@@ -2,6 +2,7 @@
 paths:
   - "src/lib/phoenix-crm/{shared-place-groups,place-match-groups,customer-match-groups,validation-review-filters,place-checks-on-demand,waiting-rules}.ts"
   - "src/lib/phoenix-crm/server/{place-match-groups,customer-match-groups,validation-reviews,place-checks-handoff}.ts"
+  - "src/lib/phoenix-crm/server/validation-reviews/**"
   - "src/components/phoenix-crm/{place-match-board,customer-match-board,shared-place-customers,shared-place-list,validated-place-list,validation-review-queue,validation-reviews-board,reopened-customer-list,place-check-done,place-check-restore}.tsx"
   - "src/components/phoenix-crm/{shared-place-customers,shared-place-list,validated-place-list,validation-review-queue}-{evidence,decision}.tsx"
   - "src/components/phoenix-crm/place-checks/**"

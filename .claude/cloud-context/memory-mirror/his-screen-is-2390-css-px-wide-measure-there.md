@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: user
   originSessionId: fec79187-477a-4fee-951b-cd4da7bc020f
-  modified: 2026-11-23T11:44:37.987Z
+  modified: 2026-11-23T12:18:29.866Z
 ---
 
 Read on 23 Nov 2026 in his own Chrome (Claude in Chrome, signed in to production): `innerWidth` 2,390 by 1,185,
@@ -20,4 +20,9 @@ tabs fill his 1,760 px row to within 1 px.
 laptop cannot hold a dev server (free memory fell to 1,553 MB compiling one page), open the live page in his
 Chrome, set the fix's layout on clones of the page's own elements with `javascript_tool`, read before and after,
 and press nothing. `resize_window` does not change a maximised window; narrow the board's container instead.
+**Other widths on the LIVE page** (23 Nov 2026): production refuses to be framed, so a 375 px `<iframe>` of the
+live page stays empty. The built-in browser pane was signed in to production as him, and its `resize_window`
+does work there: the `mobile` preset (375 by 812) and a custom 1440 by 900 both gave real readings. Put it back
+with the `desktop` preset and its earlier page afterwards. Chrome's `javascript_tool` refuses to return a full
+address or its query string; return the parameter names and values joined with other characters.
 Related: [[never-horizontal-scroll-always-mobile-and-desktop-friendly]].

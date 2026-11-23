@@ -14,6 +14,7 @@ import { phoenixCrmChannels } from "../src/lib/notifications/phoenix-crm-channel
 import { stripComments } from "./support/comment-strip.ts";
 import { placeCheckBoardSource } from "./support/place-check-board-source.ts";
 import { placeCheckListSource, placeCheckListSourceAt } from "./support/place-check-list-source.ts";
+import { placeCheckSplitSource } from "./support/place-check-split-source.ts";
 
 /**
  * Phoenix CRM — what a rep is told when his signboard photo could not be confirmed (owner,
@@ -121,7 +122,7 @@ export function runPhoenixCrmValidationFeedbackTests(): void {
   assert.equal(validationRefusalRepText("unknown"), null, "an unknown key falls back to the system wording");
 
   // ── Required to refuse, never asked to approve ────────────────────────────────────────────────
-  const reviews = stripComments(readFileSync("src/lib/phoenix-crm/server/validation-reviews.ts", "utf8"));
+  const reviews = stripComments(placeCheckSplitSource("validation-reviews"));
   assert.ok(reviews.includes("VALIDATION_REASON_REQUIRED"), "a refusal without a reason is refused");
   assert.ok(reviews.includes("refusal_reason"), "and the reason is stored on the review row");
   assert.ok(reviews.includes("tellRepValidateAgain("), "the rep is told");

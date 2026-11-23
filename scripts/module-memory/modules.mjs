@@ -654,6 +654,8 @@ export const MODULES = [
     globs: [
       "src/lib/phoenix-crm/{signboard-rules,schedule-rules,shared-place-rules,shared-place-groups,place-match-groups,validation-feedback,duplicate-merge-rules,validation-review-filters,place-photo-size,photo-reading-rules,pm-name-rules,trusted-point-rules,line-twins,line-lookalikes}.ts",
       "src/lib/phoenix-crm/server/{venue-timetable,signboard-check,signboard-sweep,signboard-holds,schedule-check,shared-places,place-location,place-match-groups,validation-reviews,full-name-reviews,trusted-point,line-twins,line-lookalikes}.ts",
+      // The reviews' parts since the split of 23 Nov 2026: `validation-reviews.ts` re-exports them.
+      "src/lib/phoenix-crm/server/validation-reviews/**",
       "src/components/phoenix-crm/{seat-in-venue-screen,venue-timetable-screen,refusal-reason-field,reopened-customer-list,shared-place-customers,shared-place-list,shared-place-screens,place-match-board,validated-place-list,validation-review-queue,validation-reviews-board,signboard-retake-screen,live-photo-capture,capture-location,full-name-checks,pm-name-fields,trusted-point-screen,line-lookalike-board}.tsx",
       // The four lists' own parts since the split of 23 Nov 2026 (what is read, and the decision).
       "src/components/phoenix-crm/{shared-place-customers,shared-place-list,validated-place-list,validation-review-queue}-{evidence,decision}.tsx",
@@ -692,6 +694,8 @@ export const MODULES = [
     globs: [
       "src/lib/phoenix-crm/{shared-place-groups,place-match-groups,customer-match-groups,validation-review-filters,place-checks-on-demand,waiting-rules}.ts",
       "src/lib/phoenix-crm/server/{place-match-groups,customer-match-groups,validation-reviews,place-checks-handoff}.ts",
+      // The reviews' parts since the split of 23 Nov 2026: `validation-reviews.ts` re-exports them.
+      "src/lib/phoenix-crm/server/validation-reviews/**",
       "src/components/phoenix-crm/{place-match-board,customer-match-board,shared-place-customers,shared-place-list,validated-place-list,validation-review-queue,validation-reviews-board,reopened-customer-list,place-check-done,place-check-restore}.tsx",
       // The four lists' own parts since the split of 23 Nov 2026 (what is read, and the decision).
       "src/components/phoenix-crm/{shared-place-customers,shared-place-list,validated-place-list,validation-review-queue}-{evidence,decision}.tsx",
@@ -730,6 +734,8 @@ export const MODULES = [
     scope: "How a validation is decided on Place checks — who may approve or reject it and when, the Super Admin's lock on what he approved or rejected, the decider's name and time, a comment written with a decision, a bulk answer, a rejected polyclinic taken back, the button a saved decision releases, and what a send-back changes and keeps.",
     globs: [
       "src/lib/phoenix-crm/server/{validation-reviews,line-twins,shared-places}.ts",
+      // The reviews' parts since the split of 23 Nov 2026: `validation-reviews.ts` re-exports them.
+      "src/lib/phoenix-crm/server/validation-reviews/**",
       "src/components/phoenix-crm/{place-check-done,place-check-restore}.tsx",
       "app/api/phoenix-crm/validation-reviews/**",
       "tests/phoenix-crm-{refuse-validation,sfe-place-checks,line-twins}*",
@@ -770,7 +776,7 @@ export const MODULES = [
     title: "Phoenix CRM — the signboard reader: reading a photo and judging it against the list",
     scope: "How the signboard reader reads a place's photo and judges it against the customer list — the nightly pass and its budget, one read per photo, every sign in the frame, the facility quorum and the list's short forms, a person's name, the advice on a sign, the re-read script and the two-reading flag.",
     globs: [
-      "src/lib/phoenix-crm/{signboard-rules,place-check-advice}.ts",
+      "src/lib/phoenix-crm/{signboard-rules,place-check-advice,place-check-advice-kinds}.ts",
       "src/lib/phoenix-crm/server/{signboard-check,signboard-sweep,signboard-holds}.ts",
       "src/components/phoenix-crm/signboard-retake-screen.tsx",
       "app/api/phoenix-crm/list/places/signboard/**",

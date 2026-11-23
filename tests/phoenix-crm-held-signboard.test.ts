@@ -22,6 +22,7 @@ import {
 } from "../src/lib/phoenix-crm/signboard-rules.ts";
 import { stripComments } from "./support/comment-strip.ts";
 import { placeCheckListSource } from "./support/place-check-list-source.ts";
+import { placeCheckSplitSource } from "./support/place-check-split-source.ts";
 
 /**
  * Phoenix CRM — a signboard the door could not confirm is HELD, re-read by the system, approved by the
@@ -213,7 +214,7 @@ function checkTheSystemOnlyApproves(): void {
 
   // The board shows the system's decision as a word, never as a code.
   const actor = /SIGNBOARD_SYSTEM_ACTOR = "([A-Z]+)"/.exec(holds)?.[1];
-  const reviews = read("src/lib/phoenix-crm/server/validation-reviews.ts");
+  const reviews = placeCheckSplitSource("validation-reviews", read);
   const decider = /const SYSTEM_DECIDER = "([A-Z]+)"/.exec(reviews)?.[1];
   assert.ok(actor && actor === decider, "the board's word for the system is the actor the system writes");
   assert.ok(reviews.includes('? "The system"'), "and it reads 'The system'");
@@ -229,7 +230,7 @@ function checkTheSystemOnlyApproves(): void {
 }
 
 function checkHisApprove(): void {
-  const reviews = stripComments(read("src/lib/phoenix-crm/server/validation-reviews.ts"));
+  const reviews = stripComments(placeCheckSplitSource("validation-reviews", read));
   const start = reviews.indexOf("export async function approveValidatedPlace(");
   assert.ok(start > 0, "the Super Admin can approve a place the system could not confirm");
   const body = reviews.slice(start, reviews.indexOf("\n}\n", start));

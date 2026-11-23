@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { stripComments } from "./support/comment-strip.ts";
 import { placeCheckBoardSource } from "./support/place-check-board-source.ts";
 import { placeCheckListSource } from "./support/place-check-list-source.ts";
+import { placeCheckSplitSource } from "./support/place-check-split-source.ts";
 
 /**
  * Phoenix CRM — the Super Admin can refuse a validation the Google check never held.
@@ -44,7 +45,7 @@ function functionBody(source: string, name: string): string {
 }
 
 function checkService(): void {
-  const service = read("src/lib/phoenix-crm/server/validation-reviews.ts");
+  const service = placeCheckSplitSource("validation-reviews", read);
   const refuse = functionBody(service, "refuseValidatedPlace");
 
   // WHO, before anything is read.
@@ -143,7 +144,7 @@ function checkRestoreDatabase(): void {
 }
 
 function checkRestoreService(): void {
-  const service = read("src/lib/phoenix-crm/server/validation-reviews.ts");
+  const service = placeCheckSplitSource("validation-reviews", read);
   const restore = functionBody(service, "restoreValidation");
 
   assert.ok(restore.indexOf("canRestoreValidation(viewer)") < restore.indexOf("callPhoenixCrm"), "restoreValidation asks who before it calls anything");
@@ -246,7 +247,7 @@ function checkRejectAfterApproval(): void {
  * intersected with what is on screen), and that a district manager's board draws none of it.
  */
 function checkBulkDecide(): void {
-  const bulk = read("src/components/phoenix-crm/place-check-bulk.tsx");
+  const bulk = placeCheckSplitSource("place-check-bulk", read);
 
   // No route of its own, and no decision of its own: each action is handed in by the screen.
   assert.doesNotMatch(bulk, /\/api\//, "the bulk bar names no route — each action is the screen's own request");
@@ -396,7 +397,7 @@ function checkTheRepReadsNothingAboutAPerson(): void {
 
   // He IS told now (owner, 2026-10-08) — through the one in-app notice worded about his photo, never
   // through a call here that could name who refused him.
-  const service = read("src/lib/phoenix-crm/server/validation-reviews.ts");
+  const service = placeCheckSplitSource("validation-reviews", read);
   const refuse = functionBody(service, "refuseValidatedPlace");
   assert.match(refuse, /tellRepValidateAgain\(/, "the refusal tells the rep what is wrong with the photo");
   assert.doesNotMatch(refuse, /createSystemNotificationForRecipients/, "and never through a raw notification that bypasses the module's wording");

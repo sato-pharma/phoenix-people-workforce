@@ -6,6 +6,7 @@ import { rejectedBuildingsSwitchLabel, seatedRejectWarning } from "@/lib/phoenix
 import { stripComments } from "./support/comment-strip.ts";
 import { placeCheckBoardSource } from "./support/place-check-board-source.ts";
 import { placeCheckListSource } from "./support/place-check-list-source.ts";
+import { placeCheckSplitSource } from "./support/place-check-split-source.ts";
 
 /**
  * Place checks for the SFE Manager (owner, 2026-10-19: "show check place to sfe manager exactly as it
@@ -180,7 +181,7 @@ export function runPhoenixCrmSfePlaceChecksTests() {
   }
 
   // ── 7. A NEW HOLD IS STILL TOLD TO THE SUPER ADMIN ALONE ─────────────────────
-  const reviews = read("src/lib/phoenix-crm/server/validation-reviews.ts");
+  const reviews = placeCheckSplitSource("validation-reviews", read);
   assert.ok(
     functionText(reviews, "notifyValidationReviewWaiting").includes('resolveHrIdsForRole("Super Admin"'),
     "🔴 the email, in-app and Telegram notice of a hold goes to the Super Admin — the SFE Manager was not given a message he did not ask for",

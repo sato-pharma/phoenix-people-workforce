@@ -10,6 +10,7 @@ import type { ValidatedPlaceRow } from "../src/lib/phoenix-crm/server/validation
 import { refusalTakeBack } from "../src/lib/phoenix-crm/validation-feedback.ts";
 import { PLACE_CHECK_BOARD_SHELL, placeCheckBoardSource } from "./support/place-check-board-source.ts";
 import { placeCheckListSource, placeCheckListSourceAt } from "./support/place-check-list-source.ts";
+import { placeCheckSplitSource } from "./support/place-check-split-source.ts";
 
 /**
  * Place checks — the deep audit of 17 Nov 2026 (owner: "redo the deep audit", then "Wrong counts,
@@ -71,7 +72,7 @@ function checkCounts() {
   checkSfeRecommendedApart();
 
   // ── A1: the figure counts real entries only, and the held buildings, and never a short read ───────
-  const reviews = code("src/lib/phoenix-crm/server/validation-reviews.ts");
+  const reviews = placeCheckSplitSource("validation-reviews", code);
   const waiting = fn(reviews, "export async function countValidationReviewsWaiting(");
   assert.equal((waiting.match(/\.eq\("is_test", false\)/g) ?? []).length, 2, "🔴 the reviews AND the held buildings are read without the test entries");
   assert.ok(waiting.includes("if (capped || heldRead.capped) throw"), "a read that met its ceiling throws, for both reads");
@@ -154,7 +155,7 @@ function checkSfeRecommendedApart() {
   );
   assert.deepEqual(none.sfeRecommended, { count: 0, oldestAt: null }, "and nothing waits on his page");
 
-  const reviews = code("src/lib/phoenix-crm/server/validation-reviews.ts");
+  const reviews = placeCheckSplitSource("validation-reviews", code);
   const loader = fn(reviews, "async function loadSfeRecommendedSubjects(");
   assert.ok(
     loader.includes('row.writer_role === "sfe_manager" && parsePlaceRecommendation(row.recommendation) !== null'),
@@ -188,7 +189,7 @@ function checkDecisionPaths() {
   assert.ok(!team.includes("scopeTerritories"), "never the scope built from every manager seat");
 
   // ── B3: an approval is rejected on its own row, whatever screen sends it ─────────────────────────
-  const reviews = code("src/lib/phoenix-crm/server/validation-reviews.ts");
+  const reviews = placeCheckSplitSource("validation-reviews", code);
   const refuse = fn(reviews, "export async function refuseValidatedPlace(");
   const branch = refuse.indexOf('if (earlierRow?.status === "approved" && typeof earlierRow.id === "string") {');
   assert.ok(branch > -1, "🔴 an approved review is caught before the upsert");
@@ -207,7 +208,7 @@ function checkDecisionPaths() {
 
 function checkWording() {
   // ── C1: the other decider settled it first — an answer, not an error ─────────────────────────────
-  const reviews = code("src/lib/phoenix-crm/server/validation-reviews.ts");
+  const reviews = placeCheckSplitSource("validation-reviews", code);
   const feedback = code("src/lib/phoenix-crm/validation-feedback.ts");
   assert.ok(feedback.includes('export const PLACE_RETIRED_CODE = "phoenix_crm_place_retired";'), "a retired place has its own code");
   assert.ok(feedback.includes('export const PLACE_GONE_CODE = "phoenix_crm_place_not_found";'), "and so does a place that is gone");
@@ -227,7 +228,7 @@ function checkWording() {
   assert.ok(sharedCodes.test(done), "read from the same module the server throws them from, never a string typed again");
 
   // ── C2: in a bulk run too, and every settled row is marked saved ─────────────────────────────────
-  const bulk = code("src/components/phoenix-crm/place-check-bulk.tsx");
+  const bulk = placeCheckSplitSource("place-check-bulk", code);
   assert.ok(bulk.includes('if (isAlreadyDecided(error)) landed.push("already");'), "🔴 a bulk row already decided is counted as settled");
   assert.ok(bulk.includes("else failed.push({ name: nameOf(row), problem: messageOf(error) });"), "and only a real failure is listed as not answered");
   assert.ok(bulk.includes("if (landed.length > before) markRowSaved(row, landed[landed.length - 1]);"), "🔴 every row the run settled draws its saved mark at once");
@@ -305,7 +306,7 @@ function checkWording() {
 
 function checkBackgroundRuns() {
   // ── D1: a bulk run holds the board still until it ends ───────────────────────────────────────────
-  const bulk = code("src/components/phoenix-crm/place-check-bulk.tsx");
+  const bulk = placeCheckSplitSource("place-check-bulk", code);
   const run = fn(bulk, "  async function run(action: BulkAction<Row>) {".trimStart());
   assert.ok(run.includes("setBulkRunGoing(true);"), "a run says it is going");
   assert.ok(/\} finally \{\s*if \(ownsRun\.current\) \{\s*ownsRun\.current = false;\s*setBulkRunGoing\(false\);\s*\}\s*\}/.test(run), "🔴 and always says it ended, even on a throw");
@@ -535,7 +536,7 @@ function checkOwedReads(board: string) {
   assert.ok(board.includes('document.addEventListener("visibilitychange", back);') && board.includes('window.addEventListener("focus", back);'), "on visibility and on focus");
   assert.ok(code("src/components/phoenix-crm/place-check-reread.ts").includes('otherTabs()?.postMessage("decided");'), "the tab's one re-read tells the others");
 
-  const bulk = code("src/components/phoenix-crm/place-check-bulk.tsx");
+  const bulk = placeCheckSplitSource("place-check-bulk", code);
   assert.ok(/placeCheckReread\.cancel\(\);\s*placeCheckReread\.owe\(\);/.test(bulk), "🔴 a bulk run's rows are owed from its first one, so leaving mid-run never shows the old page again");
   assert.ok(placeCheckListSource("shared-place-list", code).includes("placeCheckReread.refreshNow(() => router.refresh());"), "the no-timetable declaration reads through the one re-read");
   const done = code("src/components/phoenix-crm/place-check-done.tsx");
@@ -575,7 +576,7 @@ function checkEarlierDecision() {
     "no decider for a viewer who decides nothing, and no refusal reason on an approval",
   );
 
-  const loader = code("src/lib/phoenix-crm/server/validation-reviews.ts");
+  const loader = placeCheckSplitSource("validation-reviews", code);
   assert.ok(
     /await Promise\.all\(\[markDoorsCapturedAgain\(rows, reviews, placeById\), markEarlierDecisions\(rows, reviews, decides\)\]\);/.test(loader),
     "🔴 the board's read marks every waiting review with the decision before it",
@@ -617,7 +618,7 @@ function checkWaitsForBuilding() {
   const again = seatedCustomersByVenue({ pending: [], decided: [], validated: [{ ...row, waitsForBuilding: false }], reopened: [], venueIds: new Set(["v1"]) });
   assert.equal(again.get("v1")?.[0]?.waitsForBuilding, false, "a validated customer does not");
   assert.ok(
-    code("src/lib/phoenix-crm/server/validation-reviews.ts").includes(
+    placeCheckSplitSource("validation-reviews", code).includes(
       'waitsForBuilding: approvals.has(String(row.id)) && (row.customer as Row | null)?.status === "pending" && text(row.shared_place_id) !== null',
     ),
     "🔴 only an APPROVED seat whose customer is still under To validate waits for the building",
