@@ -2,6 +2,8 @@ import type { DoubleVisitExpenseWorkloadEvidence } from "@/lib/double-visit-anal
 import type { DepartureLocationRefusal } from "@/lib/outstation/departure-location-refusals";
 import type { ChainedJourneyPricing, OutstationJourneyStop } from "@/lib/outstation/chained-journey";
 import type { OutstationTicketScanRecord } from "@/lib/outstation/ticket-scan-rules";
+import type { OutstationOdometerRecord } from "@/lib/outstation/odometer-scan-rules";
+import type { FrameReading } from "@/lib/outstation/blank-frame";
 
 export type OutstationEligibilityStatus =
   | "eligible"
@@ -50,6 +52,10 @@ export type OutstationCarEvidenceMetadata = {
    * filed before it. Evidence for the approver, never a refusal.
    */
   fileTakenAt?: string | null;
+  /** The server's measure of the stored photo (blank-frame.ts, owner 2026-11-23); absent before the rule. */
+  frame?: FrameReading;
+  /** A car trip's odometer, read by the server from this photo (odometer-scan-rules.ts); absent before the rule. */
+  odometer?: OutstationOdometerRecord;
   requestDraftId: string | null;
   requestId: string | null;
   source: OutstationCarEvidenceSource;
@@ -87,7 +93,11 @@ export type OutstationDepartureEvidenceMetadata = {
   capturedLongitude: number | null;
   distanceFromArrivalKm: number | null;
   flags: string[];
+  /** The server's measure of the stored photo (blank-frame.ts, owner 2026-11-23); absent before the rule. */
+  frame?: FrameReading;
   minutesAfterArrival: number | null;
+  /** A car trip's odometer, read by the server from this photo (odometer-scan-rules.ts); absent before the rule. */
+  odometer?: OutstationOdometerRecord;
   /**
    * Every capture this one replaced, oldest first. Empty on a first capture.
    *

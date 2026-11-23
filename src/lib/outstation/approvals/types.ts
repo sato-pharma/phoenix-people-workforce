@@ -17,6 +17,7 @@ export type CheckKey =
   | "ticket"
   | "duplicate"
   | "route"
+  | "odometer"
   | "amounts";
 
 export type ClaimCheck = {
