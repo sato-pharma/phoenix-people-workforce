@@ -692,7 +692,7 @@ function checkAManagersPayloadCarriesNoDecider(): void {
   // The company board's readers keep all of it: their page admits nobody else, so `decides` is true for every row it reads.
   const company = read("app/(admin)/admin/field-crm/validation-reviews/page.tsx");
   assert.match(company, /if \(!viewer \|\| !readsCompanyPlaceChecks\(viewer\)\) redirect\("\/admin"\)/, "the company page gates on the same predicate");
-  assert.match(company, /loadValidationReviews\(viewer\),\s*loadValidatedPlaces\(viewer, \{ seatedOnly: true \}\),/, "and reads through the same loaders");
+  assert.match(company, /loadValidationReviews\(viewer, \{ seatedDecisionsOnly: true \}\),\s*loadValidatedPlaces\(viewer, \{ seatedOnly: true \}\),/, "and reads through the same loaders");
   // The read behind the page (23 Nov 2026) is reached only through two routes with the same two gates.
   const wide = read("src/lib/phoenix-crm/server/place-checks-wide-read.ts");
   assert.match(wide, /loadValidationReviews\(viewer, \{ everyDecision: true \}\),\s*loadValidatedPlaces\(viewer\),/, "the read behind it too");

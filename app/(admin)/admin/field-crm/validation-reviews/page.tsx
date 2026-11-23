@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { Building2, CheckCircle2, ChevronDown, MapPinCheck } from "lucide-react";
+import { Building2, ChevronDown, MapPinCheck } from "lucide-react";
 
 import { AdminStatCard } from "@/components/admin/admin-design-system";
 import { PlaceChecksWithDeck } from "@/components/place-review-deck/place-checks-with-deck";
@@ -79,8 +79,11 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
   // only places in use the board draws on opening; and the buildings. The wide read is asked for by the
   // board once it is on screen (`server/place-checks-wide-read.ts`): it counts those figures, and "Decided
   // by" still answers for every decision, from the rows it leaves for the click.
+  // 🔴 AND OF THE DECISIONS, ONLY THE ONES IT SENDS (owner, 23 Nov 2026: "Fix what is under 9.5"): the
+  // decisions of customers seated in a building, picked by the database (`seatedDecisionsOnly`). It read all
+  // 1,184 of the last 14 days to keep 404 of them and to count two cards; those cards are the wide read's now.
   const subjectReads = Promise.all([
-    loadValidationReviews(viewer),
+    loadValidationReviews(viewer, { seatedDecisionsOnly: true }),
     loadValidatedPlaces(viewer, { seatedOnly: true }),
     loadSharedPlaceBoard(viewer),
   ]);
@@ -123,7 +126,6 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
   // data?"): a test entry is nobody's work and the board never draws one, and a rejected building is not
   // a polyclinic in use — the card read 98, four of them test entries and 36 rejected.
   const real = <Row extends { isTest: boolean }>(set: Row[]) => set.filter((row) => !row.isTest);
-  const realDecided = real(decided).filter((row) => row.recent);
   const liveVenues = real(sharedPlaces).filter((row) => row.status !== "retired");
   // Customers seated across every live venue. The 3-a-day cap is about the DAY, never about this number.
   const seated = liveVenues.reduce((total, row) => total + row.seated, 0);
@@ -183,24 +185,9 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
           </details>
           {/* The waiting number is the board's one line, in decisions; no card repeats it in another unit. */}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
-            <AdminStatCard
-              icon={<CheckCircle2 className="h-5 w-5" />}
-              label="Approved, last 14 days"
-              value={realDecided.filter((row) => row.status === "approved").length}
-              description="Validated in the rep's own name"
-              tone="emerald"
-              size="compact"
-            />
-            <AdminStatCard
-              icon={<MapPinCheck className="h-5 w-5" />}
-              label="Rejected, last 14 days"
-              value={realDecided.filter((row) => row.status === "rejected").length}
-              description="Sent back to To validate"
-              tone="rose"
-              size="compact"
-            />
-            {/* "Validated, in use" and "Never looked at" are counted over every place in use, which this
-                page no longer reads: the board's own summary read fills them (`in-use-figures.tsx`). */}
+            {/* The two "last 14 days" cards, "Validated, in use" and "Never looked at" are counted over every
+                decision and every place in use, which this page no longer reads: the board's own summary
+                read fills them (`in-use-figures.tsx`). */}
             <PlaceChecksInUseFigures />
             <AdminStatCard
               icon={<Building2 className="h-5 w-5" />}

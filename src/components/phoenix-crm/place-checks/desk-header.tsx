@@ -62,11 +62,12 @@ export function PlaceCheckDeskHeader({ board, review }: { board: PlaceCheckBoard
             40 px above the first waiting place (measured at 1440 in the preview, 23 Nov 2026). */}
         {sfeRecommended && sfeRecommended.count > 0 ? (
           <p className="min-w-0 max-w-full flex-1 basis-64 break-words text-sm text-slate-700" data-desk-sfe>
-            {/* A phone reads the count and the link (23 Nov 2026): the sentence was four lines of the title band there. */}
+            {/* A phone reads the count and the link (23 Nov 2026): the sentence was four lines of the title band
+                there, and "N more on their own page:" still wrapped the link onto a second. */}
             <span className="max-sm:hidden">
               {sfeRecommended.count} more {sfeRecommended.count === 1 ? "has" : "have"} the SFE Manager&apos;s recommendation and {sfeRecommended.count === 1 ? "waits" : "wait"} for your decision on their own page.{" "}
             </span>
-            <span className="sm:hidden">{sfeRecommended.count} more on their own page: </span>
+            <span className="sm:hidden">{sfeRecommended.count} more: </span>
             <Link className="font-black text-slate-900 underline underline-offset-2" href={sfeRecommended.href}>
               Open SFE recommendations
             </Link>

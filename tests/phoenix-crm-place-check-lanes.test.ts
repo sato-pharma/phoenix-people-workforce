@@ -599,7 +599,13 @@ function runWordingAndFileTests() {
     assert.equal(cards.split("<LastColumn").length - 1, 1, `${name}.tsx: the controls are drawn once per card`);
   }
   assert.ok(clinicCards.includes('{bulk && section === "waiting" ? ('), "HEADLINE: the system's word on a closed card is the Super Admin's alone, and only on a row that waits");
-  assert.ok(buildingCards.includes("summary={<VenueHeader mode={mode} row={row} />}"), "a closed building says its name, its state and who captured it");
+  assert.ok(buildingCards.includes('summary={<VenueHeader mode={mode} part="summary" row={row} />}'), "a closed building says its name, its state and who captured it");
+  assert.ok(
+    buildingCards.indexOf('<VenueHeader mode={mode} part="rest" row={row} />') > buildingCards.indexOf("<PhoneFold") &&
+      buildingCards.indexOf('<VenueHeader mode={mode} part="rest" row={row} />') < buildingCards.indexOf("</CrmCardsOnPhone>"),
+    "🔴 when and where it was captured are the first lines inside the opened card: nothing is dropped (23 Nov 2026)",
+  );
+  assert.ok(buildingCards.slice(buildingCards.indexOf("</CrmCardsOnPhone>")).includes("<VenueHeader mode={mode} row={row} />"), "🔴 and the desktop table draws the building whole, as before");
   // 🔴 "WHY THESE ARE YOUR CALL" IS ONE LINE UNTIL IT IS PRESSED. Open, it stood about 130 px above the
   // first waiting place at 1440 px (measured in the preview, 23 Nov 2026), and every row says its own reason.
   const needs = code(`${dir}/needs-panel.tsx`);
@@ -628,7 +634,10 @@ function runWordingAndFileTests() {
   assert.ok(strip.includes('className="ml-auto flex min-w-0 max-w-full items-center gap-x-3 py-1 pl-3" data-filters-in-strip'), "the line asks for no width of its own, ends the row, and stands no taller than a tab (36 + 8 = 44 px)");
   assert.ok(strip.includes('className="contents" role="tablist"'), "the tab list is `contents`, so the tabs and the line wrap as one row");
   assert.ok(strip.indexOf("data-filters-in-strip") > strip.indexOf('role="tab"'), "and the line stands after the tabs: it is no tab");
-  assert.ok(filterBar.includes('lanes && !filtersOpen && "sm:hidden"'), "HEADLINE: closed, the boxed Filters bar leaves a desktop on a board with lanes");
+  assert.ok(
+    filterBar.includes('lanes && !filtersOpen && (narrowedBy.length === 0 ? "hidden" : "sm:hidden")'),
+    "HEADLINE: closed, the boxed Filters bar leaves a desktop on a board with lanes, and a phone too unless something narrows the board",
+  );
   assert.ok(filterBar.includes('"flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3", lanes && "sm:hidden"'), "open, the box holds the fields alone: the line is never drawn twice on a desktop");
   assert.equal(filterBar.split("<PlaceCheckFilterLine board={board} />").length - 1, 1, "a phone, and a board with no lanes, still read the line in the bar");
   // 🔴 A LANE'S "PICK ROWS" LINE STANDS IN ITS SECTION'S TITLE ROW (owner, 23 Nov 2026: "Add Pick rows to
@@ -685,8 +694,8 @@ function runWordingAndFileTests() {
   // on a 1440 page (637 to 326 on his own screen).
   assert.match(
     section,
-    /<div className="flex min-w-0 flex-wrap items-center [^"]*" data-lane-head>[\s\S]*?<h2 [^>]*>\{title\}<\/h2>[\s\S]*?<div className=\{typeof lane === "string" \? "min-w-0 flex-1 [^"]*" : "min-w-0 flex-1 [^"]*"\}>\{lane\}<\/div>\s*\{action \? <div [^>]*>\{action\}<\/div> : null\}/,
-    "🔴 a lane's title, its line and its action stand in one row",
+    /<div className="flex min-w-0 flex-wrap items-center [^"]*" data-lane-head>[\s\S]*?<h2 [^>]*>\{title\}<\/h2>[\s\S]*?<div\s+className=\{cn\(\s*"min-w-0 flex-1 [^"]*",[\s\S]*?\)\}\s*>\s*\{lane\}\s*<\/div>\s*\{action \? <div [^>]*>\{action\}<\/div> : null\}/,
+    "🔴 a lane's title, its line and its action stand in one row (on a phone the title takes the first, and the other two share the second)",
   );
   assert.ok(!/\{description\}/.test(section.slice(section.indexOf("data-lane-head"))), "a lane's head carries no second sentence under the title");
   assert.doesNotMatch(section, /\brounded-(?!none\b)|\boverflow-x-auto\b|\btruncate\b|\bmin-w-\[|line-clamp/, "square, no sideways scroll, no ellipsis");

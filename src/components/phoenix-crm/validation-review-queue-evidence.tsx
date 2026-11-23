@@ -11,8 +11,10 @@
  * listings are drawn only where a listing was the question (`Evidence`).
  */
 
+import type { ReactNode } from "react";
+
 import { CrmPill } from "@/components/phoenix-crm/ui";
-import { earlierDecisionText } from "@/lib/phoenix-crm/earlier-decision";
+import { earlierDecisionShort, earlierDecisionText } from "@/lib/phoenix-crm/earlier-decision";
 import type { ValidationReviewRow } from "@/lib/phoenix-crm/view-types";
 
 const REASON_TEXT: Record<NonNullable<ValidationReviewRow["reason"]>, string> = {
@@ -54,15 +56,48 @@ function readingText(label: string, reading: ValidationReviewRow["pin"]): string
   return `${label}: ${reading.lat.toFixed(5)}, ${reading.lon.toFixed(5)} (${accuracy})`;
 }
 
-function Who({ row }: { row: ValidationReviewRow }) {
+/**
+ * Who and what a review is about. The table draws it whole. A phone card draws it in two parts (owner, 23
+ * Nov 2026: "Fix what is under 9.5"): a closed card was 189 to 300 px, so two and a half filled a screen.
+ * `summary` is what a closed card says — the customer, the list and territory, the rep, and one row of
+ * pills (how long it has waited, "Rejected before", the system's word handed in as `children`); `rest` is
+ * the capture time and the earlier decision's full sentence, drawn first inside the opened card. Nothing
+ * is dropped: every line of the whole block is in one part or the other.
+ */
+function Who({ children, part, row }: { children?: ReactNode; part?: "summary" | "rest"; row: ValidationReviewRow }) {
+  const what = [row.listType, row.speciality, row.kind === "added_place" ? "Another clinic" : null].filter(Boolean).join(" · ");
+  if (part === "rest") {
+    return (
+      <div className="min-w-0 space-y-1" data-who-rest>
+        <p className="break-words text-xs text-slate-500">Captured {row.createdAtText}</p>
+        {row.earlierDecision ? <p className="break-words text-xs font-semibold text-slate-700">{earlierDecisionText(row.earlierDecision)}</p> : null}
+      </div>
+    );
+  }
+  if (part === "summary") {
+    return (
+      <div className="min-w-0 space-y-1" data-who-summary>
+        <p className="break-words text-sm font-black text-slate-900" dir="auto">
+          {row.customerName}
+        </p>
+        <p className="break-words text-xs font-semibold text-slate-500">{[what, row.territory].filter(Boolean).join(" · ")}</p>
+        <p className="break-words text-sm text-slate-700">{row.repName}</p>
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          {row.waitingText ? <CrmPill tone={row.waitingLong ? "warn" : "neutral"}>{row.waitingText}</CrmPill> : null}
+          {row.earlierDecision ? <CrmPill tone="warn">{earlierDecisionShort(row.earlierDecision)}</CrmPill> : null}
+          {row.systemStillReading ? <CrmPill tone="info">The system is still reading this sign</CrmPill> : null}
+          {row.isTest ? <CrmPill>Test entry</CrmPill> : null}
+          {children}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="min-w-0 space-y-1">
       <p className="break-words text-sm font-black text-slate-900" dir="auto">
         {row.customerName}
       </p>
-      <p className="break-words text-xs font-semibold text-slate-500">
-        {[row.listType, row.speciality, row.kind === "added_place" ? "Another clinic" : null].filter(Boolean).join(" · ")}
-      </p>
+      <p className="break-words text-xs font-semibold text-slate-500">{what}</p>
       <p className="break-words text-sm text-slate-700">{row.repName}</p>
       <p className="break-words text-xs text-slate-500">{row.territory}</p>
       <p className="break-words text-xs text-slate-500">Captured {row.createdAtText}</p>

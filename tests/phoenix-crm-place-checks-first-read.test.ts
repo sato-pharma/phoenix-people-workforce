@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { placeChecksBoardSets } from "../src/lib/phoenix-crm/place-checks-board-sets.ts";
 import { mergedNoteIndex, PLACE_CHECKS_SUMMARY_ROUTE, placeChecksSummary } from "../src/lib/phoenix-crm/place-checks-on-demand.ts";
+import { keptBySeatedDecisionsRead, REVIEW_SUBJECTS_SEATED_SELECT, REVIEW_SUBJECTS_SELECT } from "../src/lib/phoenix-crm/place-checks-slim-read.ts";
 import { placeNoteSubjectKey } from "../src/lib/phoenix-crm/place-note-rules.ts";
 import { keepPlaceChecksForTheClick, placeChecksHandoffKey, takePlaceChecksForTheClick } from "../src/lib/phoenix-crm/server/place-checks-handoff.ts";
 import type { PlaceNoteIndex, ReopenedCustomerRow, SharedPlaceBoardRow, ValidatedPlaceRow, ValidationReviewRow } from "../src/lib/phoenix-crm/view-types.ts";
@@ -29,7 +30,11 @@ import { placeCheckBoardSource } from "./support/place-check-board-source.ts";
  * - the click making the wide read a second time because it did not wait for the figures' read to end;
  * - a single clinic's comment or integrity case missing from its row, because the page no longer reads it;
  * - the page and the read behind it sorting rows by two rules, so a tab's count and its rows disagree;
- * - the phone's lane heads growing back to a screen of wrapped sentences above the first place.
+ * - the phone's lane heads growing back to a screen of wrapped sentences above the first place;
+ * - (23 Nov 2026, "Fix what is under 9.5") the page reading every decision of the last 14 days again to
+ *   keep the third of them it sends, or the narrow read resting on the request alone, so a wider answer
+ *   puts the single clinics' decisions back in the page;
+ * - a phone's lane head, filter box or tab picker growing back to rows of their own above the first place.
  */
 
 const ROOT = new URL("../", import.meta.url);
@@ -44,8 +49,8 @@ function checkThePageReadsWhatItSends() {
   const page = read(PAGE);
   assert.match(
     page,
-    /const subjectReads = Promise\.all\(\[\s*loadValidationReviews\(viewer\),\s*loadValidatedPlaces\(viewer, \{ seatedOnly: true \}\),\s*loadSharedPlaceBoard\(viewer\),\s*\]\);/,
-    "🔴 the page reads the 14-day reviews, the places SEATED in a building and the buildings: what it sends, and nothing else",
+    /const subjectReads = Promise\.all\(\[\s*loadValidationReviews\(viewer, \{ seatedDecisionsOnly: true \}\),\s*loadValidatedPlaces\(viewer, \{ seatedOnly: true \}\),\s*loadSharedPlaceBoard\(viewer\),\s*\]\);/,
+    "🔴 the page reads the places waiting, the decisions and the places SEATED in a building, and the buildings: what it sends, and nothing else",
   );
   assert.ok(!page.includes("everyDecision"), "🔴 never every decision ever made (2,377 rows before the first waiting place)");
   assert.ok(!/loadValidatedPlaces\(viewer\)/.test(page), "🔴 never every place in use (7,124 places, 13 MB)");
@@ -105,11 +110,65 @@ function checkTheFiguresRoute() {
   );
 }
 
+/**
+ * 🔴 THE PAGE READS THE DECISIONS IT SENDS, AND NO OTHERS (owner, 23 Nov 2026: "Fix what is under 9.5"). It
+ * read all 1,184 decisions of the last 14 days to keep the 404 seated in a building and to count two cards
+ * of the Figures tab: 2.9 of its seconds, its slowest read. The database now sends the seated ones alone,
+ * the rows are narrowed again in code, and the two cards are counted by the read behind the page.
+ */
+function checkThePageReadsOnlyTheSeatedDecisions() {
+  const queue = read("src/lib/phoenix-crm/server/validation-reviews/queue.ts");
+  assert.match(queue, /const seatedDecisionsOnly = options\.seatedDecisionsOnly === true;/, "the narrow read is asked for by name, and only `true` asks for it");
+  assert.match(
+    queue,
+    /const query = seatedDecisionsOnly && !waiting \? byStatus\.not\("place\.shared_place_id", "is", null\) : byStatus;\s*return seatScoped\(query, seats\)/,
+    "🔴 the database answers the seated decisions alone, and every waiting review whole",
+  );
+  assert.match(
+    queue,
+    /\.select\(seatedDecisionsOnly && !waiting \? `\$\{REVIEW_COLUMNS\}, \$\{REVIEW_SUBJECTS_SEATED_SELECT\}` : `\$\{REVIEW_COLUMNS\}, \$\{REVIEW_SUBJECTS_SELECT\}`\)/,
+    "🔴 with the place joined inner for that read: a filter on a plain join sends the review back with an empty place",
+  );
+  assert.match(
+    queue,
+    /if \(seatedDecisionsOnly\) \{\s*for \(const \[id, row\] of reviewById\) \{\s*if \(!keptBySeatedDecisionsRead\(row\)\) reviewById\.delete\(id\);/,
+    "🔴 and the rows are narrowed again in code: the rule never rests on the request alone",
+  );
+
+  // The select the narrow read sends: the plain one, with the place's join made inner and nothing else changed.
+  assert.equal(REVIEW_SUBJECTS_SELECT.split("!inner(").length - 1, 0, "the plain read joins nothing inner");
+  assert.equal(REVIEW_SUBJECTS_SEATED_SELECT.split("!inner(").length - 1, 1, "the narrow read makes one join inner");
+  assert.ok(REVIEW_SUBJECTS_SEATED_SELECT.includes("place:phoenix_crm_places!phoenix_crm_validation_reviews_place_id_fkey!inner("), "🔴 the place's");
+  assert.equal(REVIEW_SUBJECTS_SEATED_SELECT.replace("_place_id_fkey!inner(", "_place_id_fkey("), REVIEW_SUBJECTS_SELECT, "and every column of the plain read is still asked for");
+
+  assert.equal(keptBySeatedDecisionsRead({ status: "approved", place: { shared_place_id: "venue-1" } }), true, "a decision seated in a building is kept");
+  assert.equal(keptBySeatedDecisionsRead({ status: "rejected", place: { shared_place_id: null } }), false, "🔴 a single clinic's decision is dropped, even when the request sent it");
+  assert.equal(keptBySeatedDecisionsRead({ status: "approved", place: null }), false, "🔴 and so is a decision that came back with no place");
+  assert.equal(keptBySeatedDecisionsRead({ status: "approved", place: { shared_place_id: "  " } }), false, "a blank building is no building");
+  assert.equal(keptBySeatedDecisionsRead({ status: "pending", place: { shared_place_id: null } }), true, "🔴 a waiting review is kept wherever its place is: every one of them is his to decide");
+
+  const page = read(PAGE);
+  assert.ok(
+    !page.includes("realDecided") && !page.includes('label="Approved, last 14 days"') && !page.includes('label="Rejected, last 14 days"'),
+    "🔴 the page counts no card from the decisions it no longer reads",
+  );
+  const cards = read("src/components/phoenix-crm/place-checks/in-use-figures.tsx");
+  for (const label of ['label="Approved, last 14 days"', 'label="Rejected, last 14 days"', 'label="Validated, in use"', 'label="Never looked at"']) {
+    assert.ok(cards.includes(label), `the board's figures fill ${label}`);
+  }
+  assert.ok(
+    cards.includes("value={figureOrWord(state, (figures) => figures.approved)}") && cards.includes("value={figureOrWord(state, (figures) => figures.rejected)}"),
+    "🔴 the two decision cards show their number or the word: never a 0 while it is being counted",
+  );
+  assert.ok(cards.includes('"Counting every decision."'), "and say what is being counted");
+}
+
 function checkTheReadThatStartedLaterIsKept() {
   const person = placeChecksHandoffKey({ hrId: "FIRST-READ-1", role: "Super Admin", isTestPersona: false } as never);
   const rows = (tag: string) => ({
     validated: [{ placeId: tag } as unknown as ValidatedPlaceRow],
     olderDecided: [],
+    decisionFigures: { approved: 0, rejected: 0 },
     noteIndex: { notes: {}, recommendations: {}, integrity: {} } as unknown as PlaceNoteIndex,
     capped: { reviews: false, validated: false },
   });
@@ -242,10 +301,14 @@ function checkNoCountBeforeTheFigures() {
   // 🔴 A FIGURE THAT IS NOT IN YET IS NEVER A ZERO.
   assert.match(
     board,
-    /export function figureOrWord\([^{]*\{ inUse: number; unseen: number \}\) => number\): number \| string \{\s*if \(state\?\.figures\) return pick\(state\.figures\);\s*return state\?\.failed \? "Not counted" : "Counting";\s*\}/,
+    /export function figureOrWord\(state: PlaceChecksInUseFigureState \| null, pick: \(figures: PlaceChecksFigures\) => number\): number \| string \{\s*if \(state\?\.figures\) return pick\(state\.figures\);\s*return state\?\.failed \? "Not counted" : "Counting";\s*\}/,
     "🔴 a card shows its number, or the word Counting, or Not counted: never 0 for a number it does not hold",
   );
-  assert.match(board, /everything\s*\? \{ inUse: validated\.length, unseen: validated\.filter\(\(row\) => !row\.reviewed\)\.length \}\s*: summary\s*\? \{ inUse: summary\.inUse, unseen: summary\.unseen \}\s*: null/, "the cards read the rows once they are in, else the figures, else nothing");
+  assert.match(
+    board,
+    /everything\s*\? \{ inUse: validated\.length, unseen: validated\.filter\(\(row\) => !row\.reviewed\)\.length, \.\.\.everything\.decisionFigures \}\s*: summary\s*\? \{ inUse: summary\.inUse, unseen: summary\.unseen, \.\.\.summary\.decisionFigures \}\s*: null/,
+    "the cards read the rows once they are in, else the figures, else nothing; the two decision cards are the wide read's count either way",
+  );
   assert.ok(board.includes("<PlaceChecksInUseFiguresProvider value={{ figures: inUseFigures, failed: summaryError !== null }}>"), "the board hands the cards their figures, and whether the read failed");
   assert.ok(
     board.includes("{summaryError !== null && !complete ? <FiguresNotCounted error={summaryError} onRetry={reloadSummary} /> : null}"),
@@ -296,20 +359,96 @@ function checkThePhoneTop() {
 
   const needs = raw("src/components/phoenix-crm/place-checks/needs-panel.tsx");
   assert.ok(needs.includes('<span className="min-w-0 flex-1 basis-60 break-words group-open:hidden max-sm:hidden">'), "on a phone the commonest reason waits for the press with the others");
-  assert.ok(needs.includes('<span className="ml-auto shrink-0 text-xs font-black text-orange-700 sm:ml-0">'), "and the press that opens them all stays on the row");
+  // 🔴 THE FOLD IS ONE SHORT PRESS ON A PHONE (owner, 23 Nov 2026: "Fix what is under 9.5"). At 375 px the
+  // lane's head was three rows, 137 px: its title, "Why these are your call", "Answer several together".
+  assert.ok(
+    needs.includes('<span className={reasons.length > 1 ? "font-black text-slate-900 max-sm:hidden max-sm:group-open:inline" : "font-black text-slate-900"}>Why these are your call</span>'),
+    "🔴 with several reasons a phone's closed fold drops its title, which the press says; with one reason the title is all there is, and stays",
+  );
+  assert.match(
+    needs,
+    /<span className="sm:hidden">Why: \{reasons\.length\} reasons<\/span>\s*<span className="max-sm:hidden">All \{reasons\.length\} reasons<\/span>/,
+    "🔴 on a phone the press says what it opens, since no title stands beside it",
+  );
+  assert.ok(needs.includes('<span className="shrink-0 text-xs font-black text-orange-700 max-sm:group-open:ml-auto">'), "and it never pushes itself to the far edge of a row it shares with the pick button");
 
   const section = raw("src/components/phoenix-crm/place-checks/section.tsx");
+  assert.ok(section.includes('const fold = lane !== null && typeof lane !== "string";'), "a lane's fold is told from a lane's plain sentence");
+  assert.match(
+    section,
+    /"min-w-0 flex-1 basis-60 break-words text-sm text-slate-600",\s*fold \? "max-sm:basis-auto max-sm:has-\[details\[open\]\]:basis-full" : "max-sm:hidden",/,
+    "🔴 a lane's plain sentence is a desktop's; its fold is as wide as its words on a phone, and takes a row of its own only while it is open",
+  );
   assert.ok(
-    section.includes('typeof lane === "string" ? "min-w-0 flex-1 basis-60 break-words text-sm text-slate-600 max-sm:hidden" : "min-w-0 flex-1 basis-60 break-words text-sm text-slate-600"'),
-    "🔴 a lane's plain sentence is a desktop's; a lane's fold, which is one row, stays on a phone",
+    section.includes('<div className={cn("flex min-w-0 items-center gap-2.5", fold && "max-sm:w-full")}>'),
+    "🔴 the title takes the first row on a phone, so the fold and the pick button share the second (137 px to 89)",
+  );
+  assert.ok(
+    section.includes('{action ? <div className={cn("min-w-0 sm:w-auto", fold ? "max-sm:max-w-full" : "w-full")}>{action}</div> : null}'),
+    "🔴 beside a fold the pick button is as wide as its words; with no fold it keeps the row, as before",
   );
 
   const header = raw("src/components/phoenix-crm/place-checks/desk-header.tsx");
   assert.match(
     header,
-    /<span className="max-sm:hidden">\s*\{sfeRecommended\.count\} more[\s\S]{0,260}?<\/span>\s*<span className="sm:hidden">\{sfeRecommended\.count\} more on their own page: <\/span>\s*<Link /,
-    "🔴 on a phone the SFE line is the count and the link: both screens say how many, and both link to the page",
+    /<span className="max-sm:hidden">\s*\{sfeRecommended\.count\} more[\s\S]{0,260}?<\/span>\s*<span className="sm:hidden">\{sfeRecommended\.count\} more: <\/span>\s*<Link /,
+    "🔴 on a phone the SFE line is the count and the link, on one line: both screens say how many, and both link to the page",
   );
+
+  // 🔴 A PHONE'S FILTERS ARE ONE BUTTON BESIDE THE TAB PICKER (owner, 23 Nov 2026: "Fix what is under 9.5").
+  // The folded box was 94 px and a gap above the first waiting place, to say "Showing everything", and the
+  // picker's label another 20.
+  const strip = raw("src/components/phoenix-crm/place-checks/tab-strip.tsx");
+  const filterBar = raw("src/components/phoenix-crm/place-checks/filter-bar.tsx");
+  assert.match(
+    strip,
+    /<div className="flex min-w-0 items-center gap-2 sm:hidden" data-tab-picker>\s*<label className="sr-only" htmlFor="vr-tab-select">\s*Showing\s*<\/label>\s*<div className="min-w-0 flex-1">\s*<CrmSelect/,
+    "🔴 the picker's row on a phone is the picker, named for a screen reader, with room beside it",
+  );
+  assert.ok(strip.includes("{lanes ? <PlaceCheckFilterToggle board={board} /> : null}"), "🔴 on the Super Admin's board the Filters button shares that row");
+  assert.match(
+    filterBar,
+    /export function PlaceCheckFilterToggle\(\{ board \}: \{ board: PlaceCheckBoard \}\) \{[\s\S]{0,330}aria-expanded=\{filtersOpen\}\s*className="min-h-11 shrink-0"\s*data-filter-toggle\s*onClick=\{\(\) => setFiltersOpen\(\(current\) => !current\)\}/,
+    "🔴 it is 44 px tall, says whether the boxes are open, and opens the same boxes",
+  );
+  assert.ok(
+    filterBar.includes('{filtersOpen ? "Hide filters" : narrowedBy.length > 0 ? `Filters (${narrowedBy.length})` : "Filters"}'),
+    "🔴 and counts what narrows the board, so a narrowed board never looks whole",
+  );
+  assert.ok(
+    filterBar.includes('lanes && !filtersOpen && (narrowedBy.length === 0 ? "hidden" : "sm:hidden")'),
+    "🔴 closed, the box is drawn on a phone only while something narrows the board: what narrows it is never hidden",
+  );
+  assert.ok(filterBar.includes("const ownToggle = inStrip || !lanes;") && filterBar.includes("{ownToggle ? ("), "the boxed line draws no second button on that board; a board with no lanes keeps its own");
+  const shell = raw("src/components/phoenix-crm/validation-reviews-board.tsx");
+  assert.ok(shell.includes("{lanes ? null : <PlaceCheckFilterBar board={board} />}"), "a board with no lanes keeps its filter bar whole, above the tabs");
+  assert.ok(
+    shell.indexOf("{lanes ? <PlaceCheckFilterBar board={board} /> : null}") > shell.indexOf("<PlaceCheckTabStrip board={board} />"),
+    "🔴 with lanes the boxes open under the strip that holds their button",
+  );
+
+  // 🔴 A CLOSED CARD IS A SHORT ONE (owner, 23 Nov 2026: "Fix what is under 9.5"). At 375 px a closed clinic
+  // card was 189 to 300 px and a closed building 256 to 300: the whole block, one fact to a line.
+  const who = raw("src/components/phoenix-crm/validation-review-queue-evidence.tsx");
+  const whoParts = who.slice(who.indexOf("function Who("), who.lastIndexOf('<div className="min-w-0 space-y-1">'));
+  const whoWhole = who.slice(who.lastIndexOf('<div className="min-w-0 space-y-1">'), who.indexOf("function Evidence("));
+  for (const field of ["row.customerName", "row.listType", "row.repName", "row.territory", "row.createdAtText", "row.waitingText", "row.earlierDecision", "row.systemStillReading", "row.isTest"]) {
+    assert.ok((whoWhole.includes(field) || field === "row.listType") && whoParts.includes(field), `🔴 ${field} is on the table's block and on the phone card, closed or opened: nothing is dropped`);
+  }
+  const whoSummary = whoParts.slice(whoParts.indexOf('if (part === "summary")'));
+  assert.ok(whoSummary.includes('<CrmPill tone="warn">{earlierDecisionShort(row.earlierDecision)}</CrmPill>'), "🔴 a closed card still says the customer was decided before (owner, 22 Nov 2026)");
+  assert.ok(!whoSummary.includes("row.createdAtText") && !whoSummary.includes("earlierDecisionText("), "the capture time and the full sentence wait inside the card");
+  const whoRest = whoParts.slice(whoParts.indexOf('if (part === "rest")'), whoParts.indexOf('if (part === "summary")'));
+  assert.ok(whoRest.includes("Captured {row.createdAtText}") && whoRest.includes("{earlierDecisionText(row.earlierDecision)}"), "🔴 and are the first lines of the opened card");
+  const clinicCards = raw("src/components/phoenix-crm/validation-review-queue.tsx");
+  assert.match(clinicCards, /summary=\{\s*<Who part="summary" row=\{row\}>/, "🔴 a closed clinic card draws the short block");
+  assert.ok(clinicCards.indexOf('<Who part="rest" row={row} />') > clinicCards.indexOf('<Who part="summary" row={row}>'), "and the opened card the rest");
+  assert.ok(clinicCards.indexOf('<Who part="rest" row={row} />') < clinicCards.indexOf("</CrmCardsOnPhone>"), "on a phone only");
+  assert.ok(clinicCards.slice(clinicCards.indexOf("</CrmCardsOnPhone>")).includes("<Who row={row} />"), "🔴 the desktop table draws the block whole, as before");
+  const venue = raw("src/components/phoenix-crm/shared-place-list-evidence.tsx");
+  assert.ok(venue.includes("{where && part !== \"summary\" ? ("), "a closed building leaves its address for the opened card");
+  assert.ok(venue.includes("part === \"summary\" ? `${row.repName} · ${row.territory}` : `${row.repName} · ${row.territory} · Captured ${row.capturedAtText}`"), "and its capture time");
+  assert.match(venue, /if \(part === "rest"\) \{[\s\S]{0,200}Captured \{row\.capturedAtText\}[\s\S]{0,200}\{where\}/, "🔴 which are the first lines inside it: nothing is dropped");
 
   const title = raw("src/components/place-review-deck/place-checks-with-deck.tsx");
   assert.ok(
@@ -329,6 +468,7 @@ function checkThePhoneTop() {
 
 export async function runPhoenixCrmPlaceChecksFirstReadTests() {
   checkThePageReadsWhatItSends();
+  checkThePageReadsOnlyTheSeatedDecisions();
   checkTheFiguresRoute();
   checkTheReadThatStartedLaterIsKept();
   checkTheNotesComeWithTheRows();

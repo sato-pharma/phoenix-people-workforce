@@ -74,18 +74,22 @@ export function PlaceChecksWaitingPanel({ board, lane }: { board: PlaceCheckBoar
   // 🔴 "WHY THESE ARE YOUR CALL" STANDS IN THE FIRST LIST'S OWN HEAD (23 Nov 2026). As a band of its own
   // it stood 38 px, and a gap, above the first waiting place. One line until it is pressed: the commonest
   // reason, then the rest; open, the list drops under the title and each row still says its own.
+  // On a phone it is "Why: N reasons" beside the pick button (`PlaceCheckSection`); open, it says its name.
   const why =
     lanes && !ready && reasons.length > 0 ? (
       <details className="group min-w-0" data-your-call-reasons>
         <summary className="flex min-h-11 min-w-0 cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-0.5 text-sm text-slate-700 md:min-h-7 [&::-webkit-details-marker]:hidden">
-          <span className="font-black text-slate-900">Why these are your call</span>
+          <span className={reasons.length > 1 ? "font-black text-slate-900 max-sm:hidden max-sm:group-open:inline" : "font-black text-slate-900"}>Why these are your call</span>
           {/* On a phone the commonest reason waits for the press with the others: it wrapped to three lines above the first waiting place. */}
           <span className="min-w-0 flex-1 basis-60 break-words group-open:hidden max-sm:hidden">
             <span className="font-black tabular-nums">{reasons[0].count}</span> · {reasons[0].because}
           </span>
           {reasons.length > 1 ? (
-            <span className="ml-auto shrink-0 text-xs font-black text-orange-700 sm:ml-0">
-              <span className="group-open:hidden">All {reasons.length} reasons</span>
+            <span className="shrink-0 text-xs font-black text-orange-700 max-sm:group-open:ml-auto">
+              <span className="group-open:hidden">
+                <span className="sm:hidden">Why: {reasons.length} reasons</span>
+                <span className="max-sm:hidden">All {reasons.length} reasons</span>
+              </span>
               <span className="hidden group-open:inline">Close</span>
             </span>
           ) : null}

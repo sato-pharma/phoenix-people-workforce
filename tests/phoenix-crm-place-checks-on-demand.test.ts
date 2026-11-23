@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import {
   decidedSentWithPage,
+  decisionFiguresSince,
   isReal,
   mergeDecided,
   PLACE_CHECKS_EVERYTHING_ROUTE,
@@ -45,7 +46,10 @@ import { placeCheckBoardSource } from "./support/place-check-board-source.ts";
  * - (23 Nov 2026) the single clinics' decisions sent with the page again — 609 of the 991 decisions of the
  *   last 14 days that day, drawn only by History and "Approved by the system";
  * - the two decided tabs showing the few seated decisions as their count before the click, or a different
- *   number after it.
+ *   number after it;
+ * - (23 Nov 2026, "Fix what is under 9.5") "Rejected, last 14 days" counting every rejection that can still
+ *   be taken back — it read 733 when 570 had been rejected in those 14 days — or the two decision cards
+ *   counted from the few decisions the page now reads.
  */
 
 const ROOT = new URL("../", import.meta.url);
@@ -241,8 +245,14 @@ function checkTheWiring() {
   const wide = read("src/lib/phoenix-crm/server/place-checks-wide-read.ts");
   assert.match(
     wide,
-    /placeChecksSummary\(\{ team: false, lanes: decides, pending: sets\.waiting, decided: sets\.decided, validated, reopened: reopenedRead\.rows, sharedPlaces: sets\.sharedPlaces, capped \}\)/,
+    /const summary = placeChecksSummary\(\{ team: false, lanes: decides, pending: sets\.waiting, decided: sets\.decided, validated, reopened: reopenedRead\.rows, sharedPlaces: sets\.sharedPlaces, capped, decidedSince \}\);/,
     "🔴 the figures are counted from every row the wide read made",
+  );
+  assert.match(wide, /const decidedSince = Date\.now\(\) - DECIDED_SHOWN_DAYS \* 86_400_000;/, "the two decision cards' 14 days are the board's own 14 days");
+  assert.match(
+    wide,
+    /decisionFigures: summary\.decisionFigures,\s*\},\s*summary,\s*\};/,
+    "🔴 the click's rows carry the same two figures the summary answers: the cards do not move when the rows arrive",
   );
   for (const prop of ["validated={seatedInUse}", "decided={sentDecided}", "onDemand={onDemand}"]) {
     assert.ok(page.includes(prop), `the page hands the board ${prop}`);
@@ -311,6 +321,7 @@ function checkTheHandoff() {
   const rows = (tag: string) => ({
     validated: [inUse(tag, "Rep")],
     olderDecided: [],
+    decisionFigures: { approved: 0, rejected: 0 },
     noteIndex: { notes: {}, recommendations: {}, integrity: {} } as unknown as PlaceNoteIndex,
     capped: { reviews: false, validated: false },
   });
@@ -332,7 +343,37 @@ function checkTheHandoff() {
   );
 }
 
+/**
+ * 🔴 THE TWO DECISION CARDS COUNT THE LAST 14 DAYS BY THE DAY OF THE DECISION (owner, 23 Nov 2026: "Fix what
+ * is under 9.5"). A rejection that can still be taken back stays on the board for 90 days and is `recent`
+ * all that time, so the card that counted `recent` rows read 733 under "Rejected, last 14 days" when 570
+ * had been rejected in those 14 days (production, 23 Nov 2026).
+ */
+function checkTheDecisionCards() {
+  const now = Date.parse("2026-11-23T12:00:00.000Z");
+  const since = now - 14 * 86_400_000;
+  const day = (daysAgo: number) => new Date(now - daysAgo * 86_400_000).toISOString();
+  const decided = [
+    review("a-today", day(40), { status: "approved", decidedAt: day(0) }),
+    review("a-edge", day(40), { status: "approved", decidedAt: new Date(since).toISOString() }),
+    review("r-week", day(40), { status: "rejected", decidedAt: day(7) }),
+    // Rejected 30 days ago and still restorable: on the board, `recent`, and not a rejection of these 14 days.
+    review("r-restorable", day(40), { status: "rejected", decidedAt: day(30), recent: true }),
+    review("a-old", day(90), { status: "approved", decidedAt: day(60), recent: false }),
+    review("a-test", day(3), { status: "approved", decidedAt: day(1), isTest: true }),
+    review("r-undated", day(3), { status: "rejected", decidedAt: null }),
+  ];
+  assert.deepEqual(decisionFiguresSince(decided, since), { approved: 2, rejected: 1 }, "🔴 HEADLINE: a decision counts by the day it was made; a rejection that is only still restorable does not, nor a test entry, nor a row with no decision time");
+  assert.deepEqual(decisionFiguresSince(decided, Number.NEGATIVE_INFINITY), { approved: 3, rejected: 2 }, "with no start, every real dated decision counts");
+  assert.deepEqual(decisionFiguresSince([], since), { approved: 0, rejected: 0 }, "no decisions is a true zero");
+
+  const input = { team: false, lanes: true, pending: [], decided, validated: [], reopened: [], sharedPlaces: [] };
+  assert.deepEqual(placeChecksSummary({ ...input, decidedSince: since }).decisionFigures, { approved: 2, rejected: 1 }, "🔴 the figures' read answers the same two numbers, from the start it is handed");
+  assert.deepEqual(placeChecksSummary(input).decisionFigures, { approved: 3, rejected: 2 }, "handed no start, it counts every decision it was given");
+}
+
 export async function runPhoenixCrmPlaceChecksOnDemandTests() {
+  checkTheDecisionCards();
   checkTheOpeningFigures();
   checkTheHandoff();
   checkTheMergedDecisions();

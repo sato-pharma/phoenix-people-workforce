@@ -54,6 +54,11 @@ export function earlierDecisionOf(
   return latest;
 }
 
+/** The same fact in two words, for a closed phone card; the sentence is inside the card. */
+export function earlierDecisionShort(decision: Pick<EarlierDecision, "status">): string {
+  return decision.status === "rejected" ? "Rejected before" : "Approved before";
+}
+
 /** The one sentence the waiting row prints. A fact, never an instruction. */
 export function earlierDecisionText(decision: EarlierDecision): string {
   const verb = decision.status === "rejected" ? "rejected" : "approved";

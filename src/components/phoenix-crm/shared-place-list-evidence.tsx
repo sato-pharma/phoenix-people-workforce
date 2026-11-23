@@ -77,9 +77,25 @@ function VenueStatus({ mode, row }: { mode: PlaceCheckNotesMode; row: SharedPlac
  * The building, read first and read whole (owner, 2026-10-17: "every polyclinic should crystal clear
  * show me the name of the polyclinic and its data"): its name large, what kind of building it is and
  * where it stands, who captured it and when, and where it is.
+ *
+ * A phone card draws it in two parts (owner, 23 Nov 2026: "Fix what is under 9.5"; a closed building was
+ * 256 to 300 px): `summary` is its name, its pills, and who captured it; `rest` is when and where, drawn
+ * first inside the opened card. The table draws it whole.
  */
-function VenueHeader({ mode, row }: { mode: PlaceCheckNotesMode; row: SharedPlaceBoardRow }) {
+function VenueHeader({ mode, part, row }: { mode: PlaceCheckNotesMode; part?: "summary" | "rest"; row: SharedPlaceBoardRow }) {
   const where = [row.address, row.brickName, row.areaName].filter(Boolean).join(" · ");
+  if (part === "rest") {
+    return (
+      <div className="min-w-0 space-y-1" data-venue-rest>
+        <p className="break-words text-sm font-semibold text-slate-700">Captured {row.capturedAtText}</p>
+        {where ? (
+          <p className="break-words text-sm text-slate-500" dir="auto">
+            {where}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
   return (
     <div className="min-w-0 flex-1 space-y-1.5">
       <h3 className="break-words text-lg font-black leading-tight text-slate-950" dir="auto">
@@ -96,9 +112,9 @@ function VenueHeader({ mode, row }: { mode: PlaceCheckNotesMode; row: SharedPlac
         {row.isTest ? <CrmPill>Test entry</CrmPill> : null}
       </div>
       <p className="break-words text-sm font-semibold text-slate-700">
-        {row.repName} · {row.territory} · Captured {row.capturedAtText}
+        {part === "summary" ? `${row.repName} · ${row.territory}` : `${row.repName} · ${row.territory} · Captured ${row.capturedAtText}`}
       </p>
-      {where ? (
+      {where && part !== "summary" ? (
         <p className="break-words text-sm text-slate-500" dir="auto">
           {where}
         </p>

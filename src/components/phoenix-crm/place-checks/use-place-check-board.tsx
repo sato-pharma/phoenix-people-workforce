@@ -180,13 +180,14 @@ export function usePlaceCheckBoard(props: PlaceCheckBoardProps) {
   // 🔴 THE TWO DECIDED TABS ARE COUNTED BY THE SERVER UNTIL THEIR ROWS ARE IN (23 Nov 2026): the page no
   // longer sends the single clinics' decisions, so before the click the board holds only the seated ones.
   const decidedCount = (own: number, server: (figures: NonNullable<typeof counted>) => number) => (complete ? shown(own) : counted ? server(counted) : null);
-  // The Figures tab's two "in use" cards: from the rows once they are in, else from the figures' read.
+  // The Figures tab's counted cards: from the rows once they are in, else from the figures' read. The two
+  // decision cards are counted by the wide read either way (the page sends only the seated decisions).
   const inUseFigures = useMemo(
     () =>
       everything
-        ? { inUse: validated.length, unseen: validated.filter((row) => !row.reviewed).length }
+        ? { inUse: validated.length, unseen: validated.filter((row) => !row.reviewed).length, ...everything.decisionFigures }
         : summary
-          ? { inUse: summary.inUse, unseen: summary.unseen }
+          ? { inUse: summary.inUse, unseen: summary.unseen, ...summary.decisionFigures }
           : null,
     [everything, validated, summary],
   );
