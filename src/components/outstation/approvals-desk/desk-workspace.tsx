@@ -32,6 +32,7 @@ import { DeskList } from "./desk-row";
 import { DeskTiles, DeskTopLine } from "./desk-tiles";
 import { DeskNotices, DeskUndoBar } from "./desk-undo-bar";
 import { useDecidedCount } from "./use-decided-count";
+import { TypedAmountsProvider, useTypedAmounts } from "./typed-amounts";
 import { useDesk } from "./use-desk";
 
 /**
@@ -45,7 +46,17 @@ import { useDesk } from "./use-desk";
  * This file only lays the page out. What the page reads and how a press travels are in use-desk.ts;
  * every rule about lanes, words and figures is in src/lib/outstation/approvals/.
  */
+/** The typed amounts live above the page, so every row, the opened trip and both batches read one store. */
 export function DeskWorkspace({ initialSearch }: { initialSearch: string }) {
+  return (
+    <TypedAmountsProvider>
+      <DeskWorkspaceBody initialSearch={initialSearch} />
+    </TypedAmountsProvider>
+  );
+}
+
+function DeskWorkspaceBody({ initialSearch }: { initialSearch: string }) {
+  const typedAmounts = useTypedAmounts();
   const desk = useDesk(initialSearch);
   const { canDecide, lane, load, queue, view } = desk;
 
@@ -60,7 +71,7 @@ export function DeskWorkspace({ initialSearch }: { initialSearch: string }) {
   // The figure on each kind button: the lane on screen as the search, "over 7 days" and the trip dates
   // leave it, before the kind narrows it — so a button says what pressing it will show.
   const kinds = queue && lane !== "history" ? kindCounts(claimsInLane(queue.claims, lane, { ...view, kind: null })) : null;
-  const batch = lane === "ready" ? readyBatch(laneClaims, DESK_DECISION_LIMIT) : null;
+  const batch = lane === "ready" ? readyBatch(laneClaims, DESK_DECISION_LIMIT, typedAmounts) : null;
   const open = (requestId: number) => desk.setView({ trip: requestId });
 
   const openTile = (standing: TripStanding) => {

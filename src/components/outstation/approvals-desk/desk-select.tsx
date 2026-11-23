@@ -95,8 +95,8 @@ export function SelectionBar({
       </div>
       {leftOut.length > 0 ? (
         <p className="mt-2 min-w-0 break-words border-l-2 border-amber-500 pl-3 text-sm font-semibold text-slate-700" data-needs-opening={leftOut.length}>
-          Not in {DESK_WORDS.approve}: {leftOut.map((claim) => claim.employeeName || "Unassigned").join(", ")}. {leftOut.length === 1 ? "This trip has" : "These trips have"} an idle day and would be held out
-          of payroll, so approving {leftOut.length === 1 ? "it" : "them"} pays the idle day in full. {DESK_WORDS.open} {leftOut.length === 1 ? "it" : "each one"} to decide.
+          Not in {DESK_WORDS.approve}: {leftOut.map((claim) => claim.employeeName || "Unassigned").join(", ")}. Either the amount typed in {leftOut.length === 1 ? "its box" : "their boxes"} cannot be paid,
+          or {leftOut.length === 1 ? "the trip has" : "the trips have"} an idle day and would be held out of payroll, so approving pays the idle day in full. {DESK_WORDS.open} {leftOut.length === 1 ? "it" : "each one"} to decide.
         </p>
       ) : null}
       {rejecting ? (

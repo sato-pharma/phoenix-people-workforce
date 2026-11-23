@@ -9,7 +9,7 @@ import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { compactDeductionsHrId } from "@/lib/deductions/candidate-key.ts";
 import { dayChargeTarget, ledgerClaimMonthKeys, OFFICE_CYCLE_FIRST_MONTH_KEY } from "@/lib/deductions/cycle.ts";
 import { loadOnePartEmployeeCompacts } from "@/lib/deductions/cycle-population.ts";
-import { insertCandidateDrafts, listCandidatesForMonth } from "@/lib/deductions/service.ts";
+import { insertCandidateDrafts, listCandidatesForMonth, supersedeCandidate } from "@/lib/deductions/service.ts";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { privateCalendarHrIdKey, privateCalendarSourceLabels } from "@/lib/private-calendar/logic";
 import { getPrivateCalendarDayEvidence } from "@/lib/private-calendar/service";
@@ -22,6 +22,7 @@ import { dailyDeductionConnectorLabels, isDailyDeductionConnector } from "./type
 import {
   buildDayReviewDraft,
   chargesOnDay,
+  DAY_REVIEW_SOURCE_SYSTEM,
   dayReviewRefusal,
   isDayReviewFraction,
   priceDayReview,
@@ -154,6 +155,24 @@ async function loadChargesOnDay(hrId: string, date: string): Promise<DayChargeOn
     })),
     date,
   );
+}
+
+/**
+ * The live day-review rows under this push's own key that charge nothing — the earlier push for the
+ * person and day, cleared ("Do Not Take Action") or with the day unticked on the Deductions screen. They
+ * still hold the key, so a new push would be skipped as existing; the push retires them first.
+ */
+async function loadClearedDayReviewIds(hrId: string, date: string, sourceRecordId: string): Promise<string[]> {
+  const compact = compactDeductionsHrId(hrId);
+  if (!compact) return [];
+  const rows = (
+    await Promise.all(
+      ledgerClaimMonthKeys(date.slice(0, 7)).map((monthKey) => listCandidatesForMonth({ monthKey, employeeHrIdCompact: compact })),
+    )
+  ).flat();
+  return rows
+    .filter((row) => !row.supersededAt && row.sourceRecordId === sourceRecordId && row.sourceSystem === DAY_REVIEW_SOURCE_SYSTEM)
+    .map((row) => row.id);
 }
 
 /**
@@ -297,6 +316,12 @@ export async function pushDayReviewDeduction(input: {
     enteredBy,
     charge: target,
   });
+
+  // A push the owner already cleared still holds this key: retire it so the new one is written. Every
+  // row that still charges the day was refused above, so only a row charging nothing reaches here.
+  for (const clearedId of await loadClearedDayReviewIds(row.hr_id, input.date, draft.sourceRecordId)) {
+    await supersedeCandidate({ candidateId: clearedId, reason: "Pushed again from Daily Deductions day review after it was cleared.", actorHrId: enteredBy });
+  }
 
   const result = await insertCandidateDrafts({
     createdBy: enteredBy,
