@@ -9473,13 +9473,15 @@ His words: "the start date must follow the date, the start date in the job offer
 
 ## Expense approvals: rebuilt in the Phoenix CRM identity — owner, 2026-11-07
 
+**Superseded on 2026-11-23.** He had this screen audited (4.8 of 10) and ordered it rebuilt again: "REBUILD FROM SCRATCH LESS THAN 9.5/10 PER ITEM IS NOT ACCPETED". The screen described below, `src/components/outstation/expense-review/`, no longer exists; Expense Approvals is now the decision desk (`src/components/outstation/approvals-desk/`, `src/lib/outstation/approvals/`). Its account is `docs/approvals-rebuild-2026-11.md`. What follows is kept as the history of the 7 Nov screen: the file names in it are dead, and the tests it names were rewritten onto the desk, each keeping the rule it pinned.
+
 **His words.** 2026-11-07 ~03:20 Cairo, after PR 88's polish went live and the live rescore still found items under 9.5: "LOOK U ARE MAKING SMALL CHANGES AND I NEED A REBUILT RETIRE THE CURRENT EXPENSE APPROVAL AND REBUILD FROM SCRATCH SAME PHOENIX CRM IDENTITY I WANT REAL WORK". He approved the plan at ~03:35. The earlier rounds the same night, which the rebuild keeps: "if 3 days then I should have 3 maps", "every day's visits is listed under the map", "any information or data you have for the trip must be shown", "the fixed part down makes me not able to clearly see".
 
 **What patching could not reach, read live on 636f0fc.** Approve sat 57 px below the bottom of the screen at scroll 0; a filtered page read "95 of 129 awaiting" beside a bare "8 adjusted"; the brick value right-aligned under a left-aligned label; the page read as a stack of panels, not as one Phoenix screen.
 
 **Retired.** `expense-approvals-workspace.tsx`, the six files of `src/components/outstation/expense-approvals/`, the sticky rail (`.phx-expense-rail` in `globals.css`) and `chrome-height-probe.tsx`, whose only user it was. Never bring them back.
 
-**The shape now — `src/components/outstation/expense-review/`, drawn as Place checks draws its own.**
+**The shape from 7 Nov to 23 Nov 2026 — `src/components/outstation/expense-review/`, drawn as Place checks draws its own.**
 
 - `use-expense-review.ts` holds the state and the money path, byte for byte the old rules: the stored and on-screen decisions, `expenseDecisionChanged` for the unsaved count AND the payload, one POST per report with `expectedRevision`, every `payrollWarnings` line shown, the owner-scoped draft under the SAME key and shape (`…draft.v2:<HR id>`, `{ decisions, savedAt }`) so decisions left unsaved on the retired page come back, the `beforeunload` guard only while something is unsaved, the bulk plan, the live idle days.
 - `review-model.ts` holds every other rule as a pure function: which tab a trip sits in (read from the STORED decision — a row never moves when it is decided), the tab counts, the six tiles (over the LIVE decisions), `countOutOf` so EVERY tile says "of N" when narrowed, the next waiting trip, the draft parse, the reason chips and the one sentence of advice.
@@ -9493,6 +9495,8 @@ His words: "the start date must follow the date, the start date in the job offer
 **Pinned by** `tests/outstation-expense-review-model.test.ts` (behaviour), `tests/outstation-expense-approvals-layout.test.ts`, `tests/outstation-expense-approvals-queue.test.ts`, `tests/expense-approvals-one-list.test.ts` and `tests/expense-approval-decisions-survive-the-save.test.ts`.
 
 ## Expense Approvals' rail triage, and the idle-day offer — owner, 2026-11-07
+
+**What the 23 Nov 2026 rebuild kept and changed** (`docs/approvals-rebuild-2026-11.md`). Kept: an idle day is a trip day with no visit and no recorded meeting; the per-idle-day allowance share is pre-cut and named on Approve; "Keep full claim" is one press; opening a trip writes nothing; never travel or tickets; oldest first with the wait. Changed: the rail's Needs a look / Clean became the lanes Your call / Ready, read from Phoenix CRM by `approvals/checks.ts` instead of the stored `workload_match_status` stamp; there is no Biggest first and no per-reviewer memory of the order; a batch no longer holds every pre-cut trip back — it sends each row's own Approve, cut included, and holds back only the trip whose own Approve would pay the idle day in full (an idle day on a trip the payroll gate would hold, `paysIdleDayInFull`); and the server re-reads the trip, so a cut that no longer holds comes back as changed instead of being paid. `withLiveWorkloadStatus`, `reasonAfterIdleDayPick`, `planBulkApproval`'s `needsPreCutTripIds` and `EXPENSE_APPROVAL_VIEW_KEY_BASE` named below have no screen caller since that day.
 
 **His words** (~01:45 Cairo, choosing from the enhancements offered): "Rail filter: Needs a look / Clean", "Oldest first + awaiting N days", "Decide-and-advance"; and on how idle days are deducted, "LET ME DECIDE". Then, after his scored review of the live page (~02:35, "DEATILED SCORE PER ITEM FROM 10 … HONEST UR SELF") and "IMPLEMENT A PLAN EVERYTHING MENTIONED PER ITEM TO BE NO LESS THAN 9.5/10", the polish below.
 

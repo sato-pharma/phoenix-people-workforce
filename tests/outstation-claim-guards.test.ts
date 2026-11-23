@@ -206,7 +206,13 @@ export async function runOutstationClaimGuardsTests() {
   assert.ok(submitAt > 0 && guardAt > submitAt && uploadAt > guardAt, "submitOutstationRequest refuses a copied ticket before the tickets are uploaded");
   const simpleAt = service.indexOf("export async function submitMedicalRepSimpleExpenseRequest(");
   assert.ok(simpleAt > 0 && service.indexOf("await assertNoDuplicateTicket({", simpleAt) > simpleAt, "the medical rep's simple claim is guarded too");
-  assert.ok(read("src/components/outstation/expense-review/review-parts.tsx").includes("DuplicateTicketFlag"), "the approvals screen shows the pair flag");
+  // The approvals desk words the pair: the queue asks the one guard, the check says whose claim it repeats.
+  const deskQueue = read("src/lib/outstation/approvals/queue.ts");
+  assert.ok(deskQueue.includes("const tickets = flagDuplicateTicketRows("), "the approvals desk asks the one ticket guard");
+  assert.ok(
+    read("src/lib/outstation/approvals/checks.ts").includes('return check("duplicate", "fail", `Repeats a ticket, cost or receipt of ${facts.duplicateTickets.join(", ")}.`);'),
+    "and the approvals screen shows the pair, as a failed check that sends the claim to Your call",
+  );
 
   // ═══ 2 · A departure photo after the trip's last day is refused ═════════════════════════════════
   assert.equal(isWithinDepartureWindow({ capturedAt: "2026-10-23T08:00:00.000Z", tripEndDate: "2026-10-22" }), false);

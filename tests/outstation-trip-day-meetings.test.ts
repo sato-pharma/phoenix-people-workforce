@@ -7,6 +7,7 @@ import {
   TRIP_DAY_MEETING_VISIT_TYPES,
   tripWorkloadMatch,
 } from "../src/lib/crm/trip-day-meetings.ts";
+import { idleTripDates } from "../src/lib/outstation/approvals/checks.ts";
 import { resolveWorkloadFreshness } from "../src/lib/outstation/workload-freshness.ts";
 import { capturedWorkloadMatchStatus } from "../src/lib/outstation/workload-rollup.ts";
 import { shouldRestampWorkload } from "../src/lib/outstation/workload-stamp.ts";
@@ -105,9 +106,29 @@ export function runOutstationTripDayMeetingsTests() {
   assert.match(workload, /isMeetingVisitType\(row\.visit_type\)[\s\S]{0,400}ownerKey === selfKey/, "only the person's OWN meeting counts");
   assert.doesNotMatch(workload, /dateBreakdown\.filter\(\(day\) => day\.total === 0\)/, "no second idle definition in the live read");
 
-  const review = code("src/components/outstation/expense-review/review-deck/deck-days.tsx") + code("src/components/outstation/expense-review/review-deck/deck-signals.ts");
+  // The approvals desk (rebuilt 2026-11-23) has ONE idle definition, and a meeting day is not idle.
+  const review = code("src/lib/outstation/approvals/checks.ts") + code("src/lib/outstation/approvals/claim-row.ts");
   assert.doesNotMatch(review, /day\.total === 0\)\.length/, "the review screen never counts a meeting day as idle");
-  assert.match(review, /idleDays: days\.filter\(\(day\) => !isWorkedTripDay\(day\)\)\.length/, "no idle-day share is offered for a meeting day");
+  assert.ok(review.includes("return day.visits + day.meetings === 0;"), "HEADLINE: a day is idle only with no visit AND no recorded meeting");
+  assert.ok(
+    review.includes("claimPreCut({ allowance: approval.allowance, idleDays: verdict.idleDates.length, total: approval.total, tripDays: tripDates.length })"),
+    "no idle-day share is offered for a meeting day: the cut counts the one idle list",
+  );
+  assert.deepEqual(
+    idleTripDates({
+      fieldWork: {
+        days: [
+          { beforePhoenix: false, date: "2026-11-10", meetings: 1, visits: 0 },
+          { beforePhoenix: false, date: "2026-11-11", meetings: 0, visits: 0 },
+          { beforePhoenix: true, date: "2026-11-12", meetings: 0, visits: 0 },
+        ],
+      },
+      today: "2026-11-20",
+      tripDates: ["2026-11-10", "2026-11-11", "2026-11-12"],
+    } as unknown as Parameters<typeof idleTripDates>[0]),
+    ["2026-11-11"],
+    "HEADLINE: a meeting day is worked, and a day before Phoenix CRM is never called idle",
+  );
 
   const evidence = code("src/components/outstation/trip-workload-evidence.tsx");
   assert.doesNotMatch(evidence, /const idle = day\.total === 0/, "the evidence panel never reads a meeting day as idle");

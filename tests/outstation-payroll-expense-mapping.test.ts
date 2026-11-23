@@ -143,20 +143,14 @@ export function runOutstationPayrollExpenseMappingTests() {
   });
   assert.equal(located.departurePhotoNoGps, false, "a located departure photo is not");
   assert.equal(mapped.departurePhotoNoGps, false, "no departure photo at all is not a no-GPS photo");
-  // Since the 2026-11-07 rebuild the queue is a table and the trip under review is the one-by-one
-  // reviewer, whose findings section prints the note.
-  const rail = readFileSync(
-    new URL("../src/components/outstation/expense-review/review-queue-table.tsx", import.meta.url),
-    "utf8",
-  );
-  const review = readFileSync(
-    new URL("../src/components/outstation/expense-review/review-deck/deck-found.tsx", import.meta.url),
-    "utf8",
-  );
+  // Since the 2026-11-23 rebuild the queue is the desk's row and the trip under review is the
+  // one-scroll trip file, which prints the note.
+  const rail = readFileSync(new URL("../src/components/outstation/approvals-desk/desk-row.tsx", import.meta.url), "utf8");
+  const review = readFileSync(new URL("../src/components/outstation/approvals-desk/desk-trip-file.tsx", import.meta.url), "utf8");
   // Owner, 2026-11-07, on a rail row holding a long note: "comment already written in the right
   // panel, remove from here". The note is printed once, on the trip under review, never on the rail.
   assert.equal(
-    review.match(/<EmployeeNote note=\{record\.employeeNote\} wide \/>/g)?.length,
+    review.match(/<bdi dir="auto">\{claim\.employeeNote\}<\/bdi>/g)?.length,
     1,
     "Expense Approvals draws the employee's note on the trip under review",
   );

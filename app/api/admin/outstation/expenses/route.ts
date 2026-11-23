@@ -39,7 +39,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * What Save posts, one report at a time (use-expense-review.ts, expenses-review-workspace.tsx): the batch's file
+ * What Save posts, one report at a time (expenses-review-workspace.tsx, the Expenses sheets screen): the batch's file
  * name, its report id and the rows. Each row travels WHOLE — the trip as the screen loaded it plus its decision —
  * to the request-decision and payroll writes, which re-validate the contents, so a row is only required to be
  * an object and every key on it reaches them as before.

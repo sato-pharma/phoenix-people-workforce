@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { planBulkApproval } from "../src/lib/outstation/approval-state.ts";
+import { approvePays, approvePress, readyBatch, selectionBatch } from "../src/lib/outstation/approvals/desk-view.ts";
+import type { DeskClaim } from "../src/lib/outstation/approvals/types.ts";
 import { buildCrmTripEvidence, type CrmTripDayInput } from "../src/lib/outstation/crm-trip-evidence.ts";
 import { daysBeforePhoenixCrm } from "../src/lib/phoenix-crm/live-team-rules.ts";
 import { foldPlanOutstationTrips, planOutstationTripLine } from "../src/lib/phoenix-crm/outstation-trip-banner.ts";
@@ -170,7 +172,7 @@ export function runOutstationCrmTripEvidenceTests() {
   assert.match(evidenceReader, /daysBeforePhoenixCrm\(windows, teams, dates\)/, "HEADLINE: the reader asks the rule with the person's own teams");
   assert.match(evidenceReader, /beforePhoenix,\s*claimedKm/, "and hands the days to the builder");
   assert.match(readFileSync("src/lib/phoenix-crm/server/live-teams.ts", "utf8"), /export async function loadTeamCountedWindows/, "the starts are read in the table's own file");
-  assert.match(readFileSync("src/components/outstation/expense-review/review-deck/crm-trip-section.tsx", "utf8"), /day\.beforePhoenix \? "Before Phoenix CRM"/, "the day says so in words");
+  assert.ok(readFileSync("src/components/outstation/approvals-desk/desk-days.tsx", "utf8").includes('day.beforePhoenix ? "Before Phoenix CRM"'), "the day says so in words");
 
   // ── 4. The trip on the CRM side ─────────────────────────────────────────────────────────────
   const trips = foldPlanOutstationTrips([
@@ -190,16 +192,41 @@ export function runOutstationCrmTripEvidenceTests() {
   assert.match(readFileSync("src/components/phoenix-crm/plan-review-steps.tsx", "utf8"), /<PlanOutstationTrips\s+from=\{week\.weekStart\}/, "the manager reads the week under review");
 
   // ── 5. The pre-cut: Approve applies it; nothing is written by opening a trip ────────────────
-  // The rebuilt screen (expense-review/, 2026-11-07): the offer and the pre-cut are worked out once,
-  // in deck-decision.tsx's idleOffer, and read by both the decision box and the pinned Approve.
-  const bar = stripComments(readFileSync("src/components/outstation/expense-review/review-deck/deck-decision.tsx", "utf8"));
-  assert.match(bar, /const preCut = suggestions\.length > 0 && !adjusted && !keptFull\[record\.tripId\] \? suggestions\[0\] : null;/, "HEADLINE: an undecided, unadjusted trip with idle days arrives pre-cut by the per-idle-day share");
-  assert.match(bar, /const approve = \(\) => \{\s*if \(preCut\) applySuggestion\(preCut\);\s*onApprove\(pays\);/, "HEADLINE: Approve applies the pre-cut and its reason, then approves");
-  assert.match(bar, /const pays = preCut \? approvedAmountFromDeduction\(record\.total, preCut\.deduction\) : decision\.approvedAmount;/, "and the pinned bar shows what Approve will pay");
-  assert.match(bar, /onClick=\{approve\}/);
-  assert.match(bar, /data-keep-full onClick=\{keepFull\}/, "HEADLINE: Keep full claim sets the pre-cut aside");
-  assert.equal((bar.match(/keepFull\(\);\s*onChangeAmount/g) ?? []).length, 3, "typing a deduction, typing Approved, or Clear also sets it aside");
-  assert.doesNotMatch(bar, /useEffect\(\(\) => \{[^}]*onChange(Amount|Reason)/, "HEADLINE: opening a trip never writes a draft amount");
+  // Rebuilt 2026-11-23 (approvals-desk/): the cut is worked out once, on the server (`claimPreCut`),
+  // arrives on the claim, and the ONE Approve button of the page reads it (`approvePress`).
+  const idleTrip = {
+    holdReason: null,
+    preCut: { deduction: 300, label: "1 idle day", payable: 700, reason: "One day with no visit and no meeting." },
+    requestId: 5,
+    revision: "r5",
+    standing: "waiting",
+    total: 1000,
+  } as unknown as DeskClaim;
+  assert.deepEqual(
+    approvePress(idleTrip),
+    { action: "approve", approvedAmount: 700, requestId: 5, revision: "r5" },
+    "HEADLINE: an undecided trip with idle days arrives pre-cut, and Approve applies the cut",
+  );
+  assert.equal(approvePays(idleTrip), 700, "and the button shows what Approve will pay");
+  assert.deepEqual(
+    approvePress(idleTrip, { full: true }),
+    { action: "approve", keepFull: true, requestId: 5, revision: "r5" },
+    "HEADLINE: Keep full claim sets the pre-cut aside",
+  );
+  assert.deepEqual(
+    approvePress({ ...idleTrip, holdReason: "Photos are missing." } as DeskClaim),
+    { action: "approve", keepFull: true, requestId: 5, revision: "r5" },
+    "a trip the payroll gate would hold carries no reduced amount: it would pay in full on release",
+  );
+  const bar = stripComments(readFileSync("src/components/outstation/approvals-desk/desk-decision.tsx", "utf8"));
+  assert.ok(bar.includes("onClick={() => onPress([approvePress(claim)], [claim])}"), "Approve is that one press");
+  assert.ok(bar.includes("cut ? `${DESK_WORDS.approve} ${egp(cut.payable)}` : DESK_WORDS.approve"), "and the button names the amount it pays");
+  assert.ok(
+    bar.includes('data-press="keep-full" onClick={() => onPress([approvePress(claim, { full: true })], [claim])}'),
+    "Keep full claim is its own button, beside it",
+  );
+  const opened = bar + stripComments(readFileSync("src/components/outstation/approvals-desk/desk-trip-file.tsx", "utf8"));
+  assert.doesNotMatch(opened, /useEffect\(\(\) => \{[^}]*onPress/, "HEADLINE: opening a trip never writes anything: only a press does");
 
   // The batch cannot show the cut, so it holds such a trip back.
   const base = { approvedAmount: 1000, claimedTotal: 1000, hrApproved: false, hrComment: "", status: "pending" };
@@ -223,14 +250,34 @@ export function runOutstationCrmTripEvidenceTests() {
   const areas = stripComments(readFileSync("app/api/outstation/planned-areas/route.ts", "utf8"));
   assert.match(areas, /const hrId = access\.hrId \|\| access\.loginId \|\| "";/, "HEADLINE: the wizard reads the caller's own plan only");
   assert.doesNotMatch(areas, /searchParams\.get\("(employeeHrId|hrId)"\)/, "never an hr id from the request");
-  const stage = readFileSync("src/components/outstation/expense-review/review-deck/deck-stage.tsx", "utf8");
-  assert.match(stage, /\{ icon: Network, key: "crm", label: "Phoenix CRM" \}/, "HEADLINE: Phoenix CRM is one of the reviewer's views, and one of what the system found");
-  assert.ok(stage.indexOf('id="deck-view-crm"') > stage.indexOf('id="deck-view-field"'), "the section follows the day-by-day field work");
-  assert.match(stage, /<CrmTripSection onSignal=\{onCrmSignal\} requestId=\{validationRequestId\} \/>/, "and hands its sentence up");
-  assert.match(readFileSync("src/components/outstation/expense-review/review-deck/deck-signals.ts", "utf8"), /crm: input\.crm,/, "the CRM sentence sits beside field work, claim checks and photos");
-  // A list row and the batch follow the same rule: a trip with idle days goes only from the opened trip.
-  const model = stripComments(readFileSync("src/components/outstation/expense-review/review-model.ts", "utf8"));
-  assert.match(model, /if \(plan\.needsPreCutTripIds\.length > 0\) return "pre-cut";/, "HEADLINE: a row's own Approve never pays an idle day in full");
-  const hook = stripComments(readFileSync("src/components/outstation/expense-review/use-expense-review.ts", "utf8"));
-  assert.match(hook, /planBulkApproval\(selectedVisible\.map\(\(record\) => bulkCandidate\(record, decisionFor\(record\)\)\)\)/, "HEADLINE: the batch reads the allowance and the live field work through the same candidate");
+  // Rebuilt 2026-11-23 (approvals-desk/): Phoenix CRM's reading is part of the ONE trip file. It is
+  // read with the trip, in the same request, and drawn day by day under what the system found.
+  const tripFileRead = stripComments(readFileSync("src/lib/outstation/approvals/trip-file.ts", "utf8"));
+  assert.ok(
+    tripFileRead.includes("options.includeEvidence ? Promise.allSettled([loadCrmTripEvidence(requestId)]).then(([result]) => result) : null,"),
+    "HEADLINE: Phoenix CRM's reading arrives with the trip, and only when the caller may see the evidence",
+  );
+  const tripRoute = stripComments(readFileSync("app/api/admin/outstation/approvals/[requestId]/route.ts", "utf8"));
+  assert.match(tripRoute, /let includeEvidence = false;[\s\S]{0,400}includeEvidence = true;/, "which the route grants, never the page");
+  const tripFile = readFileSync("src/components/outstation/approvals-desk/desk-trip-file.tsx", "utf8");
+  assert.ok(
+    tripFile.includes("<DeskDays attachments={file.attachments} reading={file.crm?.reading ?? null} tripEnd={claim.tripEnd} tripStart={claim.tripStart} />"),
+    "HEADLINE: Phoenix CRM is part of what the reviewer reads, day by day",
+  );
+  assert.ok(
+    tripFile.indexOf('<Sheet name="found" title="What the system found">') < tripFile.indexOf('<Sheet name="days" title="The trip, day by day">'),
+    "the days follow what the system found",
+  );
+  // A list row and the batch follow the same rule: every Approve on the page is `approvePress`.
+  const view = stripComments(readFileSync("src/lib/outstation/approvals/desk-view.ts", "utf8"));
+  assert.ok(view.includes("approve: sendable.map((claim) => approvePress(claim)),"), "HEADLINE: a ticked batch sends each row's own Approve");
+  assert.ok(view.includes("decisions: taken.map((claim) => approvePress(claim)),"), "and so does Approve all");
+  const ticked = selectionBatch([idleTrip, { ...idleTrip, preCut: null, requestId: 6, revision: "r6" }], new Set([5, 6]), 50);
+  assert.deepEqual(
+    ticked.approve.map((entry) => entry.approvedAmount ?? null),
+    [700, null],
+    "HEADLINE: a batch never pays an idle day in full on the desk either",
+  );
+  assert.equal(ticked.value, 1700, "and the button's figure is what those presses pay");
+  assert.equal(readyBatch([idleTrip], 50).decisions[0].approvedAmount, 700, "Approve all could not pay an idle day in full even if one reached it");
 }

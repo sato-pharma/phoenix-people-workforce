@@ -37,7 +37,8 @@ import { stripComments } from "./support/comment-strip.ts";
 const root = process.cwd();
 const service = stripComments(readFileSync(join(root, "src/lib/outstation/service.ts"), "utf8"));
 const attachmentsRoute = stripComments(
-  readFileSync(join(root, "app/api/admin/outstation/[id]/attachments/route.ts"), "utf8"),
+  // What the attachments route sends is composed here since 2026-11-23 (the route is a thin caller).
+  readFileSync(join(root, "src/lib/outstation/trip-attachments-data.ts"), "utf8"),
 );
 const stopRoute = stripComments(readFileSync(join(root, "app/api/admin/outstation/[id]/journey-stop/route.ts"), "utf8"));
 
