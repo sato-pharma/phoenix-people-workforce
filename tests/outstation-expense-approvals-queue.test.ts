@@ -264,8 +264,8 @@ export function runOutstationExpenseApprovalsQueueTests() {
     { action: "approve", keepFull: true, requestId: 5088, revision: "rev-5088" },
     "a trip the payroll gate would hold carries no cut: a held claim cannot take a reduced amount, and its Approve says it pays in full",
   );
-  assert.ok(decision.includes("onClick={() => onPress([approvePress(claim)], [claim])}"), "the Approve button sends that one press");
-  assert.ok(decision.includes("{cut ? `${DESK_WORDS.approve} ${egp(cut.payable)}` : DESK_WORDS.approve}"), "HEADLINE: and names what it pays");
+  assert.ok(decision.includes("onClick={() => onPress([edited?.decision ?? approvePress(claim)], [claim])}"), "the Approve button sends that one press");
+  assert.ok(decision.includes("{edited?.decision ? `${DESK_WORDS.approve} ${egp(edited.figure)}` : cut ? `${DESK_WORDS.approve} ${egp(cut.payable)}` : DESK_WORDS.approve}"), "HEADLINE: and names what it pays");
   // 🔴 A DECIDED claim draws none of the four (risk review, 23 Nov): History → Open → "Pay in full"
   // wrote a typed amount to NULL and moved his money. It draws ONE button of its own (owner, 23 Nov,
   // about 21:05: "make me able to reject even if approved in history"), chosen in decided-change.ts.
