@@ -25,7 +25,7 @@ import { loadBrickCentroids, resolveBrickForPoint } from "@/lib/crm/brick-geo";
 import { checkinAgentKey } from "@/lib/crm/checkin-match";
 import { isHandedOverLabel, loadCrmIdentityMaps, previousHolderLabel } from "@/lib/crm/identity";
 import { queryCheckins, queryVisits } from "@/lib/crm/reads";
-import { isMeetingVisitType, tripWorkloadMatch } from "@/lib/crm/trip-day-meetings";
+import { isMeetingVisitType, type TripDayMeetingLabel, tripDayMeetingLabel, tripWorkloadMatch } from "@/lib/crm/trip-day-meetings";
 import type { CrmCheckinRow } from "@/lib/crm/types";
 import { addBucketToSplit, addVisitToSplit } from "@/lib/crm/visit-count-buckets";
 import { isUnplannedFieldVisit } from "@/lib/crm/visit-type-meaning";
@@ -40,9 +40,11 @@ export type RepVisitDetail = {
   contactKind: VisitContactKind;
   customer: string | null;
   /** "campaign" is the stored word for an UNPLANNED visit (isUnplannedFieldVisit) — the payload keeps it so
-   * every reader still parses; a screen prints "Unplanned" and "Planned". "meeting" is a recorded Meeting or
-   * Group Meeting (trip-day-meetings.ts): listed so the approver sees it, never counted as a visit. */
+   * every reader still parses; a screen prints "Unplanned" and "Planned". "meeting" is a recorded Meeting,
+   * Group Meeting, Training or Conference (trip-day-meetings.ts): listed so the approver sees it, never counted as a visit. */
   kind: "campaign" | "meeting" | "regular";
+  /** On a "meeting" row, what to call it — "Meeting", "Training" or "Conference". Absent on every other row. */
+  meetingLabel?: TripDayMeetingLabel;
   /**
    * On a "partner" visit, the rep who LOGGED it — the person this one was in the field with (owner,
    * 2026-11-06: a manager's visits in Expense Approvals show the rep's name, even a rep who has
@@ -408,8 +410,9 @@ export async function getRepTripVisitWorkload(input: {
             ampm: row.ampm ?? null,
             contact: row.contact_name ?? null,
             contactKind: "unclassified",
-            customer: row.customer_name || "Meeting",
+            customer: row.customer_name || tripDayMeetingLabel(row.visit_type),
             kind: "meeting",
+            meetingLabel: tripDayMeetingLabel(row.visit_type),
             repName: null,
             role: "agent",
             submittedAt: row.crm_save_date ?? null,
