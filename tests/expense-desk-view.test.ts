@@ -31,6 +31,7 @@ import {
   deskViewToSearch,
   laneSummaries,
   openingLane,
+  paysIdleDayInFull,
   pressLabel,
   readyBatch,
   reasonChips,
@@ -150,33 +151,36 @@ export function runExpenseDeskViewTests() {
   assert.ok(batch.decisions.every((decision) => decision.action === "approve" && decision.approvedAmount === undefined));
   assert.deepEqual({ count: readyBatch(claims, 1).count, left: readyBatch(claims, 1).left }, { count: 1, left: 2 }, "a lane over the limit says how many are left");
   // A Ready claim has no idle day, so the lane's batch carries no cut today. The batch is still built
-  // from each row's OWN Approve, so no list it is ever handed can pay an idle day in full.
+  // from each row's OWN Approve, and leaves out a trip whose own Approve would pay an idle day in
+  // full — so no list it is ever handed can pay an idle day in full.
   const mixed = readyBatch([yourCall(3, { preCut: cut }), yourCall(4, { holdReason: "No departure photo yet.", preCut: cut }), claim(1)], 100);
   assert.deepEqual(
-    mixed.decisions.slice(0, 2),
+    mixed.decisions,
     [
       { action: "approve", approvedAmount: 300, requestId: 3, revision: "rev-3" },
-      { action: "approve", requestId: 4, revision: "rev-4" },
+      { action: "approve", requestId: 1, revision: "rev-1" },
     ],
-    "HEADLINE: Approve all sends each row's own Approve — never Keep full claim",
+    "HEADLINE: Approve all sends each row's own Approve — never Keep full claim, and never a held trip's idle day in full",
   );
-  assert.equal(mixed.value, 1300, "HEADLINE: and the total on the button is what those presses pay (300 + 500 + 500), not the 1,500 the trips claim");
+  assert.deepEqual({ count: mixed.count, left: mixed.left, value: mixed.value }, { count: 2, left: 0, value: 800 }, "HEADLINE: and the total on the button is what those presses pay (300 + 500), not the 1,500 the trips claim");
 
   // 3b. Several claims in one press: the ticked rows.
   const lane = [yourCall(3, { preCut: cut }), yourCall(4, { holdReason: "No departure photo yet.", preCut: cut }), yourCall(7, { total: 120, payable: 120 })];
   assert.equal(approvePays(lane[0]), 300, "a row's Approve pays the cut its button names");
   assert.equal(approvePays(lane[1]), 500, "a trip that would be held pays in full: it cannot carry a cut");
+  assert.deepEqual(lane.map(paysIdleDayInFull), [false, true, false], "only an idle-day trip that would be held pays an idle day in full on its own Approve");
+  assert.equal(paysIdleDayInFull(yourCall(4, { holdReason: "No departure photo yet." })), false, "a held trip with no idle day pays nothing extra, so a batch may send it");
+  assert.equal(paysIdleDayInFull(claim(4, { holdReason: "x", preCut: cut, standing: "approved_held" })), false, "a decided claim is nobody's batch");
   const ticked = selectionBatch([...lane, claim(8, { standing: "rejected" })], new Set([3, 4, 8, 99]), 100);
   assert.deepEqual(ticked.claims.map((entry) => entry.requestId), [3, 4], "HEADLINE: only a claim still waiting on screen is in the batch — a tick on a decided or vanished claim is forgotten");
   assert.deepEqual(
     ticked.approve,
-    [
-      { action: "approve", approvedAmount: 300, requestId: 3, revision: "rev-3" },
-      { action: "approve", requestId: 4, revision: "rev-4" },
-    ],
-    "HEADLINE: Approve N sends each row's own Approve — a batch never pays an idle day in full",
+    [{ action: "approve", approvedAmount: 300, requestId: 3, revision: "rev-3" }],
+    "HEADLINE: Approve N sends each row's own Approve — a batch never pays an idle day in full, so the held idle-day trip is left out",
   );
-  assert.deepEqual({ count: ticked.count, left: ticked.left, value: ticked.value }, { count: 2, left: 0, value: 800 }, "and the button's figure is the sum of what those buttons say");
+  assert.deepEqual(ticked.needsOpening.map((entry) => entry.requestId), [4], "HEADLINE: and the trip it left out is named, to be opened");
+  assert.deepEqual({ count: ticked.count, left: ticked.left, value: ticked.value }, { count: 2, left: 0, value: 300 }, "and the button's figure is the sum of what it sends");
+  assert.deepEqual(rejectSelection(ticked.claims, "Copies").map((entry) => entry.requestId), [3, 4], "Reject N still covers every ticked claim: a rejection pays nothing");
   const capped = selectionBatch(lane, new Set([3, 4, 7]), 2);
   assert.deepEqual({ count: capped.count, left: capped.left }, { count: 2, left: 1 }, "over one request's limit, the rest stay ticked");
   assert.deepEqual(selectionBatch(lane, new Set(), 100).approve, [], "nothing ticked, nothing sent");

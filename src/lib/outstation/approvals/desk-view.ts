@@ -165,16 +165,28 @@ export function approvePress(claim: DeskClaim, options: { full?: boolean } = {})
 }
 
 /**
+ * True on the one waiting claim whose own Approve pays an idle day in full: the trip has an idle
+ * day and an allowance, and the payroll gate would hold it, so it cannot carry the cut. Its row
+ * says so and he may still press it — but no batch sends it (owner, 2026-11-07: a batch approve
+ * holds such a trip back to be opened).
+ */
+export function paysIdleDayInFull(claim: DeskClaim): boolean {
+  return claim.standing === "waiting" && claim.preCut !== null && claim.holdReason !== null;
+}
+
+/**
  * What "Approve all" in the Ready lane sends, and the two figures it shows before the press. A Ready
  * claim has no idle day, so it carries no cut — but the batch still sends each row's OWN Approve,
- * never "Keep full claim": no batch can pay an idle day in full, whatever lane it was built from.
+ * never "Keep full claim", and leaves out a trip whose own Approve would pay an idle day in full:
+ * no batch can pay an idle day in full, whatever lane it was built from.
  */
 export function readyBatch(claims: ReadonlyArray<DeskClaim>, limit: number): { count: number; decisions: DeskDecisionRequest[]; left: number; value: number } {
-  const taken = claims.slice(0, Math.max(0, limit));
+  const sendable = claims.filter((claim) => !paysIdleDayInFull(claim));
+  const taken = sendable.slice(0, Math.max(0, limit));
   return {
     count: taken.length,
     decisions: taken.map((claim) => approvePress(claim)),
-    left: claims.length - taken.length,
+    left: sendable.length - taken.length,
     value: money(taken.reduce((sum, claim) => sum + approvePays(claim), 0)),
   };
 }
@@ -187,10 +199,13 @@ export function approvePays(claim: DeskClaim): number {
 export type DeskSelection = {
   /** "Approve N": each ticked row's OWN Approve — a cut named on a row is the cut that is paid. */
   approve: DeskDecisionRequest[];
+  /** Every ticked claim in this press — what "Reject N" covers (a rejection pays nothing). */
   claims: DeskClaim[];
   count: number;
   /** Ticked beyond one request's limit; they stay ticked for the next press. */
   left: number;
+  /** Ticked, but left out of "Approve N": approving one pays an idle day in full, so it is opened. */
+  needsOpening: DeskClaim[];
   /** What "Approve N" pays in all. */
   value: number;
 };
@@ -198,17 +213,20 @@ export type DeskSelection = {
 /**
  * The ticked rows of a waiting lane, as one press. Only a claim still waiting on screen counts: a
  * tick on a claim that was decided, or left the lane, is forgotten rather than sent. A batch never
- * pays an idle day in full — it sends what each row's own Approve button says.
+ * pays an idle day in full — it sends what each row's own Approve button says, and a trip whose
+ * button would pay an idle day in full is held back and named, to be opened.
  */
 export function selectionBatch(claims: ReadonlyArray<DeskClaim>, ticked: ReadonlySet<number>, limit: number): DeskSelection {
   const chosen = claims.filter((claim) => claim.standing === "waiting" && ticked.has(claim.requestId));
   const taken = chosen.slice(0, Math.max(0, limit));
+  const sendable = taken.filter((claim) => !paysIdleDayInFull(claim));
   return {
-    approve: taken.map((claim) => approvePress(claim)),
+    approve: sendable.map((claim) => approvePress(claim)),
     claims: taken,
     count: taken.length,
     left: chosen.length - taken.length,
-    value: money(taken.reduce((sum, claim) => sum + approvePays(claim), 0)),
+    needsOpening: taken.filter(paysIdleDayInFull),
+    value: money(sendable.reduce((sum, claim) => sum + approvePays(claim), 0)),
   };
 }
 

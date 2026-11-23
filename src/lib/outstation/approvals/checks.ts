@@ -22,7 +22,7 @@
  *     hand-typed claim the system never priced, and a meeting cost with no invoice.
  *
  * Pure: the facts are gathered by `queue.ts` and `field-evidence.ts`; every verdict here is pinned
- * on behaviour without a database (tests/outstation-approvals-checks.test.ts).
+ * on behaviour without a database (tests/expense-desk-checks.test.ts).
  */
 
 import type { CheckAnswer, CheckKey, ClaimCheck, ClaimPreCut, ClaimVerdict } from "@/lib/outstation/approvals/types";

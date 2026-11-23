@@ -270,7 +270,7 @@ export function runOutstationCrmTripEvidenceTests() {
   );
   // A list row and the batch follow the same rule: every Approve on the page is `approvePress`.
   const view = stripComments(readFileSync("src/lib/outstation/approvals/desk-view.ts", "utf8"));
-  assert.ok(view.includes("approve: taken.map((claim) => approvePress(claim)),"), "HEADLINE: a ticked batch sends each row's own Approve");
+  assert.ok(view.includes("approve: sendable.map((claim) => approvePress(claim)),"), "HEADLINE: a ticked batch sends each row's own Approve");
   assert.ok(view.includes("decisions: taken.map((claim) => approvePress(claim)),"), "and so does Approve all");
   const ticked = selectionBatch([idleTrip, { ...idleTrip, preCut: null, requestId: 6, revision: "r6" }], new Set([5, 6]), 50);
   assert.deepEqual(

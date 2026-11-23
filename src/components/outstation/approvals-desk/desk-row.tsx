@@ -89,7 +89,7 @@ export function DeskList({
           </div>
         ) : null}
       </div>
-      {canDecide && selection.count > 0 ? <SelectionBar onClear={() => setTicked(new Set())} onPress={onPress} selection={selection} /> : null}
+      {canDecide && selection.count > 0 ? <SelectionBar onClear={() => setTicked(new Set())} onKeep={(requestIds) => setTicked(new Set(requestIds))} onPress={onPress} selection={selection} /> : null}
       {claims.length === 0 ? (
         <CrmEmpty
           message={narrowed ? "Nothing in this lane matches the search. Clear it to see every waiting claim." : lane === "ready" ? "No claim has passed every check and is still waiting." : "Nothing unclear is waiting for you."}

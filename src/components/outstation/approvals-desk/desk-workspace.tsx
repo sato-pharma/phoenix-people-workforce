@@ -128,7 +128,7 @@ export function DeskWorkspace({ initialSearch }: { initialSearch: string }) {
                   <button
                     className={approvalActionClassName("approve", "regular")}
                     data-approve-all={batch.count}
-                    onClick={() => desk.press(batch.decisions, laneClaims.slice(0, batch.count))}
+                    onClick={() => desk.press(batch.decisions, laneClaims)}
                     title={batch.left > 0 ? `${formatNumberValue(batch.left)} more stay in the lane for the next press` : "Every claim in this lane passed every check"}
                     type="button"
                   >

@@ -137,7 +137,10 @@ export async function runApprovalsBulkDecisionTests() {
   assert.ok(expenseBar.includes("const rejections = rejectSelection(selection.claims, reason);"), "Reject N is built by the one rule");
   assert.ok(expenseBar.includes("data-reject-ticked-confirm disabled={rejections.length === 0}"),
     "the expense Reject N must not confirm without a written reason");
-  assert.ok(expenseBar.includes("data-approve-ticked onClick={() => send(selection.approve)}"), "Approve N sends each ticked row's own Approve");
+  assert.ok(
+    expenseBar.includes("data-approve-ticked disabled={selection.approve.length === 0} onClick={() => send(selection.approve, leftOut.map((claim) => claim.requestId))}"),
+    "Approve N sends each ticked row's own Approve, and a trip it leaves out stays ticked",
+  );
   assert.ok(expenseBar.includes("onPress(decisions, selection.claims);") && !expenseBar.includes("fetch("),
     "the batch is the page's own press — it waits its Undo and the bar itself saves nothing");
   const lane = read("src/components/outstation/approvals-desk/desk-row.tsx");
