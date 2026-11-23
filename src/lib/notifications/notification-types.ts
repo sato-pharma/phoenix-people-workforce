@@ -291,7 +291,7 @@ export const NOTIFICATION_TYPES: readonly NotificationTypeEntry[] = [
   { module: "phoenix_crm", eventType: "double_visit_accepted", label: "Your double visit was accepted", sentFrom: [PHOENIX_CRM] },
   { module: "phoenix_crm", eventType: "double_visit_declined", label: "Your double visit was declined", sentFrom: [PHOENIX_CRM] },
   { module: "phoenix_crm", eventType: "validation_not_confirmed", label: "A customer's place could not be confirmed from your photo", sentFrom: [PHOENIX_CRM] },
-  { module: "phoenix_crm", eventType: "validation_review_waiting", label: "A customer's place is waiting for your check", sentFrom: ["src/lib/phoenix-crm/server/validation-reviews.ts"] },
+  { module: "phoenix_crm", eventType: "validation_review_waiting", label: "A customer's place is waiting for your check", sentFrom: ["src/lib/phoenix-crm/server/validation-reviews/notices.ts"] },
   { module: "phoenix_crm", eventType: "manager_plan_waiting", label: "A district manager's weekly plan is waiting for your approval", sentFrom: [PHOENIX_CRM] },
   { module: "phoenix_crm", eventType: "manager_plan_approved", label: "Your weekly plan as a manager was approved", sentFrom: [PHOENIX_CRM] },
   { module: "phoenix_crm", eventType: "manager_plan_returned", label: "Your weekly plan as a manager was sent back", sentFrom: [PHOENIX_CRM] },
