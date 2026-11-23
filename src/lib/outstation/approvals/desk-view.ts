@@ -249,6 +249,56 @@ export function approvePress(claim: DeskClaim, options: { full?: boolean } = {})
   };
 }
 
+/** What the amount box beside Approve opens with: what Approve pays untouched. Pure. */
+export function defaultAmountText(claim: DeskClaim): string {
+  const cut = claim.preCut && !claim.holdReason ? claim.preCut : null;
+  return String(money(cut ? cut.payable : claim.total));
+}
+
+export type AmountPress = { decision: DeskDecisionRequest; error: null; figure: number } | { decision: null; error: string; figure: number | null };
+
+const amountWords = (value: number) => `EGP ${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+
+/**
+ * Approve at the amount typed in the box beside it (owner, 23 Nov 2026: "make me able to edit in the
+ * value, make it as it is or decrease it, or if you decided that it should be decreased, make me able
+ * to edit it"). Every waiting claim's box opens on what Approve pays — the claim, or the idle-day cut
+ * the system offered — and the one press pays what the box says:
+ *
+ *   - the claim itself (within half a pound) → Approve in full, "Keep full claim" said out loud
+ *     wherever a cut was offered, so the server never reads it as a stale page;
+ *   - exactly the system's cut → that cut, the same press the untouched button sends;
+ *   - any other figure below the claim → a reduced amount, its reason the sentence of what he set,
+ *     never sent to the employee (a reduced amount is not told);
+ *   - more than the claim, nothing, zero, or a lower figure on a trip the payroll gate would hold →
+ *     no press, and the words why. The server refuses all of those again (decision-plan.ts).
+ *
+ * Pure: it builds the press, the page sends it.
+ */
+export function amountPress(claim: DeskClaim, text: string): AmountPress {
+  const figure = typedAmount(text);
+  if (figure === null) return { decision: null, error: "Type the amount to pay. To pay nothing, reject the claim.", figure: null };
+  const amount = money(figure);
+  if (amount > claim.total + 0.005) return { decision: null, error: `More than the claim (${amountWords(claim.total)}).`, figure: amount };
+  if (Math.abs(amount - claim.total) <= 0.5) return { decision: approvePress(claim, { full: true }), error: null, figure: claim.total };
+  const cut = claim.preCut && !claim.holdReason ? claim.preCut : null;
+  if (cut && Math.abs(cut.payable - amount) <= 0.005) return { decision: approvePress(claim), error: null, figure: cut.payable };
+  const blocked = reduceBlocked(claim);
+  if (blocked) return { decision: null, error: blocked, figure: amount };
+  const offered = cut ? ` The system offered ${amountWords(cut.payable)} for the idle days.` : "";
+  return {
+    decision: {
+      action: "reduce",
+      approvedAmount: amount,
+      comment: `Amount set to ${amountWords(amount)} of the ${amountWords(claim.total)} claimed.${offered}`,
+      requestId: claim.requestId,
+      revision: claim.revision,
+    },
+    error: null,
+    figure: amount,
+  };
+}
+
 /**
  * Approve on a claim that was REJECTED (History, and its opened trip): the claim in full. It names
  * no amount and never the idle-day cut, which is read for a waiting claim only, and the server

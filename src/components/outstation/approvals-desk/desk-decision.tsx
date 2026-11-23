@@ -6,7 +6,7 @@ import { useId, useState } from "react";
 import { approvalActionClassName } from "@/components/approvals-hub/approval-action-kit";
 import { CrmField, crmInputClassName, crmTextareaClassName } from "@/components/phoenix-crm/ui";
 import { decidedChange } from "@/lib/outstation/approvals/decided-change";
-import { DESK_WORDS, approvePress, approveRejectedPress, reasonChips, reduceBlocked, typedAmount } from "@/lib/outstation/approvals/desk-view";
+import { DESK_WORDS, amountPress, approvePress, approveRejectedPress, defaultAmountText, reasonChips, reduceBlocked, typedAmount } from "@/lib/outstation/approvals/desk-view";
 import type { DeskClaim, DeskDecisionRequest } from "@/lib/outstation/approvals/types";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +19,9 @@ import { RewriteFormally, noteFacts } from "./desk-rewrite";
  *
  *   Approve   one press. On a trip with idle days the button NAMES what it pays ("Approve EGP 300")
  *             and "Keep full claim" sits beside it — the idle-day cut is one press, not a form.
+ *             The amount box before it (owner, 23 Nov 2026: "make me able to edit in the value")
+ *             opens on that figure; leave it, lower it, or put the claim back, and Approve pays
+ *             what the box says (`amountPress`). A figure the server would refuse disables it.
  *   Reject    two presses: Reject, then the reason. The reasons offered are sentences built from a
  *             check that failed on THIS claim; where none failed, the reason is typed.
  *   Reduce    the amount and its reason, then one press. Not offered on a trip the payroll gate
@@ -66,20 +69,49 @@ export function DecisionButtons({
   const cut = claim.preCut && !claim.holdReason ? claim.preCut : null;
   const blocked = reduceBlocked(claim);
   const toggle = (next: DecisionMode) => onMode(mode === next ? "idle" : next);
+  // The amount box beside Approve (owner, 23 Nov 2026: "make me able to edit in the value"). It opens
+  // on what Approve pays; what he types is kept only for the version of the claim he typed it on, so a
+  // claim that comes back changed opens on its own figure again.
+  const [typed, setTyped] = useState<{ revision: string; text: string } | null>(null);
+  const amountText = typed && typed.revision === claim.revision ? typed.text : defaultAmountText(claim);
+  const edited = typed && typed.revision === claim.revision ? amountPress(claim, typed.text) : null;
+  const amountId = useId();
 
   return (
-    <div className="flex min-w-0 flex-wrap gap-1.5" data-decision-buttons>
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5" data-decision-buttons>
       {acts ? (
-        <button
-          className={approvalActionClassName("approve", size)}
-          data-press="approve"
-          onClick={() => onPress([approvePress(claim)], [claim])}
-          title={cut ? cut.reason : undefined}
-          type="button"
-        >
-          <Check aria-hidden className="h-3.5 w-3.5 shrink-0" />
-          {cut ? `${DESK_WORDS.approve} ${egp(cut.payable)}` : DESK_WORDS.approve}
-        </button>
+        <>
+          <label className="sr-only" htmlFor={amountId}>
+            Amount to pay (EGP)
+          </label>
+          <input
+            aria-invalid={edited?.error ? true : undefined}
+            autoComplete="off"
+            className={cn(crmInputClassName, "w-28 tabular-nums")}
+            data-amount-box
+            id={amountId}
+            inputMode="decimal"
+            onChange={(event) => setTyped({ revision: claim.revision, text: event.target.value })}
+            title={`The claim is ${egp(claim.total)}${cut ? `; the system offers ${egp(cut.payable)} for the idle days` : ""}. Keep it, or type a lower amount.`}
+            value={amountText}
+          />
+          <button
+            className={approvalActionClassName("approve", size)}
+            data-press="approve"
+            disabled={edited?.error ? true : undefined}
+            onClick={() => onPress([edited?.decision ?? approvePress(claim)], [claim])}
+            title={edited?.error ?? (cut ? cut.reason : undefined)}
+            type="button"
+          >
+            <Check aria-hidden className="h-3.5 w-3.5 shrink-0" />
+            {edited?.decision ? `${DESK_WORDS.approve} ${egp(edited.figure)}` : cut ? `${DESK_WORDS.approve} ${egp(cut.payable)}` : DESK_WORDS.approve}
+          </button>
+          {edited?.error ? (
+            <span className="w-full min-w-0 break-words text-xs font-bold text-rose-700" data-amount-error role="alert">
+              {edited.error}
+            </span>
+          ) : null}
+        </>
       ) : null}
       {acts && cut ? (
         <button className={approvalActionClassName("neutral", size)} data-press="keep-full" onClick={() => onPress([approvePress(claim, { full: true })], [claim])} type="button">

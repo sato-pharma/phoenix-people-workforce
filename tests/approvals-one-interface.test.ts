@@ -64,7 +64,7 @@ export function runApprovalsOneInterfaceTests() {
   const decision = read("src/components/outstation/approvals-desk/desk-decision.tsx");
   assert.match(decision, /className=\{approvalActionClassName\("approve", size\)\}\s*data-press="approve"/, "the row's Approve wears the shared look");
   assert.ok(decision.includes('className={approvalActionClassName("reject", size)} data-press="reject"'), "and so does Reject");
-  assert.ok(decision.includes("onClick={() => onPress([approvePress(claim)], [claim])}"), "Approve is one press, handed to the page");
+  assert.ok(decision.includes("onClick={() => onPress([edited?.decision ?? approvePress(claim)], [claim])}"), "Approve is one press, handed to the page");
   assert.ok(!decision.includes("fetch("), "the buttons save nothing themselves: the page sends the press after its Undo window");
   for (const screen of ["desk-row.tsx", "desk-trip-file.tsx"]) {
     const source = read(`src/components/outstation/approvals-desk/${screen}`);
