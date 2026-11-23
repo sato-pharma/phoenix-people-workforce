@@ -128,7 +128,7 @@ These REPLACE the default summary format (owner, 2026-10-09). The session is fro
 - **Never delete an HTML, PDF, XLSX/XLSM/XLS, DOCX/DOC or SVG file**, anywhere, scratchpad included — leave it or
   move it aside. 🔴 Only once he has NAMED that file in chat: `PHX_DELETE_OK=<filename> <the same command>`
   (`$env:PHX_DELETE_OK='<filename>';` in PowerShell) — one yes, one file, one command. `F:\Claude Scratchpad
-  Archive` and `F:\Hiring Posts` have NO hatch. Never reach for the marker on your own reading. Images, CSV, CSS,
+  Archive`, `F:\Hiring Posts` and `F:\Email Signatures` (every signature, every version; 2026-11-24) have NO hatch. Never reach for the marker on your own reading. Images, CSV, CSS,
   JSON and patches are not protected.
 - 🔴 **`F:\Phoenix Workforce\Validation Photos` — NEVER delete, move or overwrite ANYTHING in it** (owner,
   2026-11-23): reps' validation photos as Line\Region\Area\Rep; only ADD (copy with no overwrite). No hatch.

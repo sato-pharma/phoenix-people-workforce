@@ -69,7 +69,9 @@ const ARCHIVE_PATH = /Claude[ _-]?Scratchpad[ _-]?Archive/i;
 // upcoming — in EVERY format, and nothing in it is ever deleted. It is named here as well as covered
 // by PROTECTED_EXT because PNG and JPG lost their protection on 2026-09-20, which is exactly how the
 // image of the Talent Acquisition poster was lost while its HTML and PDFs survived.
-const HIRING_POSTS = /Hiring[ _-]?Posts/i;
+// 2026-11-24 (owner): F:\Email Signatures holds every email and handwritten signature and every version of
+// each — "never delet them". Same absolute rule as Hiring Posts, any format, no stand-down.
+const HIRING_POSTS = /Hiring[ _-]?Posts|[A-Z]:[\\/]+Email[ _-]?Signatures\b/i;
 const REPO_ARCHIVER = 'C:/Users/satoh/.claude/scripts/repo-archive.mjs';
 // Git commands that remove or overwrite working-tree files without naming a delete verb.
 const GIT_WIPE = /\bgit\b[^\n;|&]*\b(clean|worktree\s+remove|stash\b[^\n;|&]*(\s-u\b|--include-untracked|\s-a\b|--all)|reset\b[^\n;|&]*--hard|checkout\b[^\n;|&]*(\s-f\b|\s--(\s|$))|restore\b)|new-session\.mjs[^\n]*--remove/i;
@@ -407,10 +409,10 @@ if (mode === 'pre') {
           permissionDecision: 'deny',
           permissionDecisionReason:
             'OWNER RULE (2026-09-14, narrowed 2026-09-20, extended 2026-10-02): never delete HTML, PDF, XLSX/XLSM/XLS, DOCX/DOC or SVG files, ' +
-            'and never touch F:/Claude Scratchpad Archive or F:/Hiring Posts (every hiring post ever made, EVERY format, images included). ' +
+            'and never touch F:/Claude Scratchpad Archive, F:/Hiring Posts (every hiring post ever made, EVERY format, images included) or F:/Email Signatures (every signature and every version of it). ' +
             'Leave the file where it is (or move it aside), and do not look for another way to delete it. If a delete is genuinely needed, ask the owner in chat first.' +
             (absolute
-              ? ' F:/Claude Scratchpad Archive and F:/Hiring Posts have NO stand-down — nothing deletes from them.'
+              ? ' F:/Claude Scratchpad Archive, F:/Hiring Posts and F:/Email Signatures have NO stand-down — nothing deletes from them.'
               : yes.present
                 ? ` The stand-down did not apply: ${yes.why}`
                 : ' ONCE HE HAS SAID YES IN CHAT for this specific file, and only then, the delete runs as' +
@@ -642,6 +644,10 @@ if (mode === 'selftest') {
   ok('and says it has no hatch',   /NO stand-down/.test(arch.reason), arch.reason.slice(0, 120));
   const hire = decide('PHX_DELETE_OK=phx-delete-guard-selftest-fixture.pdf rm "F:/Hiring Posts/phx-delete-guard-selftest-fixture.pdf"');
   ok('Hiring Posts is absolute',   hire.decision === 'deny');
+  const sigs = decide('PHX_DELETE_OK=omar.png rm "F:/Email Signatures/Omar Gawish/omar.png"');
+  ok('Email Signatures is absolute', sigs.decision === 'deny');
+  deny('Email Signatures stays whole-command', 'cd "F:/Email Signatures" && rm -f old.gif');
+  allow('the repo email-signature code is not that folder', 'rm -f src/lib/email-signature/a.png');
 
   // The named yes, end to end — and the archive copy it must make first.
   const allowed = decide(`PHX_DELETE_OK=phx-delete-guard-selftest-fixture.pdf rm "${fixture.split(path.sep).join('/')}"`);
