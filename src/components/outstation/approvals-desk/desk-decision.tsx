@@ -5,7 +5,8 @@ import { useId, useState } from "react";
 
 import { approvalActionClassName } from "@/components/approvals-hub/approval-action-kit";
 import { CrmField, crmInputClassName, crmTextareaClassName } from "@/components/phoenix-crm/ui";
-import { DESK_WORDS, approvePress, reasonChips, reduceBlocked, typedAmount } from "@/lib/outstation/approvals/desk-view";
+import { decidedChange } from "@/lib/outstation/approvals/decided-change";
+import { DESK_WORDS, approvePress, approveRejectedPress, reasonChips, reduceBlocked, typedAmount } from "@/lib/outstation/approvals/desk-view";
 import type { DeskClaim, DeskDecisionRequest } from "@/lib/outstation/approvals/types";
 import { cn } from "@/lib/utils";
 
@@ -23,9 +24,12 @@ import { RewriteFormally, noteFacts } from "./desk-rewrite";
  *   Reduce    the amount and its reason, then one press. Not offered on a trip the payroll gate
  *             would hold, and the button says why.
  *
- * 🔴 Only a WAITING claim is decided. A claim already approved or rejected draws no decision button
- * anywhere on the desk — History and its opened trip read it and nothing more — and the server
- * refuses a press on one (decision-plan.ts).
+ * 🔴 Those four are a WAITING claim's. A claim already decided draws ONE button, on its History row
+ * and in its opened trip (owner, 23 Nov 2026: "make me able to reject even if approved in history.
+ * Make me easily able to approve or reject"): Reject on an approved claim no payroll has taken, or
+ * Approve on a rejected one, naming the full amount it pays. Never Approve again, Keep full or
+ * Reduce on a claim already approved. Which one is drawn is decided in decided-change.ts, and the
+ * server refuses every other press on a decided claim (decision-plan.ts).
  *
  * A press is handed to `onPress` and nothing else happens here: the six seconds of Undo and the
  * request live in use-desk.ts. The reason box always opens EMPTY — the system's own sentence is a
@@ -57,6 +61,8 @@ export function DecisionButtons({
   size?: "dense" | "regular";
 }) {
   const acts = canDecide && !claim.locked && claim.standing === "waiting";
+  // A decided claim: the one press still open on it, if any. Never one of the four above.
+  const again = canDecide ? decidedChange(claim).offer : null;
   const cut = claim.preCut && !claim.holdReason ? claim.preCut : null;
   const blocked = reduceBlocked(claim);
   const toggle = (next: DecisionMode) => onMode(mode === next ? "idle" : next);
@@ -96,6 +102,18 @@ export function DecisionButtons({
       ) : null}
       {acts ? (
         <button aria-expanded={mode === "reject"} className={approvalActionClassName("reject", size)} data-press="reject" onClick={() => toggle("reject")} type="button">
+          <X aria-hidden className="h-3.5 w-3.5 shrink-0" />
+          {DESK_WORDS.reject}
+        </button>
+      ) : null}
+      {again === "approve" ? (
+        <button className={approvalActionClassName("approve", size)} data-press="approve-rejected" onClick={() => onPress([approveRejectedPress(claim)], [claim])} title="Approve this rejected claim in full" type="button">
+          <Check aria-hidden className="h-3.5 w-3.5 shrink-0" />
+          {DESK_WORDS.approve} {egp(claim.total)}
+        </button>
+      ) : null}
+      {again === "reject" ? (
+        <button aria-expanded={mode === "reject"} className={approvalActionClassName("reject", size)} data-press="reject-approved" onClick={() => toggle("reject")} title="Reject this approved claim" type="button">
           <X aria-hidden className="h-3.5 w-3.5 shrink-0" />
           {DESK_WORDS.reject}
         </button>
@@ -185,7 +203,13 @@ export function DecisionPanel({
       ) : null}
 
       <CrmField
-        hint={mode === "reject" ? "The employee is told this reason." : "Kept on the claim. The employee is not told about a reduced amount."}
+        hint={
+          mode !== "reject"
+            ? "Kept on the claim. The employee is not told about a reduced amount."
+            : claim.standing === "waiting"
+              ? "The employee is told this reason."
+              : "The employee is told this reason. The claim leaves the next payroll."
+        }
         htmlFor={`${id}-reason`}
         label={chips.length > 0 ? "Or write the reason" : "Reason"}
       >

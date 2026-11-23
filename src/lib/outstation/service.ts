@@ -4231,7 +4231,14 @@ export async function approveOutstationRequestForPayroll(
   // sent a rejection email at submit and never sent the submission alert at all, so this is its
   // first and only one. Approving an ordinary pending claim stays silent, which is what the
   // owner's standing rule already says approval should be.
-  if (existing.status.startsWith("rejected")) {
+  //
+  // 🔴 A SYSTEM rejection only (23 Nov 2026). This read `startsWith("rejected")`, which also covered
+  // a claim the Super Admin had rejected himself. From that day he can approve such a claim from
+  // History, and "submitted and requires your review" is not a true word for a claim he has reviewed
+  // twice. Read on production that day: 62 of the 66 rejected claims had already been sent their
+  // submission alert, so its key would drop a repeat anyway; the other 4 would have been mailed to
+  // the employee, his manager and the Super Admins. An approval is silent.
+  if (existing.status === "rejected_by_system") {
     await afterResponse("outstation_notice:override", () => notifyOutstationSubmitted(request));
   }
 

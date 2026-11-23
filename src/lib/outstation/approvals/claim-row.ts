@@ -16,6 +16,7 @@
  */
 
 import { claimPreCut, isTripClaim, judgeClaim, shortDay, type ClaimCheckFacts, type FieldWorkReading } from "@/lib/outstation/approvals/checks";
+import { claimKindOf } from "@/lib/outstation/approvals/claim-kind";
 import { readTripStanding, type PayoutPeriod } from "@/lib/outstation/approvals/standing";
 import type { ClaimVerdict, DeskClaim } from "@/lib/outstation/approvals/types";
 import { usablePosition } from "@/lib/outstation/captured-coordinates";
@@ -23,7 +24,7 @@ import { cairoDateOnly } from "@/lib/outstation/departure-evidence";
 import { resolveOutstationGateState } from "@/lib/outstation/expense-gate";
 import { ticketReceiptFingerprint } from "@/lib/outstation/duplicate-ticket-guard";
 import { payableExpenseAmount } from "@/lib/outstation/payable";
-import { mapOutstationRequestRowToPayrollApproval, outstationPayrollTripId } from "@/lib/outstation/payroll-expense-mapping";
+import { mapOutstationRequestRowToPayrollApproval, outstationPayrollTripId, outstationReportOverride } from "@/lib/outstation/payroll-expense-mapping";
 import { odometerFromValue, odometerOfMetadata, type OutstationOdometerRecord } from "@/lib/outstation/odometer-scan-rules";
 import { frameOfMetadata } from "@/lib/outstation/blank-frame";
 import { returnTicketState } from "@/lib/outstation/return-ticket";
@@ -207,6 +208,8 @@ export function claimFactsFromRow(row: ClaimRow, context: ClaimContext): ClaimCh
     expenseType: text(row.expense_type) || "traveling",
     fieldWork: context.fieldWork ?? null,
     hasNoTicketFare: readNoTicketFare(row.no_ticket_fare) !== null,
+    // The meeting amount as payroll reads it: HR's override when there is one, else the claim's own.
+    meetingCost: outstationReportOverride(row.report_meeting_amount, num(row.meeting_amount) ?? 0),
     noTicketFareLine: text(object(row.no_ticket_fare)?.line) || null,
     odometer:
       odometer.arrival === undefined
@@ -304,10 +307,13 @@ export function buildDeskClaim(input: {
   });
   const waiting = reading.standing === "waiting";
   const verdict = waiting ? judgeClaim(claimFactsFromRow(row, input.context)) : storedVerdictOfRow(row);
-  // The stored row is the truth of a DECIDED claim: its own total and the amount he typed. A claim
-  // still waiting reads its live figures — a payroll row left pending under it decides nothing.
-  const total = waiting ? approval.total : (ledger?.total ?? approval.total);
-  const approvedAmount = waiting ? null : (ledger?.approved_amount ?? null);
+  // The stored row is the truth of an APPROVED claim: its own total and the amount he typed. A claim
+  // still waiting reads its live figures — a payroll row left pending under it decides nothing — and
+  // so does a REJECTED one: rejecting a waiting claim leaves its row behind, and approving it again
+  // writes the row from the claim as it is now. "Approve EGP X" must name what payroll will pay.
+  const live = waiting || reading.standing === "rejected";
+  const total = live ? approval.total : (ledger?.total ?? approval.total);
+  const approvedAmount = live ? null : (ledger?.approved_amount ?? null);
   const tripDates = tripDatesOfRow(row);
   const preCut =
     waiting && isTripClaim(text(row.expense_type)) && verdict.idleDates.length > 0
@@ -333,6 +339,7 @@ export function buildDeskClaim(input: {
     holdReason: waiting ? holdReasonOfRow(row) : null,
     hrComment: waiting ? "" : approval.hrComment,
     hrId: approval.hrId,
+    kind: claimKindOf(row.expense_type),
     locked: reading.standing === "in_payroll",
     payable: reading.standing === "rejected" ? 0 : payableExpenseAmount(approvedAmount, total),
     payoutMonth,

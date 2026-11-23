@@ -1,18 +1,18 @@
 "use client";
 
-import { Eye } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
-import { approvalActionClassName } from "@/components/approvals-hub/approval-action-kit";
 import { CrmButton, CrmEmpty, CrmLoadError, CrmLoading, CrmShowMore, CrmTable, crmTdClassName, crmThClassName } from "@/components/phoenix-crm/ui";
 import { formatDateValue, formatNumberValue } from "@/lib/i18n/format";
-import { DESK_WORDS, type DeskHistoryChoice } from "@/lib/outstation/approvals/desk-view";
+import type { DeskHistoryChoice } from "@/lib/outstation/approvals/desk-view";
 import type { DeskHistoryPage, SheetTrip } from "@/lib/outstation/approvals/history";
-import type { DeskClaim } from "@/lib/outstation/approvals/types";
+import type { ClaimKind } from "@/lib/outstation/approvals/types";
 import { displayPlace } from "@/lib/outstation/place-label";
 import { cn } from "@/lib/utils";
 
-import { MoneyCell, PHONE_TARGET, STANDING_RAIL, StandingPill, TripLine, egp, tripDates } from "./desk-parts";
+import type { OnPress } from "./desk-decision";
+import { HistoryCard, HistoryTableRow } from "./desk-history-row";
+import { egp } from "./desk-parts";
 
 const ROUTE = "/api/admin/outstation/approvals/history";
 const CHOICES: ReadonlyArray<{ key: DeskHistoryChoice; label: string }> = [
@@ -36,20 +36,37 @@ async function readJson<T>(url: string): Promise<T> {
  * opened, so the page itself never reads it: fifty decided claims at a time, newest decision first,
  * and the pre-July sheet trips behind one more press of their own.
  *
- * Nothing is decided on a History row. A decided trip a payroll has not taken can still be changed —
- * from the opened trip, where the evidence is.
+ * A decided claim is changed ON its row (owner, 23 Nov 2026: "make me able to reject even if approved
+ * in history. Make me easily able to approve or reject"): Reject on an approved claim no payroll has
+ * taken, Approve on a rejected one. The row and its buttons are in desk-history-row.tsx; the list
+ * reads itself again when a press is answered (`version`).
  */
 export function DeskHistory({
+  canDecide,
   choice,
+  from,
+  kind,
   onChoose,
   onOpen,
+  onPress,
+  pressed,
   search,
+  to,
   version,
 }: {
+  canDecide: boolean;
   choice: DeskHistoryChoice;
+  /** The trip dates the desk is narrowed to; null = open. The server filters, like the kind. */
+  from: string | null;
+  /** The kind the desk is narrowed to; null = every kind. The server filters: History is read a page at a time. */
+  kind: ClaimKind | null;
   onChoose: (choice: DeskHistoryChoice) => void;
   onOpen: (requestId: number) => void;
+  onPress: OnPress;
+  /** The claims inside a press right now: each draws no decision button until it is answered. */
+  pressed: ReadonlySet<number>;
   search: string;
+  to: string | null;
   /** Goes up when a decided claim was changed, so the list reads again. */
   version: number;
 }) {
@@ -60,7 +77,20 @@ export function DeskHistory({
     return () => window.clearTimeout(timer);
   }, [search]);
 
-  const key = `${choice}|${term}|${version}`;
+  const key = `${choice}|${kind ?? ""}|${from ?? ""}|${to ?? ""}|${term}|${version}`;
+  /** What every read of this list carries: the decision, the kind, the trip dates and the search. */
+  const query = useCallback(
+    (offset?: number) => {
+      const params = new URLSearchParams({ filter: choice });
+      if (kind) params.set("kind", kind);
+      if (from) params.set("from", from);
+      if (to) params.set("to", to);
+      if (term) params.set("search", term);
+      if (offset) params.set("offset", String(offset));
+      return `${ROUTE}?${params.toString()}`;
+    },
+    [choice, from, kind, term, to],
+  );
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [failed, setFailed] = useState<{ key: string; message: string } | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -68,9 +98,7 @@ export function DeskHistory({
 
   useEffect(() => {
     let cancelled = false;
-    const params = new URLSearchParams({ filter: choice });
-    if (term) params.set("search", term);
-    readJson<DeskHistoryPage>(`${ROUTE}?${params.toString()}`)
+    readJson<DeskHistoryPage>(query())
       .then((page) => {
         if (!cancelled) setLoaded({ ...page, key });
       })
@@ -81,7 +109,7 @@ export function DeskHistory({
       cancelled = true;
     };
     // `attempt` re-runs the same read after a failure.
-  }, [attempt, choice, key, term]);
+  }, [attempt, key, query]);
 
   const page = loaded?.key === key ? loaded : null;
   const error = !page && failed?.key === key ? failed.message : null;
@@ -90,16 +118,14 @@ export function DeskHistory({
     if (!page || page.nextOffset === null) return;
     setMore(true);
     try {
-      const params = new URLSearchParams({ filter: choice, offset: String(page.nextOffset) });
-      if (term) params.set("search", term);
-      const next = await readJson<DeskHistoryPage>(`${ROUTE}?${params.toString()}`);
+      const next = await readJson<DeskHistoryPage>(query(page.nextOffset));
       setLoaded((current) => (current?.key === page.key ? { ...next, claims: [...current.claims, ...next.claims], key: current.key } : current));
     } catch (caught) {
       setFailed({ key, message: caught instanceof Error ? caught.message : "Unable to load the history." });
     } finally {
       setMore(false);
     }
-  }, [choice, key, page, term]);
+  }, [key, page, query]);
 
   return (
     <section aria-labelledby="desk-tab-history" className="min-w-0 overflow-hidden border border-slate-200 bg-white" data-desk-history id="desk-panel-history" role="tabpanel">
@@ -132,49 +158,30 @@ export function DeskHistory({
       ) : !page ? (
         <CrmLoading label="Reading the decided claims" />
       ) : page.claims.length === 0 ? (
-        <CrmEmpty message={term ? "No decided claim matches the search." : "No claim has been decided yet."} title="Nothing here" />
+        <CrmEmpty
+          message={term ? "No decided claim matches the search." : kind || from || to ? "No decided claim matches the kind and the trip dates chosen." : "No claim has been decided yet."}
+          title="Nothing here"
+        />
       ) : (
         <>
           <div className="divide-y divide-slate-100 md:hidden">
             {page.claims.map((claim) => (
-              <HistoryCard claim={claim} key={claim.requestId} onOpen={onOpen} />
+              <HistoryCard canDecide={canDecide} claim={claim} key={claim.requestId} onOpen={onOpen} onPress={onPress} pressed={pressed.has(claim.requestId)} />
             ))}
           </div>
-          <CrmTable columns={["25%", "16%", null, "13%", "13%"]}>
+          <CrmTable columns={["24%", "15%", null, "12%", "22%"]}>
             <thead>
               <tr>
                 <th className={crmThClassName} scope="col">Employee and trip</th>
                 <th className={crmThClassName} scope="col">Where it stands</th>
                 <th className={crmThClassName} scope="col">Reason on the claim</th>
                 <th className={cn(crmThClassName, "text-right")} scope="col">Claim</th>
-                <th className={crmThClassName} scope="col">
-                  <span className="sr-only">Open</span>
-                </th>
+                <th className={crmThClassName} scope="col">Decision</th>
               </tr>
             </thead>
             <tbody>
               {page.claims.map((claim) => (
-                <tr className="transition-colors hover:bg-slate-50" data-request-id={claim.requestId} key={claim.requestId}>
-                  <td className={cn(crmTdClassName, "border-l-[3px]", STANDING_RAIL[claim.standing])}>
-                    <span className="block break-words text-sm font-black text-slate-950">
-                      <bdi dir="auto">{claim.employeeName || "Unassigned"}</bdi>
-                    </span>
-                    <TripLine claim={claim} />
-                  </td>
-                  <td className={crmTdClassName}>
-                    <StandingPill standing={claim.standing} />
-                    {claim.decidedAt ? <span className="mt-1 block text-xs font-semibold text-slate-500">Decided {formatDateValue(claim.decidedAt, null, { year: undefined })}</span> : null}
-                  </td>
-                  <td className={crmTdClassName}>
-                    <ReasonText claim={claim} />
-                  </td>
-                  <td className={cn(crmTdClassName, "text-right")}>
-                    <MoneyCell claim={claim} />
-                  </td>
-                  <td className={crmTdClassName}>
-                    <OpenButton claim={claim} onOpen={onOpen} />
-                  </td>
-                </tr>
+                <HistoryTableRow canDecide={canDecide} claim={claim} key={claim.requestId} onOpen={onOpen} onPress={onPress} pressed={pressed.has(claim.requestId)} />
               ))}
             </tbody>
           </CrmTable>
@@ -189,51 +196,6 @@ export function DeskHistory({
       )}
       <SheetTrips />
     </section>
-  );
-}
-
-function ReasonText({ claim }: { claim: DeskClaim }) {
-  if (!claim.hrComment) return <span className="text-slate-400">—</span>;
-  return (
-    <bdi className="block min-w-0 break-words text-sm font-medium leading-5 text-slate-700" dir="auto">
-      {claim.hrComment}
-    </bdi>
-  );
-}
-
-function OpenButton({ claim, onOpen }: { claim: DeskClaim; onOpen: (requestId: number) => void }) {
-  return (
-    <button className={approvalActionClassName("neutral", "dense", PHONE_TARGET)} data-open-trip onClick={() => onOpen(claim.requestId)} type="button">
-      <Eye aria-hidden className="h-3.5 w-3.5 shrink-0" />
-      {DESK_WORDS.open}
-    </button>
-  );
-}
-
-function HistoryCard({ claim, onOpen }: { claim: DeskClaim; onOpen: (requestId: number) => void }) {
-  return (
-    <article className={cn("min-w-0 border-l-[3px] bg-white px-3 py-2.5", STANDING_RAIL[claim.standing])} data-request-id={claim.requestId}>
-      <div className="flex min-w-0 items-start justify-between gap-3">
-        <span className="min-w-0 break-words text-sm font-black text-slate-950">
-          <bdi dir="auto">{claim.employeeName || "Unassigned"}</bdi>
-        </span>
-        <span className="shrink-0 text-right">
-          <MoneyCell claim={claim} />
-        </span>
-      </div>
-      <p className="mt-0.5 min-w-0 break-words text-xs font-semibold text-slate-500">
-        {tripDates(claim)} · <bdi dir="auto">{displayPlace(claim.to)}</bdi>
-      </p>
-      <div className="mt-1.5 flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <StandingPill standing={claim.standing} />
-        <OpenButton claim={claim} onOpen={onOpen} />
-      </div>
-      {claim.hrComment ? (
-        <div className="mt-1.5">
-          <ReasonText claim={claim} />
-        </div>
-      ) : null}
-    </article>
   );
 }
 

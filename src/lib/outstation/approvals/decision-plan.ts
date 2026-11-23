@@ -10,9 +10,11 @@
  * What this file DOES decide is what is refused before anything is written:
  *
  *   - a claim a payroll already took;
- *   - 🔴 a claim that is ALREADY DECIDED. The desk decides what waits and nothing else: an approved
- *     or rejected claim is read here, never pressed again (owner's plan, 23 Nov: "No decided claim's
- *     money moves"). The screen draws no button for one; this is the refusal behind the screen;
+ *   - 🔴 every press on a claim that is ALREADY DECIDED, but two (owner, 23 Nov, about 21:05 Cairo:
+ *     "make me able to reject even if approved in history. Make me easily able to approve or
+ *     reject"): an approved claim no payroll has taken can be REJECTED, and a rejected claim can be
+ *     APPROVED IN FULL. An approved claim is never approved again or reduced, and a claim whose
+ *     payout month's payroll already ran is not changed at all (`decided-change.ts` says why);
  *   - a press made on an older version of the claim (the row comes back with its new figures);
  *   - a rejection or a reduced amount with no reason;
  *   - "Approve EGP 300" whose idle-day cut no longer holds, because a visit was recorded since;
@@ -25,6 +27,7 @@
  */
 
 import { isAdjustedAmount } from "@/lib/outstation/approval-state";
+import { APPROVED_AFTER_REJECTION_NOTE, DECIDED_CHANGE_REFUSAL, decidedChange } from "@/lib/outstation/approvals/decided-change";
 import { OUTSTATION_CLAIM_CHANGED_CODE, OUTSTATION_CLAIM_CHANGED_MESSAGE } from "@/lib/outstation/claim-revision";
 import type { DecisionAction, DeskClaim, DeskDecisionOutcome, DeskDecisionRequest } from "@/lib/outstation/approvals/types";
 
@@ -50,17 +53,19 @@ export type PlannedDeskDecision =
 
 export const DESK_REFUSAL = {
   cutMoved: "The field work on this trip changed since you opened it, so the amount on the button no longer holds. Look at it again.",
-  decided: "This claim was already decided, so it cannot be changed here.",
+  approvedOnlyReject: DECIDED_CHANGE_REFUSAL.approvedOnlyReject,
   gone: "This claim is not on your list any more.",
   idleDayFound: "This trip now shows a day with no field work, which was not on your screen when you approved it. Look at it again.",
   keepFullAlone: "A trip that pays an idle day in full is approved by itself, never in a batch. Open it and decide it there.",
   heldCannotReduce:
     "This trip would be held out of payroll for now, and a held trip cannot carry a reduced amount — it would pay in full when it is released. Approve it in full, or reduce it once it reaches payroll.",
-  locked: "A payroll has already taken this trip, so it cannot be changed here.",
+  locked: DECIDED_CHANGE_REFUSAL.inPayroll,
   noAmount: "Type the amount to pay. To pay nothing, reject the claim.",
   noReduceReason: "A reduced amount needs a reason.",
   noRejectReason: "A rejection needs a reason.",
   notSaved: "The decision was not saved. Nothing changed.",
+  payrollRan: DECIDED_CHANGE_REFUSAL.payrollRan,
+  rejectedOnlyApprove: DECIDED_CHANGE_REFUSAL.rejectedOnlyApprove,
 } as const;
 
 const egp = (value: number) => `EGP ${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
@@ -75,14 +80,39 @@ function wouldLoseAmount(claim: DeskClaim): boolean {
 export function planDeskDecision(claim: DeskClaim | null | undefined, decision: DeskDecisionRequest): PlannedDeskDecision {
   if (!claim) return refused(DESK_REFUSAL.gone);
   if (claim.locked) return refused(DESK_REFUSAL.locked);
-  // Before the version check on purpose: no version of a decided claim can be pressed.
-  if (claim.standing !== "waiting") return refused(DESK_REFUSAL.decided);
+  // A decided claim: the one press still open on it, or the reason there is none. Asked before the
+  // version check on purpose: no version of a claim that cannot be changed gets a different answer.
+  const again = claim.standing === "waiting" ? null : decidedChange(claim);
+  if (again && !again.offer) return refused(again.why ?? DESK_REFUSAL.locked);
   if (!decision.revision || decision.revision !== claim.revision) {
     return { code: "changed", message: OUTSTATION_CLAIM_CHANGED_MESSAGE, ok: false };
   }
 
   const comment = String(decision.comment ?? "").trim();
   const base = { requestRevision: claim.revision, total: claim.total, tripId: claim.tripId };
+
+  if (again?.offer === "reject") {
+    // Approved, and no payroll has taken it. Reject is the only press: approving it again or
+    // reducing it here is the press that once wrote his typed amount to nothing.
+    if (decision.action !== "reject") return refused(DESK_REFUSAL.approvedOnlyReject);
+    if (!comment) return refused(DESK_REFUSAL.noRejectReason);
+    return {
+      approved: null,
+      ok: true,
+      record: { ...base, approvedAmount: claim.total, hrApproved: false, hrComment: comment, status: "Rejected" },
+    };
+  }
+  if (again?.offer === "approve") {
+    // Rejected. Approved in full and nothing else: a rejected claim's idle days and payroll hold are
+    // not read, so no amount other than the claim itself can be named for it.
+    const namesAnAmount = decision.approvedAmount !== null && decision.approvedAmount !== undefined && isAdjustedAmount(Number(decision.approvedAmount), claim.total);
+    if (decision.action !== "approve" || namesAnAmount) return refused(DESK_REFUSAL.rejectedOnlyApprove);
+    return {
+      approved: claim.total,
+      ok: true,
+      record: { ...base, approvedAmount: claim.total, hrApproved: true, hrComment: comment || APPROVED_AFTER_REJECTION_NOTE, status: "Approved" },
+    };
+  }
 
   if (decision.action === "reject") {
     if (!comment) return refused(DESK_REFUSAL.noRejectReason);

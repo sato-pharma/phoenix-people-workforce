@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { unauthenticatedSessionResponse } from "@/lib/auth/api-session-response";
 import { assertOutstationExpenseApprovalReviewAccess } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
+import { claimKindFromParam } from "@/lib/outstation/approvals/claim-kind";
 import { historyFilterOf, loadDeskHistory, loadSheetHistory } from "@/lib/outstation/approvals/history";
 import { deskRouteFailure } from "@/lib/outstation/approvals/route-failure";
 
@@ -16,7 +17,7 @@ const ROUTE = "/api/admin/outstation/approvals/history";
  * calls this while it loads.
  *
  *   ?source=sheets          the trips that came from the expense sheets (values only)
- *   ?filter=&search=&offset the decided claims employees filed in Phoenix, 50 at a time
+ *   ?filter=&kind=&from=&to=&search=&offset the decided claims employees filed in Phoenix, 50 at a time
  */
 export async function GET(request: Request) {
   let access: Awaited<ReturnType<typeof resolveAccessContext>> | null = null;
@@ -32,8 +33,11 @@ export async function GET(request: Request) {
     }
     const page = await loadDeskHistory(access, {
       filter: historyFilterOf(url.searchParams.get("filter")),
+      from: url.searchParams.get("from"),
+      kind: claimKindFromParam(url.searchParams.get("kind")),
       offset: Number(url.searchParams.get("offset")) || 0,
       search: url.searchParams.get("search"),
+      to: url.searchParams.get("to"),
     });
     return NextResponse.json(page);
   } catch (error) {
