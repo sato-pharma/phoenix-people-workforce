@@ -51,6 +51,9 @@ export const MEETING_TYPE = -19;
 // as a named constant rather than a literal so the pair reads as deliberate: see
 // CRM_VISIT_TYPE_FILTER_CODES, where "Meeting" selects both by code.
 export const VENDOR_MEETING_TYPE = -11;
+// The vendor's Conference (description "Conference", 128 rows on production 2026-11-23). Phoenix CRM serves a
+// recorded conference under it too. Named for trip-day-meetings.ts, which counts it as a meeting day.
+export const CONFERENCE_TYPE = -1;
 export const ADMIN_WORK_TYPE = -20;
 export const BRM_TYPE = -21;
 // Real field visits (doctor/pharmacy call notes) that iReports360 never assigned
@@ -59,7 +62,7 @@ export const BRM_TYPE = -21;
 export const UNLABELED_FIELD_VISIT_TYPE = -30;
 // Training that the vendor sends as "Unknown" (owner ruling 2026-09-17). Same label and
 // bucket as TRAINING_TYPE; a separate constant because its stored description differs.
-const UNLABELED_TRAINING_TYPE = -16;
+export const UNLABELED_TRAINING_TYPE = -16;
 
 export type VisitBucket = "regular" | "campaign" | "training" | "admin";
 export type VisitClassification = { label: string; bucket: VisitBucket };
