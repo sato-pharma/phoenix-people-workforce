@@ -328,6 +328,29 @@ export function withoutSeated<Row extends { sharedPlaceId: string | null }>(rows
   return rows.filter((row) => row.sharedPlaceId === null || !venueIds.has(row.sharedPlaceId));
 }
 
+/**
+ * The buildings whose card the Polyclinics tab draws before anything is ticked: every one but a rejected
+ * (retired) building, which waits behind its own switch. History and "Waiting to be captured again" leave
+ * out only the customers seated in THESE, so a customer whose building was rejected is listed there too —
+ * or he could be reached only by ticking that switch (owner, 23 Nov 2026: محمد سعيد الإيمان, the one doctor
+ * of a rejected building, was on no list he looked at). His building's card still files him as well.
+ */
+export function buildingsDrawnByDefault(venues: ReadonlyArray<{ sharedPlaceId: string; status: string }>): Set<string> {
+  return new Set(venues.filter((venue) => venue.status !== "retired").map((venue) => venue.sharedPlaceId));
+}
+
+/**
+ * The one-by-one review's History: the decided rows and the rejected buildings. A row seated in one of those
+ * buildings is its slide already, so it is not a second slide of its own.
+ */
+export function historyDeckSources<Row extends { sharedPlaceId: string | null }, Group extends { venue: { sharedPlaceId: string; status: string } }>(
+  decided: ReadonlyArray<Row>,
+  venueGroups: ReadonlyArray<Group>,
+): { reviews: Row[]; venues: Group[] } {
+  const venues = venueGroups.filter((group) => group.venue.status === "retired");
+  return { reviews: withoutSeated(decided, new Set(venues.map((group) => group.venue.sharedPlaceId))), venues };
+}
+
 /** Whether a seated customer passes the outcome selector — the same words the single clinics answer to. */
 export function seatedPassesOutcome(customer: SeatedCustomer, venueHeld: boolean, outcome: ValidationReviewOutcome): boolean {
   if (outcome === "all") return true;

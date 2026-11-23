@@ -37,7 +37,7 @@ import {
   type UnconfirmedChip,
 } from "@/lib/phoenix-crm/place-checks-on-demand";
 import type { PlaceNoteIndex } from "@/lib/phoenix-crm/view-types";
-import { narrowVenueGroups, seatedCustomersByVenue, venueNeedsDecision, withoutSeated } from "@/lib/phoenix-crm/shared-place-groups";
+import { buildingsDrawnByDefault, narrowVenueGroups, seatedCustomersByVenue, venueNeedsDecision, withoutSeated } from "@/lib/phoenix-crm/shared-place-groups";
 
 export function usePlaceCheckRows({
   chip,
@@ -110,10 +110,13 @@ export function usePlaceCheckRows({
   // 🔴 A ROW IS TAKEN OUT OF THE CLINICS VIEW ONLY WHEN ITS BUILDING IS ON THIS BOARD, so a customer whose
   // building has aged out of the venue read stays among the clinics where he can still be found.
   const venueIds = useMemo(() => new Set(sharedPlaces.map((row) => row.sharedPlaceId)), [sharedPlaces]);
+  // 🔴 A REJECTED BUILDING WAITS BEHIND ITS SWITCH, SO ITS CUSTOMERS STAY IN HISTORY AND "WAITING TO BE
+  // CAPTURED AGAIN" (23 Nov 2026): only a building drawn by default takes its decided and sent-back rows.
+  const drawnVenueIds = useMemo(() => buildingsDrawnByDefault(sharedPlaces), [sharedPlaces]);
   const clinicPending = useMemo(() => withoutSeated(pending, venueIds), [pending, venueIds]);
-  const clinicDecided = useMemo(() => withoutSeated(decided, venueIds), [decided, venueIds]);
+  const clinicDecided = useMemo(() => withoutSeated(decided, drawnVenueIds), [decided, drawnVenueIds]);
   const clinicValidated = useMemo(() => withoutSeated(validated, venueIds), [validated, venueIds]);
-  const clinicReopened = useMemo(() => withoutSeated(reopened, venueIds), [reopened, venueIds]);
+  const clinicReopened = useMemo(() => withoutSeated(reopened, drawnVenueIds), [reopened, drawnVenueIds]);
   const seated = useMemo(
     () => seatedCustomersByVenue({ pending, decided, validated, reopened, venueIds }),
     [pending, decided, validated, reopened, venueIds],
