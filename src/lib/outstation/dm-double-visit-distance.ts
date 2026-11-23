@@ -28,6 +28,7 @@
  */
 
 import { resolveNoTicketFare, noTicketFareRecord } from "@/lib/outstation/train-fare";
+import { tripKmText } from "@/lib/outstation/trip-km";
 import { OUTSTATION_UNDECIDED_STATUSES } from "@/lib/outstation/undecided-claim";
 import type { OutstationNoTicketFare } from "@/lib/outstation/types";
 
@@ -365,7 +366,8 @@ function shortDay(iso: string): string {
   return match ? `${Number(match[3])} ${MONTHS[Number(match[2]) - 1] ?? ""}`.trim() : "a trip day";
 }
 
-const kmText = (km: number | null) => (km === null ? "an unknown distance" : `${Math.round(km).toLocaleString("en-US")} km`);
+// Whole km, except a distance under the minimum that rounding would carry up to it (`trip-km.ts`).
+const kmText = (km: number | null, minimumKm: number | null = null) => tripKmText(km, minimumKm);
 
 /** "with Ahmed Ali on 18 Nov" — names only, never a code. */
 export function distanceVisitWords(visit: NonNullable<DistanceBasis["visit"]>): string {
@@ -390,7 +392,7 @@ export function distanceBasisVerdict(input: {
       ? { answer: "unknown", sentence: "Not priced on the first double visit yet; the next morning run prices it." }
       : null;
   }
-  const captured = kmText(basis.capturedKm);
+  const captured = kmText(basis.capturedKm, basis.minimumKm);
   if (basis.basis === "no_double_visit") {
     return { answer: "unknown", sentence: `No double visit on this trip. Priced on the ${captured} from home to the capture point.` };
   }
@@ -401,7 +403,7 @@ export function distanceBasisVerdict(input: {
       sentence: `The road distance to the first double visit${visit ? ` (${visitWords(visit)})` : ""} could not be measured, so it stays priced on the ${captured} from home to the capture point.`,
     };
   }
-  const toVisit = kmText(visit.km);
+  const toVisit = kmText(visit.km, basis.minimumKm);
   if (basis.held === "stops") {
     return { answer: "unknown", sentence: `This trip has added stops, so it stays priced on its captured route: ${captured} captured, ${toVisit} to the first double visit.` };
   }

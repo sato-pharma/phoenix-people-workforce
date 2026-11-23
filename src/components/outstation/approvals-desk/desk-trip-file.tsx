@@ -11,6 +11,7 @@ import type { DeskNotice } from "@/lib/outstation/approvals/press-queue";
 import { TRIP_STANDING_MEANING } from "@/lib/outstation/approvals/standing";
 import type { ClaimCheck, DeskClaim } from "@/lib/outstation/approvals/types";
 import type { CrmTripReading } from "@/lib/outstation/crm-trip-evidence";
+import { tripKmText } from "@/lib/outstation/trip-km";
 
 import { DeskDays } from "./desk-days";
 import { type DecisionMode, DecisionButtons, DecisionPanel, type OnPress } from "./desk-decision";
@@ -326,7 +327,8 @@ function Sheet({ children, name, title }: { children: ReactNode; name: string; t
   );
 }
 
-const kmFigure = (km: number | null) => (km === null ? "Not measured" : `${formatNumberValue(Math.round(km))} km`);
+// Whole km, except a distance under the trip minimum that rounding would carry up to it (`trip-km.ts`).
+const kmFigure = (km: number | null, minimumKm: number | null) => (km === null ? "Not measured" : tripKmText(km, minimumKm));
 
 /**
  * A District Manager's trip, priced from his home to the first double visit (owner, 2026-11-23: "show
@@ -337,7 +339,7 @@ function DistanceFigures({ distance }: { distance: NonNullable<DeskClaim["distan
   const priced =
     distance.basis === "first_double_visit" ? (
       <>
-        {kmFigure(distance.visitKm)}
+        {kmFigure(distance.visitKm, distance.minimumKm)}
         {distance.visitWords ? <span className="block text-xs font-semibold text-slate-600">{distance.visitWords}</span> : null}
       </>
     ) : distance.basis === "no_double_visit" ? (
@@ -353,7 +355,7 @@ function DistanceFigures({ distance }: { distance: NonNullable<DeskClaim["distan
       className="mt-2 grid min-w-0 grid-cols-1 gap-x-4 gap-y-2 border-t border-slate-100 pt-2 sm:grid-cols-2 [&>*]:min-w-0"
       data-trip-distance={distance.basis}
     >
-      <Figure label="Home to the capture point" value={kmFigure(distance.capturedKm)} />
+      <Figure label="Home to the capture point" value={kmFigure(distance.capturedKm, distance.minimumKm)} />
       <Figure label={distance.basis === "first_double_visit" ? "Priced: home to the first double visit" : "First double visit"} value={priced} />
     </dl>
   );
