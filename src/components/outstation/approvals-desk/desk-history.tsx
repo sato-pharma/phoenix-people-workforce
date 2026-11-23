@@ -221,7 +221,7 @@ function SheetTrips() {
     return (
       <div className="border-t border-slate-200 px-4 py-3" data-sheet-trips="closed">
         <CrmButton busy={state.loading} onClick={() => void read()} size="sm">
-          Show the trips from the expense sheets (before July 2026)
+          Show the trips from the expense sheets (before July 2026) and trips whose request was deleted
         </CrmButton>
         {state.error ? <p className="mt-2 text-xs font-bold text-rose-700">{state.error}</p> : null}
       </div>
@@ -288,6 +288,7 @@ function SheetTrips() {
 }
 
 function sheetDecision(trip: SheetTrip): string {
-  if (trip.rejected) return "Rejected";
-  return trip.approved ? "Approved" : "Not decided";
+  const decision = trip.rejected ? "Rejected" : trip.approved ? "Approved" : "Not decided";
+  // Filed in Phoenix, its request deleted after payroll took it: only the payroll row is left.
+  return trip.requestDeleted ? `${decision} · filed in Phoenix, request deleted` : decision;
 }
