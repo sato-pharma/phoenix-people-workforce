@@ -58,6 +58,7 @@ import { runPhoenixInspectMeasureTests } from "./phoenix-inspect-measure.test.ts
 import { runPhoenixInspectMcpHttpTests } from "./phoenix-inspect-mcp-http.test.ts";
 import { runChatgptConnectorOAuthTests } from "./chatgpt-connector-oauth.test.ts";
 import { runChatgptConnectorCaptureTests } from "./chatgpt-connector-capture.test.ts";
+import { runChatgptConnectorFilmsTests } from "./chatgpt-connector-films.test.ts";
 import { runChatgptConnectorToolsTests } from "./chatgpt-connector-tools.test.ts";
 import { runPhoenixInspectAuthorizationServerTests } from "./phoenix-inspect-authorization-server.test.ts";
 import { runSystemAuditApiPageMapTests } from "./system-audit-api-page-map.test.ts";
@@ -3505,6 +3506,7 @@ await runTest("the visual explorer's remote MCP door admits only the owner's tok
 await runTest("the ChatGPT connector registers only ChatGPT return addresses, needs PKCE, spends a code once, revokes a token family on a refresh replay or a changed account, refuses another address, audits every call without the answer and builds PDFs in the ink rule", runChatgptConnectorOAuthTests);
 await runTest("the ChatGPT connector tools read as the signed-in seat: names match in English and Arabic, sales come from the published closing by value, and the raw table reader is the owner's alone and refuses secrets", runChatgptConnectorToolsTests);
 await runTest("the ChatGPT connector's screenshot and video tools open only Phoenix pages, send GET and HEAD alone through a fence that fails closed, never open a page that writes when rendered, and show the picture as an image block and the video in _meta, never as text", runChatgptConnectorCaptureTests);
+await runTest("the ChatGPT connector's films stay inside twenty minutes, name every page they show, caption in two-line cues that end with the voice, mask names, emails and numbers while keeping dates, and render only on the production worker on Railway, with a big file handed over by a signed address", runChatgptConnectorFilmsTests);
 await runTest("the visual explorer's built-in sign-in registers only ChatGPT, checks the owner through Google, binds codes to PKCE, rotates refresh tokens and revokes on replay, stops every token at the kill switch, and holds one page per call under a hard time limit", runPhoenixInspectAuthorizationServerTests);
 await runTest("every API route maps to the sidebar page that calls it, or is listed as having no screen", runSystemAuditApiPageMapTests);
 await runTest("system audit columns 10 and 11 count over the period, so a filter never turns SHARED into UNIQUE", runSystemAuditPeriodCountsTests);
