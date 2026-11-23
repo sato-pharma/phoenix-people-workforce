@@ -20,7 +20,7 @@
  * come from the one payroll mapper, a decided claim's from its stored payroll row.
  */
 
-import type { AccessContext } from "@/lib/auth/server";
+import type { AccessContext } from "@/lib/auth/permissions";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { summarizeAgreement } from "@/lib/outstation/approvals/agreement";
 import { isTripClaim } from "@/lib/outstation/approvals/checks";

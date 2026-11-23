@@ -17,7 +17,7 @@
  * A source that could not be read names itself in `unavailable`; the trip still opens.
  */
 
-import type { AccessContext } from "@/lib/auth/server";
+import type { AccessContext } from "@/lib/auth/permissions";
 import { logError } from "@/lib/observability/log";
 import { loadDeskClaim } from "@/lib/outstation/approvals/queue";
 import type { DeskClaim } from "@/lib/outstation/approvals/types";

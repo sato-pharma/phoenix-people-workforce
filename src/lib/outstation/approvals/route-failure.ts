@@ -12,7 +12,8 @@
 
 import { NextResponse } from "next/server";
 
-import { isForbiddenError, type AccessContext } from "@/lib/auth/server";
+import type { AccessContext } from "@/lib/auth/permissions";
+import { isForbiddenError } from "@/lib/auth/server";
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import { logAppError } from "@/lib/error-monitor/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";

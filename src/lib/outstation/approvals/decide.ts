@@ -20,7 +20,7 @@
  * on the server reverses a decision.
  */
 
-import type { AccessContext } from "@/lib/auth/server";
+import type { AccessContext } from "@/lib/auth/permissions";
 import { assertRealSessionForDecision } from "@/lib/auth/preview-session-guard";
 import { afterResponse } from "@/lib/http/after-response";
 import { logError } from "@/lib/observability/log";

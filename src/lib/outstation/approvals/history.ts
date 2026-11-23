@@ -14,7 +14,7 @@
  * derived: a decided claim reads its stored payroll row.
  */
 
-import type { AccessContext } from "@/lib/auth/server";
+import type { AccessContext } from "@/lib/auth/permissions";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { buildDeskClaim, DESK_CLAIM_COLUMNS, requestIdOfRow, type ClaimRow } from "@/lib/outstation/approvals/claim-row";
 import { readLedger, withLiveNames } from "@/lib/outstation/approvals/queue";
