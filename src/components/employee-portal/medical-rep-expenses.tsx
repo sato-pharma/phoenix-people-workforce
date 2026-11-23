@@ -632,12 +632,12 @@ export function MedicalRepExpensesWorkspace({
                   </div>
 
                   <div className="md:col-span-3">
-                    <FormField label="Amount paid">
+                    <FormField label="Invoice amount (EGP)">
                       <Input
                         inputMode="decimal"
                         min="0"
                         onChange={(event) => setOtherAmount(event.target.value)}
-                        placeholder="EGP"
+                        placeholder="The total on the invoice"
                         required
                         step="0.01"
                         type="number"
@@ -1088,7 +1088,7 @@ export function MedicalRepExpensesWorkspace({
                           {isOtherRequest(request) ? (
                             <dl className="space-y-1">
                               <div className="flex flex-wrap items-baseline justify-between gap-x-2">
-                                <dt className="text-xs font-bold text-slate-600">Paid</dt>
+                                <dt className="text-xs font-bold text-slate-600">Invoice amount</dt>
                                 <dd className="min-w-0 break-words font-black tabular-nums text-slate-950">
                                   {egp(requestTotal(request))}
                                 </dd>
@@ -1150,7 +1150,7 @@ export function MedicalRepExpensesWorkspace({
                     {isOtherRequest(request) ? (
                     <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
                       <p className="text-slate-600">
-                        Paid: <span className="font-bold text-slate-950">{egp(requestTotal(request))}</span>
+                        Invoice amount: <span className="font-bold text-slate-950">{egp(requestTotal(request))}</span>
                       </p>
                       <p className="text-slate-600">
                         Files: <span className="font-bold text-slate-950">{request.attachmentCount}</span>

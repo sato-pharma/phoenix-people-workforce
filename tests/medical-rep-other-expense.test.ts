@@ -58,7 +58,7 @@ function validatorRules() {
   assert.throws(() => validateMedicalRepOtherExpenseInput({ ...base, expenseDate: "" }, TODAY), /date is required/i);
   assert.throws(() => validateMedicalRepOtherExpenseInput({ ...base, expenseDate: "20-11-2026" }, TODAY), /date is invalid/i);
   assert.throws(() => validateMedicalRepOtherExpenseInput({ ...base, expenseDate: "2026-11-24" }, TODAY), /date must be today or earlier/i, "a cost is already paid");
-  assert.throws(() => validateMedicalRepOtherExpenseInput({ ...base, amount: 0 }, TODAY), /amount is required/i);
+  assert.throws(() => validateMedicalRepOtherExpenseInput({ ...base, amount: 0 }, TODAY), /invoice amount is required/i);
   assert.throws(() => validateMedicalRepOtherExpenseInput({ ...base, amount: -5 }, TODAY), /amount is required/i);
   assert.throws(() => validateMedicalRepOtherExpenseInput({ ...base, amount: Number.NaN }, TODAY), /amount is required/i);
   assert.throws(() => validateMedicalRepOtherExpenseInput({ ...base, notes: "   " }, TODAY), /comment is required/i, "the comment is required");
@@ -131,6 +131,9 @@ function savedAsAnOtherClaimThatWaits() {
   assert.ok(form.includes('accept="image/*,application/pdf,.pdf"'), "a PDF or a photo can be picked");
   assert.ok(form.includes('formData.set("kind", "other")'));
   assert.ok(!form.includes("Traveling only"), "the form is no longer traveling only");
+  // Owner, 2026-11-23: "make a field in the form to put the value of the invoice" — the field is named for the invoice.
+  assert.ok(form.includes('<FormField label="Invoice amount (EGP)">'), "the value field is labelled as the invoice amount");
+  assert.ok(!form.includes('label="Amount paid"'), "the old label is gone");
 
   const page = readFileSync(new URL("../app/employee-portals/expenses/page.tsx", import.meta.url), "utf8");
   assert.match(page, /canSubmitOther=\{canSubmitExpense\}/, "an invoice needs no home address on file");
