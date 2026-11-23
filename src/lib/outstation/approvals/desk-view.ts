@@ -280,7 +280,10 @@ export function amountPress(claim: DeskClaim, text: string): AmountPress {
   if (figure === null) return { decision: null, error: "Type the amount to pay. To pay nothing, reject the claim.", figure: null };
   const amount = money(figure);
   if (amount > claim.total + 0.005) return { decision: null, error: `More than the claim (${amountWords(claim.total)}).`, figure: amount };
-  if (Math.abs(amount - claim.total) <= 0.5) return { decision: approvePress(claim, { full: true }), error: null, figure: claim.total };
+  if (Math.abs(amount - claim.total) <= 0.005) return { decision: approvePress(claim, { full: true }), error: null, figure: claim.total };
+  // The payroll reads any figure within half a pound of the claim as the claim (`isAdjustedAmount`), so
+  // such a small cut cannot be paid — said in words, never approved in full in silence.
+  if (claim.total - amount <= 0.5) return { decision: null, error: `A cut under EGP 0.50 cannot be paid. Approve ${amountWords(claim.total)} in full, or type a lower amount.`, figure: amount };
   const cut = claim.preCut && !claim.holdReason ? claim.preCut : null;
   if (cut && Math.abs(cut.payable - amount) <= 0.005) return { decision: approvePress(claim), error: null, figure: cut.payable };
   const blocked = reduceBlocked(claim);
@@ -324,15 +327,36 @@ export function paysIdleDayInFull(claim: DeskClaim): boolean {
  * never "Keep full claim", and leaves out a trip whose own Approve would pay an idle day in full:
  * no batch can pay an idle day in full, whatever lane it was built from.
  */
-export function readyBatch(claims: ReadonlyArray<DeskClaim>, limit: number): { count: number; decisions: DeskDecisionRequest[]; left: number; value: number } {
-  const sendable = claims.filter((claim) => !paysIdleDayInFull(claim));
+export function readyBatch(
+  claims: ReadonlyArray<DeskClaim>,
+  limit: number,
+  typed: TypedAmounts = NO_TYPED_AMOUNTS,
+): { count: number; decisions: DeskDecisionRequest[]; left: number; value: number } {
+  const sendable = claims.filter((claim) => !paysIdleDayInFull(claim) && batchPress(claim, typed) !== null);
   const taken = sendable.slice(0, Math.max(0, limit));
+  const presses = taken.map((claim) => batchPress(claim, typed)!);
   return {
     count: taken.length,
-    decisions: taken.map((claim) => approvePress(claim)),
+    decisions: presses.map((press) => press.decision),
     left: sendable.length - taken.length,
-    value: money(taken.reduce((sum, claim) => sum + approvePays(claim), 0)),
+    value: money(presses.reduce((sum, press) => sum + press.pays, 0)),
   };
+}
+
+/** What he typed in a row's amount box, for the version of the claim he typed it on. */
+export type TypedAmounts = ReadonlyMap<number, { revision: string; text: string }>;
+const NO_TYPED_AMOUNTS: TypedAmounts = new Map();
+
+/**
+ * One row's press inside a batch: the row's own Approve, or — when he typed in its amount box — the
+ * press that box makes, so a batch pays what the box says. A box whose figure cannot be pressed
+ * answers null and the batch leaves the row out.
+ */
+function batchPress(claim: DeskClaim, typed: TypedAmounts): { decision: DeskDecisionRequest; pays: number } | null {
+  const entry = typed.get(claim.requestId);
+  if (!entry || entry.revision !== claim.revision) return { decision: approvePress(claim), pays: approvePays(claim) };
+  const press = amountPress(claim, entry.text);
+  return press.decision ? { decision: press.decision, pays: press.figure } : null;
 }
 
 /** What a waiting claim's own Approve pays: the idle-day cut where the button names one, else the claim. */
@@ -348,7 +372,7 @@ export type DeskSelection = {
   count: number;
   /** Ticked beyond one request's limit; they stay ticked for the next press. */
   left: number;
-  /** Ticked, but left out of "Approve N": approving one pays an idle day in full, so it is opened. */
+  /** Ticked, but left out of "Approve N": approving one pays an idle day in full, or its amount box cannot be paid, so it is opened. */
   needsOpening: DeskClaim[];
   /** What "Approve N" pays in all. */
   value: number;
@@ -360,17 +384,23 @@ export type DeskSelection = {
  * pays an idle day in full — it sends what each row's own Approve button says, and a trip whose
  * button would pay an idle day in full is held back and named, to be opened.
  */
-export function selectionBatch(claims: ReadonlyArray<DeskClaim>, ticked: ReadonlySet<number>, limit: number): DeskSelection {
+export function selectionBatch(
+  claims: ReadonlyArray<DeskClaim>,
+  ticked: ReadonlySet<number>,
+  limit: number,
+  typed: TypedAmounts = NO_TYPED_AMOUNTS,
+): DeskSelection {
   const chosen = claims.filter((claim) => claim.standing === "waiting" && ticked.has(claim.requestId));
   const taken = chosen.slice(0, Math.max(0, limit));
-  const sendable = taken.filter((claim) => !paysIdleDayInFull(claim));
+  const sent = taken.map((claim) => ({ claim, press: paysIdleDayInFull(claim) ? null : batchPress(claim, typed) }));
+  const presses = sent.flatMap((entry) => (entry.press ? [entry.press] : []));
   return {
-    approve: sendable.map((claim) => approvePress(claim)),
+    approve: presses.map((press) => press.decision),
     claims: taken,
     count: taken.length,
     left: chosen.length - taken.length,
-    needsOpening: taken.filter(paysIdleDayInFull),
-    value: money(sendable.reduce((sum, claim) => sum + approvePays(claim), 0)),
+    needsOpening: sent.filter((entry) => entry.press === null).map((entry) => entry.claim),
+    value: money(presses.reduce((sum, press) => sum + press.pays, 0)),
   };
 }
 

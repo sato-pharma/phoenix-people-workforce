@@ -11,6 +11,7 @@ import type { DeskClaim, DeskDecisionRequest } from "@/lib/outstation/approvals/
 import { cn } from "@/lib/utils";
 
 import { egp } from "./desk-parts";
+import { useTypedAmount } from "./typed-amounts";
 import { RewriteFormally, noteFacts } from "./desk-rewrite";
 
 /**
@@ -72,7 +73,7 @@ export function DecisionButtons({
   // The amount box beside Approve (owner, 23 Nov 2026: "make me able to edit in the value"). It opens
   // on what Approve pays; what he types is kept only for the version of the claim he typed it on, so a
   // claim that comes back changed opens on its own figure again.
-  const [typed, setTyped] = useState<{ revision: string; text: string } | null>(null);
+  const [typed, setTyped] = useTypedAmount(claim.requestId);
   const amountText = typed && typed.revision === claim.revision ? typed.text : defaultAmountText(claim);
   const edited = typed && typed.revision === claim.revision ? amountPress(claim, typed.text) : null;
   const amountId = useId();
@@ -91,7 +92,7 @@ export function DecisionButtons({
             data-amount-box
             id={amountId}
             inputMode="decimal"
-            onChange={(event) => setTyped({ revision: claim.revision, text: event.target.value })}
+            onChange={(event) => setTyped(claim.revision, event.target.value)}
             title={`The claim is ${egp(claim.total)}${cut ? `; the system offers ${egp(cut.payable)} for the idle days` : ""}. Keep it, or type a lower amount.`}
             value={amountText}
           />
