@@ -22,6 +22,7 @@ import type { ClaimRow } from "@/lib/outstation/approvals/claim-row";
 import { MEETING_ACTIVITY_KEYS, pointOf, visitPeople } from "@/lib/outstation/approvals/field-evidence";
 import { HISTORY_PAGE_SIZE, historyFilterOf, historySearchTerm } from "@/lib/outstation/approvals/history";
 import { findDuplicates, findOdometerChains } from "@/lib/outstation/approvals/queue";
+import { isDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { managerOwnVisitUuid } from "@/lib/phoenix-crm/server/manager-visit-details";
 
 const trip = (id: number, over: ClaimRow = {}): ClaimRow => ({
@@ -130,7 +131,16 @@ export function runExpenseDeskQueueTests() {
   assert.deepEqual(pointOf("27.18", 31.18), { lat: 27.18, lon: 31.18 });
   assert.equal(pointOf(0, 0), null, "the old 0,0 marker is no position");
   assert.equal(pointOf(27.18, null), null);
-  assert.deepEqual([...MEETING_ACTIVITY_KEYS].sort(), ["group_meeting", "meeting"], "a recorded meeting is Meeting or Group meeting, nothing wider");
+  assert.deepEqual(
+    [...MEETING_ACTIVITY_KEYS].sort(),
+    ["conference", "group_meeting", "meeting", "training"],
+    "a recorded meeting is Meeting, Group meeting, Training or Conference (owner, 23 Nov 2026: \"Count them as meetings\")",
+  );
+  assert.ok(MEETING_ACTIVITY_KEYS.has("training") && MEETING_ACTIVITY_KEYS.has("conference"), "a training or conference day is a worked trip day, never idle");
+  for (const away of ["travel", "admin_work", "health_day", "sales_day", "interviews", "rtd"]) {
+    assert.ok(!MEETING_ACTIVITY_KEYS.has(away), `${away} is not a meeting — only Training and Conference were widened`);
+  }
+  for (const key of MEETING_ACTIVITY_KEYS) assert.ok(isDayActivity(key), `${key} is a real Phoenix CRM day activity key, not a typo`);
 
   // 3. The history search box.
   assert.equal(historySearchTerm("  Hossam   Adel "), "Hossam Adel");
