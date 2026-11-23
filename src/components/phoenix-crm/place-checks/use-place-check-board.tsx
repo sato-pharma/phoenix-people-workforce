@@ -218,7 +218,8 @@ export function usePlaceCheckBoard(props: PlaceCheckBoardProps) {
     // On the Super Admin's board what was decided sits beside what waits; on the others it stays last.
     ...(lanes ? decidedTabs : []),
     { key: "unconfirmed", label: "Not confirmed", count: unconfirmedCount },
-    { key: "polyclinics", label: "Polyclinics and hospitals", count: shown(buildingGroups.length) },
+    // 🔴 Counted by the wide read until every building is in: the page sends only the ones that need a decision.
+    { key: "polyclinics", label: "Polyclinics and hospitals", count: complete ? shown(buildingGroups.length) : counted ? counted.buildings : null },
     ...(team ? [] : [{ key: "samePlace" as const, label: "Same place, several reps", count: null }]),
     ...(team ? [] : [{ key: "sameCustomer" as const, label: "Same customer, several reps", count: null }]),
     // 🔴 The Super Admin's alone (`canRestore` is `canRestoreValidation`): "Same customer" there validates.

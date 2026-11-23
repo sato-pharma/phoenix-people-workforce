@@ -28,6 +28,7 @@ import {
   filterableReopened,
   isReal,
   mergeDecided,
+  pageRowsThenClick,
   placeCheckOptions,
   placeCheckScorecardOf,
   withoutDecisionNotesThatAreComments,
@@ -82,8 +83,17 @@ export function usePlaceCheckRows({
     [everyDecided, filters.decider],
   );
   const validated = useMemo(() => (everything ? everything.validated.filter(isReal) : validatedRows.filter(isReal)), [everything, validatedRows]);
-  const reopened = useMemo(() => reopenedRows.filter(isReal), [reopenedRows]);
-  const sharedPlaces = useMemo(() => venueRows.filter(isReal), [venueRows]);
+  // 🔴 THE PAGE SENDS ONLY THE BUILDINGS THAT NEED A DECISION AND THE CUSTOMERS SEATED IN THEM (23 Nov 2026,
+  // `venuesSentWithPage`); every other building and every sent-back customer arrive with the click. A row
+  // in both is the page's, which is read again after every decision.
+  const reopened = useMemo(
+    () => pageRowsThenClick(reopenedRows.filter(isReal), everything ? everything.reopened.filter(isReal) : null, (row) => row.customerId),
+    [reopenedRows, everything],
+  );
+  const sharedPlaces = useMemo(
+    () => pageRowsThenClick(venueRows.filter(isReal), everything ? everything.sharedPlaces.filter(isReal) : null, (row) => row.sharedPlaceId),
+    [venueRows, everything],
+  );
 
   // The filter bar's lists, counted from every row the board holds; until the click's read is in, the
   // figures' read counted them from every row it read, and until THAT is in they are counted from what the

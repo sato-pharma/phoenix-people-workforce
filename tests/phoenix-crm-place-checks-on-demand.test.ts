@@ -6,11 +6,14 @@ import {
   decisionFiguresSince,
   isReal,
   mergeDecided,
+  pageRowsThenClick,
   PLACE_CHECKS_EVERYTHING_ROUTE,
   placeCheckOptions,
   placeCheckScorecardOf,
   placeChecksSummary,
+  seatedInVenues,
   seatedPlacesInUse,
+  venuesSentWithPage,
   withoutDecisionNotesThatAreComments,
 } from "../src/lib/phoenix-crm/place-checks-on-demand.ts";
 import {
@@ -19,7 +22,7 @@ import {
   placeChecksHandoffKey,
   takePlaceChecksForTheClick,
 } from "../src/lib/phoenix-crm/server/place-checks-handoff.ts";
-import { withoutSeated } from "../src/lib/phoenix-crm/shared-place-groups.ts";
+import { narrowVenueGroups, needsYouDecisionCount, seatedCustomersByVenue, venueNeedsDecision, withoutSeated } from "../src/lib/phoenix-crm/shared-place-groups.ts";
 import { EMPTY_VALIDATION_REVIEW_FILTERS } from "../src/lib/phoenix-crm/validation-review-filters.ts";
 import type { PlaceNoteIndex, ReopenedCustomerRow, SharedPlaceBoardRow, ValidatedPlaceRow, ValidationReviewRow } from "../src/lib/phoenix-crm/view-types.ts";
 import { stripComments } from "./support/comment-strip.ts";
@@ -260,7 +263,7 @@ function checkTheWiring() {
   assert.ok(!page.includes("validated={validated}"), "🔴 the page never hands the board every place in use again (7.4 MB, the freeze)");
   assert.ok(!page.includes("decided={decided}"), "🔴 nor every decision ever made");
   assert.ok(!page.includes("decided={recentDecided}"), "🔴 nor the whole 14-day window: 609 of its 991 rows were single clinics' (23 Nov 2026)");
-  assert.match(page, /const sentDecided = decidedSentWithPage\(decided\.filter\(\(row\) => row\.recent\), sharedPlaces\);/, "the decisions it sends are the recent ones seated in a building on the board");
+  assert.match(page, /const sentDecided = decidedSentWithPage\(decided\.filter\(\(row\) => row\.recent\), sentVenues\);/, "the decisions it sends are the recent ones seated in a building it sends");
 
   const route = read("app/api/phoenix-crm/validation-reviews/everything/route.ts");
   assert.equal(PLACE_CHECKS_EVERYTHING_ROUTE, "/api/phoenix-crm/validation-reviews/everything", "the board asks the route that exists");
@@ -286,8 +289,8 @@ function checkTheWiring() {
   assert.match(board, /if \(onDemand && !wanted && \(viewNeedsEverything\(view\) \|\| filtering \|\| deckAsked\)\) setWanted\(true\);/, "a tab whose rows wait, any filter or the review asks for the rest");
   assert.match(
     board,
-    /export function viewNeedsEverything\(view: PlaceCheckView\): boolean \{\s*return view === "unconfirmed" \|\| view === "history" \|\| view === "bySystem";\s*\}/,
-    "🔴 Not confirmed, History and Approved by the system are the tabs whose rows the page does not send",
+    /export function viewNeedsEverything\(view: PlaceCheckView\): boolean \{\s*return view === "unconfirmed" \|\| view === "history" \|\| view === "bySystem" \|\| view === "polyclinics";\s*\}/,
+    "🔴 Not confirmed, History, Approved by the system and Polyclinics are the tabs whose rows the page does not send",
   );
   assert.match(board, /if \(wanted\) reloadEverything\(\);/, "a re-read of the page reads the rest again");
   assert.match(board, /complete \? placeCheckScorecardOf\(/, "🔴 the board counts the scorecard only once it holds every row");
@@ -320,6 +323,8 @@ function checkTheHandoff() {
   const sfe = placeChecksHandoffKey({ hrId: "SFE-1", role: "SFE Manager", isTestPersona: false } as never);
   const rows = (tag: string) => ({
     validated: [inUse(tag, "Rep")],
+    sharedPlaces: [],
+    reopened: [],
     olderDecided: [],
     decisionFigures: { approved: 0, rejected: 0 },
     noteIndex: { notes: {}, recommendations: {}, integrity: {} } as unknown as PlaceNoteIndex,
@@ -372,8 +377,93 @@ function checkTheDecisionCards() {
   assert.deepEqual(placeChecksSummary(input).decisionFigures, { approved: 3, rejected: 2 }, "handed no start, it counts every decision it was given");
 }
 
+
+// 🔴 THE PAGE SENDS ONLY THE BUILDINGS THAT NEED A DECISION (owner, 23 Nov 2026: "first list within 2
+// seconds"). All 433 buildings went with every customer seated in them, 2.5 MB of the 3.6 MB page, for the 10
+// held and the few holding a waiting customer the lanes draw. What waits, and how it is counted, must not move.
+function checkOnlyTheBuildingsThatNeedADecision() {
+  const at = "2026-11-20T09:00:00.000Z";
+  const building = (id: string, status: string) => ({ ...venue, sharedPlaceId: id, status, createdAt: at }) as unknown as SharedPlaceBoardRow;
+  const venues = [
+    building("v-held", "held"),
+    building("v-holding", "active"),
+    building("v-retired-holding", "retired"),
+    building("v-quiet", "active"),
+    building("v-quiet-retired", "retired"),
+  ];
+  const waits = (id: string, sharedPlaceId: string | null) =>
+    review(id, at, { status: "pending", decidedByName: null, sharedPlaceId, evidence: { checkReason: null, heldBecause: null, legibility: "clear", problem: null, signboard: null } } as unknown as Partial<ValidationReviewRow>);
+  const waiting = [waits("w-clinic", null), waits("w-holding", "v-holding"), waits("w-retired", "v-retired-holding")];
+  const sent = venuesSentWithPage(venues, waiting);
+  assert.deepEqual(
+    sent.map((row) => row.sharedPlaceId),
+    ["v-held", "v-holding", "v-retired-holding"],
+    "🔴 the page sends a building held, or holding a waiting customer (a rejected one too), and no other",
+  );
+
+  // The one function that counts what waits answers the same from the buildings sent as from every building.
+  const waitingCount = (onBoard: ReadonlyArray<SharedPlaceBoardRow>) =>
+    needsYouDecisionCount({
+      waiting: waiting.map((row) => ({ id: row.reviewId, at: row.createdAt, sharedPlaceId: row.sharedPlaceId })),
+      heldVenues: onBoard.filter((row) => row.status === "held").map((row) => ({ id: row.sharedPlaceId, at })),
+      venuesOnBoard: new Set(onBoard.map((row) => row.sharedPlaceId)),
+    }).count;
+  assert.equal(waitingCount(venues), 4, "the fixture waits on four decisions: a clinic and three buildings");
+  assert.equal(waitingCount(sent), waitingCount(venues), "🔴 the waiting number is the same whether the page sends every building or only these");
+  const ids = (rows: ReadonlyArray<SharedPlaceBoardRow>) => new Set(rows.map((row) => row.sharedPlaceId));
+  assert.deepEqual(withoutSeated(waiting, ids(sent)), withoutSeated(waiting, ids(venues)), "🔴 no waiting customer leaves his building for the clinics");
+
+  // The buildings the lanes draw are the same buildings, with the same customers.
+  const seatedValidated = [
+    inUse("p-holding", "Rep Building", { sharedPlaceId: "v-holding" }),
+    inUse("p-quiet", "Rep Building", { sharedPlaceId: "v-quiet" }),
+  ];
+  const lanesOf = (onBoard: ReadonlyArray<SharedPlaceBoardRow>) => {
+    const seated = seatedCustomersByVenue({ pending: waiting, decided: [], validated: seatedInVenues(seatedValidated, onBoard), reopened: [], venueIds: ids(onBoard) });
+    return narrowVenueGroups({ venues: onBoard, seated, filters: EMPTY_VALIDATION_REVIEW_FILTERS, cutoff: null })
+      .filter((group) => venueNeedsDecision(group))
+      .map((group) => [group.venue.sharedPlaceId, group.customers.map((customer) => customer.key)]);
+  };
+  assert.equal(lanesOf(venues).length, 3, "three buildings need a decision in the fixture");
+  assert.deepEqual(lanesOf(sent), lanesOf(venues), "🔴 the buildings that need a decision are drawn from the page's rows exactly as from every row");
+
+  // What is seated in a building the page does not send waits for the click.
+  assert.deepEqual(seatedInVenues(seatedValidated, sent).map((row) => row.placeId), ["p-holding"], "a place seated in a quiet building is not sent");
+  const seatedDecided = [review("d-quiet", at, { sharedPlaceId: "v-quiet" }), review("d-holding", at, { sharedPlaceId: "v-holding" })];
+  assert.deepEqual(decidedSentWithPage(seatedDecided, sent).map((row) => row.reviewId), ["d-holding"], "nor a decision seated in one");
+
+  // The Polyclinics tab is counted by the wide read until every building is in: every building not rejected.
+  const summary = placeChecksSummary({ team: false, lanes: true, pending: waiting, decided: [], validated: seatedValidated, reopened: [], sharedPlaces: venues });
+  assert.equal(summary.buildings, 3, "🔴 the Polyclinics count is every building not rejected, never the few the page sent");
+
+  // The page's rows win over the click's; the click's others follow.
+  const a1 = { sharedPlaceId: "a", tag: "page" };
+  const a2 = { sharedPlaceId: "a", tag: "click" };
+  const b = { sharedPlaceId: "b", tag: "click" };
+  assert.deepEqual(pageRowsThenClick([a1], [a2, b], (row) => row.sharedPlaceId), [a1, b], "🔴 a row in both is the page's, read again after every decision");
+  assert.deepEqual(pageRowsThenClick([a1], null, (row) => row.sharedPlaceId), [a1], "before the click, the page's rows alone");
+
+  const page = stripComments(read("app/(admin)/admin/field-crm/validation-reviews/page.tsx"));
+  assert.ok(page.includes("const sentVenues = venuesSentWithPage(sharedPlaces, waiting);"), "the page picks the buildings it sends by the waiting rows");
+  for (const prop of ["sharedPlaces={sentVenues}", "reopened={sentReopened}"]) assert.ok(page.includes(prop), `🔴 the page hands the board ${prop}`);
+  assert.ok(!page.includes("sharedPlaces={sharedPlaces}") && !page.includes("reopened={reopened}"), "🔴 never every building and every sent-back customer again");
+  const wide = stripComments(read("src/lib/phoenix-crm/server/place-checks-wide-read.ts"));
+  assert.ok(wide.includes("sharedPlaces: sets.sharedPlaces,") && wide.includes("reopened: reopenedRead.rows,"), "🔴 the click brings every building and every sent-back customer");
+  const board = placeCheckBoardSource(read);
+  assert.ok(
+    board.includes("count: complete ? shown(buildingGroups.length) : counted ? counted.buildings : null"),
+    "🔴 the Polyclinics tab shows the wide read's count until every building is in, never the few sent",
+  );
+  assert.ok(
+    board.includes("pageRowsThenClick(venueRows.filter(isReal), everything ? everything.sharedPlaces.filter(isReal) : null") &&
+      board.includes("pageRowsThenClick(reopenedRows.filter(isReal), everything ? everything.reopened.filter(isReal) : null"),
+    "and the board holds the page's buildings and the click's as one list",
+  );
+}
+
 export async function runPhoenixCrmPlaceChecksOnDemandTests() {
   checkTheDecisionCards();
+  checkOnlyTheBuildingsThatNeedADecision();
   checkTheOpeningFigures();
   checkTheHandoff();
   checkTheMergedDecisions();
