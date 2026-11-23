@@ -62,6 +62,7 @@ import { useWorkspaceActions } from "@/components/recruitment/workspace/use-work
 import { useWorkspaceCounts, useWorkspaceRows } from "@/components/recruitment/workspace/use-workspace-rows";
 import { filterQuery, pageQuery } from "@/components/recruitment/workspace/workspace-format";
 import { buildCvFolderTree, type CvFolderNode, type CvFolderRow } from "@/lib/recruitment/cv-folder-tree";
+import type { PlaceAnswerOptions } from "@/lib/recruitment/workspace/answer-place-options";
 import { activeFilterCount, emptyWorkspaceFilters, receivedRangeProblem, type WorkspaceFilters } from "@/lib/recruitment/workspace/filters";
 import {
   FOLDERS_TAB,
@@ -114,6 +115,8 @@ export type RoleWorkspaceProps = {
   initialCounts: WorkspaceCounts | null;
   initialPlaces: WorkspacePlaces | null;
   initialAnswerFilters: WorkspaceAnswerFilter[] | null;
+  /** The region and area cells' choices (the company's own list); null keeps them free text. */
+  placeOptions?: PlaceAnswerOptions | null;
   /** The CV a link opened, when it is not on the first page. */
   initialOpenedRow: WorkspaceRow | null;
   managers: ManagerPickerOption[];
@@ -514,8 +517,12 @@ export function RoleWorkspace(props: RoleWorkspaceProps) {
   const answerOptions = useMemo(() => {
     const out: Record<string, { value: string; label: string }[]> = {};
     for (const filter of meta.answerFilters ?? []) out[filter.key] = filter.options;
+    // Region and area are CHOSEN, never typed: a typed "kom hamada" or "Cairo" is no company area, so it
+    // filed nobody and the Needs placing count never fell (Talent Acquisition, 24 Nov 2026).
+    if (props.placeOptions?.region.length) out.region = props.placeOptions.region;
+    if (props.placeOptions?.area.length) out.area = props.placeOptions.area;
     return out;
-  }, [meta.answerFilters]);
+  }, [meta.answerFilters, props.placeOptions]);
   const selectedRows = list.filter((row) => selected.has(row.id));
   const newest = list.reduce<string | null>((latest, row) => (!latest || row.receivedAt > latest ? row.receivedAt : latest), null);
   const searching = filters.search.length > 0;

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { assertWorkspaceWorker } from "@/lib/recruitment/workspace/candidate-actions";
+import { PLACING_ANSWER_KEYS } from "@/lib/recruitment/workspace/answer-place-options";
 import { assertCandidateVisible } from "@/lib/recruitment/workspace/fence";
+import { placingGapAfterAnswer } from "@/lib/recruitment/workspace/placing";
 import { typedRoleRefusal } from "@/lib/recruitment/workspace/typed-role-filing";
 
 import { roleFamilyForTypedRole, saveCandidateWhatsAppAnswer } from "@/lib/recruitment/whatsapp-answer-edit";
@@ -61,7 +63,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       hrId: access.hrId ?? null,
       loginId: access.loginId ?? null,
     });
-    return NextResponse.json({ candidate, success: true });
+    // A role, region or area answer can file the person: say whether it did, and if not, why — a save
+    // that left the CV in Needs placing used to answer "Saved" and nothing more, so the Needs placing
+    // count never fell and nobody could see why (Talent Acquisition, 24 Nov 2026). Best effort: the
+    // answer is already saved, so a failed read never reports a failed save.
+    const placing = PLACING_ANSWER_KEYS.includes(key) ? await placingGapAfterAnswer(candidateId).catch(() => null) : null;
+    return NextResponse.json({ candidate, placing, success: true });
   } catch (error) {
     return recruitmentApiError(error, "Could not save that answer.");
   }

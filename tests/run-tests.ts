@@ -232,6 +232,7 @@ import { runLoginBridgeResyncHardeningTests } from "./login-bridge-resync-harden
 import { runOperationalEventsTests } from "./operational-events.test.ts";
 import { runRecruitmentOnboardingMetricsTests } from "./recruitment-onboarding-metrics.test.ts";
 import { runRecruitmentCandidateMatchingTests } from "./recruitment-candidate-matching.test.ts";
+import { runRecruitmentAnswerPlaceOptionsTests } from "./recruitment-answer-place-options.test.ts";
 import { runRecruitmentRoleTabsTests } from "./recruitment-role-tabs.test.ts";
 import { runRecruitmentWorkspaceFiltersTests } from "./recruitment-workspace-filters.test.ts";
 import { runRecruitmentWorkspaceExcludeFiltersTests } from "./recruitment-workspace-exclude-filters.test.ts";
@@ -3924,6 +3925,7 @@ await runTest("operational events", runOperationalEventsTests);
 await runTest("recruitment onboarding metrics", runRecruitmentOnboardingMetricsTests);
 await runTest("recruitment candidate matching", runRecruitmentCandidateMatchingTests);
 await runTest("recruitment role tabs", runRecruitmentRoleTabsTests);
+await runTest("recruitment answer place options", runRecruitmentAnswerPlaceOptionsTests);
 await runTest("recruitment workspace filters", runRecruitmentWorkspaceFiltersTests);
 await runTest("recruitment workspace hide filters (status, source, call result) and the page sweep", runRecruitmentWorkspaceExcludeFiltersTests);
 await runTest("recruitment rejection reasons", runRecruitmentRejectionReasonsTests);
