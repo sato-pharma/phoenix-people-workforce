@@ -53863,6 +53863,8 @@ CREATE TABLE public.ats_whatsapp_cv_archive (
     folder_path text[] NOT NULL,
     original_row jsonb NOT NULL,
     archived_at timestamp with time zone DEFAULT now() NOT NULL,
+    restored_at timestamp with time zone,
+    restored_to_candidate_id uuid,
     CONSTRAINT ats_whatsapp_cv_archive_extra_answers_chk CHECK ((jsonb_typeof(extra_answers) = 'array'::text)),
     CONSTRAINT ats_whatsapp_cv_archive_folder_chk CHECK (((cardinality(folder_path) >= 1) AND (cardinality(folder_path) <= 6)))
 );
@@ -53874,6 +53876,18 @@ ALTER TABLE public.ats_whatsapp_cv_archive OWNER TO postgres;
 --
 
 COMMENT ON TABLE public.ats_whatsapp_cv_archive IS 'Old WhatsApp applicants the owner kept when the CVs received before 11 Oct 2026 were cleaned out (2026-10-18). Not candidates: only the Archive on the WhatsApp Applicants page reads it. id = the deleted candidate''s id; original_row = that row as it was.';
+
+--
+-- Name: COLUMN ats_whatsapp_cv_archive.restored_at; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.ats_whatsapp_cv_archive.restored_at IS 'When this archived applicant was brought back into Recruitment as a live candidate. NULL = still in the Archive.';
+
+--
+-- Name: COLUMN ats_whatsapp_cv_archive.restored_to_candidate_id; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.ats_whatsapp_cv_archive.restored_to_candidate_id IS 'The live ats_candidates id this archived applicant now is (same id, or the record they were merged into).';
 
 --
 -- Name: ats_whatsapp_cv_archive_files; Type: TABLE; Schema: public; Owner: postgres
@@ -81286,6 +81300,12 @@ CREATE INDEX ats_whatsapp_cv_archive_files_archive_idx ON public.ats_whatsapp_cv
 --
 
 CREATE INDEX ats_whatsapp_cv_archive_received_idx ON public.ats_whatsapp_cv_archive USING btree (received_at DESC);
+
+--
+-- Name: ats_whatsapp_cv_archive_unrestored_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX ats_whatsapp_cv_archive_unrestored_idx ON public.ats_whatsapp_cv_archive USING btree (received_at DESC) WHERE (restored_at IS NULL);
 
 --
 -- Name: ats_whatsapp_inbound_messages_received_at_idx; Type: INDEX; Schema: public; Owner: postgres
