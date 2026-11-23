@@ -53,9 +53,12 @@ export const MISSING_TICKET_WRONG_TRANSPORT_MESSAGE = "Only a train or bus claim
  * May the employee attach a missing ticket to this claim of his? All three must hold:
  *   - a train or bus claim (a car trip's evidence is its photos);
  *   - nobody has decided it yet (the 2026-10-19 rule: after HR decides, nothing can be added);
- *   - it carries no ticket at all — the gap, never a second copy of one already there.
+ *   - it carries no ticket at all — the gap, never a second copy of one already there — OR it claims
+ *     a return fare and none of its read tickets is the return (owner, 2026-11-23: "the return ticket
+ *     is asked for with the departure photo"; return-ticket.ts).
  */
 export function canAttachMissingOutstationTicket(input: {
+  returnTicketMissing?: boolean;
   status: unknown;
   ticketAttachmentCount: number | null | undefined;
   transportationType: unknown;
@@ -63,8 +66,18 @@ export function canAttachMissingOutstationTicket(input: {
   const transport = String(input.transportationType ?? "").trim().toLowerCase();
   if (transport !== "train" && transport !== "bus") return false;
   if (!isOutstationClaimUndecided(input.status)) return false;
+  if (input.returnTicketMissing) return true;
   const count = Number(input.ticketAttachmentCount ?? 0);
   return !(Number.isFinite(count) && count > 0);
+}
+
+/**
+ * When the return ticket is asked for: with the departure photo, or once the trip's last day has come
+ * (owner, 2026-11-23). Before that the employee has not come back yet, and the ask would only be noise.
+ */
+export function returnTicketAskIsDue(input: { hasDeparturePhoto: boolean; today: string; tripEndDate: string | null | undefined }): boolean {
+  const last = String(input.tripEndDate ?? "").slice(0, 10);
+  return input.hasDeparturePhoto || (Boolean(last) && input.today >= last);
 }
 
 /**
@@ -83,9 +96,11 @@ export function eligibilityAfterMissingTicketAttached<S extends string>(input: {
 }
 
 /** The sentence the approver reads once the employee has supplied the ticket. */
-export function missingTicketAttachedSentence(attachedOnLabel: string, fileCount: number): string {
+export function missingTicketAttachedSentence(attachedOnLabel: string, fileCount: number, which: "ticket" | "return" = "ticket"): string {
   const files = fileCount === 1 ? "1 file" : `${fileCount} files`;
-  return `The employee attached the ticket on ${attachedOnLabel} (${files}), after the claim arrived without it.`;
+  return which === "return"
+    ? `The employee attached the return ticket on ${attachedOnLabel} (${files}).`
+    : `The employee attached the ticket on ${attachedOnLabel} (${files}), after the claim arrived without it.`;
 }
 
 /**

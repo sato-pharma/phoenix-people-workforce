@@ -25,6 +25,11 @@
  * side, from the image the approver is already looking at. Nothing is added to the capture screen,
  * no retake is demanded, and no flag of any kind travels back to the traveller.
  *
+ * 🔴 SINCE 23 NOV 2026 THE CAPTURE ITSELF REFUSES A BLANK FRAME — the owner's own decision after the
+ * District Manager expense inspection ("refuse it and tell the employee to clear the lens"), built in
+ * `blank-frame.ts` with its own calibration. That is a SEPARATE rule with its own module: this file
+ * stays the approver's flag on the photos filed before it, and it still never refuses anything.
+ *
  * 🔴 It is not an accusation. A dark photo is not a false one: a stairwell, a night trip and a
  * thumb over the lens produce the same frame, and only a person can tell them apart. The sentence
  * says what the FRAME contains and stops there — the same rule the departure review follows, which

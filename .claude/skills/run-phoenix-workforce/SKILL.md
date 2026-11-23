@@ -61,11 +61,11 @@ database**, every 10 minutes. So:
   invocation below or the tests on the spare (`& ~/.claude/scripts/spare-test.ps1`); the PR's CI is
   the verdict.
 - **The one exception is a PR PREVIEW, and only on the owner's own word** ("preview 649"; owner,
-  2026-11-20: "Set up PR preview"). `& ~/.claude/scripts/spare-preview.ps1 <PR>` makes
-  `localhost:3000` that open pull request for 2 hours (`-Hours` to change), then the live version
-  returns by itself; `spare-preview.ps1 status` says which one is showing, `spare-preview.ps1 stop`
-  ends it now. The spare's 8 GB cannot hold two dev servers, so a preview REPLACES the live version
-  for him and every session while it runs. Never open one on your own reading. It runs as the user
+  2026-11-20: "Set up PR preview"). `& ~/.claude/scripts/spare-preview.ps1 <PR>` shows that open
+  pull request on `localhost:3001` for 2 hours (`-Hours` to change), BESIDE the live version, which stays on
+  `localhost:3000` the whole time (side by side since 2026-11-23); `spare-preview.ps1 status` says what is
+  showing, `spare-preview.ps1 stop` ends it now. Two dev servers leave the spare under 400 MB of memory, so the
+  live pages answer slower while a preview runs. Never open one on your own reading. It runs as the user
   `phxpreview` (no sudo) on the production database, so everything done in it is real. The script's
   header has the rest.
 - Read it first (it can take 8 s when cold, and times out while the spare is compiling):

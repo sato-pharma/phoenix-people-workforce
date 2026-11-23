@@ -22,6 +22,8 @@ import { cn } from "@/lib/utils";
 export type MissingTicketRequest = {
   destination: string;
   id: number;
+  /** True when it is the RETURN ticket that is asked for — the claim pays a return fare (owner, 2026-11-23). */
+  returnTicket?: boolean;
   transportationType: string;
   tripEndDate: string;
   tripStartDate: string;
@@ -46,23 +48,34 @@ type AttachState =
  */
 export function MissingTicketCard({ requests }: { requests: MissingTicketRequest[] }) {
   if (requests.length === 0) return null;
+  const allReturns = requests.every((request) => isReturnAsk(request));
 
   return (
     <section aria-label="Ticket missing" className="border border-orange-200 bg-orange-50/60 p-4 sm:p-5">
       <div className="flex items-center gap-2">
         <Ticket aria-hidden className="h-4 w-4 text-orange-600" />
         <span className="bg-orange-100 px-2 py-1 text-phx-sm font-bold uppercase tracking-wider text-orange-700">
-          Ticket missing
+          {allReturns ? "Return ticket missing" : "Ticket missing"}
         </span>
       </div>
-      <p className="mt-2 max-w-3xl text-phx-md leading-relaxed text-orange-900">
-        {requests.length === 1
-          ? "One train or bus claim reached Phoenix without its ticket."
-          : `${requests.length} train or bus claims reached Phoenix without their tickets.`}{" "}
-        Attach a photo or PDF of the ticket here. The claim stays held for review until it has one. No amount
-        changes. The ticket is read when you choose it, and its travel date must match your arrival or
-        departure photo.
-      </p>
+      {allReturns ? (
+        <p className="mt-2 max-w-3xl text-phx-md leading-relaxed text-orange-900">
+          {requests.length === 1
+            ? "One train or bus claim pays a return fare without the return ticket."
+            : `${requests.length} train or bus claims pay a return fare without the return ticket.`}{" "}
+          Attach a photo or PDF of the ticket you came back on. Nothing else on the claim changes. The ticket is read when you
+          choose it, and its travel date must match your departure photo.
+        </p>
+      ) : (
+        <p className="mt-2 max-w-3xl text-phx-md leading-relaxed text-orange-900">
+          {requests.length === 1
+            ? "One train or bus claim reached Phoenix without its ticket."
+            : `${requests.length} train or bus claims reached Phoenix without their tickets.`}{" "}
+          Attach a photo or PDF of the ticket here. The claim stays held for review until it has one. No amount
+          changes. The ticket is read when you choose it, and its travel date must match your arrival or
+          departure photo.
+        </p>
+      )}
       <div className="mt-4 space-y-3">
         {requests.map((request) => (
           <MissingTicketRow key={request.id} request={request} />
@@ -70,6 +83,10 @@ export function MissingTicketCard({ requests }: { requests: MissingTicketRequest
       </div>
     </section>
   );
+}
+
+function isReturnAsk(request: MissingTicketRequest): boolean {
+  return request.returnTicket === true;
 }
 
 /** A train ticket's verdict: the server's, against this claim's own arrival and departure photos. */
@@ -91,6 +108,8 @@ function MissingTicketRow({ request }: { request: MissingTicketRequest }) {
   const acceptedTickets = judged.flatMap((entry) => (entry.verdict.accepted ? [{ ticket: entry.ticket, verdict: entry.verdict }] : []));
   const refusedTickets = judged.flatMap((entry) => (entry.verdict.accepted ? [] : [{ ticket: entry.ticket, verdict: entry.verdict }]));
   const readyCount = isTrain ? acceptedTickets.length : files.length;
+  const isReturn = isReturnAsk(request);
+  const ticketWord = isReturn ? "return ticket" : "ticket";
 
   async function pick(list: FileList | null) {
     const picked = Array.from(list ?? []);
@@ -129,7 +148,7 @@ function MissingTicketRow({ request }: { request: MissingTicketRequest }) {
         message:
           isTrain && refusedTickets.length > 0
             ? "None of the chosen tickets could be accepted. Take the photo again as described above."
-            : `Take a photo of the ${transport} ticket or choose the file first.`,
+            : `Take a photo of the ${transport} ${ticketWord} or choose the file first.`,
       });
       return;
     }
@@ -167,12 +186,17 @@ function MissingTicketRow({ request }: { request: MissingTicketRequest }) {
           {transport === "bus" ? "Bus" : "Ticket"} · {formatPhoenixLongDate(request.tripStartDate)} –{" "}
           {formatPhoenixLongDate(request.tripEndDate)}
         </p>
+        {isReturn ? (
+          <p className="mt-1 text-phx-md leading-relaxed text-orange-900">
+            This claim pays a return fare. Attach the ticket you came back on.
+          </p>
+        ) : null}
       </div>
 
       {state.kind === "done" ? (
         <p className="mt-3 flex items-start gap-2 text-phx-md leading-relaxed text-emerald-700">
           <CheckCircle2 aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
-          Ticket attached. Your approver now sees it on the claim.
+          {isReturn ? "Return ticket attached." : "Ticket attached."} Your approver now sees it on the claim.
         </p>
       ) : (
         <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
@@ -180,7 +204,7 @@ function MissingTicketRow({ request }: { request: MissingTicketRequest }) {
             <Upload aria-hidden className="h-4 w-4" />
             {files.length > 0
               ? `${files.length} file${files.length === 1 ? "" : "s"} chosen — tap to change`
-              : `Take a photo of the ${transport} ticket or choose a file`}
+              : `Take a photo of the ${transport} ${ticketWord} or choose a file`}
             <input
               accept={TICKET_FILE_ACCEPT}
               className="hidden"
@@ -197,7 +221,7 @@ function MissingTicketRow({ request }: { request: MissingTicketRequest }) {
             type="button"
           >
             {saving ? <Loader2 aria-hidden className="h-4 w-4 animate-spin" /> : <Ticket aria-hidden className="h-4 w-4" />}
-            {state.kind === "reading" ? "Reading the ticket" : state.kind === "saving" ? "Attaching the ticket" : "Attach the ticket"}
+            {state.kind === "reading" ? "Reading the ticket" : state.kind === "saving" ? "Attaching the ticket" : `Attach the ${ticketWord}`}
           </button>
         </div>
       )}

@@ -16,6 +16,13 @@
  *   5. The one reason of a "Your call" row is picked in the order he rejects for: duplicate first.
  *   6. A meeting or other cost is not a trip: two checks only, and it is never Ready.
  *   7. The pre-cut: the per-idle-day share of the allowance, never travel or tickets.
+ *
+ * Added 2026-11-23, after the District Manager expense inspection (the owner's three choices):
+ *   8. An arrival photo uploaded from the gallery is never Ready; a blank stored photo fails.
+ *   9. A return fare with no read return ticket fails; tickets never read cannot be checked.
+ *  10. Two trips of one person on the same day: the shared day fails the duplicate check.
+ *  11. The odometer of a car trip: no line before the rule; going down, or moving less than 90% of
+ *      the driving paid since the last reading, fails.
  */
 import assert from "node:assert/strict";
 
@@ -23,6 +30,7 @@ import {
   CHECK_LABEL,
   claimPreCut,
   DEPARTURE_MAX_KM_FROM_ARRIVAL,
+  ODOMETER_PAID_KM_SHARE,
   idleTripDates,
   isTripClaim,
   judgeClaim,
@@ -142,9 +150,21 @@ export function runExpenseDeskChecksTests() {
   // Arrival: an uploaded file is judged on the file's own day.
   const upload = (fileTakenOn: string | null | undefined) =>
     answerOf(facts({ arrival: { capturedOn: "2026-11-18", fileTakenOn, hasPosition: false, onFile: true, uploaded: true } }), "arrival_photo");
-  assert.equal(upload("2026-11-18")?.answer, "pass");
-  assert.equal(upload("2026-11-02")?.answer, "fail");
+  // 8. An upload is never Ready (owner, 2026-11-23): a gallery file proves a photo, not presence.
+  assert.equal(upload("2026-11-18")?.answer, "unknown", "HEADLINE: an uploaded arrival photo is always Your call");
+  assert.equal(upload("2026-11-18")?.sentence, "Uploaded from the gallery, not taken live; the file says it was taken on 18 Nov.");
+  assert.equal(
+    judgeClaim(facts({ arrival: { capturedOn: "2026-11-18", fileTakenOn: "2026-11-18", hasPosition: false, onFile: true, uploaded: true } })).lane,
+    "your_call",
+  );
+  assert.equal(upload("2026-11-02")?.answer, "fail", "a file from outside the trip still fails");
   assert.equal(upload(null)?.answer, "unknown");
+  // A blank stored photo fails; one never measured is judged as before.
+  const blankArrival = facts({ arrival: { ...facts().arrival, blank: true } });
+  assert.equal(answerOf(blankArrival, "arrival_photo")?.answer, "fail");
+  assert.equal(judgeClaim(blankArrival).reason, "The arrival photo is blank: nothing can be seen in it.");
+  assert.equal(answerOf(dep({ blank: true }), "departure_photo")?.sentence, "The departure photo is blank: nothing can be seen in it.");
+  assert.equal(answerOf(facts({ arrival: { ...facts().arrival, blank: false } }), "arrival_photo")?.answer, "pass");
 
   // Ticket: a train trip owes one.
   assert.equal(answerOf(facts({ transportation: "train" }), "ticket")?.answer, "fail");
@@ -156,6 +176,15 @@ export function runExpenseDeskChecksTests() {
     "HEADLINE: a no-ticket trip says the stations and the fare it was priced on",
   );
   assert.equal(answerOf(facts({ noTicketFareLine: "Cairo → Asyut", transportation: "no_ticket" }), "ticket")?.answer, "unknown", "a line with no fare on file proves nothing");
+  // 9. The return fare is paid on its ticket (owner, 2026-11-23).
+  const train = (returnTicket: ClaimCheckFacts["returnTicket"], attachments = 1) =>
+    answerOf(facts({ attachments, returnAmount: 270, returnTicket, transportation: "train" }), "ticket");
+  assert.equal(train("missing")?.answer, "fail");
+  assert.equal(train("missing")?.sentence, "Return EGP 270 claimed with no return ticket.", "HEADLINE: the return fare named, with its gap");
+  assert.equal(train("unread")?.answer, "unknown", "tickets never read cannot be checked either way");
+  assert.equal(train("present", 2)?.sentence, "2 ticket photos attached, the return ticket among them.");
+  assert.equal(train("not_claimed")?.sentence, "1 ticket photo attached.");
+  assert.equal(judgeClaim(facts({ attachments: 1, returnAmount: 270, returnTicket: "missing", transportation: "train" })).lane, "your_call");
 
   // 5. The one reason: what he rejects for first.
   const many = judgeClaim(
@@ -171,6 +200,11 @@ export function runExpenseDeskChecksTests() {
     judgeClaim(facts({ duplicateTickets: ["the waiting claim of 12 Nov"] })).reason,
     "Repeats a ticket, cost or receipt of the waiting claim of 12 Nov.",
   );
+  // 10. A shared trip day pays that day twice (owner, 2026-11-23).
+  const shared = facts({ sharedTripDays: ["18 Nov with the waiting claim of 17 Nov"] });
+  assert.equal(answerOf(shared, "duplicate")?.answer, "fail");
+  assert.equal(judgeClaim(shared).reason, "Shares 18 Nov with the waiting claim of 17 Nov.");
+  assert.equal(answerOf(facts({ sharedTripDays: [] }), "duplicate")?.answer, "pass");
   // A failure outranks a "could not check".
   const mixed = judgeClaim(facts({ departure: { ...facts().departure, onFile: false }, eligibilityStatus: "manual" }));
   assert.equal(mixed.reason, "No departure photo.");
@@ -196,6 +230,52 @@ export function runExpenseDeskChecksTests() {
   assert.equal(claimPreCut({ allowance: 0, idleDays: 1, total: 400, tripDays: 1 }), null, "no allowance, nothing to cut: travel and tickets are real costs");
   assert.equal(claimPreCut({ allowance: 300, idleDays: 0, total: 900, tripDays: 3 }), null);
   assert.equal(claimPreCut({ allowance: 300, idleDays: 1, total: 900, tripDays: 1 })?.payable, 600, "every day idle: the whole allowance");
+
+  // 11. The odometer (owner, 2026-11-23: the system reads the odometer from the car photo).
+  assert.equal(ODOMETER_PAID_KM_SHARE, 0.9);
+  const km = (value: number) => ({ km: value, status: "read" as const });
+  const odo = (over: Partial<NonNullable<ClaimCheckFacts["odometer"]>> = {}) =>
+    facts({ odometer: { anchor: null, arrival: km(52612), departure: km(52790), paidKmSinceAnchor: null, ...over } });
+  assert.ok(!runClaimChecks(facts()).some((entry) => entry.key === "odometer"), "HEADLINE: no line for a claim filed before the rule");
+  assert.ok(!runClaimChecks({ ...odo(), transportation: "train" }).some((entry) => entry.key === "odometer"), "only a car trip");
+  assert.deepEqual(
+    runClaimChecks(odo()).map((entry) => entry.key),
+    ["field_work", "route", "arrival_photo", "departure_photo", "odometer", "duplicate", "amounts"],
+  );
+  assert.equal(answerOf(odo(), "odometer")?.sentence, "First odometer reading on file: 52,612 km.");
+  assert.equal(judgeClaim(odo()).lane, "ready", "a first reading is a pass");
+  assert.equal(
+    answerOf(odo({ departure: km(52600) }), "odometer")?.sentence,
+    "The odometer went down during the trip: 52,612 km on arrival, 52,600 km at departure.",
+  );
+  const anchor = { date: "2026-11-10", km: 52605 };
+  assert.equal(
+    answerOf(odo({ anchor: { date: "2026-11-10", km: 53000 } }), "odometer")?.sentence,
+    "The odometer went down: 52,612 km now, after 53,000 km on the trip of 10 Nov.",
+  );
+  const chained = odo({ anchor, paidKmSinceAnchor: 360 });
+  assert.equal(answerOf(chained, "odometer")?.answer, "fail");
+  assert.equal(
+    judgeClaim(chained).reason,
+    "The odometer moved 7 km since the trip of 10 Nov, but 360 km of driving was paid between them.",
+    "HEADLINE: claim 163, 7 km on the odometer after claim 162",
+  );
+  // The 90% line, both sides of it.
+  const moved = (arrival: number) =>
+    answerOf(odo({ anchor: { date: "2026-11-10", km: 50000 }, arrival: km(arrival), departure: null, paidKmSinceAnchor: 200 }), "odometer");
+  assert.equal(moved(50180)?.answer, "pass");
+  assert.equal(moved(50180)?.sentence, "180 km on the odometer since the trip of 10 Nov; 200 km of driving was paid between them.");
+  assert.equal(moved(50179)?.answer, "fail");
+  assert.equal(answerOf(odo({ anchor, paidKmSinceAnchor: null }), "odometer")?.sentence, "7 km on the odometer since the trip of 10 Nov.", "a distance unknown is not a shortfall");
+  assert.equal(answerOf(odo({ arrival: { km: null, status: "unreadable" } }), "odometer")?.answer, "fail");
+  assert.equal(answerOf(odo({ arrival: { km: null, status: "not_read" } }), "odometer")?.answer, "unknown", "the reader down is not the employee's fault");
+  assert.equal(judgeClaim(odo({ arrival: { km: null, status: "not_read" } })).lane, "your_call");
+  // The odometer outranks a photo finding; an idle day outranks the odometer.
+  assert.match(judgeClaim({ ...chained, departure: { ...chained.departure, onFile: false } }).reason ?? "", /^The odometer moved 7 km/);
+  assert.match(
+    judgeClaim({ ...chained, fieldWork: { days: [day("2026-11-18", { visits: 0 })], homeDays: [], km: null } }).reason ?? "",
+    /^No visit and no meeting/,
+  );
 
   assert.equal(shortDay("2026-11-04"), "4 Nov");
   assert.equal(shortDay(null), "an unknown day");

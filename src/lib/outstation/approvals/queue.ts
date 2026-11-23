@@ -23,7 +23,7 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { summarizeAgreement } from "@/lib/outstation/approvals/agreement";
-import { isTripClaim } from "@/lib/outstation/approvals/checks";
+import { isTripClaim, shortDay } from "@/lib/outstation/approvals/checks";
 import {
   buildDeskClaim,
   claimInWords,
@@ -31,11 +31,14 @@ import {
   DESK_CLAIM_COLUMNS,
   destinationOfRow,
   LEDGER_COLUMNS,
+  odometerReadingsOfRow,
+  oneWayKmOfRow,
   receiptPrintsOfRow,
   requestIdOfRow,
   tripDatesOfRow,
   type ClaimRow,
   type LedgerRow,
+  type OdometerChain,
 } from "@/lib/outstation/approvals/claim-row";
 import { loadFieldEvidence, pointOf, type FieldEvidence, type FieldEvidenceTrip } from "@/lib/outstation/approvals/field-evidence";
 import { countTripStandings, newestPayout, readTripStanding, type PayoutPeriod, type TripStanding } from "@/lib/outstation/approvals/standing";
@@ -124,7 +127,23 @@ export function standingOfRow(row: ClaimRow, ledger: LedgerRow | null, lastPaidP
   }).standing;
 }
 
-export type DuplicateFinding = { related: number[]; tickets: string[]; trips: string[] };
+export type DuplicateFinding = {
+  /** Other trips of this employee that share a day with this one, not already named as a copy. */
+  days: string[];
+  related: number[];
+  tickets: string[];
+  trips: string[];
+};
+
+/** A claim that pays nothing: a rejected, withdrawn, cancelled or draft one is no copy and no reading. */
+const NOT_CLAIMING = /reject|declin|cancel|withdraw|draft/i;
+
+const person = (row: ClaimRow) => text(row.employee_hr_id).toLowerCase();
+
+function daysInWords(days: ReadonlyArray<string>): string {
+  const labels = days.map(shortDay);
+  return labels.length <= 1 ? labels.join("") : `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}`;
+}
 
 /**
  * The duplicate check's findings for each claim in `subjects`, named in words. `others` are the
@@ -133,8 +152,8 @@ export type DuplicateFinding = { related: number[]; tickets: string[]; trips: st
  */
 export function findDuplicates(subjects: ReadonlyArray<ClaimRow>, others: ReadonlyArray<ClaimRow>): Map<number, DuplicateFinding> {
   const subjectIds = new Set(subjects.map(requestIdOfRow));
-  const people = new Set(subjects.map((row) => text(row.employee_hr_id).toLowerCase()).filter(Boolean));
-  const rows = [...subjects, ...others.filter((row) => people.has(text(row.employee_hr_id).toLowerCase()))];
+  const people = new Set(subjects.map(person).filter(Boolean));
+  const rows = [...subjects, ...others.filter((row) => people.has(person(row)))];
   const byId = new Map(rows.map((row) => [String(requestIdOfRow(row)), row]));
   const dated = rows.filter((row) => tripDatesOfRow(row).length > 0);
 
@@ -172,16 +191,78 @@ export function findDuplicates(subjects: ReadonlyArray<ClaimRow>, others: Readon
   // A copy is named for where it stands: one he already approved, or another that still waits.
   const word = (row: ClaimRow) => (/accept|approve|confirm/i.test(text(row.status)) ? "approved" : "waiting");
   const name = (ids: string[]) => [...new Set(ids.map((id) => byId.get(id)).filter((row): row is ClaimRow => Boolean(row)).map((row) => claimInWords(row, word(row))))];
+  // A day is claimed once (owner, 2026-11-23): another live TRIP of the same person on any of this
+  // trip's days pays that day twice. A desk flag only - the filing guard stays on day + destination,
+  // because every same-day pair it was measured on went to two different places.
+  const liveTrips = dated.filter((row) => isTripClaim(text(row.expense_type)) && !NOT_CLAIMING.test(text(row.status)));
+  const sharedDays = (subject: ClaimRow, named: ReadonlySet<string>) => {
+    if (!isTripClaim(text(subject.expense_type))) return [];
+    const mine = new Set(tripDatesOfRow(subject));
+    return liveTrips
+      .filter((other) => requestIdOfRow(other) !== requestIdOfRow(subject) && person(other) === person(subject))
+      .filter((other) => !named.has(String(requestIdOfRow(other))))
+      .map((other) => ({ other, shared: tripDatesOfRow(other).filter((day) => mine.has(day)) }))
+      .filter(({ shared }) => shared.length > 0)
+      .map(({ other, shared }) => ({ id: requestIdOfRow(other), words: `${daysInWords(shared)} with ${claimInWords(other, word(other))}` }));
+  };
+
   const out = new Map<number, DuplicateFinding>();
   for (const id of subjectIds) {
     const tripCopies = trips.get(String(id)) ?? [];
     const ticketCopies = tickets.get(String(id)) ?? [];
-    if (tripCopies.length === 0 && ticketCopies.length === 0) continue;
+    const subject = byId.get(String(id));
+    const days = subject ? sharedDays(subject, new Set([...tripCopies, ...ticketCopies])) : [];
+    if (tripCopies.length === 0 && ticketCopies.length === 0 && days.length === 0) continue;
     out.set(id, {
-      related: [...new Set([...tripCopies, ...ticketCopies].map(Number))],
+      days: [...new Set(days.map((entry) => entry.words))],
+      related: [...new Set([...tripCopies, ...ticketCopies].map(Number).concat(days.map((entry) => entry.id)))],
       tickets: name(ticketCopies),
       trips: name(tripCopies),
     });
+  }
+  return out;
+}
+
+/**
+ * Where each waiting CAR trip's odometer stands against the same person's earlier car trips (owner,
+ * 2026-11-23). The anchor is the latest earlier live car trip whose photo was read - its departure
+ * reading, else its arrival reading - and the driving paid since then is that trip's way back, both
+ * ways of every car trip in between, and this trip's way out: the fuel was priced on exactly those
+ * one-way kilometres. A car that drove less than that between two readings did not make those trips
+ * from home (claims 162 and 163; two trips chained without going home). Null paid kilometres when any
+ * of those trips carries no distance. Pure.
+ */
+export function findOdometerChains(subjects: ReadonlyArray<ClaimRow>, others: ReadonlyArray<ClaimRow>): Map<number, OdometerChain> {
+  const isCar = (row: ClaimRow) => text(row.transportation_type).toLowerCase() === "car";
+  const first = (row: ClaimRow) => tripDatesOfRow(row)[0] ?? "";
+  const pool = [...subjects, ...others].filter((row) => isCar(row) && first(row) && !NOT_CLAIMING.test(text(row.status)));
+  const lastReading = (row: ClaimRow): number | null => {
+    const { arrival, departure } = odometerReadingsOfRow(row);
+    if (departure?.status === "read" && departure.km !== null) return departure.km;
+    return arrival?.status === "read" ? arrival.km : null;
+  };
+  const before = (left: ClaimRow, right: ClaimRow) =>
+    first(left) < first(right) || (first(left) === first(right) && requestIdOfRow(left) < requestIdOfRow(right));
+
+  const out = new Map<number, OdometerChain>();
+  for (const subject of subjects) {
+    if (!isCar(subject) || !first(subject)) continue;
+    const earlier = pool
+      .filter((row) => person(row) === person(subject) && requestIdOfRow(row) !== requestIdOfRow(subject) && before(row, subject))
+      .sort((left, right) => (before(left, right) ? 1 : before(right, left) ? -1 : 0));
+    let paid: number | null = oneWayKmOfRow(subject);
+    let anchor: OdometerChain["anchor"] = null;
+    for (const row of earlier) {
+      const km = lastReading(row);
+      const oneWay = oneWayKmOfRow(row);
+      if (km !== null) {
+        anchor = { date: first(row), km };
+        paid = paid === null || oneWay === null ? null : paid + oneWay;
+        break;
+      }
+      paid = paid === null || oneWay === null ? null : paid + 2 * oneWay;
+    }
+    out.set(requestIdOfRow(subject), { anchor, paidKmSinceAnchor: anchor ? paid : null });
   }
   return out;
 }
@@ -218,6 +299,7 @@ async function buildWaitingClaims(input: {
   const trips = input.rows.filter((row) => isTripClaim(text(row.expense_type))).map(evidenceTripOf);
   const evidence = await loadFieldEvidence(trips);
   const duplicates = findDuplicates(input.rows, input.decided);
+  const chains = findOdometerChains(input.rows, input.decided);
   const claims = input.rows.map((row) => {
     const id = requestIdOfRow(row);
     const found = duplicates.get(id);
@@ -227,6 +309,8 @@ async function buildWaitingClaims(input: {
         duplicateTrips: found?.trips ?? [],
         fieldWork: evidence.byRequest.get(id) ?? null,
         lastPaidPayout: input.lastPaidPayout,
+        odometerChain: chains.get(id),
+        sharedTripDays: found?.days ?? [],
         today,
       },
       ledger: input.ledger.get(outstationPayrollTripId(id)) ?? null,

@@ -24,6 +24,9 @@ import { resolveOutstationGateState } from "@/lib/outstation/expense-gate";
 import { ticketReceiptFingerprint } from "@/lib/outstation/duplicate-ticket-guard";
 import { payableExpenseAmount } from "@/lib/outstation/payable";
 import { mapOutstationRequestRowToPayrollApproval, outstationPayrollTripId } from "@/lib/outstation/payroll-expense-mapping";
+import { odometerFromValue, odometerOfMetadata, type OutstationOdometerRecord } from "@/lib/outstation/odometer-scan-rules";
+import { frameOfMetadata } from "@/lib/outstation/blank-frame";
+import { returnTicketState } from "@/lib/outstation/return-ticket";
 import { readNoTicketFare } from "@/lib/outstation/train-fare";
 import type { OutstationEvidenceGateStatus, OutstationWorkloadGateStatus } from "@/lib/outstation/types";
 import { addDaysIso } from "@/lib/crm/dates";
@@ -61,11 +64,17 @@ export const DESK_CLAIM_COLUMNS = [
   "evidence_gate_status", "workload_gate_status", "system_lane_at_decision", "system_verdict_at_decision",
 ].join(", ");
 
-/** What the tiles, the duplicate check and the agreement meter need of a DECIDED claim. */
+/**
+ * What the tiles, the duplicate check, the odometer chain and the agreement meter need of a DECIDED
+ * claim. The two odometer readings are read out of the photo metadata by path, so the rest of that
+ * JSON (positions, retakes, summaries) is not pulled for every claim ever decided.
+ */
 export const DECIDED_CLAIM_COLUMNS = [
   "id", "status", "created_at", "updated_at", "trip_start_date", "trip_end_date", "employee_hr_id",
   "to_label", "to_area", "to_city", "captured_latitude", "captured_longitude", "expense_type",
   "go_ticket_amount", "return_ticket_amount", "other_amount", "report_other_amount", "ticket_attachment_metadata",
+  "transportation_type", "distance_km", "distance_from_residence_km",
+  "arrival_odometer:car_evidence_metadata->odometer", "departure_odometer:departure_evidence_metadata->odometer",
   "system_lane_at_decision", "system_verdict_at_decision",
 ].join(", ");
 
@@ -107,10 +116,37 @@ export function receiptPrintsOfRow(row: ClaimRow): string[] {
     .filter((print): print is string => Boolean(print));
 }
 
+/**
+ * The odometer readings kept beside a car trip's photos (odometer-scan-rules.ts): from the path-read
+ * columns of a decided claim, or from the whole metadata of a waiting one. `undefined` = never read
+ * (a photo taken before the rule, or no photo).
+ */
+export function odometerReadingsOfRow(row: ClaimRow): {
+  arrival: OutstationOdometerRecord | undefined;
+  departure: OutstationOdometerRecord | undefined;
+} {
+  return {
+    arrival: "arrival_odometer" in row ? odometerFromValue(row.arrival_odometer) : odometerOfMetadata(row.car_evidence_metadata),
+    departure: "departure_odometer" in row ? odometerFromValue(row.departure_odometer) : odometerOfMetadata(row.departure_evidence_metadata),
+  };
+}
+
+/** The one-way kilometres the trip's fuel was priced on; null when the row carries none. */
+export function oneWayKmOfRow(row: ClaimRow): number | null {
+  const km = num(row.distance_from_residence_km) ?? num(row.distance_km);
+  return km !== null && km >= 0 ? km : null;
+}
+
 /** A destination in words, exactly as the mapper names it. */
 export function destinationOfRow(row: ClaimRow): string {
   return text(row.to_label) || [row.to_area, row.to_city].map(text).filter(Boolean).join(", ");
 }
+
+/** Where a car trip's odometer stands against the employee's earlier car trips (queue.ts, `findOdometerChains`). */
+export type OdometerChain = {
+  anchor: { date: string; km: number } | null;
+  paidKmSinceAnchor: number | null;
+};
 
 export type ClaimContext = {
   duplicateTickets?: string[];
@@ -119,6 +155,8 @@ export type ClaimContext = {
   fieldWork?: FieldWorkReading | null;
   /** The newest payout month a payroll has paid (queue.ts, `readLastPaidPayout`); absent = not read. */
   lastPaidPayout?: PayoutPeriod | null;
+  odometerChain?: OdometerChain;
+  sharedTripDays?: string[];
   today: string;
 };
 
@@ -131,9 +169,12 @@ export function claimFactsFromRow(row: ClaimRow, context: ClaimContext): ClaimCh
   const tickets = Array.isArray(row.ticket_attachment_metadata) ? row.ticket_attachment_metadata.length : 0;
   const attachments = Math.max(num(row.attachment_count) ?? 0, tickets + (text(row.meeting_invoice_path) ? 1 : 0));
   const fileTakenAt = arrivalMeta && "fileTakenAt" in arrivalMeta ? arrivalMeta.fileTakenAt : undefined;
+  const odometer = odometerReadingsOfRow(row);
+  const reading = (record: OutstationOdometerRecord) => ({ km: record.km, status: record.status });
 
   return {
     arrival: {
+      blank: arrivalOnFile ? frameOfMetadata(arrivalMeta)?.blank : undefined,
       capturedOn: cairoDateOnly(text(arrivalMeta?.capturedAt) || null),
       fileTakenOn: fileTakenAt === undefined ? undefined : cairoDateOnly(text(fileTakenAt) || null),
       hasPosition: arrivalOnFile && usablePosition(num(arrivalMeta?.capturedLatitude), num(arrivalMeta?.capturedLongitude)) !== null,
@@ -142,6 +183,7 @@ export function claimFactsFromRow(row: ClaimRow, context: ClaimContext): ClaimCh
     },
     attachments,
     departure: {
+      blank: departureOnFile ? frameOfMetadata(departureMeta)?.blank : undefined,
       capturedOn: cairoDateOnly(text(departureMeta?.capturedAt) || null),
       flags: Array.isArray(departureMeta?.flags) ? (departureMeta.flags as unknown[]).map(String) : [],
       hasPosition:
@@ -159,7 +201,23 @@ export function claimFactsFromRow(row: ClaimRow, context: ClaimContext): ClaimCh
     fieldWork: context.fieldWork ?? null,
     hasNoTicketFare: readNoTicketFare(row.no_ticket_fare) !== null,
     noTicketFareLine: text(object(row.no_ticket_fare)?.line) || null,
+    odometer:
+      odometer.arrival === undefined
+        ? undefined
+        : {
+            anchor: context.odometerChain?.anchor ?? null,
+            arrival: reading(odometer.arrival),
+            departure: odometer.departure ? reading(odometer.departure) : null,
+            paidKmSinceAnchor: context.odometerChain?.paidKmSinceAnchor ?? null,
+          },
+    returnAmount: num(row.return_ticket_amount) ?? 0,
+    returnTicket: returnTicketState({
+      returnAmount: num(row.return_ticket_amount),
+      tickets: row.ticket_attachment_metadata,
+      transportation: row.transportation_type,
+    }),
     role: text(row.employee_role) || null,
+    sharedTripDays: context.sharedTripDays ?? [],
     today: context.today,
     transportation: text(row.transportation_type),
     tripDates: tripDatesOfRow(row),

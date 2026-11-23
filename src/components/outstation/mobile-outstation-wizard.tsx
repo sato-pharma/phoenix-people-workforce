@@ -85,7 +85,9 @@ import {
   getCompressedEvidenceCanvasSize,
   resolveEvidenceLocationStamp,
 } from "@/components/outstation/evidence-watermark";
+import { measureCanvasFrame } from "@/components/outstation/measure-blank-frame";
 import { photoFileTimeCaption, readPhotoFileTakenAt } from "@/lib/evidence/photo-file-time";
+import { blankFrameRefusal } from "@/lib/outstation/blank-frame";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
@@ -601,7 +603,7 @@ export function MobileOutstationWizard({
     : "Take one live photo of the car";
   const arrivalPhotoHint =
     transportationType === "car"
-      ? "Car requests require one in-app camera photo with GPS and app-generated timestamp."
+      ? "Car requests require one in-app camera photo of the dashboard, with the kilometre number sharp and in view: the system reads it from the photo."
       : "This trip requires one arrival photo. Take it live, or upload one — an uploaded photo is stamped as uploaded.";
   const arrivalPhotoMissingMessage =
     transportationType === "car"
@@ -1348,6 +1350,13 @@ export function MobileOutstationWizard({
       }
 
       context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      // Nothing to see — a covered lens, a black or white frame — is refused here, before the stamp is
+      // drawn over it (owner, 2026-11-23; blank-frame.ts). The server measures the stored photo again.
+      const frame = measureCanvasFrame(canvas);
+      if (frame?.blank) {
+        setMessage(blankFrameRefusal("arrival", frame));
+        return;
+      }
       const capturedAt = new Date().toISOString();
       // Resolved BEFORE the watermark is drawn, so the address and the Phoenix brick/area/region
       // are burned into the JPEG itself rather than only stored beside it.
@@ -1448,6 +1457,12 @@ export function MobileOutstationWizard({
       }
 
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      // A blank picture is refused whether it was taken or chosen (owner, 2026-11-23; blank-frame.ts).
+      const frame = measureCanvasFrame(canvas);
+      if (frame?.blank) {
+        setMessage(blankFrameRefusal("arrival", frame));
+        return;
+      }
       const capturedAt = new Date().toISOString();
       // The TRIP's destination capture, not the file's own — an uploaded photo carries no
       // trustworthy position. Accuracy is deliberately null: this pin was not measured here.
@@ -2074,15 +2089,9 @@ export function MobileOutstationWizard({
   const amountsBody = (
     <div className="grid gap-5">
       {isNonTravel ? null : transportationType === "car" ? (
-        <Field label="Kilometer reading">
-          <Input
-            inputMode="numeric"
-            onChange={(event) => setKilometerReading(event.target.value)}
-            placeholder="Odometer reading"
-            type="number"
-            value={kilometerReading}
-          />
-        </Field>
+        // The odometer is READ from the arrival and departure photos (owner, 2026-11-23): the typed
+        // field carried 0 or nothing on 136 of 207 car claims, so nothing is typed any more.
+        <StepNote tone="neutral">The kilometres are read from your car photos. Nothing to type here.</StepNote>
       ) : transportationType === "no_ticket" ? (
         <NoTicketFarePanel fare={calculation?.noTicketFare ?? null} />
       ) : isTicketBased ? (
