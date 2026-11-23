@@ -454,9 +454,16 @@ export function UploadedPictures({ large, tickets }: { large: boolean; tickets: 
  * it (owner, 2026-09-18). Both now render full width through TripEvidencePhotos.
  */
 export function TripAttachments({
+  data: given,
+  onChanged,
   onLoaded,
   tripId,
 }: {
+  /** The payload when the caller has ALREADY read it (the approvals reviewer reads the whole trip in
+   * one request): nothing is fetched here. Null = the caller's read failed. Omitted = fetch as before. */
+  data?: AttachmentsData | null;
+  /** Called after "Add a missed stop" saved, so a caller that supplied the data reads the trip again. */
+  onChanged?: () => void;
   /** The payload, once it lands (null on a failure or for a sheet-imported trip) — so the caller
    * can pin the photos and stops on its own map and word its verdict (2026-11-07). */
   onLoaded?: (data: AttachmentsData | null) => void;
@@ -466,11 +473,17 @@ export function TripAttachments({
   const [reloadKey, setReloadKey] = useState(0);
   // Kept here, not in the form: adding a stop reloads this panel, which unmounts the form.
   const [stopNotice, setStopNotice] = useState<string | null>(null);
-  const [state, setState] = useState<{
+  const [fetched, setState] = useState<{
     status: "idle" | "loading" | "done" | "error";
     data?: AttachmentsData;
     error?: string;
   }>({ status: "idle" });
+  const supplied = given !== undefined;
+  const state: typeof fetched = supplied
+    ? given
+      ? { data: given, status: "done" }
+      : { error: "the photos and tickets could not be read.", status: "error" }
+    : fetched;
   const onLoadedRef = useRef(onLoaded);
   useEffect(() => {
     onLoadedRef.current = onLoaded;
@@ -480,7 +493,7 @@ export function TripAttachments({
     let cancelled = false;
     async function run() {
       await Promise.resolve();
-      if (cancelled) return;
+      if (cancelled || supplied) return;
       if (!requestId) {
         onLoadedRef.current?.(null);
         return;
@@ -507,7 +520,7 @@ export function TripAttachments({
     return () => {
       cancelled = true;
     };
-  }, [requestId, reloadKey]);
+  }, [requestId, reloadKey, supplied]);
 
   if (!requestId) {
     return (
@@ -561,7 +574,7 @@ export function TripAttachments({
       {data.journey ? <TripJourney journey={data.journey} /> : null}
       {stopNotice ? (
         <p className="text-xs leading-relaxed text-emerald-700">
-          {stopNotice} Refresh the page before deciding this claim: its figures changed.
+          {stopNotice} {onChanged ? "The claim was read again with its new figures." : "Refresh the page before deciding this claim: its figures changed."}
         </p>
       ) : null}
       {data.missedStop ? (
@@ -570,6 +583,7 @@ export function TripAttachments({
           onAdded={(notice) => {
             setStopNotice(notice);
             setReloadKey((key) => key + 1);
+            onChanged?.();
           }}
           requestId={requestId}
         />

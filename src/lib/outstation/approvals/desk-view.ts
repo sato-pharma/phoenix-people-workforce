@@ -1,0 +1,290 @@
+/**
+ * What the Expense Approvals page shows and how a press changes it — pure, so the browser, the
+ * address bar and the tests all read one definition.
+ *
+ * Rebuilt 2026-11-23 (owner: "REBUILD FROM SCRATCH"). Four things live here:
+ *
+ *   1. The lanes. Ready (every check passed) · Your call (the one reason it is unclear) · History
+ *      (read on a press). The two waiting lanes always add up to the Waiting tile: one list, split
+ *      once, by the verdict the server already gave.
+ *   2. The view kept in the address — lane, search, "over 7 days", the open trip — so a reload or a
+ *      shared link opens the same thing. Defaults are left out of the address.
+ *   3. What a press sends, and what the page looks like after the answer: the decided claim leaves
+ *      the list, the Waiting tile loses it and its new tile gains it; a claim the server refused or
+ *      found changed comes back with its new figures. No re-read of the whole page.
+ *   4. The words. One vocabulary for the buttons, and the reasons offered as one-press chips — each
+ *      a finished sentence the employee can read, built only from a check that FAILED on this claim
+ *      (a rejection's reason is told to the employee; never a reason that is not true of the trip).
+ */
+
+import { TRIP_STANDINGS, type TripStanding } from "@/lib/outstation/approvals/standing";
+import type {
+  DecisionAction,
+  DeskClaim,
+  DeskDecisionOutcome,
+  DeskDecisionRequest,
+  DeskLaneSummary,
+  DeskQueue,
+} from "@/lib/outstation/approvals/types";
+
+/** The one vocabulary. Pinned by tests/expense-desk-view.test.ts. */
+export const DESK_WORDS = {
+  approve: "Approve",
+  approveAll: "Approve all",
+  changeAmount: "Change amount",
+  keepFull: "Keep full claim",
+  open: "Open",
+  payInFull: "Pay in full",
+  reduce: "Reduce",
+  reject: "Reject",
+  undo: "Undo",
+} as const;
+
+export const DESK_LANES = ["ready", "your_call", "history"] as const;
+export type DeskLane = (typeof DESK_LANES)[number];
+
+export const DESK_LANE_LABEL: Record<DeskLane, string> = { history: "History", ready: "Ready", your_call: "Your call" };
+
+export const DESK_LANE_MEANING: Record<DeskLane, string> = {
+  history: "What was already decided. Read when you open it.",
+  ready: "Every check passed. Nothing to look at.",
+  your_call: "Something is unclear. Each row says the one reason.",
+};
+
+export type DeskHistoryChoice = "all" | "approved" | "rejected";
+
+export type DeskView = {
+  history: DeskHistoryChoice;
+  /** Null = not chosen: the page opens the first waiting lane that holds a claim. */
+  lane: DeskLane | null;
+  overSevenDays: boolean;
+  search: string;
+  /** The trip open in the reviewer; null when none. */
+  trip: number | null;
+};
+
+export const DEFAULT_DESK_VIEW: DeskView = { history: "all", lane: null, overSevenDays: false, search: "", trip: null };
+
+const isLane = (value: string | null): value is DeskLane => (DESK_LANES as readonly string[]).includes(String(value));
+
+export function deskViewFromSearch(search: string | URLSearchParams | null | undefined): DeskView {
+  const params = typeof search === "string" ? new URLSearchParams(search) : (search ?? new URLSearchParams());
+  const lane = params.get("lane");
+  const history = params.get("decided");
+  const trip = params.get("trip");
+  return {
+    history: history === "approved" || history === "rejected" ? history : "all",
+    lane: isLane(lane) ? lane : null,
+    overSevenDays: params.get("over7") === "1",
+    search: (params.get("q") ?? "").trim().slice(0, 60),
+    trip: trip && /^\d{1,12}$/.test(trip) && Number(trip) > 0 ? Number(trip) : null,
+  };
+}
+
+/** The address for a view — defaults left out, keys in one order, so the same view is the same link. */
+export function deskViewToSearch(view: DeskView): string {
+  const params = new URLSearchParams();
+  if (view.lane) params.set("lane", view.lane);
+  if (view.search.trim()) params.set("q", view.search.trim());
+  if (view.overSevenDays) params.set("over7", "1");
+  if (view.history !== "all") params.set("decided", view.history);
+  if (view.trip) params.set("trip", String(view.trip));
+  const text = params.toString();
+  return text ? `?${text}` : "";
+}
+
+const money = (value: number) => Math.round(value * 100) / 100;
+
+/** The two waiting lanes. They add up to the Waiting tile: nothing waits outside them. */
+export function laneSummaries(claims: ReadonlyArray<DeskClaim>): Record<Exclude<DeskLane, "history">, DeskLaneSummary> {
+  const out = { ready: { count: 0, value: 0 }, your_call: { count: 0, value: 0 } };
+  for (const claim of claims) {
+    if (claim.standing !== "waiting") continue;
+    const lane = out[claim.verdict.lane];
+    lane.count += 1;
+    lane.value += claim.payable;
+  }
+  out.ready.value = money(out.ready.value);
+  out.your_call.value = money(out.your_call.value);
+  return out;
+}
+
+/** The lane the page opens on when the address names none: Ready when it holds a claim, else Your call. */
+export function openingLane(view: DeskView, claims: ReadonlyArray<DeskClaim>): DeskLane {
+  if (view.lane) return view.lane;
+  return laneSummaries(claims).ready.count > 0 ? "ready" : "your_call";
+}
+
+const fold = (value: string | null | undefined) => String(value ?? "").trim().toLowerCase();
+
+/** The claims a waiting lane shows: its lane, the search (name, places), and "over 7 days". Oldest first, as sent. */
+export function claimsInLane(
+  claims: ReadonlyArray<DeskClaim>,
+  lane: Exclude<DeskLane, "history">,
+  view: Pick<DeskView, "overSevenDays" | "search">,
+  hidden: ReadonlySet<number> = new Set(),
+): DeskClaim[] {
+  const words = fold(view.search).split(/\s+/).filter(Boolean);
+  return claims.filter((claim) => {
+    if (claim.standing !== "waiting" || claim.verdict.lane !== lane || hidden.has(claim.requestId)) return false;
+    if (view.overSevenDays && claim.daysWaiting <= 7) return false;
+    if (words.length === 0) return true;
+    const text = fold(`${claim.employeeName} ${claim.from} ${claim.to} ${claim.employeeRole ?? ""}`);
+    return words.every((word) => text.includes(word));
+  });
+}
+
+/** "Today", "1 day", "9 days" — how long a claim has waited. */
+export function waitLabel(days: number): string {
+  if (!(days >= 1)) return "Today";
+  return days === 1 ? "1 day" : `${Math.floor(days)} days`;
+}
+
+/** Whole days of the trip, first to last inclusive, from the dates' own text. */
+export function tripDayCount(claim: Pick<DeskClaim, "tripEnd" | "tripStart">): number {
+  const start = Date.parse(`${claim.tripStart.slice(0, 10)}T00:00:00Z`);
+  const end = Date.parse(`${claim.tripEnd.slice(0, 10)}T00:00:00Z`);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return 1;
+  return Math.round((end - start) / 86_400_000) + 1;
+}
+
+/**
+ * What Approve sends for one waiting claim. With idle days and an allowance the button names the cut
+ * and sends it; a trip the payroll gate would hold cannot carry a reduced amount, so there the
+ * button pays the claim in full and the row says why. `full: true` is "Keep full claim".
+ */
+export function approvePress(claim: DeskClaim, options: { full?: boolean } = {}): DeskDecisionRequest {
+  const cut = !options.full && claim.preCut && !claim.holdReason ? claim.preCut : null;
+  return {
+    action: "approve",
+    ...(cut ? { approvedAmount: cut.payable } : {}),
+    requestId: claim.requestId,
+    revision: claim.revision,
+  };
+}
+
+/** What "Approve all" in the Ready lane sends, and the two figures it shows before the press. */
+export function readyBatch(claims: ReadonlyArray<DeskClaim>, limit: number): { count: number; decisions: DeskDecisionRequest[]; left: number; value: number } {
+  const taken = claims.slice(0, Math.max(0, limit));
+  return {
+    count: taken.length,
+    decisions: taken.map((claim) => approvePress(claim, { full: true })),
+    left: claims.length - taken.length,
+    value: money(taken.reduce((sum, claim) => sum + claim.total, 0)),
+  };
+}
+
+export type ReasonChip = { key: string; label: string; text: string };
+
+/**
+ * The reasons offered as one-press chips, for a rejection or a reduced amount. Built only from a
+ * check that FAILED on this claim. A claim with no failed check gets no chip: the reason is typed.
+ */
+export function reasonChips(claim: DeskClaim): ReasonChip[] {
+  const failed = new Map(claim.verdict.checks.filter((check) => check.answer === "fail").map((check) => [check.key, check]));
+  const chips: ReasonChip[] = [];
+  const idle = claim.verdict.idleDates.length;
+  const days = tripDayCount(claim);
+  if (failed.has("field_work") && idle > 0) {
+    chips.push(
+      idle >= days
+        ? {
+            key: "no-activity",
+            label: "No field activity",
+            text: days > 1 ? `No field activity was recorded on any of the ${days} days of this trip.` : "No field activity was recorded on the day of this trip.",
+          }
+        : { key: "idle-days", label: "Idle days", text: `${idle} of the ${days} days of this trip had no field activity.` },
+    );
+  }
+  const duplicate = failed.get("duplicate");
+  if (duplicate) chips.push({ key: "duplicate", label: "Already claimed", text: `This trip was already claimed. ${duplicate.sentence}` });
+  if (failed.has("route")) {
+    chips.push({ key: "route", label: "Not at the destination", text: "The field work recorded on this trip was not at the claimed destination." });
+  }
+  if (failed.has("arrival_photo")) {
+    chips.push({ key: "arrival-photo", label: "Arrival photo", text: "The arrival photo is missing or did not pass its check." });
+  }
+  if (failed.has("departure_photo")) {
+    chips.push({ key: "departure-photo", label: "Departure photo", text: "The departure photo is missing or did not pass its check." });
+  }
+  if (failed.has("ticket")) chips.push({ key: "ticket", label: "No ticket", text: "No ticket was attached to this trip." });
+  if (failed.has("amounts")) chips.push({ key: "invoice", label: "No invoice", text: "No invoice or picture was attached to this cost." });
+  return chips;
+}
+
+/** What is said before a Reduce press is offered at all; null when the claim can be reduced. */
+export function reduceBlocked(claim: DeskClaim): string | null {
+  if (claim.locked) return "A payroll has already taken this trip.";
+  if (claim.standing === "approved_held" || (claim.standing === "waiting" && claim.holdReason)) {
+    return "This trip would be held out of payroll for now, and a held trip cannot carry a reduced amount.";
+  }
+  return null;
+}
+
+/** "2,430.50" typed by a person, as a figure; null when it is not one. */
+export function typedAmount(value: string): number | null {
+  const text = value.replace(/[,\s]/g, "").replace(/^egp/i, "");
+  if (!/^\d+(\.\d{1,2})?$/.test(text)) return null;
+  const parsed = Number(text);
+  return parsed > 0 ? parsed : null;
+}
+
+/**
+ * The page after the server answered. `sent` is each claim as it was on screen when it was pressed,
+ * with the press. A claim that landed leaves the waiting list and moves between tiles; one that was
+ * refused or had changed is put back as the server now reads it. Tiles never go below zero.
+ */
+export function applyDeskOutcomes(
+  queue: DeskQueue,
+  outcomes: ReadonlyArray<DeskDecisionOutcome>,
+  sent: ReadonlyArray<{ action: DecisionAction; claim: DeskClaim }>,
+): DeskQueue {
+  const before = new Map(sent.map((entry) => [entry.claim.requestId, entry]));
+  const tiles = Object.fromEntries(TRIP_STANDINGS.map((key) => [key, { ...queue.tiles[key] }])) as DeskQueue["tiles"];
+  const agreement = { ...queue.agreement, ready: { ...queue.agreement.ready }, yourCall: { ...queue.agreement.yourCall } };
+  const claims = new Map(queue.claims.map((claim) => [claim.requestId, claim]));
+  const order = queue.claims.map((claim) => claim.requestId);
+
+  const move = (from: { payable: number; standing: TripStanding }, to: { payable: number; standing: TripStanding }) => {
+    tiles[from.standing].count = Math.max(0, tiles[from.standing].count - 1);
+    if (from.standing !== "rejected") tiles[from.standing].value = Math.max(0, money(tiles[from.standing].value - from.payable));
+    tiles[to.standing].count += 1;
+    if (to.standing !== "rejected") tiles[to.standing].value = money(tiles[to.standing].value + to.payable);
+  };
+
+  for (const outcome of outcomes) {
+    const was = before.get(outcome.requestId);
+    const now = outcome.claim;
+    if (!was || !now) continue;
+    move(was.claim, now);
+    if (now.standing === "waiting") {
+      claims.set(now.requestId, now);
+      if (!order.includes(now.requestId)) order.push(now.requestId);
+    } else {
+      claims.delete(now.requestId);
+    }
+    if (outcome.code === "saved" && was.claim.standing === "waiting") {
+      const bucket = was.claim.verdict.lane === "ready" ? agreement.ready : agreement.yourCall;
+      bucket.decided += 1;
+      if (was.action === "approve") bucket.approved += 1;
+    }
+  }
+
+  const list = order.map((id) => claims.get(id)).filter((claim): claim is DeskClaim => Boolean(claim));
+  return { ...queue, agreement, claims: list, overSevenDays: list.filter((claim) => claim.daysWaiting > 7).length, tiles };
+}
+
+/** The top line: how many decisions wait, what they are worth, how many are old. One unit, one function. */
+export function deskTopLine(queue: Pick<DeskQueue, "overSevenDays" | "tiles">): { count: number; overSevenDays: number; value: number } {
+  return { count: queue.tiles.waiting.count, overSevenDays: queue.overSevenDays, value: queue.tiles.waiting.value };
+}
+
+/** What the Undo bar says about a press that has not been sent yet. */
+export function pressLabel(decisions: ReadonlyArray<DeskDecisionRequest>, claims: ReadonlyArray<DeskClaim>): string {
+  if (decisions.length > 1) return `${decisions.length} claims approved`;
+  const [decision] = decisions;
+  const name = claims.find((claim) => claim.requestId === decision?.requestId)?.employeeName ?? "The claim";
+  if (decision?.action === "reject") return `${name}: rejected`;
+  if (decision?.action === "reduce") return `${name}: reduced`;
+  return `${name}: approved`;
+}
