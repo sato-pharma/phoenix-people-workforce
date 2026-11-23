@@ -5,7 +5,8 @@
  * filed to draw the ones that waited. Two reads live here, each behind its own press:
  *
  *   - `loadDeskHistory` — the decided claims employees filed in Phoenix, newest decision first,
- *     50 at a time, with where each one stands (held, next payroll, in payroll, rejected).
+ *     50 at a time, with where each one stands (held, next payroll, payroll already ran, in
+ *     payroll, rejected).
  *   - `loadSheetHistory` — the trips that came from the expense sheets before employees filed in
  *     Phoenix. Values only: they are decided on the sheet workspace, whose own save path this does
  *     not touch.
@@ -17,7 +18,7 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { buildDeskClaim, DESK_CLAIM_COLUMNS, requestIdOfRow, type ClaimRow } from "@/lib/outstation/approvals/claim-row";
-import { readLedger, withLiveNames } from "@/lib/outstation/approvals/queue";
+import { readLastPaidPayout, readLedger, withLiveNames } from "@/lib/outstation/approvals/queue";
 import type { DeskClaim } from "@/lib/outstation/approvals/types";
 import { outstationRequestIdFromTripId } from "@/lib/outstation/expense-approval-decisions";
 import { applyEmployeeHrIdInFilter, keepExpenseRowsInScope, listPayrollExpenses, resolveExpenseAccessFilter } from "@/lib/outstation/expenses";
@@ -92,11 +93,14 @@ export async function loadDeskHistory(
   const read = (data ?? []) as unknown as ClaimRow[];
   const rows = keepExpenseRowsInScope(read, accessFilter, "employee_hr_id");
 
-  const ledger = await readLedger(supabase, rows.map((row) => outstationPayrollTripId(requestIdOfRow(row))));
+  const [ledger, lastPaidPayout] = await Promise.all([
+    readLedger(supabase, rows.map((row) => outstationPayrollTripId(requestIdOfRow(row)))),
+    readLastPaidPayout(supabase),
+  ]);
   const today = currentCairoDateOnlyIso(now);
   const claims = await withLiveNames(
     rows.map((row) =>
-      buildDeskClaim({ context: { today }, ledger: ledger.get(outstationPayrollTripId(requestIdOfRow(row))) ?? null, now, row }),
+      buildDeskClaim({ context: { lastPaidPayout, today }, ledger: ledger.get(outstationPayrollTripId(requestIdOfRow(row))) ?? null, now, row }),
     ),
   );
 

@@ -51,6 +51,7 @@ export const PHONE_TARGET = "max-md:min-h-11";
 
 export const STANDING_TONE: Record<TripStanding, PillTone> = {
   approved_held: "warn",
+  approved_missed: "warn",
   approved_queued: "good",
   in_payroll: "info",
   rejected: "bad",
@@ -59,6 +60,7 @@ export const STANDING_TONE: Record<TripStanding, PillTone> = {
 
 export const STANDING_RAIL: Record<TripStanding, string> = {
   approved_held: "border-l-amber-400",
+  approved_missed: "border-l-amber-600",
   approved_queued: "border-l-emerald-500",
   in_payroll: "border-l-sky-500",
   rejected: "border-l-rose-500",

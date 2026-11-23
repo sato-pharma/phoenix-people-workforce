@@ -95,6 +95,16 @@ export function runExpenseDeskQueueTests() {
   assert.ok(history.includes("applyEmployeeHrIdInFilter(") && history.includes("keepExpenseRowsInScope("));
   assert.ok(!queue.includes("history"), "the queue never reads history: it loads on a press");
   assert.ok(queue.includes("OUTSTATION_UNDECIDED_STATUSES"), "what waits is the one shared list of undecided statuses");
+
+  // 🔴 The newest paid payout month reaches every place a decided trip's standing is read: the tiles,
+  // the claims re-read after a press, and History. Without it a trip its own payroll missed reads
+  // "next payroll" (12 of them on 23 Nov 2026).
+  assert.ok(queue.includes('.or("imported_payroll_batch_id.not.is.null,imported_to_payroll_at.not.is.null")'), "the newest paid month is read from rows that carry a paid stamp");
+  assert.ok(queue.includes("if (error) throw error;\n  return newestPayout("), "a failed read throws; it is never guessed");
+  assert.equal(queue.split("readLastPaidPayout(supabase)").length - 1, 2, "HEADLINE: the page load and the after-press re-read both read it");
+  assert.ok(queue.includes("const standing = standingOfRow(row, stored, lastPaidPayout);"), "HEADLINE: the tiles count a decided trip with it");
+  assert.ok(queue.includes("buildDeskClaim({ context: { lastPaidPayout, today }, ledger: ledgerOf(row), now, row })"), "a claim re-read after a press is told it");
+  assert.ok(history.includes("readLastPaidPayout(supabase)") && history.includes("buildDeskClaim({ context: { lastPaidPayout, today },"), "and so is every row of History");
   assert.ok(evidence.includes('unavailable: ["Phoenix CRM field work"]'), "a failed Phoenix CRM read names itself and gives no reading");
   assert.ok(evidence.includes('.eq("is_test", false)') && evidence.includes('.is("archived_at", null)'), "test visits and archived copies are never field work");
 }

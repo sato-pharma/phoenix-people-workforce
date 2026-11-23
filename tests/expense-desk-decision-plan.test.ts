@@ -202,6 +202,12 @@ export function runExpenseDeskDecisionPlanTests() {
 
   // 5. The answer, read from the claim as stored afterwards.
   assert.equal(decisionLanded("approve", claim({ standing: "approved_queued" })), true);
+  assert.equal(
+    decisionLanded("approve", claim({ standing: "approved_missed" })),
+    true,
+    "HEADLINE: approving a trip whose payout month's payroll already ran still landed — it must not read as not saved",
+  );
+  assert.equal(decisionLanded("reject", claim({ standing: "approved_missed" })), false);
   assert.equal(decisionLanded("reduce", claim({ standing: "approved_held" })), true);
   assert.equal(decisionLanded("approve", claim({ standing: "waiting" })), false);
   assert.equal(decisionLanded("reject", claim({ standing: "approved_queued" })), false);
@@ -317,7 +323,7 @@ export function runExpenseDeskDecisionPlanTests() {
   // into the next payroll, never for one the workflow refused as stale — and the verdict is kept
   // only with an answer of "saved".
   const resend = decide.slice(decide.indexOf("const unfinished = sent.filter("), decide.indexOf("const outcomes: DeskDecisionOutcome[] = [];"));
-  assert.ok(resend.includes('if (entry.decision.action === "reject" || !entry.claim || stored?.standing !== "approved_queued") return false;'), "only an approval that reached the next payroll is sent again");
+  assert.ok(resend.includes('if (entry.decision.action === "reject" || !entry.claim || !stored || !awaitsAPayroll(stored.standing)) return false;'), "only an approval whose payroll row no payroll has taken is sent again");
   assert.ok(resend.includes("if (skippedByTrip.get(entry.claim.tripId)?.code === OUTSTATION_CLAIM_CHANGED_CODE) return false;"), "HEADLINE: never a press the workflow refused as stale — that claim is somebody else's decision");
   assert.ok(resend.includes("return !amountLanded(entry.plan.approved, stored);"), "and only where the stored figure is not the one chosen");
   assert.equal((decide.match(/await applyOutstationRequestExpenseDecisions\(/g) ?? []).length, 2, "the press, and at most one re-send: never a loop");

@@ -37,6 +37,7 @@ import { verdictStamp } from "@/lib/outstation/approvals/agreement";
 import { DESK_DECISION_LIMIT } from "@/lib/outstation/approvals/decision-body";
 import { amountLanded, DESK_REFUSAL, deskDecisionOutcome, planDeskDecision, type PlannedDeskDecision } from "@/lib/outstation/approvals/decision-plan";
 import { loadDeskClaims } from "@/lib/outstation/approvals/queue";
+import { awaitsAPayroll } from "@/lib/outstation/approvals/standing";
 import type { DeskClaim, DeskDecisionOutcome, DeskDecisionRequest } from "@/lib/outstation/approvals/types";
 import { OUTSTATION_CLAIM_CHANGED_CODE } from "@/lib/outstation/claim-revision";
 import { expenseClaimsReadEnabled } from "@/lib/outstation/claims-read-flag";
@@ -116,7 +117,7 @@ export async function decideDeskClaims(
   // where it is by somebody else's press, and it is theirs.
   const unfinished = sent.filter((entry) => {
     const stored = after.get(entry.decision.requestId);
-    if (entry.decision.action === "reject" || !entry.claim || stored?.standing !== "approved_queued") return false;
+    if (entry.decision.action === "reject" || !entry.claim || !stored || !awaitsAPayroll(stored.standing)) return false;
     if (skippedByTrip.get(entry.claim.tripId)?.code === OUTSTATION_CLAIM_CHANGED_CODE) return false;
     return !amountLanded(entry.plan.approved, stored);
   });

@@ -50,7 +50,7 @@ export function runOutstationExpenseApprovalsLayoutTests() {
   // REBUILT FROM SCRATCH, 2026-11-23 (approvals-desk/; owner: "REBUILD FROM SCRATCH LESS THAN 9.5/10
   // PER ITEM IS NOT ACCPETED"). The audit of the 7 Nov screen found the first waiting trip under a
   // page of tiles, tabs and filters, nine tabs, a Save button, and a reviewer that was a second way
-  // to decide. The desk is: one line that says what waits, five true tiles, three lanes, the list —
+  // to decide. The desk is: one line that says what waits, six true tiles, three lanes, the list —
   // and one trip opened the same way from anywhere, on one scroll, its decision pinned at the foot.
   // Every day still draws ITS OWN MAP ("if 3 days then I should have 3 maps").
   const dir = "src/components/outstation/approvals-desk";
@@ -112,11 +112,11 @@ export function runOutstationExpenseApprovalsLayoutTests() {
   assert.ok(tiles.includes("{formatNumberValue(top.overSevenDays)} over 7 days"), "HEADLINE: and how many have waited more than a week");
   assert.ok(tiles.includes("aria-pressed={overOnly}"), "which is a press that shows only those");
 
-  // Five tiles, one per place a trip can stand — never a count that includes another tile's trips.
+  // Six tiles, one per place a trip can stand — never a count that includes another tile's trips.
   assert.ok(tiles.includes("{TRIP_STANDINGS.map((standing) => {"), "HEADLINE: one tile per standing, from the one list of standings");
   assert.ok(tiles.includes("const tile = queue.tiles[standing];"), "each reading the server's own count");
   assert.ok(tiles.includes("onClick={() => onOpen(standing)}"), "and a tile opens its trips");
-  assert.match(tiles, /grid min-w-0 grid-cols-2 border border-slate-200 bg-white sm:grid-cols-3 xl:grid-cols-5/, "one slim strip: two across on a phone, five on a desktop");
+  assert.match(tiles, /grid min-w-0 grid-cols-2 border border-slate-200 bg-white sm:grid-cols-3 xl:grid-cols-6/, "one slim strip: two across on a phone, six on a desktop");
   assert.ok(tiles.includes("data-desk-agreement"), "under them, how often the system's lane matched his answer");
 
   // The lanes: a tablist, keyboard included.

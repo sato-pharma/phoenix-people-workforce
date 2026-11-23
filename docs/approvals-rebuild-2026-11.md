@@ -44,7 +44,7 @@ What the audit found on Expense Approvals, read on production that night:
 
 ### What it is
 
-One line says how many decisions wait. Under it, five tiles that each equal a database count. Then
+One line says how many decisions wait. Under it, six tiles that each equal a database count. Then
 three lanes:
 
 - **Ready**: every check that applies to the claim passed. One button approves the whole lane and
@@ -105,13 +105,32 @@ that could not be read gives "could not check" for every trip, never "idle".
 | --- | --- |
 | Waiting | Not decided. |
 | Approved · held | Accepted, but no payroll row carries it yet. The evidence gate is holding it. |
-| Approved · next payroll | Accepted, a payroll row carries it, no payroll has taken it. |
+| Approved · next payroll | Accepted, a payroll row carries it, and the payroll of its payout month has not run yet. |
+| Approved · payroll already ran | Accepted, a payroll row carries it, the row is not marked paid, and the payroll of its payout month has already run. |
 | In payroll | A payroll took it. Nothing can change it here. |
 | Rejected | Nothing is paid. |
 
 The paid stamp on a payroll row is written only since 12 Sep 2026, and July and August 2026 were
 never backfilled. So a row with no stamp whose payout month is August 2026 or earlier is in a
 payroll, and the page says so.
+
+**Approved · payroll already ran** was added the morning the desk went live (23 Nov 2026). The first
+read of production after the merge found 12 approved trips, 3,869.30 EGP, with payout month September
+(6) or October (6) 2026 and no paid mark, while both payrolls had run. The desk called them "Approved
+· next payroll". That was not true: payroll reads a trip by its own payout month and no later run
+looks back at an earlier one (`src/lib/automated-payroll/late-expenses.ts`), and the switch that
+carries such trips into the next run was off. Those trips are listed on the payroll Expenses step,
+where it is decided whether a run carries them.
+
+How the state is read: the newest payout month that any payroll row carries a paid stamp for is the
+last payroll that ran (`readLastPaidPayout` in `approvals/queue.ts`, one row). An approved trip
+with a payroll row, no paid mark, and a payout month on or before that one is in this state. The
+page never calls it unpaid, because a missing mark does not prove a missing payment (a stamp can
+fail, and a person's published figure can differ from their approved trips). It says what is known
+and names the screen. The state changes nothing: no payroll row is written and no amount moves.
+
+On production that morning: 64 waiting, 5 held, 104 next payroll (49,710.97 EGP), 12 payroll already
+ran (3,869.30 EGP), 109 in payroll, 64 rejected.
 
 ### The press
 
@@ -223,7 +242,7 @@ Each of these was on the 7 Nov screen and is not on the desk.
 | Not carried | What is there instead |
 | --- | --- |
 | The Save button, the unsaved count and the draft kept in the browser | A press saves after six seconds of Undo. |
-| Nine tabs and six tiles | Three lanes and five tiles. |
+| Nine tabs and six tiles | Three lanes and six tiles, each counting one state. |
 | The "By employee" roll-up tab | The search box narrows by employee. |
 | "Unapprove back to waiting" | A decided claim is not reopened here. |
 | Biggest first, and the order remembered for each reviewer | Oldest first, always. |

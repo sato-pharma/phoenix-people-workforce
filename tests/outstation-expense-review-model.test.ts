@@ -128,11 +128,11 @@ export function runOutstationExpenseReviewModelTests() {
   assert.equal(openingLane(DEFAULT_DESK_VIEW, [unclear, queued]), "your_call", "and on Your call once Ready is empty");
   assert.equal(openingLane({ ...DEFAULT_DESK_VIEW, lane: "history" }, all), "history", "the address's own lane is kept");
 
-  // ── 2. Five tiles, each counting ONE standing ────────────────────────────────────────────────
+  // ── 2. Six tiles, each counting ONE standing ────────────────────────────────────────────────
   const tiles = countTripStandings(all);
   assert.deepEqual(
     TRIP_STANDINGS.map((standing) => [standing, tiles[standing].count]),
-    [["waiting", 3], ["approved_held", 1], ["approved_queued", 2], ["in_payroll", 1], ["rejected", 1]],
+    [["waiting", 3], ["approved_held", 1], ["approved_queued", 2], ["approved_missed", 0], ["in_payroll", 1], ["rejected", 1]],
     "HEADLINE: every trip is in exactly one tile — a paid trip is never also counted as Approved",
   );
   assert.equal(TRIP_STANDINGS.reduce((sum, standing) => sum + tiles[standing].count, 0), all.length, "and the tiles add up to the trips");
@@ -185,8 +185,8 @@ export function runOutstationExpenseReviewModelTests() {
   // ── 5. The state pill: one word per standing ─────────────────────────────────────────────────
   assert.deepEqual(
     TRIP_STANDINGS.map((standing) => TRIP_STANDING_LABEL[standing]),
-    ["Waiting", "Approved · held", "Approved · next payroll", "In payroll", "Rejected"],
-    "HEADLINE: the five words a row and a tile wear",
+    ["Waiting", "Approved · held", "Approved · next payroll", "Approved · payroll already ran", "In payroll", "Rejected"],
+    "HEADLINE: the six words a row and a tile wear",
   );
   assert.equal(pressLabel([approve(ready)], [ready]), "Mona Saleh: approved", "the Undo bar names who and what");
   assert.equal(pressLabel([{ action: "reject", comment: "Twice.", requestId: 2, revision: "rev-2" }], [unclear]), "Karim Adel: rejected");
