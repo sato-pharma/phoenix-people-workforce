@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { PremiumHero } from "@/components/ui/premium-hero";
+import { DailyDeductionsDayReview } from "@/components/admin/daily-deductions-day-review";
 import { DailyDeductionsWorkspace } from "@/components/admin/daily-deductions-workspace";
 import { guardSeatPage } from "@/lib/auth/seat-page-guard";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -47,6 +48,9 @@ export default async function AdminDailyDeductionsPage({
         title="Daily Deductions"
         subtitle="Count deductions day by day over any date range, then release them one at a time, per employee, or together — for the payroll sheet you finalize before month-end. Reuses the Fingerprint, Phoenix CRM, Vacation, No-records and Weekly-plan detection of the month-final module (days before 6 Nov 2026 read the iReports360 archive), counting only days that have fully elapsed. Each released employee is emailed the amount, the reason and the days. Releasing here feeds no salary run; payroll takes its figures from the Deductions screen."
       />
+      {/* Deduct a day by hand (owner, 2026-11-23): choose a person and a day, read the day, push it with a
+          comment. Super Admin only — the route refuses every other seat as well. */}
+      {access.role === "Super Admin" ? <DailyDeductionsDayReview today={today} /> : null}
       <DailyDeductionsWorkspace
         canPublish={access.role === "Super Admin"}
         defaultFrom={from}

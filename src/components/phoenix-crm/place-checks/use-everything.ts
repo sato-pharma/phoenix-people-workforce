@@ -24,9 +24,12 @@ import {
   type PlaceChecksSummary,
 } from "@/lib/phoenix-crm/place-checks-on-demand";
 
-/** The tabs whose rows the page does not send: the places in use, and the decisions of single clinics. */
+/**
+ * The tabs whose rows the page does not send: the places in use, the decisions of single clinics, and the
+ * buildings that need no decision (23 Nov 2026: the page sends only the ones the lanes draw).
+ */
 export function viewNeedsEverything(view: PlaceCheckView): boolean {
-  return view === "unconfirmed" || view === "history" || view === "bySystem";
+  return view === "unconfirmed" || view === "history" || view === "bySystem" || view === "polyclinics";
 }
 
 export function usePlaceChecksEverything({

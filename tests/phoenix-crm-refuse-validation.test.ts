@@ -344,7 +344,7 @@ function checkScreens(): void {
   // call multi-line, and a single-line fingerprint would go red on formatting alone.
   // Since 2026-11-14 the page hands the recent decisions and the seated places in use, and the board reads
   // the rest on the click (`place-checks-on-demand.ts`) — so those two props are the narrower sets.
-  for (const prop of ["pending={waiting}", "decided={sentDecided}", "validated={seatedInUse}", "onDemand={onDemand}", "reopened={reopened}", "capped={capped}"]) {
+  for (const prop of ["pending={waiting}", "decided={sentDecided}", "validated={seatedInUse}", "onDemand={onDemand}", "reopened={sentReopened}", "sharedPlaces={sentVenues}", "capped={capped}"]) {
     assert.ok(page.includes(prop), `the Place checks board is handed ${prop}`);
   }
   // Since 2026-10-18 the page draws the board through the one-by-one review's wrapper, which hands
