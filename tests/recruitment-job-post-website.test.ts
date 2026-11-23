@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 
+import { OwnPictureError, ownPictureFromDataUrl } from "../src/lib/recruitment/job-posts/own-picture.ts";
 import { closeJobCardOnWebsite, publishJobCardToWebsite, readOpenCareersCards, WebsiteCareersError } from "../src/lib/recruitment/job-posts/website.ts";
 import { CAREERS_ROUTES, cardDescriptionEn, careersGuard, careersRouteForTitle, cardTitle, publishCardViolations } from "../src/lib/recruitment/job-posts/website-cards.ts";
 
@@ -38,6 +39,27 @@ async function refusedWith(run: () => Promise<unknown>): Promise<WebsiteCareersE
     return error;
   }
   throw new Error("expected a refusal");
+}
+
+/** The first bytes of a PNG: signature, then IHDR with this width and height. */
+function pngBytes(width: number, height: number): Uint8Array {
+  const bytes = new Uint8Array(33);
+  bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(16, width);
+  view.setUint32(20, height);
+  return bytes;
+}
+
+/** A JPEG start: SOI, an APP0 segment, then SOF0 with this height and width. */
+function jpegBytes(width: number, height: number): Uint8Array {
+  const app0 = [0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00];
+  const sof = [0xff, 0xc0, 0x00, 0x11, 0x08, height >> 8, height & 0xff, width >> 8, width & 0xff, 0x03, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1];
+  return new Uint8Array([0xff, 0xd8, ...app0, ...sof, 0xff, 0xd9]);
+}
+
+function dataUrl(bytes: Uint8Array, label = "png"): string {
+  return `data:image/${label};base64,${Buffer.from(bytes).toString("base64")}`;
 }
 
 function sourceFiles(dir: string, out: string[] = []): string[] {
@@ -173,6 +195,31 @@ export async function runRecruitmentJobPostWebsiteTests() {
       await assert.rejects(readOpenCareersCards(), /503/);
     },
   );
+
+  // A person's own picture: a 4:5 PNG or JPEG of at least 1080 wide, typed by its bytes, refused in words.
+  const ownPng = ownPictureFromDataUrl(dataUrl(pngBytes(2160, 2700)));
+  assert.deepEqual([ownPng.contentType, ownPng.extension, ownPng.width, ownPng.height], ["image/png", "png", 2160, 2700]);
+  const ownJpeg = ownPictureFromDataUrl(dataUrl(jpegBytes(1080, 1350), "png"));
+  assert.deepEqual([ownJpeg.contentType, ownJpeg.extension, ownJpeg.width, ownJpeg.height], ["image/jpeg", "jpg", 1080, 1350], "the bytes decide the type, never the label");
+  assert.throws(() => ownPictureFromDataUrl(dataUrl(pngBytes(1080, 1080))), (error: unknown) => error instanceof OwnPictureError && /4:5 portrait[^]*1080 × 1080/.test(error.message));
+  assert.throws(() => ownPictureFromDataUrl(dataUrl(pngBytes(800, 1000))), /at least 1080 × 1350/);
+  assert.throws(() => ownPictureFromDataUrl(dataUrl(new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0, 0, 0, 0]), "gif")), /PNG or JPEG/);
+  assert.throws(() => ownPictureFromDataUrl("https://example.com/post.png"), /could not be read/);
+  assert.throws(() => ownPictureFromDataUrl(`data:image/png;base64,${"A".repeat(Math.ceil((8 * 1024 * 1024 + 3) / 3) * 4)}`), /larger than 8 MB/);
+
+  // ...and it goes to the website under its own type and name.
+  await withFetch(
+    () => Response.json({ data: { id: "c2", slug: "dm-delta-2", status: "OPEN" }, error: null, meta: null }, { status: 201 }),
+    async (calls) => {
+      await publishJobCardToWebsite(CARD, ownJpeg.bytes, "district-manager-delta-2.jpg", ownJpeg.contentType);
+      const image = (calls[0]!.init.body as FormData).get("image") as File;
+      assert.equal(image.name, "district-manager-delta-2.jpg");
+      assert.equal(image.type, "image/jpeg");
+    },
+  );
+  const publishRoute = readFileSync("app/api/recruitment/job-posts/publish/route.ts", "utf8");
+  assert.ok(publishRoute.includes("const picture = own ? own.bytes : await renderJobPostPng(one, template);"), "the press sends the person's picture when they chose one, else the drawn one");
+  assert.ok(publishRoute.includes("error instanceof OwnPictureError) return recruitmentProblem(error.message, 400)"));
 
   // 🔴 ONLY A PERSON'S PRESS PUBLISHES: the one route is the only caller, with no cron, autopilot or retry.
   const callers = ["app", "src", "scripts"]
