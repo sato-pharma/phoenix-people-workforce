@@ -51,8 +51,18 @@ export type FieldEvidence = {
   unavailable: string[];
 };
 
-/** The day activities that are a recorded meeting — Meeting and Group meeting, nothing wider. */
-export const MEETING_ACTIVITY_KEYS: ReadonlySet<string> = new Set(["meeting", "group_meeting"]);
+/**
+ * The day activities that count as a recorded meeting on Expense Approvals: Meeting, Group meeting,
+ * Training and Conference. A day holding one is worked, never "No visit and no meeting", and no
+ * idle-day cut is offered for it.
+ *
+ * Training and Conference joined on the owner's word, 23 Nov 2026 ("Count them as meetings"): 13
+ * District Manager claims for the 19 Nov training in Cairo and Weaam's Hurghada conference read "No
+ * visit and no meeting" on days spent at the company's own training and conference. Travelling,
+ * Admin work, Health day, Sales day, Interviews and RTD are NOT here. Every key is a Phoenix CRM day
+ * activity key (day-activities.ts), pinned by tests/expense-desk-queue.test.ts.
+ */
+export const MEETING_ACTIVITY_KEYS: ReadonlySet<string> = new Set(["meeting", "group_meeting", "training", "conference"]);
 
 const VISIT_COLUMNS = "id, visit_date, lat, lon, place_id, rep_hr_id, manager_hr_id, senior_hr_id, product_manager_hr_id";
 const ROLE_COLUMNS = ["rep_hr_id", "manager_hr_id", "senior_hr_id", "product_manager_hr_id"] as const;
