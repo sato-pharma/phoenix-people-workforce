@@ -161,7 +161,7 @@ export function runExpenseDeskClaimRowTests() {
   const unpriced = buildDeskClaim({ context: { fieldWork: fieldWork(3), today: TODAY }, ledger: null, now: NOW, row: row({ distance_basis: null }) });
   assert.equal(unpriced.verdict.lane, "your_call");
   assert.equal(unpriced.verdict.reason, "Not priced on the first double visit yet; the next morning run prices it.");
-  assert.deepEqual(ready.distance, { basis: "first_double_visit", capturedKm: 130, visitKm: 128, visitWords: "with Rep Name on 9 Nov" });
+  assert.deepEqual(ready.distance, { basis: "first_double_visit", capturedKm: 130, visitKm: 128, minimumKm: 60, visitWords: "with Rep Name on 9 Nov" });
   // A pending payroll row left under a waiting claim decides nothing.
   const shadowed = buildDeskClaim({ context: { fieldWork: fieldWork(3), today: TODAY }, ledger: ledger({ approved_amount: 10, total: 10 }), now: NOW, row: row() });
   assert.equal(shadowed.standing, "waiting");
