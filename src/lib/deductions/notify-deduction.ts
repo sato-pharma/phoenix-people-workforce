@@ -190,6 +190,10 @@ export type DeductionPushNoticeLine = {
   /** What makes this notice "already sent". Defaults to the line id; the DAILY page passes the id
    * plus the days, so releasing 11 November after the 9th tells the employee again. */
   noticeKey?: string;
+  /** HR's own words to the employee — set for a day pushed by hand from Daily Deductions, whose
+   * comment IS its reason (owner, 2026-11-23). Email only, like the figure: in-app and Telegram
+   * stay free of it. */
+  note?: string | null;
 };
 
 /**
@@ -219,6 +223,8 @@ export function buildDeductionEmailMetrics(
     { label: "Month", value: monthLabel },
     { label: "Reason", value: deductionCategoryName(line.category) },
   ];
+  const note = line.note?.trim();
+  if (note) metrics.push({ label: "Comment from HR", value: note });
 
   if (typeof line.daysCount === "number" && Number.isFinite(line.daysCount) && line.daysCount > 0) {
     metrics.push({ label: "Days deducted", value: formatDaysCharged(line.daysCount) });
