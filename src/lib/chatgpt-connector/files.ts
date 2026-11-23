@@ -27,6 +27,20 @@ import { connectorOrigin } from "./oauth";
 import { defineTool, ToolRefusal, type ConnectorTool } from "./types";
 
 export const CONNECTOR_FILE_DAYS = 7;
+
+/** Above this a file (a long film) is handed over by a signed storage address, never through the server. */
+export const CONNECTOR_STREAM_DIRECT_BYTES = 24 * 1024 * 1024;
+
+/**
+ * Does the download route hand this file over by a short-lived signed storage address (a 303) rather
+ * than stream it through the server's memory? Only above CONNECTOR_STREAM_DIRECT_BYTES; an unknown size
+ * streams, as every file did before films.
+ */
+export function connectorFileGoesBySignedAddress(sizeBytes: unknown): boolean {
+  const size = Number(sizeBytes ?? 0);
+  return Number.isFinite(size) && size > CONNECTOR_STREAM_DIRECT_BYTES;
+}
+
 const MAX_SHEET_ROWS = 50_000;
 const MAX_PDF_ROWS = 3_000;
 const MAX_COLUMNS = 60;
