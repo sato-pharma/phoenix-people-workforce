@@ -11,6 +11,12 @@
  * row (`PlaceCheckFilterLine`, drawn by `tab-strip.tsx`): as a boxed bar of its own it stood 82 px, the
  * bar and its gap, above the first waiting place (the live page, 23 Nov 2026). Beside the last tabs the
  * line costs nothing; on a row of its own, 44 px. The boxes still open here.
+ *
+ * 🔴 ON A PHONE THE BUTTON STANDS BESIDE THE TAB PICKER (owner, 23 Nov 2026: "Fix what is under 9.5"). The
+ * folded box was 94 px and a gap above the first waiting place at 375 px, to say "Showing everything". On
+ * the Super Admin's board a phone now gets one button in the picker's own row (`PlaceCheckFilterToggle`);
+ * the folded box is drawn there only while something narrows the board, so what narrows it is never hidden.
+ * The boxes open under the strip that holds their button (`validation-reviews-board.tsx`).
  */
 
 import type { PlaceCheckBoard } from "@/components/phoenix-crm/place-checks/use-place-check-board";
@@ -65,7 +71,10 @@ export function filterSummary(filters: ValidationReviewFilters): string[] {
  * it fits there; with the bar's 240 px floor under the labels it never fitted (measured, 23 Nov 2026).
  */
 export function PlaceCheckFilterLine({ board, inStrip = false }: { board: PlaceCheckBoard; inStrip?: boolean }) {
-  const { anyFilter, filters, filtersOpen, narrowedBy, setFilters, setFiltersOpen } = board;
+  const { anyFilter, filters, filtersOpen, lanes, narrowedBy, setFilters, setFiltersOpen } = board;
+  // On the Super Admin's board the boxed line is a phone's alone, and a phone's button stands beside the tab
+  // picker (`PlaceCheckFilterToggle`): a second one here would be the same press twice on one screen.
+  const ownToggle = inStrip || !lanes;
   return (
     <>
       <h2 className="text-sm font-black uppercase tracking-[0.12em] text-slate-500">Filters</h2>
@@ -86,19 +95,42 @@ export function PlaceCheckFilterLine({ board, inStrip = false }: { board: PlaceC
             Clear filters
           </CrmButton>
         ) : null}
-        <CrmButton aria-controls={filtersOpen ? "vr-filter-fields" : undefined} aria-expanded={filtersOpen} onClick={() => setFiltersOpen((current) => !current)} size="sm">
-          {filtersOpen ? "Hide filters" : "Show filters"}
-        </CrmButton>
+        {ownToggle ? (
+          <CrmButton aria-controls={filtersOpen ? "vr-filter-fields" : undefined} aria-expanded={filtersOpen} onClick={() => setFiltersOpen((current) => !current)} size="sm">
+            {filtersOpen ? "Hide filters" : "Show filters"}
+          </CrmButton>
+        ) : null}
       </div>
     </>
   );
 }
 
-export function PlaceCheckFilterBar({ board }: { board: PlaceCheckBoard }) {
-  const { areas, deciders, filters, filtersOpen, lanes, lines, lists, regions, reps, set, team } = board;
+/** The phone's Filters button on the Super Admin's board, beside the tab picker. It counts what narrows the board. */
+export function PlaceCheckFilterToggle({ board }: { board: PlaceCheckBoard }) {
+  const { filtersOpen, narrowedBy, setFiltersOpen } = board;
   return (
-    // With lanes, a desktop draws the line in the tab strip: closed, this box is the phone's alone.
-    <div className={cn("min-w-0 border border-slate-200 bg-white", lanes && !filtersOpen && "sm:hidden")} data-filter-bar={lanes ? "line-in-strip" : "whole"}>
+    <CrmButton
+      aria-controls={filtersOpen ? "vr-filter-fields" : undefined}
+      aria-expanded={filtersOpen}
+      className="min-h-11 shrink-0"
+      data-filter-toggle
+      onClick={() => setFiltersOpen((current) => !current)}
+      size="sm"
+    >
+      {filtersOpen ? "Hide filters" : narrowedBy.length > 0 ? `Filters (${narrowedBy.length})` : "Filters"}
+    </CrmButton>
+  );
+}
+
+export function PlaceCheckFilterBar({ board }: { board: PlaceCheckBoard }) {
+  const { areas, deciders, filters, filtersOpen, lanes, lines, lists, narrowedBy, regions, reps, set, team } = board;
+  return (
+    // With lanes, a desktop draws the line in the tab strip and a phone its button beside the tab picker:
+    // closed, this box is the phone's alone, and only while something narrows the board.
+    <div
+      className={cn("min-w-0 border border-slate-200 bg-white", lanes && !filtersOpen && (narrowedBy.length === 0 ? "hidden" : "sm:hidden"))}
+      data-filter-bar={lanes ? "line-in-strip" : "whole"}
+    >
       <div className={cn("flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3", lanes && "sm:hidden")}>
         <PlaceCheckFilterLine board={board} />
       </div>

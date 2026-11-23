@@ -8,7 +8,7 @@ import { formatPhoenixDateTime } from "@/lib/i18n/format";
 import { logError } from "@/lib/observability/log";
 import type { PlaceCheckAdvice } from "@/lib/phoenix-crm/place-check-advice";
 import { adviceOnReviewRecord } from "@/lib/phoenix-crm/place-check-stored-advice";
-import { REVIEW_SUBJECTS_SELECT, signboardCheckRead } from "@/lib/phoenix-crm/place-checks-slim-read";
+import { keptBySeatedDecisionsRead, REVIEW_SUBJECTS_SEATED_SELECT, REVIEW_SUBJECTS_SELECT, signboardCheckRead } from "@/lib/phoenix-crm/place-checks-slim-read";
 import { parseScheduleHeldBecause, parseScheduleLegibility, parseScheduleProblem } from "@/lib/phoenix-crm/schedule-rules";
 import { territoryName } from "@/lib/phoenix-crm/scope";
 import { customerKindText } from "@/lib/phoenix-crm/speciality-list";
@@ -25,6 +25,10 @@ import { DECIDED_SHOWN_DAYS, deciderLabel, isRecord, listingsOf, newestValidated
 import type { ValidationBoardRead, ValidationReviewRow } from "@/lib/phoenix-crm/server/validation-reviews/types";
 import { markDoorsCapturedAgain, markEarlierDecisions } from "@/lib/phoenix-crm/server/validation-reviews/capture-marks";
 import { signboardOf } from "@/lib/phoenix-crm/server/validation-reviews/decided";
+
+/** The review's own columns the board reads; the customer and the place are joined beside them. */
+const REVIEW_COLUMNS =
+  "id, seat_id, customer_id, place_id, is_test, kind, status, google, created_by_hr_id, created_at, decided_by_hr_id, decided_at, decision_note, refusal_reason, system_approved_rule";
 
 /**
  * Every waiting review, and the ones decided in the last two weeks — newest first.
@@ -45,10 +49,22 @@ export async function loadValidationReviews(
      * `recent`, and the board shows the others only while a decider is chosen.
      */
     everyDecision?: boolean;
+    /**
+     * 🔴 THE SUPER ADMIN'S PAGE READS THE DECISIONS IT SENDS, AND NO OTHERS (owner, 23 Nov 2026: "Fix what is
+     * under 9.5"). The page sends the decisions of the customers SEATED in a building, because a building's
+     * card shows everybody in it (`decidedSentWithPage`); it read all 1,184 decisions of the last 14 days to
+     * keep those — 2.9 of the page's seconds, its slowest read. With this the database sends only the
+     * decisions whose place is seated in a building (the place is joined into each review, so it is one
+     * filter and no list of ids), and the rows are narrowed again here, so the rule never rests on the
+     * request alone. Every waiting review is still read whole. The single clinics' decisions are the wide
+     * read's (`server/place-checks-wide-read.ts`), which counts them and hands them to the click.
+     */
+    seatedDecisionsOnly?: boolean;
   } = {},
 ): Promise<ValidationBoardRead<ValidationReviewRow>> {
   const seats = placeChecksSeatScope(viewer);
   const decides = readsCompanyPlaceChecks(viewer);
+  const seatedDecisionsOnly = options.seatedDecisionsOnly === true;
   const since = new Date(Date.now() - DECIDED_SHOWN_DAYS * 86_400_000).toISOString();
   const rejectedSince = new Date(Date.now() - REJECTED_SHOWN_DAYS * 86_400_000).toISOString();
   // Phoenix CRM validation audit, 14 Nov 2026: the waiting reviews and the decided ones were ONE read
@@ -59,17 +75,18 @@ export async function loadValidationReviews(
   const reviewsOf = (waiting: boolean) => () => {
     const base = getSupabaseAdmin()
       .from("phoenix_crm_validation_reviews")
-      .select(
-        `id, seat_id, customer_id, place_id, is_test, kind, status, google, created_by_hr_id, created_at, decided_by_hr_id, decided_at, decision_note, refusal_reason, system_approved_rule, ${REVIEW_SUBJECTS_SELECT}`,
-      );
+      // The same columns either way; only the place's join differs, inner when the database narrows by it.
+      .select(seatedDecisionsOnly && !waiting ? `${REVIEW_COLUMNS}, ${REVIEW_SUBJECTS_SEATED_SELECT}` : `${REVIEW_COLUMNS}, ${REVIEW_SUBJECTS_SELECT}`);
     // A rejection keeps its undo for longer than an ordinary decided row keeps its place on the
     // page — see REJECTED_SHOWN_DAYS. The place's own status is not on this table, so a rejection
     // with nothing left to undo is dropped after the read, below.
-    const query = waiting
+    const byStatus = waiting
       ? base.eq("status", "pending")
       : options.everyDecision
         ? base.neq("status", "pending")
         : base.neq("status", "pending").or(`decided_at.gte.${since},and(status.eq.rejected,decided_at.gte.${rejectedSince})`);
+    // The decisions of the customers seated in a building, picked by the database.
+    const query = seatedDecisionsOnly && !waiting ? byStatus.not("place.shared_place_id", "is", null) : byStatus;
     return seatScoped(query, seats)
       .order("created_at", { ascending: false })
       .order("id", { ascending: false });
@@ -86,6 +103,13 @@ export async function loadValidationReviews(
   // order the single read asked the database for, `created_at desc, id desc`, made here.
   const reviewById = new Map<string, Row>();
   for (const row of [...waitingRead.rows, ...decidedRead.rows]) reviewById.set(String(row.id), row);
+  // 🔴 SEATED IS THE RULE; THE DATABASE'S NARROWING ONLY SAVES THE DOWNLOAD. A decision whose place sits in
+  // no building is dropped here too, so a request that came back wider answers the same rows.
+  if (seatedDecisionsOnly) {
+    for (const [id, row] of reviewById) {
+      if (!keptBySeatedDecisionsRead(row)) reviewById.delete(id);
+    }
+  }
   const reviews = [...reviewById.values()].sort(newestValidatedFirst);
   const capped = waitingRead.capped || decidedRead.capped;
   if (reviews.length === 0) return { rows: [], capped: false };

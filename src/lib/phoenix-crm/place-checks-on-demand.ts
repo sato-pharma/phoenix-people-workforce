@@ -29,6 +29,12 @@
  * its rows for the click, so the click still reads nothing again. Until it answers, a tab whose count
  * needs it shows no count — never one taken from the seated places alone.
  *
+ * 🔴 NOR DOES THE PAGE READ THE DECISIONS IT DOES NOT SEND (owner, 23 Nov 2026: "Fix what is under 9.5"). It
+ * read all 1,184 decisions of the last 14 days, kept the 404 seated in a building, and counted two cards of
+ * the Figures tab from the rest. The page now asks the database for the seated decisions alone
+ * (`loadValidationReviews`, `seatedDecisionsOnly`), and those two cards are counted by the wide read with
+ * every other figure (`decisionFigures`).
+ *
  * Pure and screen-free, so the server page and the client board both import it.
  */
 
@@ -67,7 +73,27 @@ export type PlaceChecksEverything = {
   noteIndex: PlaceNoteIndex;
   /** Whether either of the two wide reads stopped at its ceiling, so the board says so. */
   capped: { reviews: boolean; validated: boolean };
+  /** The Figures tab's two decision cards, counted from these rows by the read that made them. */
+  decisionFigures: PlaceChecksDecisionFigures;
 };
+
+/** The Figures tab's "Approved, last 14 days" and "Rejected, last 14 days". */
+export type PlaceChecksDecisionFigures = { approved: number; rejected: number };
+
+/**
+ * The real decisions made on or after `since` (milliseconds), by what was decided.
+ *
+ * 🔴 BY THE DAY IT WAS DECIDED, NEVER BY `recent`. A rejection that can still be taken back stays on the
+ * board for 90 days and is `recent` all that time, so the card that counted `recent` rows read 733 under
+ * "Rejected, last 14 days" on 23 Nov 2026 when 570 had been rejected in those 14 days.
+ */
+export function decisionFiguresSince(decided: ReadonlyArray<ValidationReviewRow>, since: number): PlaceChecksDecisionFigures {
+  const inWindow = decided.filter((row) => isReal(row) && row.decidedAt !== null && Date.parse(row.decidedAt) >= since);
+  return {
+    approved: inWindow.filter((row) => row.status === "approved").length,
+    rejected: inWindow.filter((row) => row.status === "rejected").length,
+  };
+}
 
 /**
  * The page's notes and the click's as one index. A subject in both is the page's: the page is read again
@@ -207,6 +233,8 @@ export type PlaceChecksSummary = {
   inUse: number;
   /** The Figures tab's "Never looked at": in use, and no review row of any status. */
   unseen: number;
+  /** The Figures tab's two decision cards (`decisionFiguresSince`). */
+  decisionFigures: PlaceChecksDecisionFigures;
   /** Whether a read these figures were counted from stopped at its ceiling. */
   capped: { reviews: boolean; validated: boolean };
 };
@@ -225,6 +253,8 @@ export function placeChecksSummary(input: {
   reopened: ReadonlyArray<ReopenedCustomerRow>;
   sharedPlaces: ReadonlyArray<SharedPlaceBoardRow>;
   capped?: { reviews: boolean; validated: boolean };
+  /** Where the two decision cards' 14 days begin, in milliseconds. Without one, every decision handed in counts. */
+  decidedSince?: number;
 }): PlaceChecksSummary {
   const filters = EMPTY_VALIDATION_REVIEW_FILTERS;
   const pending = input.pending.filter(isReal);
@@ -246,6 +276,7 @@ export function placeChecksSummary(input: {
     inUse: validated.length,
     // Nobody has ever looked at these — no review row of any status (598 of the first 643, 2026-10-08).
     unseen: validated.filter((row) => !row.reviewed).length,
+    decisionFigures: decisionFiguresSince(everyDecided, input.decidedSince ?? Number.NEGATIVE_INFINITY),
     capped: input.capped ?? { reviews: false, validated: false },
   };
 }

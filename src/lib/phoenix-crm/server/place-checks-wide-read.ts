@@ -26,6 +26,7 @@
 
 import { placeChecksBoardSets } from "@/lib/phoenix-crm/place-checks-board-sets";
 import { placeChecksSummary, type PlaceChecksEverything, type PlaceChecksSummary } from "@/lib/phoenix-crm/place-checks-on-demand";
+import { DECIDED_SHOWN_DAYS } from "@/lib/phoenix-crm/server/validation-reviews/shared";
 import type { PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadPlaceCheckIntegrity } from "@/lib/phoenix-crm/server/integrity-board";
 import { loadPlaceNoteIndex } from "@/lib/phoenix-crm/server/place-notes";
@@ -63,6 +64,10 @@ export async function readPlaceChecksWide(viewer: PhoenixCrmViewer): Promise<Pla
   const validated = validatedRead.rows;
   const capped = { reviews: reviews.capped, validated: validatedRead.capped };
   const sets = placeChecksBoardSets({ decides, reviews: reviews.rows, sharedPlaces: sharedRead.rows, notes });
+  // The Figures tab's two decision cards count the last 14 days by the day of the decision. The page counted
+  // them from every recent decision it read; it reads only the seated ones now, so they are counted here.
+  const decidedSince = Date.now() - DECIDED_SHOWN_DAYS * 86_400_000;
+  const summary = placeChecksSummary({ team: false, lanes: decides, pending: sets.waiting, decided: sets.decided, validated, reopened: reopenedRead.rows, sharedPlaces: sets.sharedPlaces, capped, decidedSince });
   return {
     everything: {
       validated,
@@ -71,7 +76,9 @@ export async function readPlaceChecksWide(viewer: PhoenixCrmViewer): Promise<Pla
       olderDecided: reviews.rows.filter((row) => row.status !== "pending"),
       noteIndex: { ...notes, integrity },
       capped,
+      // The same two figures the summary answers, so the cards do not move when the rows arrive.
+      decisionFigures: summary.decisionFigures,
     },
-    summary: placeChecksSummary({ team: false, lanes: decides, pending: sets.waiting, decided: sets.decided, validated, reopened: reopenedRead.rows, sharedPlaces: sets.sharedPlaces, capped }),
+    summary,
   };
 }

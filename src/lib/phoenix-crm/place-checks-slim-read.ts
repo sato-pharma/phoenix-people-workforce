@@ -56,6 +56,29 @@ export const REVIEW_SUBJECTS_SELECT =
   `${SIGNBOARD_CHECK_KEYS_SELECT})`;
 
 /**
+ * The same joins, with the place joined `!inner`, for the read that asks for the decisions of the customers
+ * seated in a building (`loadValidationReviews`, `seatedDecisionsOnly`; 23 Nov 2026). A filter on
+ * a joined table drops the review only when the join is inner; without it the review comes back with an
+ * empty place. Every review has a place (`place_id` is not null), so the inner join drops nothing else.
+ */
+export const REVIEW_SUBJECTS_SEATED_SELECT = REVIEW_SUBJECTS_SELECT.replace("_place_id_fkey(", "_place_id_fkey!inner(");
+
+/**
+ * Whether the seated-decisions read keeps a review row as the database sent it: every waiting review, and
+ * a decision whose place sits in a building.
+ *
+ * 🔴 SEATED IS THE RULE; THE DATABASE'S NARROWING ONLY SAVES THE DOWNLOAD. The read puts every row it got
+ * through this, so a request that came back wider answers the same rows.
+ */
+export function keptBySeatedDecisionsRead(row: { status?: unknown; place?: unknown }): boolean {
+  if (row.status === "pending") return true;
+  const place = row.place;
+  if (typeof place !== "object" || place === null || Array.isArray(place)) return false;
+  const building = (place as { shared_place_id?: unknown }).shared_place_id;
+  return typeof building === "string" && building.trim() !== "";
+}
+
+/**
  * The customer's status, joined into the places-in-use read so a dropped customer's place can be left out
  * in the same request (owner, 17 Nov 2026: 77 such places counted as "Validated, in use"). `!inner` makes
  * the filter on `customer.status` drop the place rather than blank the field; the key is NAMED, as above.

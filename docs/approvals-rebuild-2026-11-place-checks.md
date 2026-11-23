@@ -332,6 +332,114 @@ top's new heights and the review's opening are read on the live page after the m
 items are scored again from those readings. The whole suite did not run anywhere before the push
 for the same reason; the pull request's `validate` and `checks` are the verdict.
 
+## Under 9.5 (owner, 23 Nov 2026, 17:05 Cairo: "Fix what is under 9.5")
+
+**Where the first read left it.** Pull request 718 merged at about 17:00 Cairo and its error read came
+back clean. Read on the live page afterwards: the first waiting place at 4.8 s, 6.2 s and 3.6 s (12.2 s
+before). Scored again from those readings: the reviewer 9.5, the phone 8.5, speed 6.5. Two items were
+under 9.5, and this pass is about those two.
+
+718's first run was red. A test that names a changed file had not been run before the push, because only
+the tests this work had touched were run. Since then every test file that names a changed source is run
+alone before the push (39 files here).
+
+### Speed
+
+**What the page still read and did not send.** One load of the live page: first byte at 2.1 s, the
+response ended at 6.96 s, 3,651 KB decoded (506 KB on the wire). Its slowest read was the review read:
+all 1,184 decisions of the last 14 days, to keep the 404 seated in a building and to count two cards
+of the Figures tab.
+
+**What changed.** The page asks the database for the seated decisions alone
+(`loadValidationReviews`, `seatedDecisionsOnly`). The place is already joined into each review, so
+it is one filter on that join, made inner for this read (`REVIEW_SUBJECTS_SEATED_SELECT`), and no
+list of ids. The rows are narrowed again in code (`keptBySeatedDecisionsRead`), so the rule never
+rests on the request alone. Every waiting review is still read whole. The two cards moved to the read
+behind the page, which already counts every other figure (`decisionFigures`).
+
+**Measured, read-only, from this laptop against production (23 Nov 2026).** The decided review read
+fell to 1,009 KB. The page's reads together: 55 requests and 4,721 KB narrow against 63 and 6,858 KB
+wide. In time the two runs were 2,714 ms and 5,969 ms narrow against 5,090 ms and 3,530 ms wide: the
+network noise is larger than the difference, so no number of seconds is claimed from them. What the
+page SENDS was compared row for row and is identical: 76 waiting, 404 decided, 432 buildings, 465
+seated places.
+
+**"Rejected, last 14 days" was wrong, and is corrected.** It read 733. Production holds 570 rejections
+decided in those 14 days (427 approvals, which the card had right). The other 163 were older
+rejections that can still be taken back: they stay on the board for 90 days and are `recent` all
+that time, and the card counted `recent` rows. `decisionFiguresSince` counts by the day of the
+decision.
+
+**Looked at and left.**
+
+- Slimming the buildings' `signboard_check` is unsafe: the building's reader judges again from the
+  signs it carries.
+- Slimming `schedule_check` on the seated places would save about 270 KB of 3,651 (the column is
+  about 390 KB in all, the keys the board reads about 115 KB). Not worth a second shape of that column.
+- The pager's closing empty page is a deliberate safety rule (a full page is never taken as the last).
+
+**Not at 2 seconds, and said plainly.** The plan's line is the first list in 2 seconds. This change
+removes the page's slowest read; it does not change what the page sends, and most of that payload is
+rows that do not wait (432 buildings, 465 seated places, 404 seated decisions). The change that would
+reach 2 s is a narrow opening: send only the buildings that are held or hold a waiting customer, and
+bring the rest with the click, as the places in use already are. That reaches into how the board
+builds its building groups and cannot be seen in a browser on a branch here, so it is not in this pull
+request. Speed is scored again from the live page after the merge, and if it is still above 2 s the
+narrow opening is the next change.
+
+### The phone
+
+**Measured at 375 px on the live page before this.** The first waiting card started at 714 px and the
+page was 5,625 px long. Above the first card: the board's line 188 px, the folded filter box 94 px, the
+tab picker 64 px, the lane's head 137 px (title 24, "Why these are your call" 44, "Answer several
+together" 44). A closed clinic card was 189 to 300 px and a closed building 256 to 300 px.
+
+**What changed.**
+
+- **The SFE line is one line.** "N more:" and the link, in place of "N more on their own page:".
+- **Filters are one button beside the tab picker** (`PlaceCheckFilterToggle`). The folded box said
+  "Showing everything" in 94 px. It is drawn on a phone only while something narrows the board, so
+  what narrows it is never hidden; the button counts it ("Filters (2)"). The boxes open under the
+  strip that holds their button. The boxed line draws no second button on that board.
+- **The picker's label is a screen reader's.** Its own option says what it is ("Your call (38)"). A
+  board with no lanes (a district manager's) keeps the visible label and its whole filter bar.
+- **A lane's head is two rows.** The title, then the fold and the pick button together (`fold` in
+  `place-checks/section.tsx`). Closed, the fold reads "Why: N reasons"; open, it takes a row of
+  its own and says its name.
+- **A closed card is the short block.** A clinic: the customer, "list · speciality · territory", the
+  rep, and one row of pills (the wait, "Rejected before" or "Approved before", the system's word). A
+  building: its name, its pills, "rep · territory". The capture time, the address and the earlier
+  decision's full sentence are the first lines inside the opened card (`part="summary"`,
+  `part="rest"`). Nothing is dropped, and the desktop table draws both blocks whole.
+
+**Expected, not measured.** From the measured row heights: the first card at about 506 px, a closed
+clinic card about 145 to 170 px, a closed building about 165 to 185 px, the page about 4,100 px. The
+branch was not opened in a browser (the live page and the spare laptop show production, never a
+branch). The class names were compiled with the project's Tailwind and each produced its rule,
+`max-sm:has-[details[open]]:basis-full` included. The heights are read on the live page after the
+merge and the phone is scored again from them.
+
+**Tests.** `tests/phoenix-crm-place-checks-first-read.test.ts` (the page asks for the seated
+decisions, the database narrows and the code narrows again, what the narrow read keeps, the four
+cards never a 0, the phone's filters, lane head and closed cards), the on-demand test (the two cards
+by the day decided, the same figures before and after the click) and the lanes test (a closed
+building). 16 of 16 fired when their fixes were broken.
+
+**What the two reviews of this pull request found.** Neither found a broken rule in access, in what a
+manager receives, or in what waits for a decision. What changed because of them:
+
+- A district manager's phone had lost the visible "Showing" label over its picker, on a board this
+  work said it left alone. It is back; only the Super Admin's board has the picker row with the button.
+- The narrowing query was proven on production with an earlier wording of the code. The committed
+  code was run again, read-only, at about 19:00 Cairo on 23 Nov 2026, before the merge was made. The
+  database accepted it (every request answered 200) and narrowed there: the decided read was one
+  request of 437 rows and 946 KB, with the inner join and the filter in the request and no row
+  without a building. The whole read was two requests, 1,365 rows and 2,887 KB. Both answered the
+  same waiting reviews and the same 404 seated decisions.
+
+Left as it is: with the filters open on a phone and nothing narrowing, the box still heads its fields
+with "Filters · Showing everything". It stands only while he has the boxes open.
+
 ## What is deliberately not there
 
 - **No "New photo" button and no "Take back" button.** The plan named five verbs. A rejection with

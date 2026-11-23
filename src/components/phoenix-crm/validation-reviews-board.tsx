@@ -98,7 +98,8 @@ export function ValidationReviewsBoard(props: PlaceCheckBoardProps) {
       <div className="space-y-5">
         <fieldset className="m-0 min-w-0 space-y-5 border-0 p-0" disabled={bulkRunning}>
           <PlaceCheckTop hero={props.hero}>{lanes ? <PlaceCheckDeskHeader board={board} review={review} /> : review}</PlaceCheckTop>
-          <PlaceCheckFilterBar board={board} />
+          {/* A board with no lanes keeps its filter bar here, whole. With lanes it is under the tab strip. */}
+          {lanes ? null : <PlaceCheckFilterBar board={board} />}
 
           {/* The figures' read failed and the rows are not in to count from: say which numbers are missing. */}
           {summaryError !== null && !complete ? <FiguresNotCounted error={summaryError} onRetry={reloadSummary} /> : null}
@@ -118,6 +119,9 @@ export function ValidationReviewsBoard(props: PlaceCheckBoardProps) {
           {team ? <PlaceChecksScorecardPanel board={board} /> : null}
 
           <PlaceCheckTabStrip board={board} />
+          {/* The Super Admin's filters: their button is in the strip above (a phone's beside the tab picker),
+              so the boxes open right under it. Closed, a desktop draws nothing here. */}
+          {lanes ? <PlaceCheckFilterBar board={board} /> : null}
         </fieldset>
 
         {bulkRunning ? (
