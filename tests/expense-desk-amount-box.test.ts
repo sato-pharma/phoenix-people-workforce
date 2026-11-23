@@ -19,7 +19,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
-import { amountPress, approvePress, defaultAmountText } from "@/lib/outstation/approvals/desk-view";
+import { amountPress, approvePress, defaultAmountText, readyBatch, selectionBatch } from "@/lib/outstation/approvals/desk-view";
 import type { DeskClaim } from "@/lib/outstation/approvals/types";
 
 const plain = { holdReason: null, preCut: null, requestId: 7, revision: "r7", standing: "waiting", total: 1200 } as unknown as DeskClaim;
@@ -44,7 +44,10 @@ export async function runExpenseDeskAmountBoxTests() {
     { action: "approve", keepFull: true, requestId: 8, revision: "r8" },
     "HEADLINE: typing the claim back over the system's cut pays it in full, keep-full said out loud",
   );
-  assert.equal(amountPress(withCut, "1199.6").figure, 1200, "within half a pound is the claim itself");
+  // A cut under half a pound cannot be paid (the payroll reads it as the claim), so it is refused in words,
+  // never approved in full in silence (code review, 24 Nov 2026).
+  assert.equal(amountPress(withCut, "1199.6").decision, null, "HEADLINE: a cut under EGP 0.50 is never approved in full in silence");
+  assert.match(String(amountPress(withCut, "1199.6").error), /A cut under EGP 0.50 cannot be paid/);
 
   // 2. Exactly the cut: the untouched button's own press.
   assert.deepEqual(amountPress(withCut, "700").decision, approvePress(withCut), "HEADLINE: the cut left as it is sends the untouched Approve");
@@ -88,4 +91,21 @@ export async function runExpenseDeskAmountBoxTests() {
   assert.ok(screen.includes("onClick={() => onPress([edited?.decision ?? approvePress(claim)], [claim])}"), "HEADLINE: Approve pays what the box says, in one press");
   assert.ok(screen.includes("disabled={edited?.error ? true : undefined}"), "HEADLINE: a figure the server would refuse disables Approve");
   assert.ok(screen.includes("{edited.error}"), "and says why");
+
+  // 6. The batches pay what each box says (code review, 24 Nov 2026: a box reading 850 on a 1,200
+  // claim was paid 1,200 by "Approve all"). A box that cannot be paid leaves its row out, named.
+  const typed = new Map([
+    [7, { revision: "r7", text: "850" }],
+    [8, { revision: "r8", text: "1300" }],
+  ]);
+  const ready = readyBatch([plain, withCut], 100, typed);
+  assert.deepEqual(ready.decisions, [amountPress(plain, "850").decision], "HEADLINE: Approve all sends the typed 850, and leaves out a box it cannot pay");
+  assert.equal(ready.value, 850, "and its figure is what the boxes say");
+  const stale = readyBatch([plain], 100, new Map([[7, { revision: "old", text: "850" }]]));
+  assert.deepEqual(stale.decisions, [approvePress(plain)], "a figure typed on an older version of the claim is not sent");
+  const ticked = selectionBatch([plain, withCut], new Set([7, 8]), 100, typed);
+  assert.deepEqual(ticked.approve, [amountPress(plain, "850").decision], "HEADLINE: Approve N sends the typed 850 too");
+  assert.deepEqual(ticked.needsOpening.map((claim) => claim.requestId), [8], "and names the row whose box cannot be paid");
+  assert.ok(fs.readFileSync("src/components/outstation/approvals-desk/desk-workspace.tsx", "utf8").includes("readyBatch(laneClaims, DESK_DECISION_LIMIT, typedAmounts)"), "HEADLINE: the page's Approve all reads the boxes");
+  assert.ok(screen.includes("const [typed, setTyped] = useTypedAmount(claim.requestId);"), "HEADLINE: the box keeps its figure in the desk's store, not the row's");
 }

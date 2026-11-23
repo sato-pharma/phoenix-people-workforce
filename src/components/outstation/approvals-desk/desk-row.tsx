@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { type DecisionMode, DecisionButtons, DecisionPanel, type OnPress } from "./desk-decision";
 import { FoundCell, MoneyCell, STANDING_RAIL, TripLine, WaitFigure, egp, kindNote, tripDates } from "./desk-parts";
 import { SelectionBar, TickAll, TickBox } from "./desk-select";
+import { useTypedAmounts } from "./typed-amounts";
 
 /** Rows drawn at a time; "Show 20 more" under the list reaches the rest. */
 const PAGE_ROWS = 20;
@@ -65,7 +66,8 @@ export function DeskList({
   const [ticked, setTicked] = useState<ReadonlySet<number>>(() => new Set());
   const page = claims.slice(0, shown);
   // Read against the claims on screen, so a tick on a claim that was decided or left the lane is gone.
-  const selection = selectionBatch(claims, ticked, DESK_DECISION_LIMIT);
+  const typed = useTypedAmounts();
+  const selection = selectionBatch(claims, ticked, DESK_DECISION_LIMIT, typed);
   const tick = (requestId: number, on: boolean) =>
     setTicked((current) => {
       const next = new Set(current);

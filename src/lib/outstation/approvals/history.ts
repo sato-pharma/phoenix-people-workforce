@@ -109,7 +109,8 @@ export async function loadDeskHistory(
   // inside the period — it ended on or after From and began on or before To. The days are stored as
   // midnight UTC (all 363 rows on 23 Nov 2026), so "before the day after To" keeps the whole last day.
   const period = tripPeriodOf(options.from, options.to);
-  if (period.from) query = query.gte("trip_end_date", period.from);
+  // A trip with no end date is a one-day trip on its start day, as `claimInPeriod` reads it on the lanes.
+  if (period.from) query = query.or(`trip_end_date.gte.${period.from},and(trip_end_date.is.null,trip_start_date.gte.${period.from})`);
   if (period.to) query = query.lt("trip_start_date", dayAfter(period.to));
   // The one builder quotes the term (src/lib/supabase/search-filter.ts); an empty answer means no filter.
   const searchFilter = search ? ilikeAnyFilter(["employee_name", "employee_hr_id"], search) : "";

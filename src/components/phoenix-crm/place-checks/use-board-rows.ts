@@ -91,7 +91,7 @@ export function usePlaceCheckRows({
     [reopenedRows, everything],
   );
   const sharedPlaces = useMemo(
-    () => pageRowsThenClick(venueRows.filter(isReal), everything ? everything.sharedPlaces.filter(isReal) : null, (row) => row.sharedPlaceId),
+    () => pageRowsThenClick(venueRows.filter(isReal), everything ? everything.sharedPlaces.filter(isReal) : null, (row) => row.sharedPlaceId, (row) => row.status === "held"),
     [venueRows, everything],
   );
 

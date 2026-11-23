@@ -144,7 +144,7 @@ export async function runApprovalsBulkDecisionTests() {
   assert.ok(expenseBar.includes("onPress(decisions, selection.claims);") && !expenseBar.includes("fetch("),
     "the batch is the page's own press — it waits its Undo and the bar itself saves nothing");
   const lane = read("src/components/outstation/approvals-desk/desk-row.tsx");
-  assert.ok(lane.includes("const selection = selectionBatch(claims, ticked, DESK_DECISION_LIMIT);"), "the ticks are read against the claims on screen, capped at one request's limit");
+  assert.ok(lane.includes("const selection = selectionBatch(claims, ticked, DESK_DECISION_LIMIT, typed);"), "the ticks are read against the claims on screen, capped at one request's limit");
   assert.ok(lane.includes("{canDecide && selection.count > 0 ? <SelectionBar "), "the bar is drawn only for someone who can decide, with something ticked");
   assert.ok(lane.includes("onTick: canDecide ? (on: boolean) => tick(claim.requestId, on) : undefined,"), "a reader gets no tick box");
   assert.ok(read("src/lib/outstation/decision-note.ts").includes('export const JOURNEY_CHECK_MARKER = "Journey check:";'),
