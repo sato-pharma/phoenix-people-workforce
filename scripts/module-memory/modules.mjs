@@ -655,6 +655,8 @@ export const MODULES = [
       "src/lib/phoenix-crm/{signboard-rules,schedule-rules,shared-place-rules,shared-place-groups,place-match-groups,validation-feedback,duplicate-merge-rules,validation-review-filters,place-photo-size,photo-reading-rules,pm-name-rules,trusted-point-rules,line-twins,line-lookalikes}.ts",
       "src/lib/phoenix-crm/server/{venue-timetable,signboard-check,signboard-sweep,signboard-holds,schedule-check,shared-places,place-location,place-match-groups,validation-reviews,full-name-reviews,trusted-point,line-twins,line-lookalikes}.ts",
       "src/components/phoenix-crm/{seat-in-venue-screen,venue-timetable-screen,refusal-reason-field,reopened-customer-list,shared-place-customers,shared-place-list,shared-place-screens,place-match-board,validated-place-list,validation-review-queue,validation-reviews-board,signboard-retake-screen,live-photo-capture,capture-location,full-name-checks,pm-name-fields,trusted-point-screen,line-lookalike-board}.tsx",
+      // The four lists' own parts since the split of 23 Nov 2026 (what is read, and the decision).
+      "src/components/phoenix-crm/{shared-place-customers,shared-place-list,validated-place-list,validation-review-queue}-{evidence,decision}.tsx",
       // The camera's own reading (2026-10-22): which of its readings becomes the photo's is what capture
       // trust later measures, so a session editing the camera gets the cold-reading rule with it.
       "src/components/phoenix-crm/location-receiver.ts",
@@ -691,6 +693,11 @@ export const MODULES = [
       "src/lib/phoenix-crm/{shared-place-groups,place-match-groups,customer-match-groups,validation-review-filters,place-checks-on-demand,waiting-rules}.ts",
       "src/lib/phoenix-crm/server/{place-match-groups,customer-match-groups,validation-reviews,place-checks-handoff}.ts",
       "src/components/phoenix-crm/{place-match-board,customer-match-board,shared-place-customers,shared-place-list,validated-place-list,validation-review-queue,validation-reviews-board,reopened-customer-list,place-check-done,place-check-restore}.tsx",
+      // The four lists' own parts since the split of 23 Nov 2026 (what is read, and the decision).
+      "src/components/phoenix-crm/{shared-place-customers,shared-place-list,validated-place-list,validation-review-queue}-{evidence,decision}.tsx",
+      // The board's own parts since the rebuild (23 Nov 2026): the frame is `validation-reviews-board.tsx`,
+      // and its hook, panels, header and tab strip live here. They load this module AND the desk's.
+      "src/components/phoenix-crm/place-checks/**",
       "app/**/field-crm/validation-reviews/**",
       "app/api/phoenix-crm/validation-reviews/**",
       // The one-by-one review (owner, 2026-10-18): its shell, its pure slides, the integrity slide and
@@ -728,6 +735,27 @@ export const MODULES = [
       "tests/phoenix-crm-{refuse-validation,sfe-place-checks,line-twins}*",
     ],
     keywords: ["send-back", "keep earlier distances", "reject after approval", "decided by filter", "decision comment", "sent-back customer"],
+    tables: [],
+  },
+  // 🔴 NEW, 23 Nov 2026, WITH THE REBUILD OF THE PAGE (owner: "REBUILD FROM SCRATCH"), AND A MODULE OF ITS OWN
+  // FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: the four place-check modules stood at 2,925, 1,975,
+  // 2,220 and 2,607 bytes of the 4,000-byte pointer margin, and the rebuild teaches eight rules at once. How
+  // the page SORTS and COUNTS what waits — the two lanes, the one waiting number, the four verbs, the view
+  // kept in the address, the advice kept with each decision and the one group the system approves by itself
+  // — is one family, so it starts together. `phoenix-crm-place-checks` gains the new folder's glob, so a
+  // panel file loads the PAIR; a lane rule lives here, a rule about what a list draws stays there.
+  {
+    id: "phoenix-crm-place-check-desk",
+    title: "Phoenix CRM — the Place checks desk: two lanes, one waiting number, and what the system approves by itself",
+    scope: "How the rebuilt Place checks page sorts and counts what waits for the Super Admin — the Ready and Your call lanes, the one waiting number in one unit, the four verbs, the view kept in the address, the advice kept with every decision and its 30-day agreement, and the sign-wins group the system approves by itself until it is taken back too often.",
+    globs: [
+      "src/lib/phoenix-crm/{place-check-lanes,place-check-address,place-check-stored-advice,sign-wins-rules,decision-stamp}.ts",
+      "src/lib/phoenix-crm/server/{sign-wins,stored-advice}.ts",
+      "src/components/phoenix-crm/place-checks/**",
+      "tests/phoenix-crm-{place-check-lanes,sign-wins}*",
+      "tests/support/place-check-*",
+    ],
+    keywords: ["ready lane", "your call lane", "sign wins", "approved by the system", "waiting number", "agreement meter", "approve after all", "reject after all"],
     tables: [],
   },
   // 🔴 SPLIT, 2026-10-19, FOR THE SAME REASON AGAIN: `phoenix-crm-validation` measured a 4,144-byte

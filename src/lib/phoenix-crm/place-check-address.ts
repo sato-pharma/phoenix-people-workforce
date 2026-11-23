@@ -1,7 +1,7 @@
 /**
  * Phoenix CRM — Place checks: what the page's address remembers.
  *
- * The rebuild, 23 Nov 2026 (`docs/approvals-rebuild-2026-11.md`, Part 2). The tab, the filters and how far
+ * The rebuild, 23 Nov 2026 (`docs/approvals-rebuild-2026-11-place-checks.md`). The tab, the filters and how far
  * a list was opened lived in the component, so a reload — or the page coming back after a decision —
  * opened on the first tab with every filter gone. They are written to the address now, so a reload, the
  * Back button and a link sent to somebody open the same view.

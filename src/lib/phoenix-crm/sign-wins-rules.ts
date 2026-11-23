@@ -4,7 +4,7 @@
  * Owner, 23 Nov 2026, asked as a choice on the Place checks rebuild and answered "Yes, the sign wins
  * (Recommended)". A place that ONLY the Google check held, whose photographed sign names the customer,
  * is approved by the system. He had approved every one of the 117 put to him, so each was a press that
- * decided nothing. Account: `docs/approvals-rebuild-2026-11.md`, Part 2.
+ * decided nothing. Account: `docs/approvals-rebuild-2026-11-place-checks.md`.
  *
  * Pure and screen-free. `server/sign-wins.ts` reads the rows and writes; this file is the whole rule,
  * so each line of it is pinned by `tests/phoenix-crm-sign-wins.test.ts`.

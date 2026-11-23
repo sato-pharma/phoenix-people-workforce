@@ -2,7 +2,7 @@
  * Phoenix CRM — the system's advice as it stood when a place check was decided, and how often the
  * Super Admin agreed with it.
  *
- * The rebuild, 23 Nov 2026 (`docs/approvals-rebuild-2026-11.md`, Part 2). The page recommended Reject on
+ * The rebuild, 23 Nov 2026 (`docs/approvals-rebuild-2026-11-place-checks.md`). The page recommended Reject on
  * evidence he mostly approved, and nobody could say so with a number, because nothing kept what the
  * system had said. A decision now keeps two values beside it (`system_advice_at_decision`, the kind of
  * advice in `system_advice_code_at_decision`), and the page reads its own agreement from them.

@@ -1,7 +1,7 @@
 /**
  * Phoenix CRM — Place checks: the two lanes a waiting decision sits in, and the ONE waiting number.
  *
- * The rebuild, 23 Nov 2026 (`docs/approvals-rebuild-2026-11.md`, Part 2). The page drew every waiting
+ * The rebuild, 23 Nov 2026 (`docs/approvals-rebuild-2026-11-place-checks.md`). The page drew every waiting
  * place in one list under a line that said what the system recommended across all of them, and four
  * figures on it counted "waiting" four ways. Here every open decision is sorted once, and counted once.
  *

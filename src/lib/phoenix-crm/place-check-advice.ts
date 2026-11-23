@@ -17,7 +17,7 @@
  * click is the decision, as it has been since 2026-10-03.
  *
  * 🔴 THE TABLE IS HIS OWN 2,353 DECISIONS, READ ON PRODUCTION ON 23 NOV 2026 (the rebuild; the account
- * is `docs/approvals-rebuild-2026-11.md`, Part 2). The advice used to say Reject, with the reason
+ * is `docs/approvals-rebuild-2026-11-place-checks.md`). The advice used to say Reject, with the reason
  * filled in, on evidence he mostly approved: a sign naming somebody else (he approved 135 of 182 the
  * door held for it, and 46 of 49 Google held), a photo with no sign naming the customer (21 of 34), a
  * sign nobody could read (most of them), a timetable read without his customer's name on it (10 of 16).
