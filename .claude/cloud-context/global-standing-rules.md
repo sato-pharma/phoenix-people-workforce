@@ -130,6 +130,8 @@ These REPLACE the default summary format (owner, 2026-10-09). The session is fro
   (`$env:PHX_DELETE_OK='<filename>';` in PowerShell) — one yes, one file, one command. `F:\Claude Scratchpad
   Archive` and `F:\Hiring Posts` have NO hatch. Never reach for the marker on your own reading. Images, CSV, CSS,
   JSON and patches are not protected.
+- 🔴 **`F:\Phoenix Workforce\Validation Photos` — NEVER delete, move or overwrite ANYTHING in it** (owner,
+  2026-11-23): reps' validation photos as Line\Region\Area\Rep; only ADD (copy with no overwrite). No hatch.
 - `scratchpad-archive.mjs` and `repo-archive.mjs` copy the protected types into `F:\Claude Scratchpad Archive`;
   never delete anything there. "Is this archived?" is answered by `repo-archive.mjs --verify`, never by a path.
 

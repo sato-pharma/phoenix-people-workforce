@@ -1553,6 +1553,7 @@
   "vacation-report-cross-request-cache-live-on-prod-2026-08-14": "time-off",
   "vacations-audit-coverage-is-complete-via-two-tables": "time-off",
   "validate-once-at-done-not-per-edit": "engineering-tests",
+  "validation-photos-folder-is-never-deleted-from": "phoenix-crm-validation",
   "venue-validation-rule-gps-photo-then-code-or-licence": "marketing",
   "vercel-preview-env-and-branching": "history",
   "vercel-pro-and-deploy-recovery": "history",
