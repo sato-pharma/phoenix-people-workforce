@@ -11,6 +11,7 @@ import {
   actedBySuperAdmin,
   approvalLockedFor,
 } from "../src/lib/phoenix-crm/super-admin-approval-rules.ts";
+import { placeCheckListSource } from "./support/place-check-list-source.ts";
 
 /**
  * Phoenix CRM — what the Super Admin approved, only the Super Admin rejects.
@@ -170,26 +171,26 @@ function checkService(): void {
 function checkScreens(): void {
   const NOTE = "<CrmNote tone=\"neutral\">{SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT}</CrmNote>";
 
-  const venues = read("src/components/phoenix-crm/shared-place-list.tsx");
+  const venues = placeCheckListSource("shared-place-list", read);
   assert.ok(venues.includes(`{row.lockedBySuperAdmin ? ${NOTE} : null}`), "a locked building shows the sentence");
   assert.match(venues, /\{row\.lockedBySuperAdmin \? null : \(/, "and no Reject button");
   assert.match(venues, /takes: \(row\) => !row\.restorable && !row\.lockedBySuperAdmin/, "bulk reject skips a locked building");
 
-  const validated = read("src/components/phoenix-crm/validated-place-list.tsx");
+  const validated = placeCheckListSource("validated-place-list", read);
   assert.ok(validated.includes(`if (row.lockedBySuperAdmin) return ${NOTE};`), "Refuse becomes the sentence on a locked place (the review deck reuses this button)");
   assert.match(validated, /takes: \(row\) => !row\.lockedBySuperAdmin/, "bulk refuse skips a locked place");
 
-  const queue = read("src/components/phoenix-crm/validation-review-queue.tsx");
+  const queue = placeCheckListSource("validation-review-queue", read);
   assert.ok(queue.includes(`{row.status === "approved" && row.lockedBySuperAdmin ? ${NOTE} : null}`), "an approved, locked review shows the sentence");
 
-  const seated = read("src/components/phoenix-crm/shared-place-customers.tsx");
+  const seated = placeCheckListSource("shared-place-customers", read);
   assert.ok(seated.includes(`if (customer.state === "in_use" && customer.lockedBySuperAdmin) return ${NOTE};`), "a seated customer the Super Admin approved shows the sentence instead of Reject");
 
   const groups = read("src/lib/phoenix-crm/shared-place-groups.ts");
   assert.match(groups, /customer\.lockedBySuperAdmin = customer\.lockedBySuperAdmin === true \|\| review\.lockedBySuperAdmin === true;/, "the approved review's lock is carried onto the seated customer");
 
-  const deck = read("src/components/place-review-deck/review-deck.tsx");
-  assert.match(deck, /<PlaceInUseRefuse row=\{row\}/, "the review deck reuses the gated Refuse button rather than a second one");
+  const deck = placeCheckListSource("review-deck", read);
+  assert.match(deck, /<PlaceInUseReject row=\{row\}/, "the review deck reuses the gated Reject button rather than a second one");
 }
 
 /** The body of one exported function, from its name to the first line that closes it at column zero. */

@@ -17,7 +17,7 @@
 //      unacknowledged one is refused as unreadable (fails CLOSED), and the stand-down works.
 
 import { strict as assert } from "node:assert";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -84,11 +84,23 @@ function inventoryContents(entries: string[]): string {
   return (Buffer.from(text, "utf8").toString("base64").match(/.{1,60}/g) ?? []).join("\n");
 }
 
-function fileLines(files: Array<{ filename: string; status: string }>): string {
+type ListedFile = { filename: string; status: string; patch?: string };
+
+function fileLines(files: ListedFile[]): string {
   return files.map((f) => JSON.stringify(f)).join("\n");
 }
 
-function answers(files: Array<{ filename: string; status: string }> | null, acknowledged: string[]): Array<[string, string | null]> {
+/**
+ * A file list the size GitHub really sends: every entry carries its patch, so the answer passes node's
+ * default 1 MB of stdout (PR 699: 109 files, 1,089,812 bytes). `last` goes at the END, past the megabyte.
+ */
+function longFileList(last: ListedFile[]): ListedFile[] {
+  const patch = "+ a changed line of a real patch\n".repeat(160);
+  const filler = Array.from({ length: 300 }, (_, i) => ({ filename: `src/lib/module-${i}/file.ts`, status: "modified", patch }));
+  return [...filler, ...last];
+}
+
+function answers(files: ListedFile[] | null, acknowledged: string[]): Array<[string, string | null]> {
   return [
     ["/files", files === null ? null : fileLines(files)],
     ["headRefOid,baseRefName", JSON.stringify({ headRefOid: SHA, baseRefName: "main" })],
@@ -267,6 +279,25 @@ function hookCases(): void {
     const blind = runGuard(dir, merge, ghShim(dir, answers(null, [])));
     assert.equal(blind.decision, "deny", "an unreadable file list refuses, never allows");
     assert.match(blind.reason, /^C22 — could not tell/);
+
+    // A file list past node's default 1 MB is READ, not "could not tell" (23 Nov 2026: PR 699's merge
+    // was refused with its migration on production, because the read stopped at 1,048,576 bytes).
+    const long = longFileList(migration);
+    assert.ok(Buffer.byteLength(fileLines(long)) > 1024 * 1024 + 400_000, "the list must be well past the default buffer");
+    const longAcknowledged = runGuard(dir, merge, ghShim(dir, answers(long, [MIG])));
+    assert.equal(longAcknowledged.decision, "allow", `a long file list is read whole and its acknowledged migration merges: ${longAcknowledged.reason}`);
+    const longUnproven = runGuard(dir, merge, ghShim(dir, answers(long, [])));
+    assert.equal(longUnproven.decision, "deny", "the migration at the end of a long list is still judged");
+    assert.match(longUnproven.reason, /not production/, "a long list is refused for its migration, never for its length");
+    // The same reading by hand: `node scripts/migration-merge-gate.mjs <pr>` reads the long list too.
+    const byHand = spawnSync(process.execPath, [resolve("scripts/migration-merge-gate.mjs"), "603"], {
+      cwd: dir,
+      encoding: "utf8",
+      env: envWithPathFirst(process.env, ghShim(dir, answers(longFileList([]), []))),
+      timeout: 60000,
+    });
+    assert.match(String(byHand.stdout), /PR #603 adds or changes no migration\./, `the hand script reads a long file list: ${byHand.stdout}${byHand.stderr}`);
+    assert.equal(byHand.status, 0, "and answers 0, never 2 (could not tell)");
 
     // The stand-down, inline and in the environment; C21's word does not pass it (PHX_RED_MERGE_OK is set above).
     const inline = runGuard(dir, `PHX_MIGRATION_MERGE_OK=1 ${merge}`, ghShim(dir, answers(migration, [])));

@@ -50,7 +50,7 @@ export function runOutstationExpenseApprovalsLayoutTests() {
   // REBUILT FROM SCRATCH, 2026-11-23 (approvals-desk/; owner: "REBUILD FROM SCRATCH LESS THAN 9.5/10
   // PER ITEM IS NOT ACCPETED"). The audit of the 7 Nov screen found the first waiting trip under a
   // page of tiles, tabs and filters, nine tabs, a Save button, and a reviewer that was a second way
-  // to decide. The desk is: one line that says what waits, five true tiles, three lanes, the list —
+  // to decide. The desk is: one line that says what waits, six true tiles, three lanes, the list —
   // and one trip opened the same way from anywhere, on one scroll, its decision pinned at the foot.
   // Every day still draws ITS OWN MAP ("if 3 days then I should have 3 maps").
   const dir = "src/components/outstation/approvals-desk";
@@ -96,6 +96,20 @@ export function runOutstationExpenseApprovalsLayoutTests() {
   const order = ["<AdminPageHero", "<DeskTopLine", "<DeskTiles", "<DeskTabs", "<DeskList", "<DeskUndoBar", "<DeskReviewer"];
   const at = order.map((tag) => workspace.indexOf(tag));
   assert.ok(at.every((index, i) => index > 0 && (i === 0 || index > at[i - 1])), `HEADLINE: the page reads top to bottom ${order.join(" → ")}`);
+  // 🔴 On a phone the first claim began 904 px down, under the tiles (measured at 375, 23 Nov 2026).
+  // The tiles are drawn twice: above the lanes from a tablet up, after the list on a phone.
+  assert.equal((workspace.match(/<DeskTiles /g) ?? []).length, 2, "the tiles are drawn in two places, one per width");
+  assert.ok(
+    workspace.indexOf('<DeskTiles className="hidden md:block"') > workspace.indexOf("<DeskTopLine") &&
+      workspace.indexOf('<DeskTiles className="hidden md:block"') < workspace.indexOf("<DeskTabs"),
+    "HEADLINE: the tiles above the lanes are hidden on a phone",
+  );
+  assert.ok(
+    workspace.indexOf('<DeskTiles className="md:hidden"') > workspace.indexOf("<DeskList") &&
+      workspace.indexOf('<DeskTiles className="md:hidden"') < workspace.indexOf("<DeskUndoBar"),
+    "HEADLINE: on a phone the tiles come after the list, so the first claim is on the first screen",
+  );
+  assert.ok(tiles.includes('<div className={cn("min-w-0", className)} data-desk-tiles>'), "and the tiles wear the width rule they are given");
   assert.match(workspace, /\bcompact\n\s*description=\{/, "HEADLINE: the hero is compact — one sentence, never a band of its own");
   assert.match(workspace, /Export XLSX/);
   assert.match(workspace, /className="min-w-0 space-y-3" data-expense-desk/, "and the parts sit close");
@@ -112,11 +126,11 @@ export function runOutstationExpenseApprovalsLayoutTests() {
   assert.ok(tiles.includes("{formatNumberValue(top.overSevenDays)} over 7 days"), "HEADLINE: and how many have waited more than a week");
   assert.ok(tiles.includes("aria-pressed={overOnly}"), "which is a press that shows only those");
 
-  // Five tiles, one per place a trip can stand — never a count that includes another tile's trips.
+  // Six tiles, one per place a trip can stand — never a count that includes another tile's trips.
   assert.ok(tiles.includes("{TRIP_STANDINGS.map((standing) => {"), "HEADLINE: one tile per standing, from the one list of standings");
   assert.ok(tiles.includes("const tile = queue.tiles[standing];"), "each reading the server's own count");
   assert.ok(tiles.includes("onClick={() => onOpen(standing)}"), "and a tile opens its trips");
-  assert.match(tiles, /grid min-w-0 grid-cols-2 border border-slate-200 bg-white sm:grid-cols-3 xl:grid-cols-5/, "one slim strip: two across on a phone, five on a desktop");
+  assert.match(tiles, /grid min-w-0 grid-cols-2 border border-slate-200 bg-white sm:grid-cols-3 xl:grid-cols-6/, "one slim strip: two across on a phone, six on a desktop");
   assert.ok(tiles.includes("data-desk-agreement"), "under them, how often the system's lane matched his answer");
 
   // The lanes: a tablist, keyboard included.
@@ -134,6 +148,12 @@ export function runOutstationExpenseApprovalsLayoutTests() {
   assert.equal((parts.match(/\{displayPlace\(claim\.(?:from|to)\)\}/g) ?? []).length, 2, "HEADLINE: From and To in words, never the plus-code prefix");
   assert.ok(list.includes('<bdi dir="auto">{displayPlace(claim.to)}</bdi>'), "HEADLINE: the phone card prints the place in words too");
   assert.ok(history.includes('<bdi dir="auto">{displayPlace(claim.to)}</bdi>'), "and so does History's");
+  // 🔴 A phone card says the other checks in ONE line. A tag each, one per line, made a Your call card
+  // 300 px tall at 375 (measured in the preview of pull request 700, 23 Nov 2026).
+  assert.ok(list.includes("<FoundCell claim={claim} compact />"), "HEADLINE: the phone card asks for the one-line form of the other checks");
+  assert.ok(list.includes("<FoundCell claim={claim} />"), "and the desktop row keeps a tag for each");
+  assert.ok(parts.includes("{compact && others.length > 0 ? (") && parts.includes("{!compact && others.length > 0 ? ("), "HEADLINE: one line or the tags, never both");
+  assert.ok(parts.includes('Not checked: {notChecked.join(", ")}') && parts.includes('Also failed: {failed.join(", ")}'), "the line tells a failed check from one that could not be made");
   assert.match(history, /md:hidden[\s\S]*?<CrmTable /, "History is a fitted table with cards on a phone");
   assert.ok(parts.includes("${formatNumberValue(days)} days`"), "HEADLINE: a trip over more than one day says how many days, beside its dates");
   // The heading of the list is one line: the lane, its count, its meaning, the ticks and the lane's press.

@@ -22,10 +22,12 @@
 
 import { CRM_DESTINATION_RADIUS_KM, buildCrmTripEvidence, type CrmPoint } from "@/lib/outstation/crm-trip-evidence";
 import type { FieldWorkReading } from "@/lib/outstation/approvals/checks";
+import { logError } from "@/lib/observability/log";
 import { daysBeforePhoenixCrm } from "@/lib/phoenix-crm/live-team-rules";
 import { heldManagerSeats, ownTerritories, personKey } from "@/lib/phoenix-crm/scope";
 import { loadTeamCountedWindows } from "@/lib/phoenix-crm/server/live-teams";
 import { loadManagerOwnVisitRows, loadManagerVisitFixes } from "@/lib/phoenix-crm/server/manager-plan-readers";
+import { managerOwnVisitUuid } from "@/lib/phoenix-crm/server/manager-visit-details";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -175,7 +177,12 @@ export async function loadFieldEvidence(trips: ReadonlyArray<FieldEvidenceTrip>)
       loadPhoenixCrmOrg(),
       loadTeamCountedWindows(),
     ]);
-  } catch {
+  } catch (error) {
+    // Named on the page AND recorded: a swallowed failure cannot be found afterwards.
+    logError("Phoenix CRM field work could not be read for the expense desk", {
+      labels: { event: "expense_desk_evidence_failed", source: "Phoenix CRM field work" },
+      error: error instanceof Error ? error : new Error(String(error)),
+    });
     return { byRequest, unavailable: ["Phoenix CRM field work"] };
   }
 
@@ -192,7 +199,15 @@ export async function loadFieldEvidence(trips: ReadonlyArray<FieldEvidenceTrip>)
           .map((row) => String(row.place_id)),
       ),
     ];
-    const [fixes, readPins] = await Promise.all([loadManagerVisitFixes(ownVisits.map((visit) => visit.id)), readPlacePins(placeIds)]);
+    // 🔴 A manager's own visit wears `own:<uuid>` (a screen LABEL, never a key). Sent to the uuid column
+    // as it is, the database refused the read, so no manager's own visit and no place pin carried a
+    // position and the page said "visit positions could not be read" on every load (found on the live
+    // desk, 23 Nov 2026; that day's 64 answers happened not to change). The read asks by the bare
+    // uuid; the map is keyed by it too.
+    const [fixes, readPins] = await Promise.all([
+      loadManagerVisitFixes(ownVisits.map((visit) => managerOwnVisitUuid(visit.id))),
+      readPlacePins(placeIds),
+    ]);
     ownFixes = new Map(
       fixes.flatMap((fix) => {
         const point = pointOf(fix.lat, fix.lon);
@@ -200,7 +215,11 @@ export async function loadFieldEvidence(trips: ReadonlyArray<FieldEvidenceTrip>)
       }),
     );
     pins = readPins;
-  } catch {
+  } catch (error) {
+    logError("Visit positions could not be read for the expense desk", {
+      labels: { event: "expense_desk_evidence_failed", source: "visit positions" },
+      error: error instanceof Error ? error : new Error(String(error)),
+    });
     unavailable.push("visit positions");
   }
 
@@ -222,7 +241,7 @@ export async function loadFieldEvidence(trips: ReadonlyArray<FieldEvidenceTrip>)
   }
   for (const visit of ownVisits) {
     const person = personKey(visit.managerHrId);
-    if (person) add(person, { date: visit.date, id: `m:${visit.id}`, placeId: null, point: ownFixes.get(visit.id) ?? null });
+    if (person) add(person, { date: visit.date, id: `m:${visit.id}`, placeId: null, point: ownFixes.get(managerOwnVisitUuid(visit.id)) ?? null });
   }
 
   const meetings = new Map<string, number>();

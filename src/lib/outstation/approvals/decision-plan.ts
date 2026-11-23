@@ -150,7 +150,14 @@ function sentence(value: string): string {
 export function decisionLanded(action: DecisionAction, after: DeskClaim | null | undefined): boolean {
   if (!after) return false;
   if (action === "reject") return after.standing === "rejected";
-  return after.standing === "approved_held" || after.standing === "approved_queued" || after.standing === "in_payroll";
+  // An approval whose payout month's payroll already ran still LANDED: the claim is approved and its
+  // payroll row is written. Reading it as "not saved" would tell him to press again.
+  return (
+    after.standing === "approved_held" ||
+    after.standing === "approved_queued" ||
+    after.standing === "approved_missed" ||
+    after.standing === "in_payroll"
+  );
 }
 
 /**

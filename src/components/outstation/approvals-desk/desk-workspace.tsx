@@ -44,6 +44,8 @@ export function DeskWorkspace({ initialSearch }: { initialSearch: string }) {
   const openTile = (standing: TripStanding) => {
     if (standing === "waiting") desk.setView({ lane: lanes && lanes.ready.count > 0 ? "ready" : "your_call" });
     else desk.setView({ history: standing === "rejected" ? "rejected" : "approved", lane: "history" });
+    // On a phone the tiles sit under the list, so the lane a tile opens is brought back into view.
+    document.querySelector("[data-desk-top-line]")?.scrollIntoView({ block: "nearest" });
   };
 
   const exportHref = view.search.trim() ? `/api/admin/outstation/expenses/export?search=${encodeURIComponent(view.search.trim())}` : "/api/admin/outstation/expenses/export";
@@ -88,7 +90,10 @@ export function DeskWorkspace({ initialSearch }: { initialSearch: string }) {
       ) : (
         <>
           <DeskTopLine onToggleOld={() => desk.setView({ overSevenDays: !view.overSevenDays })} overOnly={view.overSevenDays} queue={queue} />
-          <DeskTiles onOpen={openTile} queue={queue} />
+          {/* A desktop reads the tiles first. On a phone they stood between the count and the first
+              claim, which began 904 px down (measured at 375, 23 Nov 2026), so there they are drawn
+              after the list: the one line above already says what waits. */}
+          <DeskTiles className="hidden md:block" onOpen={openTile} queue={queue} />
 
           {queue.unavailable.length > 0 ? (
             <CrmNote title="Some of the checks could not be made just now" tone="warn">
@@ -146,6 +151,8 @@ export function DeskWorkspace({ initialSearch }: { initialSearch: string }) {
               onPress={desk.press}
             />
           )}
+
+          <DeskTiles className="md:hidden" onOpen={openTile} queue={queue} />
 
           <DeskUndoBar onUndo={desk.undo} presses={desk.presses} />
         </>

@@ -184,6 +184,20 @@ export function runExpenseDeskClaimRowTests() {
   assert.equal(reduced.daysWaiting, 0);
   assert.equal(reduced.holdReason, null, "held-before-press is a waiting claim's question only");
 
+  // 🔴 A decided claim whose payout month's payroll already ran says so (23 Nov 2026: 12 such trips
+  // read "next payroll"). The row is told the newest paid month by its context.
+  const september = ledger({ approved_amount: 331.2, payout_month: 9, payout_year: 2026, total: 456.2 });
+  const missed = buildDeskClaim({ context: { lastPaidPayout: { month: 10, year: 2026 }, today: TODAY }, ledger: september, now: NOW, row: accepted });
+  assert.equal(missed.standing, "approved_missed", "HEADLINE: September's trip, once October's payroll has run, is not waiting for the next payroll");
+  assert.equal(missed.payable, 331.2, "it still pays the amount he typed");
+  assert.equal(missed.locked, false, "no payroll took it, so it is not locked");
+  assert.equal(
+    buildDeskClaim({ context: { lastPaidPayout: { month: 8, year: 2026 }, today: TODAY }, ledger: september, now: NOW, row: accepted }).standing,
+    "approved_queued",
+    "a month no payroll has paid yet is still next payroll",
+  );
+  assert.equal(buildDeskClaim({ context: { today: TODAY }, ledger: september, now: NOW, row: accepted }).standing, "approved_queued", "not read, never claimed");
+
   const held = buildDeskClaim({ context: { today: TODAY }, ledger: null, now: NOW, row: accepted });
   assert.equal(held.standing, "approved_held");
   assert.equal(held.payable, mapped.total, "a held claim has no payroll row yet, so it pays its own claim");

@@ -22,6 +22,7 @@ import {
   type CameraTime,
 } from "../src/lib/phoenix-crm/camera-item-rules.ts";
 import { reasonsFor } from "../src/lib/phoenix-crm/validation-feedback.ts";
+import { placeCheckListSource } from "./support/place-check-list-source.ts";
 
 /**
  * The Phoenix Camera's items and the Super Admin's camera page (owner, 20 Nov 2026: "Phoenix will not reject
@@ -163,7 +164,7 @@ function aNoTimetableBuildingIsNeverRefusedForOne(): void {
   assert.equal(reasonsFor("schedule", { buildingHasNoTimetable: true }).length, reasonsFor("schedule").length - 1, "only that one reason goes");
   const field = read("src/components/phoenix-crm/refusal-reason-field.tsx");
   assert.match(field, /reasonsFor\(kind, \{ buildingHasNoTimetable \}\)/);
-  assert.match(read("src/components/phoenix-crm/shared-place-customers.tsx"), /<RefusalReasonField buildingHasNoTimetable=\{noTimetable\}/);
+  assert.match(placeCheckListSource("shared-place-customers", read), /<RefusalReasonField buildingHasNoTimetable=\{noTimetable\}/);
 }
 
 function theSyncReceivesEverything(): void {

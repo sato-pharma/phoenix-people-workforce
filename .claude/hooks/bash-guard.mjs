@@ -2165,9 +2165,14 @@ try {
   // looked at, and this hook ends in process.exit, so one still in flight holds nothing up. C10's one
   // retry after UNKNOWN goes through `ghFresh` on purpose: a remembered answer would defeat it.
   const ghCwd = input?.cwd && existsSync(String(input.cwd)) ? String(input.cwd) : process.cwd();
+  // 🔴 A PR'S FILE LIST IS LONGER THAN NODE'S DEFAULT 1 MB OF STDOUT. `pulls/<n>/files` carries every
+  // file's patch: PR 699 (109 files) answered 1,089,812 bytes, `exec` stopped at 1,048,576 with "stdout
+  // maxBuffer length exceeded", and C22 refused a merge whose migration WAS on production (23 Nov
+  // 2026). Every read here holds this much; the hand script's reader names the same figure.
+  const GH_READ_MAX_BYTES = 64 * 1024 * 1024;
   const ghFresh = (args) =>
     new Promise((resolve, reject) => {
-      const options = { cwd: ghCwd, encoding: 'utf8', timeout: 20000, windowsHide: true };
+      const options = { cwd: ghCwd, encoding: 'utf8', timeout: 20000, windowsHide: true, maxBuffer: GH_READ_MAX_BYTES };
       const done = (err, out) => (err ? reject(err) : resolve(String(out)));
       // On Windows a PATH lookup without a shell resolves .exe but NOT .cmd, and gh ships both, so it
       // goes through cmd.exe. `exec` of the joined line is what `execFile(…, { shell: true })` ran —

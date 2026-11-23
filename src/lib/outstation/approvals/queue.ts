@@ -41,7 +41,7 @@ import {
   type OdometerChain,
 } from "@/lib/outstation/approvals/claim-row";
 import { loadFieldEvidence, pointOf, type FieldEvidence, type FieldEvidenceTrip } from "@/lib/outstation/approvals/field-evidence";
-import { countTripStandings, readTripStanding, type TripStanding } from "@/lib/outstation/approvals/standing";
+import { countTripStandings, newestPayout, readTripStanding, type PayoutPeriod, type TripStanding } from "@/lib/outstation/approvals/standing";
 import type { DeskClaim, DeskQueue } from "@/lib/outstation/approvals/types";
 import { flagDuplicateTicketRows } from "@/lib/outstation/duplicate-ticket-guard";
 import { flagDuplicateTripRows } from "@/lib/outstation/duplicate-trip-guard";
@@ -98,9 +98,28 @@ export async function readLedger(supabase: DeskClient, tripIds?: string[]): Prom
   return new Map(((data ?? []) as unknown as LedgerRow[]).map((row) => [String(row.trip_id), row]));
 }
 
-export function standingOfRow(row: ClaimRow, ledger: LedgerRow | null): TripStanding {
+/**
+ * The newest payout month a payroll has paid: the newest one any payroll row carries a paid stamp
+ * for, sheet trips included. One row is read. An approved trip of that month or an earlier one that
+ * is not marked paid was missed by its own payroll (standing.ts, `approved_missed`).
+ * A failed read THROWS, like every other read here: guessing would call a missed trip "next payroll".
+ */
+export async function readLastPaidPayout(supabase: DeskClient): Promise<PayoutPeriod | null> {
+  const { data, error } = await supabase
+    .from("outstation_expenses")
+    .select("payout_month, payout_year")
+    .or("imported_payroll_batch_id.not.is.null,imported_to_payroll_at.not.is.null")
+    .order("payout_year", { ascending: false, nullsFirst: false })
+    .order("payout_month", { ascending: false, nullsFirst: false })
+    .limit(1);
+  if (error) throw error;
+  return newestPayout((data ?? []) as unknown as Array<{ payout_month?: unknown; payout_year?: unknown }>);
+}
+
+export function standingOfRow(row: ClaimRow, ledger: LedgerRow | null, lastPaidPayout: PayoutPeriod | null = null): TripStanding {
   return readTripStanding({
     hasPayrollRow: ledger !== null,
+    lastPaidPayout,
     payoutMonth: ledger?.payout_month ?? null,
     payoutYear: ledger?.payout_year ?? null,
     payrollStamped: Boolean(ledger?.imported_payroll_batch_id || ledger?.imported_to_payroll_at),
@@ -271,6 +290,7 @@ export async function withLiveNames(claims: DeskClaim[]): Promise<DeskClaim[]> {
 /** Builds waiting claims from their rows: one Phoenix CRM read for all of them, then the checks. */
 async function buildWaitingClaims(input: {
   decided: ReadonlyArray<ClaimRow>;
+  lastPaidPayout: PayoutPeriod | null;
   ledger: ReadonlyMap<string, LedgerRow>;
   now: Date;
   rows: ReadonlyArray<ClaimRow>;
@@ -288,6 +308,7 @@ async function buildWaitingClaims(input: {
         duplicateTickets: found?.tickets ?? [],
         duplicateTrips: found?.trips ?? [],
         fieldWork: evidence.byRequest.get(id) ?? null,
+        lastPaidPayout: input.lastPaidPayout,
         odometerChain: chains.get(id),
         sharedTripDays: found?.days ?? [],
         today,
@@ -306,10 +327,11 @@ export async function loadDeskQueue(access: AccessContext, options: { canDecide:
   const accessFilter = await resolveExpenseAccessFilter(access);
   const supabase = await rowSecurityClientFor("outstation.approvalsDesk");
 
-  const [waitingRows, decidedRows, ledger] = await Promise.all([
+  const [waitingRows, decidedRows, ledger, lastPaidPayout] = await Promise.all([
     readClaimRows(supabase, accessFilter, DESK_CLAIM_COLUMNS, "waiting"),
     readClaimRows(supabase, accessFilter, DECIDED_CLAIM_COLUMNS, "decided"),
     readLedger(supabase),
+    readLastPaidPayout(supabase),
   ]);
 
   // A decided claim with no payroll row is HELD and pays its own claim, so it needs its figures;
@@ -326,6 +348,7 @@ export async function loadDeskQueue(access: AccessContext, options: { canDecide:
 
   const { claims, evidence } = await buildWaitingClaims({
     decided: decidedRows.filter((row) => !unlistedIds.has(requestIdOfRow(row))),
+    lastPaidPayout,
     ledger,
     now,
     rows: [...waitingRows, ...unlisted],
@@ -341,7 +364,7 @@ export async function loadDeskQueue(access: AccessContext, options: { canDecide:
       .filter((row) => !unlistedIds.has(requestIdOfRow(row)))
       .map((row) => {
         const stored = ledgerOf(row);
-        const standing = standingOfRow(row, stored);
+        const standing = standingOfRow(row, stored, lastPaidPayout);
         const payable = stored ? payableExpenseAmount(stored.approved_amount, stored.total) : (heldPayable.get(requestIdOfRow(row)) ?? 0);
         return { payable, standing };
       }),
@@ -373,16 +396,17 @@ export async function loadDeskClaims(access: AccessContext, requestIds: Readonly
 
   const accessFilter = await resolveExpenseAccessFilter(access);
   const supabase = await rowSecurityClientFor("outstation.approvalsDeskClaims");
-  const [rows, ledger] = await Promise.all([
+  const [rows, ledger, lastPaidPayout] = await Promise.all([
     readClaimRows(supabase, accessFilter, DESK_CLAIM_COLUMNS, { ids }),
     readLedger(supabase, ids.map((id) => outstationPayrollTripId(id))),
+    readLastPaidPayout(supabase),
   ]);
   const ledgerOf = (row: ClaimRow) => ledger.get(outstationPayrollTripId(requestIdOfRow(row))) ?? null;
   const waiting = rows.filter((row) => standingOfRow(row, ledgerOf(row)) === "waiting");
   const decided = rows.filter((row) => standingOfRow(row, ledgerOf(row)) !== "waiting");
 
   const today = currentCairoDateOnlyIso(now);
-  const decidedClaims = await withLiveNames(decided.map((row) => buildDeskClaim({ context: { today }, ledger: ledgerOf(row), now, row })));
+  const decidedClaims = await withLiveNames(decided.map((row) => buildDeskClaim({ context: { lastPaidPayout, today }, ledger: ledgerOf(row), now, row })));
   for (const claim of decidedClaims) out.set(claim.requestId, claim);
   if (waiting.length === 0) return out;
 
@@ -398,7 +422,7 @@ export async function loadDeskClaims(access: AccessContext, requestIds: Readonly
     if (error) throw error;
     others = ((data ?? []) as unknown as ClaimRow[]).filter((row) => !waitingIds.has(requestIdOfRow(row)));
   }
-  const { claims } = await buildWaitingClaims({ decided: others, ledger, now, rows: waiting });
+  const { claims } = await buildWaitingClaims({ decided: others, lastPaidPayout, ledger, now, rows: waiting });
   for (const claim of claims) out.set(claim.requestId, claim);
   return out;
 }

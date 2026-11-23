@@ -11,6 +11,7 @@ import { egp } from "./desk-parts";
 
 const TILE_RULE: Record<TripStanding, string> = {
   approved_held: "border-t-amber-500",
+  approved_missed: "border-t-amber-600",
   approved_queued: "border-t-emerald-500",
   in_payroll: "border-t-sky-500",
   rejected: "border-t-rose-500",
@@ -18,7 +19,7 @@ const TILE_RULE: Record<TripStanding, string> = {
 };
 
 /**
- * The top of the page: ONE line saying how many decisions wait, then five true tiles.
+ * The top of the page: ONE line saying how many decisions wait, then six true tiles.
  *
  * Every figure here is read from `queue.tiles`, which the server counts with the one function that
  * says where a trip stands (`standing.ts`) — so "Approved" can no longer hold a trip a payroll
@@ -54,10 +55,10 @@ export function DeskTopLine({ onToggleOld, overOnly, queue }: { onToggleOld: () 
   );
 }
 
-export function DeskTiles({ onOpen, queue }: { onOpen: (standing: TripStanding) => void; queue: DeskQueue }) {
+export function DeskTiles({ className, onOpen, queue }: { className?: string; onOpen: (standing: TripStanding) => void; queue: DeskQueue }) {
   return (
-    <div className="min-w-0" data-desk-tiles>
-      <div className="grid min-w-0 grid-cols-2 border border-slate-200 bg-white sm:grid-cols-3 xl:grid-cols-5">
+    <div className={cn("min-w-0", className)} data-desk-tiles>
+      <div className="grid min-w-0 grid-cols-2 border border-slate-200 bg-white sm:grid-cols-3 xl:grid-cols-6">
         {TRIP_STANDINGS.map((standing) => {
           const tile = queue.tiles[standing];
           return (

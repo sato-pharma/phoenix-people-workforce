@@ -35,6 +35,7 @@ import { formatPhoenixDateTime } from "@/lib/i18n/format";
 import { noTimetableControl, type NoTimetableControl } from "@/lib/phoenix-crm/failing-timetable-rules";
 import { logError } from "@/lib/observability/log";
 import { deviceClockSkewMinutes, type ValidatedPlaceReading } from "@/lib/phoenix-crm/entry-rules";
+import { adviseOnBuilding, type PlaceCheckAdvice } from "@/lib/phoenix-crm/place-check-advice";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { waitingIsLong, waitingText } from "@/lib/phoenix-crm/waiting-rules";
@@ -54,6 +55,7 @@ import { resolvePlaceLocation, territoryOfSeat } from "@/lib/phoenix-crm/server/
 import { refuseReadingsApart } from "@/lib/phoenix-crm/server/far-visit-safeguards";
 import { shareAcrossLinesQuietly, withdrawValidateAgainNoticeQuietly } from "@/lib/phoenix-crm/server/line-twins";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
+import { keepBuildingAdviceQuietly } from "@/lib/phoenix-crm/server/stored-advice";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
@@ -847,6 +849,23 @@ export type SharedPlaceDecision = {
 };
 
 /**
+ * The system's advice on a building still HELD, read just before it is decided, so the decision can keep
+ * it (the rebuild, 23 Nov 2026; `place-check-stored-advice.ts`). The board row's own reading of the sign
+ * (`signboardOf`), so it is the advice the page showed. Null for a building already decided and for
+ * anything that could not be read. Never throws.
+ */
+async function adviceOnHeldBuilding(sharedPlaceId: string): Promise<PlaceCheckAdvice | null> {
+  try {
+    const [venue] = await selectByIds<Row>("phoenix_crm_shared_places", "id, status, name, brick_name, signboard_check", "id", [sharedPlaceId]);
+    if (!venue || venue.status !== "held") return null;
+    return adviseOnBuilding({ signboard: signboardOf(venue.signboard_check, String(venue.name ?? ""), text(venue.brick_name)) });
+  } catch (error) {
+    logError("Phoenix CRM building advice could not be read before a decision", { error, labels: { event: "phoenix_crm_place_check_advice_unread" } });
+    return null;
+  }
+}
+
+/**
  * Approve a venue, or reject it.
  *
  * A rejection retires the venue, retires every place seated in it, and sends each of those customers
@@ -867,6 +886,8 @@ export async function decideSharedPlace(viewer: PhoenixCrmViewer, raw: unknown):
   const refusalReason = decision === "reject" ? buildingRefusalReason(body.refusalReason) : null;
   if (decision === "reject" && !refusalReason) throw validationError(VALIDATION_REASON_REQUIRED);
 
+  // What the system advised, read while the building is still held, and kept once the decision has landed.
+  const adviceThen = await adviceOnHeldBuilding(String(body.sharedPlaceId).toLowerCase());
   const result = await callPhoenixCrm<Row>("phoenix_crm_decide_shared_place", {
     p: {
       shared_place_id: String(body.sharedPlaceId).toLowerCase(),
@@ -876,6 +897,7 @@ export async function decideSharedPlace(viewer: PhoenixCrmViewer, raw: unknown):
       refusal_reason: refusalReason,
     },
   });
+  await keepBuildingAdviceQuietly(String(result.shared_place_id), adviceThen);
 
   const reopened = Array.isArray(result.reopened) ? (result.reopened as Row[]) : [];
   // 🔴 THE REJECTION MUST SPEAK. Until 2026-10-09 this returned here, so a refused venue reopened

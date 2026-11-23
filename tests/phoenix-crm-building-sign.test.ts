@@ -11,6 +11,7 @@ import {
   type PhoenixCrmSignboardCheck,
 } from "../src/lib/phoenix-crm/signboard-rules.ts";
 import { stripComments } from "./support/comment-strip.ts";
+import { placeCheckListSource } from "./support/place-check-list-source.ts";
 
 /**
  * The buildings on the Place checks board (owner, 14 Nov 2026, "Fix all three"). Measured that day on
@@ -144,12 +145,12 @@ function checkWording() {
   assert.equal(sharedPlaceKindNoun(null), "building");
 
   // 🔴 A HOSPITAL IS NEVER CALLED A POLYCLINIC on the board or the review deck.
-  const list = stripComments(read("src/components/phoenix-crm/shared-place-list.tsx"));
+  const list = stripComments(placeCheckListSource("shared-place-list", read));
   assert.ok(!/names this polyclinic/.test(list), "the match label is not 'this polyclinic' for every kind");
   assert.match(list, /`The sign names this \$\{sharedPlaceKindNoun\(kind\)\}`/);
   assert.match(list, /a \{sharedPlaceKindNoun\(row\.kind\)\} has none/, "the Google sentence names the building's own kind");
   assert.ok(!/could not be read yet/.test(list), "🔴 never 'yet' on a building's sign");
-  const deck = stripComments(read("src/components/place-review-deck/review-deck.tsx"));
+  const deck = stripComments(placeCheckListSource("review-deck", read));
   assert.ok(!/The polyclinic itself|>\s*Polyclinic ·/.test(deck), "the review deck names the building's own kind");
   assert.match(deck, /venueSignboardText\(venue\.signboard, venue\.kind\)/);
 }

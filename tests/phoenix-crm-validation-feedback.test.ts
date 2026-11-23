@@ -12,6 +12,8 @@ import {
 } from "../src/lib/phoenix-crm/validation-feedback.ts";
 import { phoenixCrmChannels } from "../src/lib/notifications/phoenix-crm-channel-guard.ts";
 import { stripComments } from "./support/comment-strip.ts";
+import { placeCheckBoardSource } from "./support/place-check-board-source.ts";
+import { placeCheckListSource, placeCheckListSourceAt } from "./support/place-check-list-source.ts";
 
 /**
  * Phoenix CRM — what a rep is told when his signboard photo could not be confirmed (owner,
@@ -68,7 +70,7 @@ export function runPhoenixCrmValidationFeedbackTests(): void {
   assert.equal(buildingRefusalReason("no_signboard"), "no_signboard", "a building reason passes");
   const venueServer = stripComments(readFileSync("src/lib/phoenix-crm/server/shared-places.ts", "utf8"));
   assert.ok(venueServer.includes("buildingRefusalReason(body.refusalReason)"), "the venue decision parses through the building list");
-  const venueScreen = readFileSync("src/components/phoenix-crm/shared-place-list.tsx", "utf8");
+  const venueScreen = placeCheckListSource("shared-place-list");
   assert.equal(venueScreen.split(`kind="building"`).length - 1, 2, "the venue row and its bulk bar offer the building list");
   assert.ok(reasonsFor("signboard").some((reason) => reason.key === "short_name"), "a customer's own signboard can be sent back for a short name");
   assert.ok(reasonsFor("schedule").some((reason) => reason.key === "short_name"), "and so can a seated customer's timetable");
@@ -119,13 +121,13 @@ export function runPhoenixCrmValidationFeedbackTests(): void {
 
   // ── Both decision screens use one field ───────────────────────────────────────────────────────
   for (const path of ["src/components/phoenix-crm/validation-review-queue.tsx", "src/components/phoenix-crm/validated-place-list.tsx"]) {
-    const screen = readFileSync(path, "utf8");
+    const screen = placeCheckListSourceAt(path);
     assert.ok(screen.includes("<RefusalReasonField"), `${path} offers the closed list`);
     assert.ok(screen.includes("refusalReason"), `${path} posts it`);
   }
 
   // ── The Super Admin sees who is waiting to be captured again ──────────────────────────────────
-  const board = readFileSync("src/components/phoenix-crm/validation-reviews-board.tsx", "utf8");
+  const board = placeCheckBoardSource();
   assert.ok(board.includes("<ReopenedCustomerList"), "the wait is on his page");
   const list = readFileSync("src/components/phoenix-crm/reopened-customer-list.tsx", "utf8");
   assert.ok(list.indexOf("<CrmCardsOnPhone") < list.indexOf("<CrmTable"), "phone cards first, then the table");

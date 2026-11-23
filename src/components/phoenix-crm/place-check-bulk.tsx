@@ -141,6 +141,17 @@ function subscribeBulkRun(listener: () => void): () => void {
   };
 }
 
+/**
+ * The same lock for a run that is not a tick-box bar: the Ready lane's one press (the rebuild, 23 Nov
+ * 2026). It holds the board exactly as a bar's run does, and the function it returns lets go. A second
+ * run while one is going is refused with null, so two runs never overlap.
+ */
+export function holdBoardForBulkRun(): (() => void) | null {
+  if (bulkRunGoing) return null;
+  setBulkRunGoing(true);
+  return () => setBulkRunGoing(false);
+}
+
 /** Whether a bulk run is going anywhere on the page — the board locks its tabs, filters and counts on it. */
 export function useBulkRunGoing(): boolean {
   return useSyncExternalStore(subscribeBulkRun, () => bulkRunGoing, () => false);

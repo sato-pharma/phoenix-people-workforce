@@ -6,6 +6,7 @@ import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { logError, logInfo } from "@/lib/observability/log";
 import { runCommentReadingFire } from "@/lib/phoenix-crm/server/comment-reading";
 import { runHeldSignboardRecheck } from "@/lib/phoenix-crm/server/signboard-holds";
+import { runSignWinsSweep } from "@/lib/phoenix-crm/server/sign-wins";
 import { runPhoenixCrmVisitRollup } from "@/lib/phoenix-crm/server/visit-rollup";
 import { VISIT_ROLLUP_JOB_SLUG } from "@/lib/phoenix-crm/visit-rollup-rules";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
@@ -28,6 +29,16 @@ export async function GET(request: Request) {
       logInfo("Phoenix CRM held signboards re-read", {
         labels: { event: "phoenix_crm_held_signboard_recheck" },
         context: { ...recheck },
+      });
+    });
+    // The sign wins (owner, 23 Nov 2026; sign-wins-rules.ts): a place only Google held whose sign names
+    // the customer is approved by the system. The door does it at the save; this hourly pass meets the
+    // ones the door left for a reason that has since gone. Same terms: after the reply, never failing the roll-up.
+    await afterResponse("phoenix_crm_sign_wins_sweep", async () => {
+      const sweep = await runSignWinsSweep();
+      logInfo("Phoenix CRM sign-wins sweep", {
+        labels: { event: "phoenix_crm_sign_wins_sweep" },
+        context: { ...sweep },
       });
     });
     // The hourly read of new visit comments (owner, 2026-11-03: "build 3"), on the same terms: after the

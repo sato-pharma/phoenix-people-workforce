@@ -97,8 +97,12 @@ export type HeldSignboardSettlement = "approved" | "again" | "done" | "lost" | "
  * land: he decided it first (`review_decided`), or the review is gone, and his decision stands. One
  * approve for the hourly re-read, the one-off read of the old places and the rep's new photo alike.
  * False too for a clinic customer still short of three names, who is left waiting (14 Nov 2026, below).
+ *
+ * `note` is the one sentence of why, which the board shows beside "the system". The sign-wins rule
+ * (owner, 23 Nov 2026; `server/sign-wins.ts`) approves through here with its own sentence, because it
+ * approves a place Google held, not one the sign held.
  */
-export async function approveHeldSignboardBySystem(reviewId: string): Promise<boolean> {
+export async function approveHeldSignboardBySystem(reviewId: string, note: string = SIGNBOARD_SYSTEM_APPROVAL_NOTE): Promise<boolean> {
   let approved: Row;
   try {
     // Phoenix CRM validation audit, 14 Nov 2026: Place checks never approves a clinic customer with one
@@ -112,7 +116,7 @@ export async function approveHeldSignboardBySystem(reviewId: string): Promise<bo
         review_id: reviewId,
         actor_hr_id: SIGNBOARD_SYSTEM_ACTOR,
         decision: "approve",
-        note: SIGNBOARD_SYSTEM_APPROVAL_NOTE,
+        note,
         refusal_reason: null,
       },
     });

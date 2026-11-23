@@ -21,6 +21,7 @@ import {
   type SignboardCheckReason,
 } from "../src/lib/phoenix-crm/signboard-rules.ts";
 import { stripComments } from "./support/comment-strip.ts";
+import { placeCheckListSource } from "./support/place-check-list-source.ts";
 
 /**
  * Phoenix CRM — a signboard the door could not confirm is HELD, re-read by the system, approved by the
@@ -159,7 +160,8 @@ function checkTheDoorPaths(): void {
   assert.equal(list.split("signboard.holds").length - 1, 2, "both doors — a first validation and another clinic — hold on the scanner's answer");
   assert.ok(list.includes('holds: action.kind !== "save"'), "and the scanner's answer is its door action, never a second rule");
   assert.equal(list.split("await settleHeldSignboard(").length - 1, 2, "and both re-read it straight after the reply");
-  assert.equal(list.split("&& !signboardHold) {").length - 1, 2, "neither tells the Super Admin at the door: the system has not finished");
+  // Since 23 Nov 2026 the same line also waits on the sign-wins rule (tests/phoenix-crm-sign-wins.test.ts).
+  assert.equal(list.split("&& !signboardHold && !signMayWin) {").length - 1, 2, "neither tells the Super Admin at the door: the system has not finished");
 
   // The re-read runs AFTER the reply and AFTER the door's own verdict is recorded, so its count is 2.
   const validate = list.slice(list.indexOf('afterResponse("phoenix-crm validate: post-save records"'));
@@ -248,12 +250,12 @@ function checkHisApprove(): void {
   assert.match(route, /approveValidatedPlace\(viewer, await request\.json\(\)\)/, "before the service decides who may press it");
   assert.ok(read("src/lib/security/access-registry.ts").includes('pattern: "/api/phoenix-crm/validation-reviews/approve"'), "and it is in the access registry");
 
-  const list = stripComments(read("src/components/phoenix-crm/validated-place-list.tsx"));
+  const list = stripComments(placeCheckListSource("validated-place-list", read));
   assert.match(list, /const decider = mode !== "team" && decides;/, "🔴 a district manager's board approves nothing, nor the SFE Manager's (owner, 2026-11-19)");
   assert.match(list, /\{decider \? <Approve row=\{row\} \/> : null\}/, "and Approve is drawn behind that one test");
   assert.ok(list.includes('"/api/phoenix-crm/validation-reviews/approve", { placeId: row.placeId, note: answer.note }'), "ticked rows approve through the same route");
 
-  const queue = stripComments(read("src/components/phoenix-crm/validation-review-queue.tsx"));
+  const queue = stripComments(placeCheckListSource("validation-review-queue", read));
   assert.ok(queue.includes("row.systemStillReading ?"), "Needs you says when the system is still reading a sign");
 }
 

@@ -25,6 +25,8 @@ import type {
   ValidatedPlaceRow,
   ValidationReviewRow,
 } from "../src/lib/phoenix-crm/view-types.ts";
+import { placeCheckBoardSource } from "./support/place-check-board-source.ts";
+import { placeCheckListSource } from "./support/place-check-list-source.ts";
 
 /**
  * Phoenix CRM — Place checks, a polyclinic grouped with the customers seated in it (owner, 2026-10-17:
@@ -459,12 +461,22 @@ export function runPhoenixCrmSharedPlaceGroupsTests(): void {
 
   // ── The board: five tabs, the clinics without the seated, the polyclinics grouped ─────────────
   // (owner, 2026-10-17: "is this a report that really shows me data? or it's a bunch of chaos")
-  const board = read("src/components/phoenix-crm/validation-reviews-board.tsx");
+  const board = placeCheckBoardSource(read);
   assert.ok(board.includes('role="tablist"') && board.includes('role="tab"') && board.includes('role="tabpanel"'), "the checks are a real tab switch");
-  for (const label of ['"Needs you"', '"Being checked"', '"Not confirmed"', '"Polyclinics and hospitals"', '"History"']) {
+  // The rebuild of 23 Nov 2026: what waits is "Your call" (and "Ready") on the Super Admin's board, the
+  // lanes' own labels; "Waiting" on the SFE Manager's, which has no lanes; "Being checked" on a manager's.
+  for (const label of ['"Waiting"', '"Being checked"', '"Not confirmed"', '"Polyclinics and hospitals"', '"History"', '"Approved by the system"']) {
     assert.ok(board.includes(label), `a tab named for what it holds: ${label}`);
   }
-  assert.ok(board.includes('useState<PlaceCheckView>("needs")'), "the board opens on what is waiting for a decision");
+  assert.ok(
+    board.includes('label: team ? "Being checked" : lanes ? PLACE_CHECK_LANE_LABEL.your_call : "Waiting"'),
+    "🔴 the waiting tab is named by who reads it: a manager's board never says whose call it is",
+  );
+  assert.ok(
+    board.includes('const view: PlaceCheckView = picked ?? (lanes && (desk?.ready ?? 0) > 0 ? "ready" : "needs");'),
+    "the board opens on what is waiting for a decision: Ready when it holds anything, else what is his call",
+  );
+  assert.ok(board.includes("const [picked, setPicked] = useState<PlaceCheckView | null>(null);"), "and stands there until he chooses a tab himself");
   for (const set of ["pending", "decided", "validated", "reopened"]) {
     assert.ok(board.includes(`withoutSeated(${set}, venueIds)`), `the clinics view drops ${set} rows seated in a building on the board`);
   }
@@ -474,20 +486,24 @@ export function runPhoenixCrmSharedPlaceGroupsTests(): void {
   assert.ok(!board.includes("showSharedPlaces"), "🔴 Rejected no longer hides the polyclinics");
   assert.ok(board.includes("<ReopenedCustomerList"), "and History still lists who waits to be captured again");
   // 🔴 NO TAB DRAWS ITS WHOLE SET: the decided list alone was 197 rows and 88,288 px tall.
-  assert.equal((board.match(/<Paged key=/g) ?? []).length, 5, "the five long lists are each drawn 20 (or 10 buildings) at a time");
+  assert.equal((board.match(/<Paged key=/g) ?? []).length, 6, "the six long lists are each drawn a page at a time (the system's approvals are the sixth)");
   assert.ok(board.includes("const PAGE_ROWS = 20;") && board.includes("const PAGE_BUILDINGS = 10;"), "at a page size a person can read");
+  assert.ok(board.includes("const PAGE_LANE = 10;") && board.includes("const rowsPage = lanes ? PAGE_LANE : PAGE_ROWS;"), "🔴 and a lane by ten: twenty waiting rows were a phone page 51,062 px long");
   // 🔴 A TEST ENTRY IS NEVER DRAWN — four test buildings sat among the live ones on production.
   for (const set of ["pendingRows", "decidedRows", "validatedRows", "reopenedRows", "venueRows"]) {
     assert.ok(board.includes(`${set}.filter(isReal)`), `${set} loses its test entries before anything else reads it`);
   }
   assert.ok(board.includes('group.venue.status !== "retired"'), "a rejected building waits behind its own switch");
-  assert.ok(board.includes("{team ? null : <AdviceSummary advice={advice} />}"), "the recommendation summary is the Super Admin's alone");
-  assert.ok(board.includes("<PlaceCheckScorecard"), "and the board opens with each rep's captures");
+  // The one-line recommendation summary became the two lanes (the rebuild): sorted for the decider alone.
+  assert.ok(board.includes("const lanes = decides && !team;"), "🔴 the lanes are the Super Admin's alone: never the SFE Manager's board, never a manager's");
+  assert.ok(!board.includes("AdviceSummary"), "and no second summary of the advice is drawn beside them");
+  assert.ok(board.includes("<PlaceCheckScorecard"), "the scorecard is still each rep's captures");
+  assert.ok(board.includes("{team ? <PlaceChecksScorecardPanel board={board} /> : null}"), "🔴 and a district manager's board still opens with it; on the company board it is a tab");
 
   // ── The group: the building's sign and timetable, then the customers behind it ────────────────
-  const list = read("src/components/phoenix-crm/shared-place-list.tsx");
+  const list = placeCheckListSource("shared-place-list", read);
   assert.ok(list.includes("row.schedulePhotoPath") && list.includes("Timetable photo for"), "the building's own timetable photograph is on the board");
-  const rows = read("src/components/phoenix-crm/shared-place-customers.tsx");
+  const rows = placeCheckListSource("shared-place-customers", read);
   assert.ok(rows.includes("const own = customer.photoPath;") && !/photoPath !== venueTimetablePath/.test(rows), "🔴 a customer's OWN photograph is always on their row — the checker's 'unreadable' and 'no timetable' are judged by eye, never hidden because it matches the building's");
   assert.ok(list.includes("Sign photo for"), "beside the sign on its door");
   assert.ok((list.match(/<SeatedCustomers/g) ?? []).length === 2, "the customers are drawn under their building on the phone and on the desktop");
@@ -495,7 +511,7 @@ export function runPhoenixCrmSharedPlaceGroupsTests(): void {
   assert.ok(list.includes("{signboardText(row.signboard, row.kind)}"), "the building's sign verdict is still drawn in words, naming its own kind");
 
   // ── The reject control: the existing refusal, on the timetable's own pick-list ────────────────
-  const customersSource = read("src/components/phoenix-crm/shared-place-customers.tsx");
+  const customersSource = placeCheckListSource("shared-place-customers", read);
   assert.ok(customersSource.includes("Reject — not on the timetable"), "the option the request names");
   assert.ok(/kind="schedule"/.test(customersSource), "it offers the timetable's reasons, never 'a photo of paper'");
   assert.ok(customersSource.includes('"schedule_other_name"'), "starting on the one that says he is not named on it");
@@ -556,14 +572,17 @@ export function runPhoenixCrmSharedPlaceGroupsTests(): void {
   );
   assert.match(list, /if \(row\.timetableExempt\) \{/, "the building's timetable frame is replaced by the exception");
   assert.match(list, /\{mode === "team" \? null : \(\s*<>/, "🔴 a manager's board is told the building has no timetable and not who decided it");
-  assert.ok(board.includes("adviseOnTimetable(customer.timetable, group.venue.timetableExempt !== null)"), "the Needs-you summary reads the same exception");
+  assert.ok(
+    read("src/lib/phoenix-crm/place-check-lanes.ts").includes("adviseOnTimetable(customer.timetable, group.venue.timetableExempt !== null)"),
+    "the lanes read the same exception",
+  );
 
   // Owner, 2026-10-20: every approval or refusal by Khaled Bedair appears to him, by name and timestamp.
   assert.equal(decisionStamp("Approved", "Khaled Bedair", "19 Oct 2026, 14:43"), "Approved by Khaled Bedair · 19 Oct 2026, 14:43");
-  assert.equal(decisionStamp("Refused", "Khaled Bedair", "19 Oct 2026, 14:44"), "Refused by Khaled Bedair · 19 Oct 2026, 14:44");
+  assert.equal(decisionStamp("Rejected", "Khaled Bedair", "19 Oct 2026, 14:44"), "Rejected by Khaled Bedair · 19 Oct 2026, 14:44");
   assert.equal(decisionStamp("Approved", "The system", "19 Oct 2026, 23:32"), "Approved by the system · 19 Oct 2026, 23:32", "the system's own word reads as a word");
   assert.equal(decisionStamp("Approved", null, null), null, "a decision that predates the record draws nothing");
-  assert.equal(decisionStamp("Refused", null, "19 Oct 2026, 14:44"), "Refused · 19 Oct 2026, 14:44", "a time with no name is still said");
+  assert.equal(decisionStamp("Rejected", null, "19 Oct 2026, 14:44"), "Rejected · 19 Oct 2026, 14:44", "a time with no name is still said");
   const byKhaled = seatedCustomersByVenue({
     pending: [],
     decided: [],
@@ -585,8 +604,8 @@ export function runPhoenixCrmSharedPlaceGroupsTests(): void {
   );
   assert.ok(reviewsSource.includes("refusedByName: decides ? deciderLabel("), "🔴 the reopened read names who refused, to the deciders");
   assert.ok(serverPlaces.includes("refusal_reason, decided_by_hr_id, decided_at"), "and a rejected building's own decider, for the customers it reopened");
-  assert.match(read("src/components/phoenix-crm/validated-place-list.tsx"), /mode === "team" \? null : decisionStamp\("Approved"/, "🔴 only the company board says who approved a place in use");
-  assert.match(read("src/components/phoenix-crm/reopened-customer-list.tsx"), /mode === "team" \? null : decisionStamp\("Refused"/, "🔴 only the company board says who refused a waiting customer");
+  assert.match(placeCheckListSource("validated-place-list", read), /mode === "team" \? null : decisionStamp\("Approved"/, "🔴 only the company board says who approved a place in use");
+  assert.match(read("src/components/phoenix-crm/reopened-customer-list.tsx"), /mode === "team" \? null : decisionStamp\("Rejected"/, "🔴 only the company board says who rejected a waiting customer");
   assert.match(customersSource, /mode === "team" \|\| \(customer\.state === "rejected" && customer\.restorable\)/, "🔴 a manager's board names nobody above him on a seated customer either");
   console.log("phoenix-crm shared place groups: OK");
 }

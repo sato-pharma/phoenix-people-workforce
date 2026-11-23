@@ -16,6 +16,7 @@ import {
   type CustomerSubject,
 } from "../src/lib/phoenix-crm/customer-match-groups.ts";
 import { personNameWords } from "../src/lib/phoenix-crm/signboard-rules.ts";
+import { placeCheckBoardSource } from "./support/place-check-board-source.ts";
 
 /**
  * Phoenix CRM — one customer validated by more than one rep at places that do not agree (owner,
@@ -166,7 +167,7 @@ export function runPhoenixCrmCustomerMatchGroupsTests(): void {
   assert.doesNotMatch(screen.toLowerCase(), /\b(doctor|doctors|account|accounts)\b/, "AM and PM customers — never the old words");
   assert.ok(screen.includes("conflict.members.some((member) => subjectPasses(member, filters, cutoff))"), "🔴 a customer stays whole when any of its validations passes the shared filters");
 
-  const shell = read("src/components/phoenix-crm/validation-reviews-board.tsx");
+  const shell = placeCheckBoardSource(read);
   assert.ok(shell.includes('...(team ? [] : [{ key: "sameCustomer" as const, label: "Same customer, several reps"'), "🔴 the tab is not drawn on a manager's board");
   assert.ok(shell.includes("{!team && sameCustomerOpened ? ("), "and neither is its panel, or the read behind it");
   assert.ok(shell.includes('if (key === "sameCustomer") setSameCustomerOpened(true);'), "the read starts when the tab is first opened");

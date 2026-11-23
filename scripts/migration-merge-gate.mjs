@@ -43,6 +43,9 @@ refuseUnknownFlags({
 /** Production's Supabase project ref (AGENTS.md §3). The only database this gate may be answered by. */
 export const PRODUCTION_REF = 'ozucdzovmcqvepbozvqf';
 
+/** The most a GitHub read's output may hold. A PR's file list carries every patch and passes 1 MB. */
+export const GH_READ_MAX_BYTES = 64 * 1024 * 1024;
+
 /** A migration file, as the drift check names one: `supabase/migrations/<14 digits>_<name>.sql`. */
 const MIGRATION_PATH = /^supabase\/migrations\/((\d{14})_(.+)\.sql)$/;
 
@@ -203,10 +206,12 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   }
   const { execFileSync, execSync } = await import('node:child_process');
   // Through cmd.exe on Windows, where gh ships as .cmd too — the same joined line bash-guard runs.
+  // 🔴 The file list carries every file's patch and passes node's default 1 MB: PR 699 answered
+  // 1,089,812 bytes and this read ended "could not tell: … ENOBUFS" (23 Nov 2026). bash-guard's
+  // reader holds the same figure.
+  const read = { encoding: 'utf8', maxBuffer: GH_READ_MAX_BYTES };
   const gh = (args) =>
-    process.platform === 'win32'
-      ? execSync(['gh', ...args].join(' '), { encoding: 'utf8' })
-      : execFileSync('gh', args, { encoding: 'utf8' });
+    process.platform === 'win32' ? execSync(['gh', ...args].join(' '), read) : execFileSync('gh', args, read);
   try {
     const repo = 'sato-pharma/phoenix-people-workforce';
     const files = gh(['api', `repos/${repo}/pulls/${pr}/files?per_page=100`, '--paginate', '--jq', '.[]'])

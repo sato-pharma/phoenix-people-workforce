@@ -92,7 +92,7 @@ const ALREADY_DECIDED_CODES: ReadonlySet<string> = new Set([
   "phoenix_crm_review_not_found",
   "phoenix_crm_review_not_rejected",
   "phoenix_crm_full_name_not_held",
-  // Refuse and Approve on Not confirmed, when the other decider settled the place first (17 Nov 2026):
+  // Reject and Approve on Not confirmed, when the other decider settled the place first (17 Nov 2026):
   // the same two constants the server answers with, from the pure `validation-feedback.ts`.
   PLACE_RETIRED_CODE,
   PLACE_GONE_CODE,
@@ -162,7 +162,7 @@ const SAVED_LABEL: Record<PlaceCheckOutcome, { text: string; tone: PillTone }> =
   waiting_building: { text: "Approved, waits for the building", tone: "good" },
   // No control sends "kept" any more (an approved building reads "Approved"); the word stays so an old mark never reads "Kept".
   kept: { text: "Approved", tone: "good" },
-  refused: { text: "Refused", tone: "warn" },
+  refused: { text: "Rejected", tone: "warn" },
   rejected: { text: "Rejected", tone: "warn" },
   reopened: { text: "Reopened", tone: "neutral" },
   restored: { text: "Approved after all", tone: "good" },

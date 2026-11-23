@@ -2,59 +2,51 @@
 
 /**
  * Phoenix CRM — validations the system never held, and the Super Admin's power to refuse one — or,
- * since 2026-10-17, to approve one the system could not read (`Approve`, below).
+ * since 2026-10-17, to approve one the system could not read (`Approve`, in
+ * `validated-place-list-decision.tsx`).
  *
  * The Google check covers AM customers only (`googleCheckApplies`), so a doctor's validation is never
  * held and never appears in the queue above; an AM one that matched its listing does not either. Before
  * this list there was no way to take one back — it had to be undone in SQL.
  *
- * Refusing writes the same review the automatic check would have written and runs the same reject, so
+ * Rejecting writes the same review the automatic check would have written and runs the same reject, so
  * the rep reads the system's own wording ("The system could not confirm this place") and never that
  * a person looked at him. Since 2026-10-08 the Super Admin also picks WHAT IS WRONG WITH THE PHOTO from
  * a closed list, and that one sentence is what the rep is told about the photo. The comment beside it is
  * OPTIONAL since 2026-10-15 ("admin comment is optional"), and since 2026-11-01 the rep and their manager
  * read it, from the System Administrator and with no name on it (`tellDecisionComment`).
  *
- * 🔴 REFUSING A PLACE THAT WAS APPROVED IN THE QUEUE ABOVE IS BETTER DONE THERE. This path rewrites the
- * review row's `google` column as `refused_by_admin`; since the validation audit of 14 Nov 2026 the
- * evidence the system held it on is kept under `before` (`evidenceToKeep`), one level deep, where the
- * queue's own "Reject it after all" leaves the record untouched. This control is for the places that
- * never reached the queue at all, which is what it was built for.
- *
  * Desktop draws the module's `CrmTable` (`table-fixed` with a colgroup, never a min-width in a
  * scroller); a phone draws the same rows as cards. Square corners throughout.
+ *
+ * The row's pieces live beside this file since the split of 23 Nov 2026: what is read in
+ * `validated-place-list-evidence.tsx`, the two controls in `validated-place-list-decision.tsx`. This file
+ * keeps the bulk answers, the search, the table and its phone cards.
  */
 
-import { useId, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
-import { crmPost, messageOf } from "@/components/phoenix-crm/api";
+import { crmPost } from "@/components/phoenix-crm/api";
 import { usePlaceCheckDecides } from "@/components/phoenix-crm/place-check-decides";
 import { BulkDecideBar, BulkPick, useRowPicks, type BulkAction } from "@/components/phoenix-crm/place-check-bulk";
-import { isAlreadyDecided, PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
-import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
+import type { PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { useCanRestoreValidation } from "@/components/phoenix-crm/place-check-restore";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
-import { DecisionComment, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
-import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
 import {
-  CrmButton,
   CrmCardsOnPhone,
   CrmEmpty,
-  CrmNote,
-  CrmPill,
   CrmSearchField,
   CrmShowMore,
   CrmTable,
   crmTdClassName,
   crmThClassName,
 } from "@/components/phoenix-crm/ui";
-import { decisionStamp } from "@/lib/phoenix-crm/decision-stamp";
+import { Approve, LastColumn, RejectInUse } from "@/components/phoenix-crm/validated-place-list-decision";
+import { PHOTO_CLASS, photoAlt, Place, readingText, SCHEDULE_TEXT, signboardText, Who } from "@/components/phoenix-crm/validated-place-list-evidence";
 import { adviseOnPlaceInUse } from "@/lib/phoenix-crm/place-check-advice";
-import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
-import { APPROVAL_NEEDS_FULL_NAME, approvalNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
-import { SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT } from "@/lib/phoenix-crm/super-admin-approval-rules";
+import { approvalNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import { TRUSTED_POINT_NO_PHOTO } from "@/lib/phoenix-crm/trusted-point-rules";
-import { PLACE_APPROVED_NOT_A_LIST_ADD, refusalTakeBack, VALIDATION_NOTE_LABEL, type ValidationRefusalReason } from "@/lib/phoenix-crm/validation-feedback";
+import { refusalTakeBack } from "@/lib/phoenix-crm/validation-feedback";
 import type { PlaceNoteIndex, ValidatedPlaceRow } from "@/lib/phoenix-crm/view-types";
 
 /**
@@ -64,385 +56,7 @@ import type { PlaceNoteIndex, ValidatedPlaceRow } from "@/lib/phoenix-crm/view-t
  */
 const EMPTY_INDEX: PlaceNoteIndex = { integrity: {}, notes: {}, recommendations: {} };
 
-/** What the system read on the signboard, in the Super Admin's words. A verdict, never a decision. */
-const SIGNBOARD_TEXT: Record<NonNullable<ValidatedPlaceRow["signboard"]>["verdict"], string> = {
-  match: "The signboard names this customer",
-  other_name: "The signboard names somebody else",
-  no_name: "No name to judge on the signboard",
-  unjudged: "The signboard could not be read",
-};
-
-/**
- * 🔴 `unjudged` BECAME FOUR DIFFERENT ANSWERS ON 2026-10-09, AND ONE SENTENCE IS WRONG FOR THREE OF
- * THEM. "Could not be read" fits a frame still waiting for another attempt; it is misleading for a
- * verdict two readings disagreed about, it hides that a place has already had every attempt it gets,
- * and it says nothing about a place there was never anything to compare. A reason not named here
- * falls back to the verdict's own sentence, so a reason added later can never render as a code.
- */
-const SIGNBOARD_UNJUDGED_TEXT: Record<string, string> = {
-  name_unusable: "Nothing on a signboard to compare",
-  unconfirmed: "Two readings of the sign disagreed",
-  unreadable: "The signboard could not be read yet",
-  unreadable_final: "The signboard could not be read",
-};
-
-/** A place whose photo shows no readable name, sent back to its rep for a new one (2026-10-18). */
-const SIGNBOARD_RETAKE_TEXT = "Sent back to the rep for a new photo";
-
-function signboardText(signboard: NonNullable<ValidatedPlaceRow["signboard"]>): string {
-  if (signboard.retake) return SIGNBOARD_RETAKE_TEXT;
-  if (signboard.verdict !== "unjudged") return SIGNBOARD_TEXT[signboard.verdict];
-  return SIGNBOARD_UNJUDGED_TEXT[signboard.reason ?? ""] ?? SIGNBOARD_TEXT.unjudged;
-}
-
-/**
- * What the system read on the TIMETABLE of a customer seated in a polyclinic (owner, 2026-10-09).
- * A seated place has no signboard of its own — the sign on the building names the venue — so the
- * evidence is the schedule hanging inside it, and these are the four things it can say.
- */
-const SCHEDULE_TEXT: Record<NonNullable<ValidatedPlaceRow["schedule"]>["verdict"], string> = {
-  match: "The timetable names this customer",
-  other_name: "The timetable names somebody else",
-  no_schedule: "No timetable in the photo",
-  unjudged: "The timetable could not be read",
-};
-
 const PAGE = 25;
-
-/**
- * The photograph, large: the full width of its column (a third of the table on a laptop, the whole card
- * on a phone) and 20rem tall, shown whole and turnable. It was a 128-pixel square, and at that size an
- * unreadable sign and an unreadable photo of a pavement look the same (owner, 2026-10-17: "I must be
- * able to see the photos").
- */
-const PHOTO_CLASS = "h-80 w-full";
-
-/** What the photo IS, so a blind reader is never told a timetable is a signboard. */
-function photoAlt(row: ValidatedPlaceRow): string {
-  return `${row.photoKind === "schedule" ? "Timetable" : "Signboard"} photo for ${row.customerName}`;
-}
-
-function readingText(label: string, reading: ValidatedPlaceRow["pin"]): string | null {
-  if (!reading) return null;
-  const accuracy = reading.accuracyMeters === null ? "accuracy unknown" : `within ${Math.round(reading.accuracyMeters)} m`;
-  return `${label}: ${reading.lat.toFixed(5)}, ${reading.lon.toFixed(5)} (${accuracy})`;
-}
-
-function Who({ row, mode }: { row: ValidatedPlaceRow; mode: PlaceCheckNotesMode }) {
-  // Who approved it and when, on the company board only: a district manager's board names nobody above
-  // him (owner, 2026-10-13), and this is the SFE Manager's and the Super Admin's own record (2026-10-20).
-  const approved = mode === "team" ? null : decisionStamp("Approved", row.decidedByName, row.decidedAtText);
-  return (
-    <div className="min-w-0 space-y-1">
-      <p className="break-words text-sm font-black text-slate-900" dir="auto">
-        {row.customerName}
-      </p>
-      <p className="break-words text-xs font-semibold text-slate-500">{[row.listType, row.speciality].filter(Boolean).join(" · ")}</p>
-      <p className="break-words text-sm text-slate-700">{row.repName}</p>
-      <p className="break-words text-xs text-slate-500">{row.territory}</p>
-      <p className="break-words text-xs text-slate-500">Validated {row.validatedAtText}</p>
-      {approved ? <p className="break-words text-xs font-semibold text-slate-700">{approved}</p> : null}
-      <div className="flex min-w-0 flex-wrap gap-1">
-        {row.reviewed ? null : <CrmPill tone="info">Never looked at</CrmPill>}
-        {row.isTest ? <CrmPill>Test entry</CrmPill> : null}
-      </div>
-    </div>
-  );
-}
-
-/** The fields the evidence block reads: a Place checks row, or a place another screen draws the same way. */
-type PlaceEvidence = Pick<
-  ValidatedPlaceRow,
-  "photoKind" | "photo" | "pin" | "placeLabel" | "sharedPlaceName" | "address" | "brickName" | "areaName" | "mapsLink" | "schedule" | "signboard"
->;
-
-function Place({ row }: { row: PlaceEvidence }) {
-  // A SEATED customer has no reading of his own: his point is the polyclinic's, frozen when the venue
-  // itself was validated, so `pin` and `photo` are both empty by construction and saying "no reading"
-  // is the honest line rather than an empty space the reader has to interpret.
-  const seated = row.photoKind === "schedule";
-  const readings = [readingText("Photo", row.photo), readingText("Capture location", row.pin)].filter((line): line is string => line !== null);
-  return (
-    <div className="min-w-0 space-y-0.5 text-sm text-slate-700">
-      {row.placeLabel ? (
-        <p className="break-words font-semibold" dir="auto">
-          {row.placeLabel}
-        </p>
-      ) : null}
-      {seated && row.sharedPlaceName ? (
-        <p className="break-words text-xs font-black text-slate-700" dir="auto">
-          Seated in {row.sharedPlaceName}
-        </p>
-      ) : null}
-      {row.address ? <p className="break-words text-xs text-slate-500">{row.address}</p> : null}
-      {row.brickName || row.areaName ? <p className="break-words text-xs text-slate-500">{[row.brickName, row.areaName].filter(Boolean).join(" · ")}</p> : null}
-      {seated ? (
-        <p className="break-words text-xs text-slate-500">No reading of its own — the point is the polyclinic&apos;s, taken when it was validated.</p>
-      ) : (
-        readings.map((line) => (
-          <p key={line} className="break-words text-xs text-slate-500">
-            {line}
-          </p>
-        ))
-      )}
-      <a className="inline-block text-xs font-black text-orange-700 underline underline-offset-2" href={row.mapsLink} rel="noreferrer" target="_blank">
-        {seated ? "Open the building in Google Maps" : "Open where they stood in Google Maps"}
-      </a>
-      <div className="space-y-0.5 border-t border-slate-100 pt-1">
-        {seated ? (
-          <>
-            {row.schedule ? (
-              <CrmPill tone={row.schedule.verdict === "match" ? "good" : row.schedule.verdict === "unjudged" ? "neutral" : "warn"}>
-                {SCHEDULE_TEXT[row.schedule.verdict]}
-              </CrmPill>
-            ) : (
-              <p className="text-xs text-slate-500">The timetable has not been read yet.</p>
-            )}
-            {row.schedule?.hoursRead ? (
-              <p className="break-words text-xs text-slate-700" dir="auto">
-                Hours read: {row.schedule.hoursRead}
-              </p>
-            ) : null}
-            {row.schedule?.scheduleText ? (
-              <p className="break-words text-xs text-slate-700" dir="auto">
-                {row.schedule.scheduleText}
-              </p>
-            ) : null}
-          </>
-        ) : (
-          <>
-            {row.signboard ? (
-              <CrmPill tone={row.signboard.verdict === "match" ? "good" : row.signboard.verdict === "unjudged" ? "neutral" : "warn"}>
-                {signboardText(row.signboard)}
-              </CrmPill>
-            ) : (
-              <p className="text-xs text-slate-500">The signboard has not been read yet.</p>
-            )}
-            {row.signboard?.signText ? (
-              <p className="break-words text-xs text-slate-700" dir="auto">
-                {row.signboard.signText}
-              </p>
-            ) : null}
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/** What refusing this row costs, in plain words — read before the button, not after. */
-function Cost({ row }: { row: ValidatedPlaceRow }) {
-  const lines = [
-    row.otherPlaces === 0
-      ? "They go back to To validate — this is the customer's only place."
-      : `The customer keeps ${row.otherPlaces === 1 ? "their other place" : `their other ${row.otherPlaces} places`}, so they stay validated.`,
-    row.visits === 0 ? "No visit is measured against it yet." : `${row.visits} ${row.visits === 1 ? "visit is" : "visits are"} measured against it, and ${row.visits === 1 ? "it loses its distance" : "they lose their distances"}.`,
-  ];
-  return (
-    <ul className="space-y-0.5">
-      {lines.map((line) => (
-        <li key={line} className="break-words text-xs text-slate-600">
-          {line}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-/**
- * 🔴 FOLDED UNTIL HE PRESSES IT (owner, 2026-10-17: "make me see what is the unreadable — the photos, I
- * must be able to see the photos"). The reason list, the note and the cost stood open on every row, so
- * the form was most of the row and the photograph a 113-pixel square beside it. Closed, a row is the
- * photo, who took it, what the reader saw, the system's advice and one button.
- */
-function Refuse({ row, scope = "" }: { row: ValidatedPlaceRow; scope?: string }) {
-  const done = usePlaceCheckDone();
-  const canRestore = useCanRestoreValidation();
-  const { saved, markSaved } = useSavedOutcome(row);
-  const [open, setOpen] = useState(false);
-  const [note, setNote] = useState("");
-  // Opens on the reason the system's own confident reading gives, and on nothing otherwise.
-  const [reason, setReason] = useState<ValidationRefusalReason | "">(() => adviseOnPlaceInUse(row).refusal ?? "");
-  const [armed, setArmed] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-
-  async function refuse() {
-    if (saving) return;
-    setSaving(true);
-    setProblem(null);
-    try {
-      await crmPost<unknown>("/api/phoenix-crm/validation-reviews/refuse", { placeId: row.placeId, note, refusalReason: reason }, "refused");
-      markSaved(done("refused"));
-      setSaving(false);
-    } catch (error) {
-      if (isAlreadyDecided(error)) {
-        markSaved(done("already"));
-        setSaving(false);
-        return;
-      }
-      setProblem(messageOf(error));
-      setSaving(false);
-      setArmed(false);
-    }
-  }
-
-  // Approve, drawn beside this control on every row, reads the same saved mark and draws it once; drawn here
-  // too, one press showed its outcome twice (17 Nov 2026).
-  if (saved) return null;
-
-  // 🔴 What the administrator approved — a trusted point included — only he refuses (owner, 2026-11-16).
-  if (row.lockedBySuperAdmin) return <CrmNote tone="neutral">{SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT}</CrmNote>;
-
-  if (!open) {
-    return (
-      <CrmButton onClick={() => setOpen(true)} variant="danger">
-        Refuse this validation
-      </CrmButton>
-    );
-  }
-
-  return (
-    <div className="space-y-2">
-      <Cost row={row} />
-      <RefusalReasonField
-        disabled={saving}
-        id={`refuse-reason-${scope}${row.placeId}`}
-        kind={row.photoKind}
-        onChange={(next) => {
-          setReason(next);
-          setArmed(false);
-        }}
-        value={reason}
-      />
-      <DecisionComment
-        disabled={saving}
-        id={`refuse-note-${scope}${row.placeId}`}
-        label={VALIDATION_NOTE_LABEL}
-        onChange={(next) => {
-          setNote(next);
-          setArmed(false);
-        }}
-        value={note}
-      />
-      {armed ? (
-        <div className="space-y-2">
-          <CrmNote tone="warn">This retires the place — they validate the customer again from their own list. {refusalTakeBack(canRestore)}</CrmNote>
-          <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
-            <CrmButton disabled={saving} onClick={() => void refuse()} variant="danger">
-              {saving ? "Refusing…" : "Yes, refuse it"}
-            </CrmButton>
-            <CrmButton disabled={saving} onClick={() => setArmed(false)}>
-              Keep it
-            </CrmButton>
-          </div>
-        </div>
-      ) : (
-        <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
-          <CrmButton disabled={reason === ""} onClick={() => setArmed(true)} variant="danger">
-            Refuse it
-          </CrmButton>
-          <CrmButton disabled={saving} onClick={() => setOpen(false)}>
-            Cancel
-          </CrmButton>
-        </div>
-      )}
-      {reason === "" && !armed ? <p className="text-xs text-slate-500">Choose what is wrong with the photo first.</p> : null}
-      {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
-    </div>
-  );
-}
-
-/**
- * Confirm it himself (owner, 2026-10-17: *"make me able to approve"* — "I can read them. So why you
- * cannot?"). One press: the customer is already validated, so approving changes nothing the rep sees;
- * it records that the Super Admin looked and confirmed, and the place leaves Not confirmed.
- *
- * The comment box stays folded so a row is still the photo and one button, and a comment written in it
- * reaches the rep and their manager (owner, 2026-11-01).
- */
-function Approve({ row }: { row: ValidatedPlaceRow }) {
-  const done = usePlaceCheckDone();
-  const { saved, markSaved } = useSavedOutcome(row);
-  const noteFieldId = useId();
-  const [note, setNote] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-  // A clinic customer with one or two names is never approved — refused and sent back for all three (owner, 2026-11-07).
-  const shortName = approvalNeedsFullName(row);
-
-  async function approve() {
-    if (saving || shortName) return;
-    setSaving(true);
-    setProblem(null);
-    try {
-      await crmPost<unknown>("/api/phoenix-crm/validation-reviews/approve", { placeId: row.placeId, note }, "approved");
-      markSaved(done("approved"));
-      setSaving(false);
-    } catch (error) {
-      if (isAlreadyDecided(error)) {
-        markSaved(done("already"));
-        setSaving(false);
-        return;
-      }
-      setProblem(messageOf(error));
-      setSaving(false);
-    }
-  }
-
-  if (saved) return <PlaceCheckSaved outcome={saved} />;
-
-  return (
-    <div className="space-y-2">
-      <DecisionComment disabled={saving} id={noteFieldId} label={VALIDATION_NOTE_LABEL} onChange={setNote} value={note} />
-      <CrmButton disabled={saving || shortName} onClick={() => void approve()} variant="primary">
-        {saving ? "Approving…" : "Approve this validation"}
-      </CrmButton>
-      {shortName ? <p className="break-words text-xs font-semibold text-slate-700">{APPROVAL_NEEDS_FULL_NAME}</p> : null}
-      <p className="break-words text-xs text-slate-500">{PLACE_APPROVED_NOT_A_LIST_ADD}</p>
-      {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
-    </div>
-  );
-}
-
-/**
- * `showSearch` is false when the board above owns the filtering (the Place checks page) — the list is
- * then handed rows that are already narrowed, and its own search box would be a second, confusing one.
- * It stays true by default so the component keeps its own search anywhere it is used on its own.
- */
-/**
- * The last column, both modes together.
- *
- * 🔴 `Refuse` IS NOT RENDERED FOR A MANAGER, AND NEITHER IS ITS WARNING. Refusing a validation retires
- * the place and can send the customer back to To validate — it is a decision, and the decision is the
- * deciders' alone (the Super Admin and the SFE Manager). A manager comments and recommends, and the
- * owner's instruction on 2026-10-13 was that his screen does not say who makes the call.
- *
- * `scope` keeps the phone cards' field ids apart from the table's (17 Nov 2026, the audit): both are on the
- * page at once, one of them hidden, and the same id twice sent a label's tap to the hidden copy.
- */
-function LastColumn({ mode, noteIndex, row, scope }: { mode: PlaceCheckNotesMode; noteIndex: PlaceNoteIndex; row: ValidatedPlaceRow; scope: string }) {
-  const key = placeNoteSubjectKey("place", row.placeId);
-  // Approve and Refuse are decisions — the Super Admin's alone since 2026-11-19, never the SFE Manager's.
-  const decides = usePlaceCheckDecides();
-  const decider = mode !== "team" && decides;
-  return (
-    <div className="min-w-0 space-y-2">
-      {/* The system's recommendation and its reason (owner, 2026-10-17) — the company board only. */}
-      {mode === "team" ? null : <SystemAdvice advice={adviseOnPlaceInUse(row)} />}
-      {decider ? <Approve row={row} /> : null}
-      {decider ? <Refuse row={row} scope={scope} /> : null}
-      <PlaceCheckNotes
-        integrity={noteIndex.integrity[key] ?? []}
-        mode={mode}
-        notes={noteIndex.notes[key] ?? []}
-        recommendations={noteIndex.recommendations[key] ?? []}
-        subjectId={row.placeId}
-        subjectKind="place"
-      />
-    </div>
-  );
-}
 
 /**
  * Answering several at once (owner, 2026-10-15: "also make me able to multiple select and response";
@@ -463,8 +77,8 @@ const inUseActions = (canRestore: boolean): ReadonlyArray<BulkAction<ValidatedPl
   },
   {
     key: "refuse",
-    label: "Refuse",
-    busyLabel: "Refusing",
+    label: "Reject",
+    busyLabel: "Rejecting",
     variant: "danger",
     needsReason: true,
     warning: (count) =>
@@ -477,6 +91,11 @@ const inUseActions = (canRestore: boolean): ReadonlyArray<BulkAction<ValidatedPl
   },
 ];
 
+/**
+ * `showSearch` is false when the board above owns the filtering (the Place checks page) — the list is
+ * then handed rows that are already narrowed, and its own search box would be a second, confusing one.
+ * It stays true by default so the component keeps its own search anywhere it is used on its own.
+ */
 export function ValidatedPlaceList({
   mode = "company",
   noteIndex = EMPTY_INDEX,
@@ -563,7 +182,7 @@ export function ValidatedPlaceList({
                 <th className={crmThClassName}>Photo</th>
                 <th className={crmThClassName}>Customer and rep</th>
                 <th className={crmThClassName}>The place they saved</th>
-                <th className={crmThClassName}>{mode === "team" ? "Your comment" : bulk ? "Approve or refuse" : "Your recommendation"}</th>
+                <th className={crmThClassName}>{mode === "team" ? "Your comment" : bulk ? "Approve or reject" : "Your recommendation"}</th>
               </tr>
             </thead>
             <tbody>
@@ -606,7 +225,7 @@ export {
   Approve as PlaceInUseApprove,
   Place as PlaceInUseEvidence,
   PHOTO_CLASS as PLACE_CHECK_PHOTO_CLASS,
-  Refuse as PlaceInUseRefuse,
+  RejectInUse as PlaceInUseReject,
   photoAlt as placeInUsePhotoAlt,
   readingText as placeReadingText,
   SCHEDULE_TEXT as PLACE_SCHEDULE_TEXT,

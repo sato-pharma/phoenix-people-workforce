@@ -427,6 +427,12 @@ answers `not on production: 20261119132423_outstation_accept_claim_for_payroll_a
   user-level `merge-checks-guard.mjs` does not carry it.
 - Its GitHub reads go through `ghRead` like C21's: the file list is prefetched with the others, and the
   PR head is the read C21 already made.
+- **A long file list is read whole** (23 Nov 2026). `pulls/<n>/files` carries every file's patch, so
+  PR 699 (109 files) answered 1,089,812 bytes. Node's default 1 MB of stdout stopped the read, and the
+  merge was refused as "could not tell (stdout maxBuffer length exceeded)" with its one migration on
+  production; the hand script ended "could not tell: … ENOBUFS". The owner stood the check down for
+  that one merge after the gate's own functions, run with a larger buffer, read production's ledger
+  (1,627 rows) and found the file. `ghFresh` and the hand script now hold 64 MB.
 
 Pinned by `tests/migration-merge-gate.test.ts` — the pure pieces against the real exception list, the
 ledger read with a fake fetch, and the real hook through a `gh` shim with a staging URL in its
