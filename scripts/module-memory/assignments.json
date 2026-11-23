@@ -900,6 +900,7 @@
   "never-move-a-browser-program-folder-off-c": "platform-access",
   "never-put-his-physical-actions-in-the-next-step-box": "global",
   "never-rotate-the-supabase-db-password-with-alter-role": "database",
+  "never-save-a-production-form-he-asked-steps-for": "sales-imports",
   "never-silent-drop-count-and-flag-instead": "sales-imports",
   "never-skip-ask-until-resolved": "global",
   "never-stop-a-dev-server-at-all-until-he-says": "sessions",

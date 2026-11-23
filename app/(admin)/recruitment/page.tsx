@@ -17,6 +17,7 @@ import { loadAllDistrictBoards } from "@/lib/recruitment/district-manager-folder
 import { listHiringManagerOptions } from "@/lib/recruitment/hiring-manager-notify";
 import { fenceCandidateIds, fenceDistrictBoards } from "@/lib/recruitment/workspace/fence";
 import { cairoToday, parseWorkspaceFilters, type WorkspaceFilters } from "@/lib/recruitment/workspace/filters";
+import { placeAnswerOptions } from "@/lib/recruitment/workspace/answer-place-options";
 import { loadWorkspacePlaces } from "@/lib/recruitment/workspace/places";
 import {
   allowedTabsForViewer,
@@ -192,7 +193,7 @@ async function WorkspaceContent({
   const listed = listFilters(filters);
   const regions = isWorkspaceRoleTab(tab) && tabsWithRegions.includes(tab);
 
-  const [page, counts, places, answerFilters, managers, cabinet, shelves, canHire, canExport, viewerName] = await Promise.all([
+  const [page, counts, places, answerFilters, managers, cabinet, shelves, canHire, canExport, viewerName, placeOptions] = await Promise.all([
     settle("the CVs", () => loadWorkspacePage(listed, viewer)),
     settle("the counts", () => loadWorkspaceCounts(listed, viewer)),
     regions ? settle("the regions and areas", () => loadWorkspacePlaces(tab), OPTIONAL_DEADLINE_MS) : Promise.resolve(null),
@@ -242,9 +243,14 @@ async function WorkspaceContent({
     // button is drawn only for a reader the route will answer.
     canAccess(access, "recruitment", "export").catch(() => false),
     access.hrId ? namesByHrId([access.hrId]).then((names) => names.get(access.hrId), () => null) : Promise.resolve(null),
+    // The region and area cells are chosen from the company's list, never typed (24 Nov 2026): every
+    // active area under its recruitment region, the same list the bot and the placing form offer.
+    viewer.canWork
+      ? settle("the area list", async () => placeAnswerOptions(await loadWorkspacePlaces("medical_rep")), OPTIONAL_DEADLINE_MS)
+      : Promise.resolve(null),
   ]);
 
-  const failures = [page, counts, places, answerFilters, managers, cabinet, shelves].flatMap((read) =>
+  const failures = [page, counts, places, answerFilters, managers, cabinet, shelves, placeOptions].flatMap((read) =>
     read && !read.ok ? [{ error: read.error, label: read.label }] : [],
   );
   logFailures(access, failures);
@@ -262,6 +268,7 @@ async function WorkspaceContent({
       initialPage={page.ok ? page.value : null}
       initialPageError={page.ok ? null : "The CVs could not be loaded just now. Reload the page, or change a filter to try again."}
       initialPlaces={places?.ok ? places.value : null}
+      placeOptions={placeOptions?.ok ? placeOptions.value : null}
       managerShelves={shelves ? (shelves.ok ? shelves.value : []) : null}
       managers={managers?.ok ? managers.value : []}
       notices={notices}

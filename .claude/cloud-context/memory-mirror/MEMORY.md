@@ -29,6 +29,7 @@
 
 
 ## Inbox — new notes land here
+- [never save a production form he asked steps for](never-save-a-production-form-he-asked-steps-for.md) - he saves it himself; a short button reply is not an order to submit in his browser; check production first, name whose behalf
 - [a moved-back customer leaves the receiving rep's assignment open](a-moved-back-customer-leaves-the-receiving-reps-assignment-open.md) - the mint re-adds a pending copy; close the rows and prove the mint returns 0
 - [Validation Photos folder: never delete](validation-photos-folder-is-never-deleted-from.md) - F:\Phoenix Workforce\Validation Photos, Line\Region\Area\Rep; only add, never delete/move/overwrite
 
