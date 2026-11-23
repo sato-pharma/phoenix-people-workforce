@@ -44,8 +44,9 @@ export async function runOutstationDecisionFailureTraceTests() {
   // makes these blocks lossy, so every block that reaches for it must also record the original.
   const blocks = source.split(/\}\s*catch\s*\(error\)\s*\{/).slice(1);
   assert.ok(
-    blocks.length >= 4,
-    `expected a catch block for each handler (GET/POST/PATCH/DELETE), found ${blocks.length}`,
+    // DELETE has no catch since 24 Nov 2026: it only refuses (an expense request is never deleted).
+    blocks.length >= 3,
+    `expected a catch block for each handler (GET/POST/PATCH), found ${blocks.length}`,
   );
 
   blocks.forEach((block, index) => {
@@ -73,7 +74,7 @@ export async function runOutstationDecisionFailureTraceTests() {
   // `${RECORDER}({` matches the call sites only — the declaration reads
   // `${RECORDER}(input: {`, and counting it as a call made this very test fail on itself.
   const callSites = source.split(`${RECORDER}({`).slice(0, -1);
-  assert.ok(callSites.length >= 4, `expected every handler to record its failure, found ${callSites.length}`);
+  assert.ok(callSites.length >= 3, `expected every handler (GET/POST/PATCH; DELETE only refuses since 24 Nov 2026) to record its failure, found ${callSites.length}`);
   callSites.forEach((before, index) => {
     assert.ok(
       before.trimEnd().endsWith("await"),

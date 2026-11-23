@@ -85,18 +85,18 @@ export function runOutstationNotificationFramingTests() {
   assert.match(
     deleted,
     /\.like\("summary", "Admin deleted outstation request%"\)/,
-    "the notice must read the audit row deleteOutstationRequest writes",
+    "the notice must read the audit rows the old admin delete wrote (six, 7 Jun to 10 Oct 2026)",
   );
   assert.match(
     deleted,
     /canViewEmployeeExpenseScope\(access, employeeHrId\)/,
     "the notice must be scoped like the request itself, or the page confirms a request id to anyone",
   );
-  const deleteSummary = functionSlice(service, "export async function deleteOutstationRequestAsAdmin");
-  assert.match(
-    deleteSummary,
-    /summary: `Admin deleted outstation request \$\{existing\.id\}\.`/,
-    "the audit summary the notice matches on must stay exactly this",
+  // 🔴 An expense request is never deleted any more (owner, 24 Nov 2026): no code writes that audit row now.
+  assert.doesNotMatch(
+    code(service),
+    /export async function deleteOutstationRequestAsAdmin/,
+    "the admin delete of an expense request must stay gone: a rejected request stays as rejected",
   );
   const page = source("app/employee-portals/outstation-review/[id]/page.tsx");
   assert.match(
