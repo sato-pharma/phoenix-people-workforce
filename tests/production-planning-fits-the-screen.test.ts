@@ -163,12 +163,13 @@ export function runProductionPlanningFitsTheScreenTests() {
   ].map((match) => match[1]);
   assert.equal(
     tables.length,
-    6,
-    `${WORKSPACE}: found ${tables.length} tables, expected 6 (planner result, stock, cost, the ` +
-      `execution preview, the factory balance, composition). A new table needs its own colgroup and ` +
+    7,
+    `${WORKSPACE}: found ${tables.length} tables, expected 7 (planner result, stock, cost, the ` +
+      `execution preview, the factory balance, composition, the stock entry list). A new table needs its own colgroup and ` +
       `its own card list, so this count is pinned. It went from 4 to 5 on 2026-10-09, when the ` +
       `Settings tab's formula list became a table with an editor under it, and from 5 to 6 on ` +
-      `2026-11-24, when the run entry became the execution's preview and factory-balance tables — each ` +
+      `2026-11-24, when the run entry became the execution's preview and factory-balance tables, and from 6 to 7 the same day, when the Stock tab ` +
+      `gained its entry list with a reverse button (the audit for Dr. Sahar) — each ` +
       `raised deliberately, with the colgroup and the card list in the same change, never to quiet a failure.`,
   );
   for (const [index, table] of tables.entries()) {

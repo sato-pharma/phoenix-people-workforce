@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  coerceCountTiming,
   coerceRunStage,
+  countAgainstProduction,
   deductionRowDate,
   executedYield,
   measuredWaste,
@@ -232,6 +234,55 @@ export function runProductionPlanningExecutionTests() {
   assert.ok(
     headline.includes("run.saleableBoxes ? t.execBoxesWord : saleableWord"),
     "a recorded production reads its count as boxes, not as tablets",
+  );
+
+  // ── A count typed AFTER a production must say whether it is from before it (owner, 2026-11-24) ──
+  // Production, 24 Nov 2026 Cairo: 65,300 Saginkgo boxes counted at Med Care Badr at 16:00, the run
+  // took 22,130 at 16:16 (43,170 left), and 76,600 — the corrected count from BEFORE the run — was
+  // typed at 16:19. A count replaces the balance, so the 22,130 came back and the stock read 76,600.
+  const before = countAgainstProduction({
+    typedQty: BigInt(76_600),
+    timing: "before_production",
+    movedQty: BigInt(22_130),
+    standingQty: BigInt(43_170),
+  });
+  assert.equal(before.storedQty, BigInt(54_470), "a count from before the run has the run's take come off it again");
+  assert.equal(before.openingDelta, BigInt(11_300), "the run's opening moves from 65,300 to 76,600");
+  const after = countAgainstProduction({
+    typedQty: BigInt(76_600),
+    timing: "after_production",
+    movedQty: BigInt(22_130),
+    standingQty: BigInt(43_170),
+  });
+  assert.equal(after.storedQty, BigInt(76_600), "a count from after the run is what the lot holds now");
+  assert.equal(after.openingDelta, BigInt(0));
+  assert.throws(
+    () => countAgainstProduction({ typedQty: BigInt(20_000), timing: "before_production", movedQty: BigInt(22_130), standingQty: BigInt(43_170) }),
+    /cannot be smaller than what the production took/,
+    "the run cannot have taken more than was there before it",
+  );
+  assert.equal(coerceCountTiming("before_production"), "before_production");
+  assert.equal(coerceCountTiming("whenever"), null, "an unknown timing is no answer, never a default");
+
+  const service = readFileSync("src/lib/production-planning/service.ts", "utf8");
+  const recordStock = service.slice(
+    service.indexOf("export async function addStockEntry("),
+    service.indexOf("export async function changeStockLotExpiry("),
+  );
+  assert.ok(
+    recordStock.includes('lot.data?.source === "production" && lot.data.run_id') &&
+      recordStock.includes('coerceRunStage(run.data.stage) === "awaiting_balance"') &&
+      recordStock.includes("errorsFor(body).countTimingRequired"),
+    "a replacing count on a lot standing on a production that waits for the factory's balance is refused until it says before or after",
+  );
+  assert.ok(
+    recordStock.includes("savedQty = counted.storedQty;") && !recordStock.includes("qty: formatQty(storedQty),"),
+    "the count's before/after answer is what gets stored, not the figure as typed",
+  );
+  const stockTab = workspace.slice(workspace.indexOf("export function StockTab("), workspace.indexOf("export function RunTab("));
+  assert.ok(
+    stockTab.includes('value="before_production"') && stockTab.includes('value="after_production"'),
+    "the stock form offers both answers",
   );
 
   // ── The table agrees: 'production' is a source only an execution writes ────────────────────────
