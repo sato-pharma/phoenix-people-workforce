@@ -2791,6 +2791,9 @@ export const accessRegistry = [
   // The portal Monthly Closing's Pharmacies column — a manager's own team, published months only, a
   // Medical Rep refused; the scope is resolved from the session inside the loader.
   sessionApi({ methods: ["GET"], pattern: "/api/employee-portals/monthly-closing/pharmacies", permission: { resource: "sales", action: "read" } }),
+  // The portal Customer Count dashboard — the same gates and scope as the line above, over several
+  // published months; a Medical Rep refused inside the loader.
+  sessionApi({ methods: ["GET"], pattern: "/api/employee-portals/customer-count", permission: { resource: "sales", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/employee-portals/territory-drilldown", permission: { resource: "sales", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/employee-portals/territory-drilldown/area/:areaCode", permission: { resource: "sales", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/employee-portals/territory-drilldown/totals", permission: { resource: "sales", action: "read" } }),

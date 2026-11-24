@@ -67,6 +67,47 @@ function keyOf(row: Pick<PharmacyCountRow, "distributorCode" | "clientCode">): s
   return `${upper(row.distributorCode)}|${upper(row.clientCode)}`;
 }
 
+/** One pharmacy that BOUGHT one product in one area and brick, in one month (net units above zero). */
+export type BuyingEntry = {
+  /** distributor|client — the pharmacy's identity. Server-side only; never sent to a screen. */
+  key: string;
+  area: string;
+  brickId: string;
+  brickName: string;
+  product: string;
+  qty: number;
+};
+
+/**
+ * THE RULE, once: one month's rows → the pharmacies that bought, per area, brick and product.
+ * Every reader of the count (the Closing Matrix column, the Customer Count dashboard) goes through
+ * here, so the two can never disagree about who bought.
+ */
+export function netBuyingEntries(rows: readonly PharmacyCountRow[], shared: ReadonlySet<string>): BuyingEntry[] {
+  const net = new Map<string, BuyingEntry>();
+  for (const row of rows) {
+    if (row.includedInClosing !== true || row.isDirect) continue;
+    if (classifyRowKind(row, shared) !== "pharmacy") continue;
+    const area = closingAreaOf(row);
+    const product = upper(row.productCode);
+    if (!area || !product) continue;
+    const key = keyOf(row);
+    const brickId = String(row.brickId ?? "").trim();
+    const cell = `${key}§${area}§${brickId}§${product}`;
+    const entry = net.get(cell) ?? { key, area, brickId, brickName: String(row.brickName ?? "").trim(), product, qty: 0 };
+    entry.qty += Number(row.qty) || 0;
+    if (!entry.brickName && row.brickName) entry.brickName = String(row.brickName).trim();
+    net.set(cell, entry);
+  }
+  return [...net.values()].filter((entry) => entry.qty > EPSILON);
+}
+
+/** One month judged ON ITS OWN — its shared (wholesaler) customers read from that month alone, which
+ *  is exactly what that month's Closing Matrix column does. */
+export function monthBuyingEntries(rows: readonly PharmacyCountRow[]): BuyingEntry[] {
+  return netBuyingEntries(rows, findSharedCustomerKeys([{ period: "", rows }]));
+}
+
 /**
  * Count every area's and brick's buying pharmacies, per product, from the closing's invoice rows.
  * `periods` may come in any order; each month's rows are judged on their own.
@@ -97,24 +138,8 @@ export function buildClosingPharmacyCounts(input: {
   };
 
   for (const { rows } of input.periods) {
-    // Net units per pharmacy, area, brick and product, for THIS month only.
-    const net = new Map<string, { key: string; area: string; brickId: string; brickName: string; product: string; qty: number }>();
-    for (const row of rows) {
-      if (row.includedInClosing !== true || row.isDirect) continue;
-      if (classifyRowKind(row, shared) !== "pharmacy") continue;
-      const area = closingAreaOf(row);
-      const product = upper(row.productCode);
-      if (!area || !product) continue;
-      const key = keyOf(row);
-      const brickId = String(row.brickId ?? "").trim();
-      const cell = `${key}§${area}§${brickId}§${product}`;
-      const entry = net.get(cell) ?? { key, area, brickId, brickName: String(row.brickName ?? "").trim(), product, qty: 0 };
-      entry.qty += Number(row.qty) || 0;
-      if (!entry.brickName && row.brickName) entry.brickName = String(row.brickName).trim();
-      net.set(cell, entry);
-    }
-    for (const entry of net.values()) {
-      if (entry.qty <= EPSILON) continue;
+    const net = netBuyingEntries(rows, shared);
+    for (const entry of net) {
       const id = idOf(entry.key);
       const areaBucket = areas.get(entry.area) ?? new Map<string, Set<number>>();
       add(areaBucket, entry.product, id);
