@@ -6,7 +6,8 @@ import { PrivateCalendar } from "@/components/employee-portal/private-calendar";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
 import { canUsePrivateCalendarAdminSurface, getPrivateCalendarWorkspace } from "@/lib/private-calendar/service";
-import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { privateCalendarPickerPool } from "@/lib/private-calendar/roster";
 import {
   phxFieldClassName,
   phxSelectClassName,
@@ -65,21 +66,13 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
   const month = rawMonth ? Math.max(1, Math.min(12, parseInt(rawMonth, 10))) : currentMonth;
   const year = rawYear ? parseInt(rawYear, 10) : currentYear;
 
-  const directory = await getEmployeeDirectory().catch(() => null);
-  const allEmployees = directory?.employees ?? [];
-
-  const isWorking = (emp: (typeof allEmployees)[number]) => {
-    const status = (emp.employmentStatus ?? "").toLowerCase();
-    return status === "active" || status === "on_leave";
-  };
+  // 🔴 The directory read WITH leavers. `getEmployeeDirectory()` is active-only, so reading it here
+  // left "Left the company" empty and Esraa Awad unfindable (owner, 2026-11-24).
+  const allEmployees = await getEmployeeDirectoryRows({ includeInactive: true }).catch(() => []);
 
   // The pool is the whole company. Only the employment-status choice narrows it, and the
   // dropdowns below are derived from that same pool so a filter can never offer an empty result.
-  const pool = statusFilter === "all"
-    ? allEmployees
-    : statusFilter === "left"
-      ? allEmployees.filter((emp) => !isWorking(emp))
-      : allEmployees.filter(isWorking);
+  const pool = privateCalendarPickerPool(allEmployees, statusFilter);
 
   // Derive unique lines, regions and departments for the filter dropdowns
   const lines = [...new Set(pool.map((e) => e.lineName).filter(Boolean) as string[])].sort();

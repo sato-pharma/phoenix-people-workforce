@@ -20,6 +20,29 @@ export function privateCalendarRosterFromRows(rows: EmployeeDirectoryRow[], from
   return rows.filter((employee) => isActiveDirectoryEmployee(employee) || isWithinNoticePeriod(employee, fromDate));
 }
 
+export type PrivateCalendarPickerStatus = "working" | "left" | "all";
+
+/**
+ * Who the admin desk's picker lists for each Status choice. `rows` MUST be the directory read WITH
+ * inactive people (`getEmployeeDirectoryRows({ includeInactive: true })`).
+ *
+ * 🔴 WHY (owner, 2026-11-24: "I CANNOT FIND ESRAA AWAD PRIVATE CALENDAR"). The page read
+ * `getEmployeeDirectory()`, whose `employees` are ACTIVE ONLY, so "Left the company" listed
+ * "0 employees found of 0" and "Everyone, leavers included" listed the 130 active people and no
+ * leaver — the picker could never offer the leaver whose calendar `privateCalendarRosterForRequest`
+ * was built to open. A historical payroll record is not a person who left, so it is in no list.
+ */
+export function privateCalendarPickerPool(
+  rows: EmployeeDirectoryRow[],
+  status: PrivateCalendarPickerStatus,
+): EmployeeDirectoryRow[] {
+  const working = (employee: EmployeeDirectoryRow) => isActiveDirectoryEmployee(employee);
+  const left = (employee: EmployeeDirectoryRow) => hasDepartedEmployment(employee.employmentStatus);
+  if (status === "left") return rows.filter(left);
+  if (status === "all") return rows.filter((employee) => working(employee) || left(employee));
+  return rows.filter(working);
+}
+
 /**
  * The roster ONE person's calendar is read against: the usual roster, plus — for a global viewer who
  * asked for that person by HR id — someone who has already LEFT, whatever month is asked about.
