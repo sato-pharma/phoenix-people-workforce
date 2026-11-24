@@ -53,7 +53,14 @@ export async function loadWhatsAppCvArchiveView(viewer?: WhatsAppCvArchiveViewer
   const supabase = recruitmentDb();
   const [rows, files] = await Promise.all([
     readEveryPage<WhatsAppCvArchiveRow>("WhatsApp CV Archive", (from, to) =>
-      supabase.from(WHATSAPP_CV_ARCHIVE_TABLE).select(ARCHIVE_COLUMNS).order("id", { ascending: true }).range(from, to),
+      // A person brought back into Recruitment keeps their Archive row, marked restored (owner, 24 Nov 2026),
+      // and leaves the Archive: their files are keyed to that row, so they leave with it.
+      supabase
+        .from(WHATSAPP_CV_ARCHIVE_TABLE)
+        .select(ARCHIVE_COLUMNS)
+        .is("restored_at", null)
+        .order("id", { ascending: true })
+        .range(from, to),
     ),
     readEveryPage<WhatsAppCvArchiveFileRow>("WhatsApp CV Archive file", (from, to) =>
       supabase.from(WHATSAPP_CV_ARCHIVE_FILES_TABLE).select(FILE_COLUMNS).order("id", { ascending: true }).range(from, to),
