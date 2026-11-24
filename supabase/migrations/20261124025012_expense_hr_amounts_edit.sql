@@ -329,4 +329,17 @@ from (
 ) c
 full join legacy l on l.claim_ref = c.claim_ref;
 
+-- The ledger row. Both Supabase tools decline this file (the function body contains `delete`), so it
+-- is applied through `scripts/apply-sql-file.mjs`, which writes no ledger row — so it is written here,
+-- with the FILE's own version, guarded on the new column being live and on the row not existing.
+insert into supabase_migrations.schema_migrations (version, name)
+select '20261124025012', 'expense_hr_amounts_edit'
+where exists (
+        select 1 from information_schema.columns
+        where table_schema = 'public' and table_name = 'outstation_expense_requests' and column_name = 'hr_amounts'
+      )
+  and not exists (
+        select 1 from supabase_migrations.schema_migrations where version = '20261124025012'
+      );
+
 commit;
