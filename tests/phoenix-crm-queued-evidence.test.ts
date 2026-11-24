@@ -253,11 +253,11 @@ function checkAManagersWaitIsTestedOnHisOwnPhone(): void {
   const believed = byManager(new Map([["PD-0031", [claimed.capturedAt]]]));
   assert.equal(believed.flags.includes("impossible_travel"), false, "🔴 the rep's phone being online does not contradict the manager's wait");
   assert.ok(believed.flags.includes(HELD_FLAG), "it still rests on the wait, and still costs the rank until settled");
-  assert.equal(believed.signals.heldWait?.creditedSeconds, 7_200, "the manager's claim is credited");
+  assert.deepEqual(believed.signals.heldWait, { claimedSeconds: 7_200, creditedSeconds: 7_200, priorClaimedSeconds: 0 }, "the manager's claim is credited");
 
   const contradicted = byManager(new Map([["PD-0031", [new Date("2026-11-03T11:00:00.000Z"), claimed.capturedAt]]]));
   assert.ok(contradicted.flags.includes("impossible_travel"), "🔴 the manager's OWN phone reaching Phoenix inside the wait contradicts it");
-  assert.equal(contradicted.signals.heldWait?.creditedSeconds, 0);
+  assert.deepEqual(contradicted.signals.heldWait, { claimedSeconds: 7_200, creditedSeconds: 0, priorClaimedSeconds: 0 });
 
   // The same on a manager's held save already on record: the rep's arrivals never void it.
   const heldBefore = { ...prior(fixAt("2026-11-03T12:29:00.000Z", 20), "held"), queuedSeconds: 3_540, sentByHrId: "PD-0031" };
