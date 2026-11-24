@@ -1594,8 +1594,9 @@ async function employeeHasLeft(employeeHrId: string): Promise<boolean> {
  *   • removed before the week was released (the owner took it out),
  *   • a dispute the reviewer upheld,
  *   • a dispute still waiting for the reviewer — approving now would pre-empt that decision,
- *   • a day still pending in a week waiting for release (owner, 2026-09-15 — "Block until
- *     released"): the employee has not been asked, and the Super Admin may still untick the day,
+ *   (A day still pending in a week NOT RELEASED yet no longer blocks — owner, 2026-11-24, "donot
+ *   make this block deduction", replacing 2026-09-15's "Block until released". Approving it takes
+ *   the day out of that week instead: takeMonthEndDecidedDaysOutOfReview, after the decision is saved.)
  *   • a day still pending in a released week (owner, 2026-09-16 — "Block until answered"): the
  *     employee can still pay it from annual balance or dispute it, until they answer or the answer
  *     deadline settles it.
@@ -1634,15 +1635,15 @@ async function assertDayNotClearedInAttendanceReview(input: { employeeHrId: stri
       .in("work_date", dates)
       .ilike("attendance_weekly_digests.employee_hr_id", hrPattern)
       .eq("attendance_weekly_digests.dry_run", false),
-    // A day still pending in a real week: waiting for release, or released and not answered yet. A
-    // trial-run week is never released, so it never blocks.
+    // A day still pending in a RELEASED real week, not answered yet. A week waiting for release no
+    // longer blocks (owner, 2026-11-24), and a trial-run week is never released, so neither is read.
     supabase
       .from("attendance_digest_lines")
       .select("work_date,attendance_weekly_digests!inner(employee_hr_id,status,dry_run,notified_at)")
       .eq("action", "pending")
       .in("work_date", dates)
       .ilike("attendance_weekly_digests.employee_hr_id", hrPattern)
-      .in("attendance_weekly_digests.status", ["awaiting_release", "open"])
+      .eq("attendance_weekly_digests.status", "open")
       .eq("attendance_weekly_digests.dry_run", false),
   ]);
   for (const read of [cleared, disputed, undecided]) {
@@ -1699,18 +1700,11 @@ async function assertDayNotClearedInAttendanceReview(input: { employeeHrId: stri
   // in their FINAL payroll for ever. HR settles it here as it did before the weekly review existed —
   // approve it from the final pay, or record Do Not Take Action. Nothing is deducted automatically
   // without a notice, and the annual-balance guard still refuses a day already decided, so no day is
-  // ever charged twice. Anyone still with the company keeps the block, because they can answer; so
-  // does a week still waiting for release, which is still the Super Admin's to untick.
+  // ever charged twice. Anyone still with the company keeps the block, because they can answer.
   const untold = allUndecidedRows.filter((row) => weekStatus(row) === "open" && !weekNotified(row));
   const undecidedRows = untold.length && (await employeeHasLeft(hrId)) ? allUndecidedRows.filter((row) => !untold.includes(row)) : allUndecidedRows;
   if (undecidedRows.length) {
     const daysOf = (rows: Array<{ work_date: string }>) => Array.from(new Set(rows.map((row) => String(row.work_date))));
-    const unreleased = daysOf(undecidedRows.filter((row) => weekStatus(row) === "awaiting_release"));
-    if (unreleased.length) {
-      throw new Error(
-        `Conflict: ${unreleased.join(", ")} ${unreleased.length === 1 ? "is" : "are"} still waiting for release in the weekly attendance review, so the employee has not been asked yet. Release that week on the Weekly Attendance Review page first, or mark this deduction Needs Follow-up.`,
-      );
-    }
     // Released and not answered yet: the employee can still pay the day from annual balance or dispute it.
     throw new Error(
       `Conflict: the employee has not answered ${daysOf(undecidedRows).join(", ")} in the weekly attendance review yet, and can still choose annual balance or dispute. Wait for their answer or for the answer deadline to settle it, or mark this deduction Needs Follow-up.`,
@@ -1911,6 +1905,20 @@ export async function recordDecision(input: {
     summary: `Deductions decision recorded: ${input.decisionStatus}`,
   });
 
+  // An approved day of a week not released yet leaves that week (owner, 2026-11-24 — "Take it out"):
+  // releasing it later must neither clear the day nor ask the employee about it. Never throws: the
+  // decision is saved, so a failure here is said beside it, not raised over it.
+  const reviewNotices =
+    input.decisionStatus === "Approved for Payroll" &&
+    (candidateRow.category === "fingerprint" || candidateRow.category === "field_review")
+      ? await takeMonthEndDecidedDaysOutOfReview({
+          employeeHrId: candidateRow.employee_hr_id,
+          dates: Array.isArray(candidateRow.dates) ? (candidateRow.dates as unknown[]).map(String) : [],
+          actorLoginId: input.actor.loginId ?? input.actor.hrId ?? "unknown",
+          candidateId: input.candidateId,
+        })
+      : [];
+
   // The decision is what Automated Payroll charges (owner, 2026-10-07 — the push gate is retired), so
   // a decision that moves payroll money has to reach a step that was already confirmed, exactly as a
   // push did while the push was the gate. Never throws: the decision is saved and is his intent.
@@ -1934,7 +1942,49 @@ export async function recordDecision(input: {
         )
       : [];
 
-  return { ...mapDecisionRow(data as Record<string, unknown>)!, payrollNotices };
+  return { ...mapDecisionRow(data as Record<string, unknown>)!, payrollNotices: [...reviewNotices, ...payrollNotices] };
+}
+
+/**
+ * Take the days of an approved month-end deduction out of every weekly attendance review week of
+ * that employee that has NOT been released yet (owner, 2026-11-24, "Take it out"). The day becomes
+ * `month_end_decided`: the release step neither clears it nor asks about it, and the daily builder
+ * leaves it alone. A released week, an answered day and a trial-run week are untouched (the
+ * database function phx_attendance_take_out_month_end_decided_days locks each week first). Returns
+ * a notice for the screen when it could not be done, never throws.
+ */
+export async function takeMonthEndDecidedDaysOutOfReview(input: {
+  employeeHrId: string | null;
+  dates: string[];
+  actorLoginId: string;
+  candidateId: string;
+}): Promise<string[]> {
+  const hrId = String(input.employeeHrId ?? "").trim();
+  const dates = input.dates.filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date));
+  if (!hrId || !dates.length) return [];
+  try {
+    const { data, error } = await getSupabaseAdmin().rpc("phx_attendance_take_out_month_end_decided_days", {
+      p_employee_hr_id: hrId,
+      p_work_dates: dates,
+    });
+    if (error) throw new Error(error.message);
+    const moved = Number(data) || 0;
+    if (moved > 0) {
+      await writeAuditLog({
+        actorLoginId: input.actorLoginId,
+        entityId: input.candidateId,
+        entityType: "deductions_decision",
+        newValues: { employeeHrId: hrId, dates, daysTakenOutOfWeeklyReview: moved },
+        summary: `Approved at month end: ${dates.join(", ")} taken out of the weekly attendance review before release`,
+      });
+    }
+    return [];
+  } catch (error) {
+    const why = error instanceof Error ? error.message : String(error);
+    return [
+      `Approved. ${dates.join(", ")} could not be taken out of the weekly attendance review (${why}), so do not release that week with the day unticked until it is.`,
+    ];
+  }
 }
 
 export const STALE_DECISION_CONFLICT =

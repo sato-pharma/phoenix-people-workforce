@@ -82,6 +82,7 @@ const ANSWER_LABEL: Record<string, string> = {
   dispute_upheld: "Dispute accepted, no deduction",
   dispute_rejected: "Dispute rejected",
   confirmed: "Confirmed",
+  month_end_decided: "Decided at month end",
 };
 
 function formatDay(iso: string, withWeekday = true): string {

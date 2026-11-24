@@ -24399,6 +24399,76 @@ $_$;
 ALTER FUNCTION public.phx_attendance_sync_digest_days(p_employee_hr_id text, p_cycle_key text, p_week_index integer, p_week_start date, p_week_end date, p_dry_run boolean, p_days jsonb, p_cleared_dates date[]) OWNER TO postgres;
 
 --
+-- Name: phx_attendance_take_out_month_end_decided_days(text, date[]); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phx_attendance_take_out_month_end_decided_days(p_employee_hr_id text, p_work_dates date[]) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_hr text := btrim(coalesce(p_employee_hr_id, ''));
+  v_digest public.attendance_weekly_digests;
+  v_moved integer;
+  v_total integer := 0;
+  v_total_days numeric;
+  v_total_value numeric;
+  v_unpriced boolean;
+begin
+  if v_hr = '' or p_work_dates is null or coalesce(array_length(p_work_dates, 1), 0) = 0 then
+    return 0;
+  end if;
+
+  -- Each waiting week is locked the way a tick, a release and the daily builder lock it, so a
+  -- release running at the same moment either finishes first (the day is then no longer waiting and
+  -- is left alone) or waits for this.
+  for v_digest in
+    select g.*
+    from public.attendance_weekly_digests g
+    where upper(g.employee_hr_id) = upper(v_hr)
+      and g.status = 'awaiting_release'
+      and g.dry_run = false
+      and exists (
+        select 1 from public.attendance_digest_lines l
+        where l.digest_id = g.id and l.action = 'pending' and l.work_date = any(p_work_dates)
+      )
+    order by g.id
+    for update
+  loop
+    update public.attendance_digest_lines set
+      action = 'month_end_decided',
+      acted_at = now(),
+      updated_at = now()
+    where digest_id = v_digest.id
+      and action = 'pending'
+      and work_date = any(p_work_dates);
+    get diagnostics v_moved = row_count;
+    v_total := v_total + v_moved;
+
+    -- The same totals the daily builder keeps on a waiting week.
+    select
+      coalesce(sum(deduction_days) filter (where action <> 'removed' and (deduct or action <> 'pending')), 0),
+      coalesce(sum(deduction_value) filter (where action <> 'removed' and (deduct or action <> 'pending')), 0),
+      coalesce(bool_or(deduction_value is null) filter (where action <> 'removed' and (deduct or action <> 'pending')), false)
+    into v_total_days, v_total_value, v_unpriced
+    from public.attendance_digest_lines
+    where digest_id = v_digest.id;
+
+    update public.attendance_weekly_digests set
+      total_deduction_days = round(v_total_days, 3),
+      total_deduction_value = case when v_unpriced then null else round(v_total_value, 2) end,
+      has_unpriced_day = v_unpriced,
+      updated_at = now()
+    where id = v_digest.id;
+  end loop;
+
+  return v_total;
+end;
+$$;
+
+ALTER FUNCTION public.phx_attendance_take_out_month_end_decided_days(p_employee_hr_id text, p_work_dates date[]) OWNER TO postgres;
+
+--
 -- Name: phx_audit_position_vacancy_change(); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -54426,7 +54496,7 @@ CREATE TABLE public.attendance_digest_lines (
     hr_ops_line_id uuid,
     hr_ops_decided_by_hr_id text,
     hr_ops_decided_at timestamp with time zone,
-    CONSTRAINT attendance_digest_lines_action_check CHECK ((action = ANY (ARRAY['pending'::text, 'removed'::text, 'salary'::text, 'annual_balance'::text, 'auto_salary'::text, 'disputed'::text, 'dispute_upheld'::text, 'dispute_rejected'::text, 'confirmed'::text]))),
+    CONSTRAINT attendance_digest_lines_action_check CHECK ((action = ANY (ARRAY['pending'::text, 'removed'::text, 'salary'::text, 'annual_balance'::text, 'auto_salary'::text, 'disputed'::text, 'dispute_upheld'::text, 'dispute_rejected'::text, 'confirmed'::text, 'month_end_decided'::text]))),
     CONSTRAINT attendance_digest_lines_chosen_method_check CHECK (((chosen_method IS NULL) OR (chosen_method = ANY (ARRAY['salary'::text, 'annual_balance'::text])))),
     CONSTRAINT attendance_digest_lines_disputed_method_check CHECK (((action <> 'disputed'::text) OR (chosen_method IS NOT NULL))),
     CONSTRAINT attendance_digest_lines_status_check CHECK ((status = ANY (ARRAY['late'::text, 'short_hours'::text, 'early_leave'::text, 'missing_punch'::text, 'field_review'::text])))
@@ -102814,6 +102884,13 @@ GRANT ALL ON FUNCTION public.phx_attendance_settlement_immutable() TO authentica
 
 REVOKE ALL ON FUNCTION public.phx_attendance_sync_digest_days(p_employee_hr_id text, p_cycle_key text, p_week_index integer, p_week_start date, p_week_end date, p_dry_run boolean, p_days jsonb, p_cleared_dates date[]) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.phx_attendance_sync_digest_days(p_employee_hr_id text, p_cycle_key text, p_week_index integer, p_week_start date, p_week_end date, p_dry_run boolean, p_days jsonb, p_cleared_dates date[]) TO service_role;
+
+--
+-- Name: FUNCTION phx_attendance_take_out_month_end_decided_days(p_employee_hr_id text, p_work_dates date[]); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phx_attendance_take_out_month_end_decided_days(p_employee_hr_id text, p_work_dates date[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phx_attendance_take_out_month_end_decided_days(p_employee_hr_id text, p_work_dates date[]) TO service_role;
 
 --
 -- Name: FUNCTION phx_audit_position_vacancy_change(); Type: ACL; Schema: public; Owner: postgres

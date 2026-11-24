@@ -2564,14 +2564,23 @@ Payroll (a race, or a decision made before these guards shipped), the bridge rai
 naming the cause every run and the daily job returns 500. The same happens when the bridge cannot
 close a cleared day. A day that only needed salary, and could not be applied, is a warning.
 
-**A day nobody has finished deciding cannot be approved either.**
+**A day the employee can still answer cannot be approved either.**
 `assertDayNotClearedInAttendanceReview` also refuses **Approved for Payroll** for a fingerprint day
-still pending in a real week:
+still pending in a real, released week:
 
-- **Waiting for release** (owner, same day, chosen from options: "Block until released"). The
-  employee has not been asked, and the Super Admin may still untick the day. The refusal says to
-  release that week on the Weekly Attendance Review page first, or to mark the deduction Needs
-  Follow-up.
+- **Waiting for release — REVERSED 2026-11-24.** Until then (owner, 2026-09-15, chosen from
+  options: "Block until released") a day of a week not released yet refused approval too, and the
+  refusal said to release that week first. On 2026-11-24 the owner wrote "donot make this block
+  deduction", then chose **"Take it out"**: approving the day now goes through, and once the
+  decision is saved `takeMonthEndDecidedDaysOutOfReview` (database function
+  `phx_attendance_take_out_month_end_decided_days`, migration `20261124031229`) moves that
+  employee's still-pending lines on those dates, in every real week not released yet, to
+  `month_end_decided`. The release step then neither clears the day (an unticked pending day is
+  cleared on release, which the bridge would turn into Do Not Take Action against his approval) nor
+  asks the employee about it; the daily builder refreshes only pending lines; no settlement is
+  written, so the bridge has nothing to apply. The month-end decision is the only record of the
+  money. A take-out that fails never undoes the saved decision; the screen says it beside the
+  approval.
 - **Released and not answered yet** (owner, 2026-09-16, chosen from options: "Block until
   answered"). The employee can still pay the day from annual balance or dispute it, and approving
   first would take that choice away. The refusal says to wait for their answer or for the answer
@@ -2589,8 +2598,8 @@ by `employeeHasLeft`). HR decides that day at month end as it did before the wee
 approve it from the final pay, or record Do Not Take Action. Nothing is deducted automatically
 without a notice, and the settle function still refuses annual balance for a day already decided at
 month end (`55000`), so no day is ever charged twice. Anyone still with the company keeps the
-block, because they can still answer; so does a week still waiting for release, which is still the
-Super Admin's to untick. An employee record that cannot be read counts as still here, so the block
+block, because they can still answer. (A week still waiting for release no longer blocks anyone
+since 2026-11-24 — the approval takes the day out of it.) An employee record that cannot be read counts as still here, so the block
 stays.
 
 A day still pending when payroll closes is therefore not deducted that month. The bridge's own
@@ -2776,7 +2785,8 @@ by the risk review of those follow-ups later that day. He chose the recommended 
 - **"Yes, in-app and Telegram"**: the employee is told how a dispute was decided (§2).
 - **"Pause for leave days"**: days on approved leave do not count toward the answer window (§4).
 - **"Block until released"**: month-end approval refuses a day of a week still waiting for release
-  (§3).
+  (§3). **Reversed 2026-11-24** ("donot make this block deduction", then "Take it out"): the
+  approval goes through and takes the day out of that week.
 - **"Block until answered"** (2026-09-16): month-end approval also refuses a day of a released week
   that the employee can still answer (§3).
 - **"Pending pauses too"** (2026-09-16): leave still waiting for approval pauses the answer window
