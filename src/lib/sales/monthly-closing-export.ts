@@ -3,6 +3,8 @@ import ExcelJS from "exceljs";
 import { systemIdentity } from "@/config/system-settings";
 import { directRowsCarryOwnArea, isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
 import { CLOSING_EPDA_SHEET_NAME, closingEpdaSheetSpec } from "@/lib/sales/closing-epda-sheet";
+import type { ClosingPharmacyCounts } from "@/lib/sales/closing-pharmacy-counts";
+import { buildPharmacyLookup, pharmacyBrickRows } from "@/lib/sales/closing-pharmacy-lookup";
 import { normalizeCode } from "@/lib/sales/master-data/definitions";
 import {
   emptyClosingCell,
@@ -87,6 +89,7 @@ const MUTED = "FF94A3B8";
 const ZEBRA = "FFF8FAFC";
 
 const UNITS_FMT = "#,##0";
+export const PHARMACIES_BY_BRICK_SHEET = "Pharmacies by Brick";
 const VALUE_FMT = "#,##0.00";
 const PCT_FMT = "0.0%";
 
@@ -1031,6 +1034,11 @@ function writeMatrixSheet(
   note?: string,
   office?: MonthlyClosingMatrix | null,
   sheetName: string = "Closing Matrix",
+  /**
+   * How many pharmacies bought (closing-pharmacy-counts.ts) — the screen's Pharmacies column, read
+   * against THIS grid exactly as the screen reads it. Omitted, the sheet is exactly what it was.
+   */
+  pharmacies?: ClosingPharmacyCounts | null,
 ) {
   const sheet = workbook.addWorksheet(sanitizeSheetName(sheetName), { views: [{ state: "frozen", xSplit: 2, ySplit: 5 }] });
   const products = matrix.columns;
@@ -1043,21 +1051,28 @@ function writeMatrixSheet(
   // in the middle of a block silently re-points every SUMIFS and every column letter on the sheet
   // if the offsets are open-coded.
   const showOffice = Boolean(office);
-  const METRICS_PER_PRODUCT = showOffice ? 8 : 7;
+  // "Pharmacies" (owner, 24 Nov 2026) follows Units and any Office column — how many pharmacies
+  // bought that product in that row. Present only when the caller supplied the count.
+  const showPharmacies = Boolean(pharmacies);
+  const pharmacyLookup = buildPharmacyLookup(pharmacies ?? undefined, matrix);
+  const extra = (showOffice ? 1 : 0) + (showPharmacies ? 1 : 0);
+  const METRICS_PER_PRODUCT = 7 + extra;
   const M_UNITS = 0;
   const M_OFFICE = 1;
-  const M_VALUE = showOffice ? 2 : 1;
-  const M_TGT_UNITS = showOffice ? 3 : 2;
-  const M_TGT_VALUE = showOffice ? 4 : 3;
-  const M_ACH = showOffice ? 5 : 4;
-  const M_SALES_CONTR = showOffice ? 6 : 5;
-  const M_TGT_CONTR = showOffice ? 7 : 6;
-  // Grand Total block: Value, [of wh. Office], Tgt Value, Ach %.
-  const GRAND_METRICS = showOffice ? 4 : 3;
+  const M_PHARM = showOffice ? 2 : 1;
+  const M_VALUE = 1 + extra;
+  const M_TGT_UNITS = 2 + extra;
+  const M_TGT_VALUE = 3 + extra;
+  const M_ACH = 4 + extra;
+  const M_SALES_CONTR = 5 + extra;
+  const M_TGT_CONTR = 6 + extra;
+  // Grand Total block: Value, [of wh. Office], [Pharmacies], Tgt Value, Ach %.
+  const GRAND_METRICS = 3 + extra;
   const G_VALUE = 0;
   const G_OFFICE = 1;
-  const G_TGT = showOffice ? 2 : 1;
-  const G_ACH = showOffice ? 3 : 2;
+  const G_PHARM = showOffice ? 2 : 1;
+  const G_TGT = 1 + extra;
+  const G_ACH = 2 + extra;
   const productCols = products.length * METRICS_PER_PRODUCT;
   // + the Grand Total metrics, then the same two share columns for the row as a whole.
   const totalCols = 2 + productCols + GRAND_METRICS + 2;
@@ -1117,9 +1132,12 @@ function writeMatrixSheet(
   // The last two are CONTRIBUTION percentages — this row's share of the line, not an achievement
   // against a target. The header says "Contr%" outright (owner, 2026-08-05): read as a bare "%"
   // beside "Ach %" they were taken for a second achievement figure.
-  const metricLabels = showOffice
-    ? ["Units", "of wh. Office", "Value", "Tgt Units", "Tgt Value", "Ach %", "Sales Contr% of Line", "Tgt Contr% of Line"]
-    : ["Units", "Value", "Tgt Units", "Tgt Value", "Ach %", "Sales Contr% of Line", "Tgt Contr% of Line"];
+  const metricLabels = [
+    "Units",
+    ...(showOffice ? ["of wh. Office"] : []),
+    ...(showPharmacies ? ["Pharmacies"] : []),
+    "Value", "Tgt Units", "Tgt Value", "Ach %", "Sales Contr% of Line", "Tgt Contr% of Line",
+  ];
   products.forEach((product, index) => {
     const start = productStart(index);
     sheet.mergeCells(4, start, 4, start + METRICS_PER_PRODUCT - 1);
@@ -1128,7 +1146,7 @@ function writeMatrixSheet(
   });
   sheet.mergeCells(4, grandStart, 4, grandStart + GRAND_METRICS - 1);
   headerStyle(sheet.getCell(4, grandStart), "Grand Total");
-  (showOffice ? ["Value", "of wh. Office", "Tgt Value", "Ach %"] : ["Value", "Tgt Value", "Ach %"])
+  ["Value", ...(showOffice ? ["of wh. Office"] : []), ...(showPharmacies ? ["Pharmacies"] : []), "Tgt Value", "Ach %"]
     .forEach((label, index) => headerStyle(metricRow.getCell(grandStart + index), label));
   sheet.mergeCells(4, contribStart, 4, contribStart + 1);
   headerStyle(sheet.getCell(4, contribStart), "Contribution of Line (Contr%)");
@@ -1199,7 +1217,9 @@ function writeMatrixSheet(
   // EVERY SALES NUMBER ON THIS SHEET IS A VALUE, NEVER A SUMIFS. See the block above the call
   // sites below for why. `level` is gone from the signature because it only ever existed to build
   // those SUMIFS criteria, and it was identical to `tone` at all five call sites.
-  const writeRow = (key: string, name: string, cells: MonthlyClosingCell[], rowTotal: MonthlyClosingCell, tone: Tone, accent: string | null = null, accentText: string = DIRECT_TEXT) => {
+  // `pharmacyKey` is the row's key in the pharmacy lookup (`A:<area>`, `R:<region>`, `NAT`); null
+  // leaves the row's Pharmacies cells blank (Direct – National: direct orders are not counted).
+  const writeRow = (key: string, name: string, cells: MonthlyClosingCell[], rowTotal: MonthlyClosingCell, tone: Tone, accent: string | null = null, accentText: string = DIRECT_TEXT, pharmacyKey: string | null = null) => {
     rowAccent = accent;
     rowAccentText = accentText;
     const row = sheet.getRow(rowIndex);
@@ -1219,6 +1239,16 @@ function writeMatrixSheet(
         num(
           row.getCell(start + M_OFFICE),
           officeUnitsBy.get(`${tone}:${key}|${product.productCode}`) ?? 0,
+          UNITS_FMT,
+          tone,
+          false,
+          index,
+        );
+      }
+      if (showPharmacies) {
+        num(
+          row.getCell(start + M_PHARM),
+          pharmacyKey ? pharmacyLookup.cellFor(pharmacyKey, product.productCode) ?? null : null,
           UNITS_FMT,
           tone,
           false,
@@ -1258,6 +1288,10 @@ function writeMatrixSheet(
     if (showOffice) {
       // Value, not a SUMIFS — same reasoning as the per-product Office cell above.
       num(row.getCell(grandStart + G_OFFICE), officeValueBy.get(`${tone}:${key}`) ?? 0, VALUE_FMT, tone);
+    }
+    if (showPharmacies) {
+      // Distinct pharmacies across every product of the row — each counted once, never a sum.
+      num(row.getCell(grandStart + G_PHARM), pharmacyKey ? pharmacyLookup.totalFor(pharmacyKey) ?? null : null, UNITS_FMT, tone);
     }
     num(row.getCell(grandStart + G_TGT), rowTotal.targetValue, VALUE_FMT, tone);
     num(row.getCell(grandStart + G_ACH), rowTotal.achievement, PCT_FMT, tone, true);
@@ -1325,10 +1359,12 @@ function writeMatrixSheet(
         area.rowTotal,
         "area",
         synthetic ? DIRECT_FILL : null,
+        DIRECT_TEXT,
+        `A:${area.areaCode}`,
       );
       zebra = !zebra;
     });
-    writeRow(region.regionName, `${region.regionName} (Region)`, region.subtotal.cells, region.subtotal.rowTotal, "subtotal");
+    writeRow(region.regionName, `${region.regionName} (Region)`, region.subtotal.cells, region.subtotal.rowTotal, "subtotal", null, DIRECT_TEXT, `R:${region.regionCode}`);
     zebra = false;
   });
   // When the reader has filtered down to a single region, calling the bottom line "National Grand
@@ -1344,12 +1380,13 @@ function writeMatrixSheet(
     "grand",
     soleRegion ? REGION_TOTAL_FILL : null,
     WHITE,
+    "NAT",
   );
   if (matrix.directNational) {
     writeRow("◆ DIRECT", "Direct – National", matrix.directNational.cells, matrix.directNational.rowTotal, "subtotal", DIRECT_FILL);
   }
   if (matrix.companyTotal) {
-    writeRow("", "Grand Total (incl. Direct)", matrix.companyTotal.cells, matrix.companyTotal.rowTotal, "grand");
+    writeRow("", "Grand Total (incl. Direct)", matrix.companyTotal.cells, matrix.companyTotal.rowTotal, "grand", null, DIRECT_TEXT, "NAT");
   }
 
   // Filter stamp — a filtered workbook gets forwarded like any other, so the sheet itself must
@@ -3378,6 +3415,10 @@ const SHEET_GUIDE: Record<string, { ar: string; en: string }> = {
     ar: "وحدات الأوفيس وحدها: لكل منطقة ولكل منتج. الأوفيس ليس موزعاً — وحداته توزَّع على المناطق بقاعدة المالك حسب مساهمة كل منطقة في قيمة مبيعات الخط.",
     en: "The Office channel on its own, per area and product. Office is not a distributor: its units are spread across areas by the owner's rule, on each area's share of the line's value. The same figures as the “of wh. Office” columns on the Closing Matrix.",
   },
+  [PHARMACIES_BY_BRICK_SHEET]: {
+    ar: "عدد الصيدليات التي اشترت في كل بريك ولكل منتج، وآخر عمود يعد كل صيدلية مرة واحدة. نفس أرقام عمود Pharmacies في الشيت الرئيسي.",
+    en: "How many pharmacies bought in each brick, per product, with each pharmacy counted once in the last column. The same rule as the Pharmacies column on the Closing Matrix.",
+  },
   "Retail Sales (no direct)": {
     ar: "مبيعات الموزعين فقط، بدون أي أوردر مباشر — نفس المناطق والمنتجات.",
     en: "Distributor sell-out only, with every direct order excluded — same areas and products.",
@@ -3539,6 +3580,48 @@ function writeEpdaSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatrix
     sheet.getRow(startRow + 2 + index).eachCell((cell) => {
       cell.font = { bold: true, color: { argb: BLACK }, name: "Calibri", size: 10.5 };
     });
+  });
+}
+
+// "Pharmacies by Brick" (owner, 24 Nov 2026: "each area and each brick, how many pharmacy"). One
+// row per brick of every area on the Closing Matrix, a count per product and the distinct total —
+// the same rule and the same rows as the matrix's Pharmacies column, one level down. Named by
+// region, area and brick NAME, never by code.
+function writePharmacyBrickSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatrix, pharmacies: ClosingPharmacyCounts | null | undefined, note?: string) {
+  if (!pharmacies) return;
+  const products = matrix.columns;
+  const rows = pharmacyBrickRows(pharmacies, matrix);
+  const national = buildPharmacyLookup(pharmacies, matrix);
+  const sheet = workbook.addWorksheet(sanitizeSheetName(PHARMACIES_BY_BRICK_SHEET), { views: [{ state: "frozen", xSplit: 3, ySplit: 5 }] });
+  const columns: TableColumn[] = [
+    { label: "Region", width: 18 },
+    { label: "Area", width: 28 },
+    { label: "Brick", width: 30 },
+    ...products.map((product) => ({
+      label: `${product.productName} (${product.productCode})`,
+      numFmt: UNITS_FMT,
+      right: true,
+      width: 15,
+    })),
+    { label: "Pharmacies (any product)", numFmt: UNITS_FMT, right: true, width: 16 },
+  ];
+  bandHeader(sheet, matrix.line, matrix.period, PHARMACIES_BY_BRICK_SHEET, columns.length);
+  writeTable(sheet, 4, {
+    columns,
+    note:
+      "A pharmacy is one distributor customer that bought more than zero units, net of returns, in that brick and "
+      + "month. Direct orders, Office, Main Stores and a wholesaler's city share are not counted. The last column "
+      + "counts each pharmacy once, whatever it bought, so it is not the sum of the product columns."
+      + (note ? `  ·  ${note}` : ""),
+    rows: rows.map((row) => [row.regionName, row.areaName, row.brickName, ...row.counts, row.total]),
+    title: "Pharmacies that bought, by brick and product",
+    totals: [
+      "",
+      "",
+      "National Grand Total",
+      ...products.map((product) => national.cellFor("NAT", product.productCode) ?? 0),
+      national.totalFor("NAT") ?? 0,
+    ],
   });
 }
 
@@ -3724,6 +3807,12 @@ export async function buildMonthlyClosingWorkbook(
      */
     office?: MonthlyClosingMatrix | null;
     /**
+     * How many pharmacies bought, per area, brick and product — the screen's Pharmacies column.
+     * Adds that column to the Closing Matrix and a "Pharmacies by Brick" sheet after it. Omitted,
+     * the workbook is exactly what it was.
+     */
+    pharmacies?: ClosingPharmacyCounts | null;
+    /**
      * True when `office` was narrowed by the SAME filter as `matrix`, so the Office slice can be
      * taken out of it cell by cell — which is what the "Closing Matrix (No Office)" tab is.
      *
@@ -3771,7 +3860,8 @@ export async function buildMonthlyClosingWorkbook(
   // Office Allocation sheet appear on CNS and nowhere else. Resolved once here so the column and
   // the sheet can never disagree about whether this workbook has an Office layer.
   const office = lineHasOfficeChannel(matrix.line) ? (options?.office ?? null) : null;
-  writeMatrixSheet(workbook, matrix, options?.filterNote, office);
+  writeMatrixSheet(workbook, matrix, options?.filterNote, office, "Closing Matrix", options?.pharmacies);
+  writePharmacyBrickSheet(workbook, matrix, options?.pharmacies, options?.filterNote);
   // 🔴 THE SAME GRID WITH OFFICE TAKEN OUT, IMMEDIATELY AFTER IT — owner, 2026-10-05: "a new tab is
   // added without the office sales ... then the closing matrix as it is". CNS only, because Office
   // is a CNS-only channel (`lineHasOfficeChannel` above), and `office` is already null everywhere
@@ -4104,6 +4194,8 @@ export async function buildPortalClosingWorkbook(
    * viewer's own matrix, so only his own areas and products appear. Null or empty, no tab.
    */
   epdaUnits?: ReadonlyMap<string, number> | null,
+  /** This viewer's own pharmacy count, scoped exactly as `matrix` is. Null or absent omits it. */
+  pharmacies?: ClosingPharmacyCounts | null,
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = systemIdentity.appName;
@@ -4144,7 +4236,8 @@ export async function buildPortalClosingWorkbook(
 
   // Owner's rule, 2026-08-25 — Office is CNS-only. Same gate, same reason as the admin workbook.
   const officeLayer = lineHasOfficeChannel(rebuiltMatrix.line) ? (office ?? null) : null;
-  writeMatrixSheet(workbook, rebuiltMatrix, "Scoped to your own areas, region and products — never company-wide.", officeLayer);
+  writeMatrixSheet(workbook, rebuiltMatrix, "Scoped to your own areas, region and products — never company-wide.", officeLayer, "Closing Matrix", pharmacies);
+  writePharmacyBrickSheet(workbook, rebuiltMatrix, pharmacies, "Scoped to your own areas, region and products — never company-wide.");
   if (officeLayer) writeOfficeSheet(workbook, officeLayer, "Scoped to your own areas, region and products — never company-wide.");
   writeEpdaSheet(workbook, rebuiltMatrix, epdaUnits);
   writeTargetAchievementSheet(workbook, rebuiltMatrix);
