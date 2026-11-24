@@ -2971,7 +2971,7 @@ function FactoryBalanceForm({
   const setLine = (materialId: string, field: "opening" | "delivered" | "closing", value: string) =>
     setLines((current) => ({
       ...current,
-      [materialId]: { opening: "", delivered: "", closing: "", ...current[materialId], [field]: value },
+      [materialId]: { ...(current[materialId] ?? { opening: "", delivered: "", closing: "" }), [field]: value },
     }));
   const anyClosing = Object.values(lines).some((line) => line.closing.trim() !== "");
   const input = (materialId: string, field: "opening" | "delivered" | "closing") => (

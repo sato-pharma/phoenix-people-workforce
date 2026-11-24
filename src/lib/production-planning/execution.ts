@@ -126,7 +126,7 @@ export type DeductionPlan = {
 };
 
 /** Soonest expiry first, undated (packaging) last — the lot that dies first is the one used first. */
-function byExpiry(a: DeductibleLot, b: DeductibleLot): number {
+function byExpiry(a: { readonly expiryDate: string | null }, b: { readonly expiryDate: string | null }): number {
   if (a.expiryDate === b.expiryDate) return 0;
   if (a.expiryDate === null) return 1;
   if (b.expiryDate === null) return -1;
