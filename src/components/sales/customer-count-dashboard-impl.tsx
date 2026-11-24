@@ -6,6 +6,11 @@
 //
 // Every number is a count of DISTINCT pharmacies (customer-count-dashboard.ts): a total is never the
 // sum of the rows above it, so no total row is drawn and the export adds none.
+//
+// THE LOOK (owner, 24 Nov 2026: "a big premium polish … centre the numbers in the table"): flat
+// colour only — orange for the month that matters, slate for the months behind it, emerald and rose
+// for who came and who went. No gradient, glow or rounded corner; figures sit on the bars so the
+// chart reads without the tooltip; every number in the table is centred.
 
 import {
   ArrowDownRight,
@@ -24,7 +29,7 @@ import {
   Users,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Cell, LabelList, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 
 import { SafeResponsiveContainer } from "@/components/charts/safe-responsive-container";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
@@ -42,12 +47,15 @@ import {
 } from "@/lib/sales/customer-count-dashboard";
 import { formatNumber } from "@/lib/sales/format";
 
-const ORANGE = "#F97316";
+const ORANGE = "#EA580C";
+const ORANGE_SOFT = "#FDBA74";
+const PRIOR = "#CBD5E1";
 const INK = "#0F172A";
-const GAIN = "#059669";
-const LOSS = "#E11D48";
-const GRID = "#F1F5F9";
+const GAIN = "#047857";
+const LOSS = "#BE123C";
+const GRID = "#EEF2F6";
 const AXIS = { fontSize: 10, fontWeight: 700, fill: "#64748B" } as const;
+const BAR_LABEL = { fontSize: 10, fontWeight: 800, fill: "#334155" } as const;
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const MONTH_LONG = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -60,6 +68,14 @@ function monthLong(period: string | null | undefined): string {
   if (!period) return "";
   const [year, month] = period.split("-").map(Number);
   return `${MONTH_LONG[(month || 1) - 1]} ${year}`;
+}
+
+/** 12,697 → "12.7k" for an axis; the bars and the table always carry the full figure. */
+function compact(value: number): string {
+  const size = Math.abs(value);
+  if (size >= 10_000) return `${Math.round(value / 1000)}k`;
+  if (size >= 1_000) return `${(value / 1000).toFixed(1).replace(/\.0$/, "")}k`;
+  return `${value}`;
 }
 
 type Choice = { selected: string[]; mode: MultiSelectFilterMode };
@@ -93,37 +109,100 @@ function Change({ value }: { value: number | null }) {
   );
 }
 
+/** A month-by-month line, last point marked. Scales evenly, so the dot stays round. */
+function Spark({ values, color }: { values: number[]; color: string }) {
+  if (values.length < 2) return <div aria-hidden="true" className="mt-3 h-[26px]" />;
+  const width = 120;
+  const height = 26;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min || 1;
+  const points = values.map((value, index) => [
+    3 + (index / (values.length - 1)) * (width - 6),
+    height - 4 - ((value - min) / span) * (height - 8),
+  ]);
+  const [lastX, lastY] = points[points.length - 1];
+  return (
+    <svg aria-hidden="true" viewBox={`0 0 ${width} ${height}`} className="mt-3 block h-[26px] w-full">
+      <line x1="0" x2={width} y1={height - 0.5} y2={height - 0.5} stroke="#E2E8F0" strokeWidth="1" />
+      <polyline points={points.map(([x, y]) => `${x},${y}`).join(" ")} fill="none" stroke={color} strokeWidth="1.6" strokeLinejoin="round" />
+      <circle cx={lastX} cy={lastY} r="2.6" fill={color} />
+    </svg>
+  );
+}
+
+/** The months of one row as tiny bars, the latest in orange — the row's own shape at a glance. */
+function MicroBars({ values }: { values: number[] }) {
+  const max = Math.max(1, ...values);
+  const step = 7;
+  const width = Math.max(step * values.length - 2, 1);
+  return (
+    <svg aria-hidden="true" viewBox={`0 0 ${width} 22`} className="mx-auto block h-[22px]" style={{ width: Math.min(width, 84) }} preserveAspectRatio="none">
+      {values.map((value, index) => {
+        const barHeight = Math.max(value > 0 ? 2 : 0, (value / max) * 20);
+        return (
+          <rect
+            key={index}
+            x={index * step}
+            y={22 - barHeight}
+            width={5}
+            height={barHeight}
+            fill={index === values.length - 1 ? ORANGE : PRIOR}
+          />
+        );
+      })}
+    </svg>
+  );
+}
+
 function Tile({
   label,
   value,
   sub,
   icon,
-  accent = false,
+  rule,
+  valueClass = "text-slate-900",
   change,
+  spark,
+  share,
 }: {
   label: string;
   value: string;
   sub: string;
   icon: React.ReactNode;
-  accent?: boolean;
+  rule: string;
+  valueClass?: string;
   change?: number | null;
+  spark?: { values: number[]; color: string };
+  share?: { value: number; label: string };
 }) {
   return (
-    <div className="relative min-w-0 border border-slate-200 bg-white p-4">
-      <span aria-hidden="true" className={`absolute inset-x-0 top-0 h-[3px] ${accent ? "bg-orange-500" : "bg-slate-900"}`} />
+    <div className="relative flex min-w-0 flex-col border border-slate-200 bg-white px-4 pb-3 pt-4">
+      <span aria-hidden="true" className="absolute inset-x-0 top-0 h-[3px]" style={{ backgroundColor: rule }} />
       <div className="flex items-start justify-between gap-2">
-        <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">{label}</p>
-        <span className={accent ? "text-orange-500" : "text-slate-300"}>{icon}</span>
+        <p className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
+        <span className="text-slate-300">{icon}</span>
       </div>
-      <div className="mt-2 flex flex-wrap items-baseline gap-2">
-        <span className="text-2xl font-black tabular-nums leading-none text-slate-900">{value}</span>
+      <div className="mt-2.5 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <span className={`text-[1.75rem] font-black tabular-nums leading-none tracking-tight ${valueClass}`}>{value}</span>
         {change !== undefined ? (
           <span className="text-xs">
             <Change value={change} />
           </span>
         ) : null}
       </div>
-      <p className="mt-1.5 text-phx-xs font-semibold text-slate-500">{sub}</p>
+      <p className="mt-1.5 text-phx-xs font-semibold leading-snug text-slate-500">{sub}</p>
+      <div className="mt-auto">
+        {spark ? <Spark values={spark.values} color={spark.color} /> : null}
+        {share ? (
+          <div className="mt-3">
+            <div className="h-[6px] w-full bg-slate-100">
+              <div className="h-full" style={{ width: `${Math.min(100, Math.max(0, share.value * 100))}%`, backgroundColor: INK }} />
+            </div>
+            <p className="mt-1.5 text-phx-xs font-bold tabular-nums text-slate-600">{share.label}</p>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -144,10 +223,11 @@ function Panel({
   return (
     <section className="min-w-0 border border-slate-200 bg-white">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className="text-orange-500">{icon}</span>
+        <div className="flex min-w-0 items-center gap-3">
+          <span aria-hidden="true" className="h-8 w-[3px] shrink-0 bg-orange-600" />
+          <span className="text-orange-600">{icon}</span>
           <div className="min-w-0">
-            <h3 className="text-sm font-black tracking-tight text-slate-900">{title}</h3>
+            <h3 className="text-[0.95rem] font-black tracking-tight text-slate-900">{title}</h3>
             <p className="text-xs text-slate-500">{subtitle}</p>
           </div>
         </div>
@@ -158,20 +238,45 @@ function Panel({
   );
 }
 
+/** A chart key: flat squares, the words beside them. */
+function Key({ items }: { items: Array<{ label: string; color: string }> }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+      {items.map((item) => (
+        <span key={item.label} className="inline-flex items-center gap-1.5 text-phx-xs font-bold text-slate-600">
+          <span aria-hidden="true" className="h-2.5 w-2.5" style={{ backgroundColor: item.color }} />
+          {item.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function CountTooltip({ active, payload, label }: { active?: boolean; payload?: Array<Record<string, unknown>>; label?: unknown }) {
   if (!active || !payload || payload.length === 0) return null;
+  const first = payload[0]?.payload as Record<string, unknown> | undefined;
+  const depth = typeof first?.depth === "number" ? first.depth : null;
   return (
-    <div className="border border-slate-200 bg-white p-3">
-      <p className="mb-1 text-phx-sm font-black uppercase tracking-wider text-slate-500">{String(label ?? "")}</p>
-      {payload.map((entry, index) => (
-        <div key={index} className="flex items-center justify-between gap-4 text-phx-xs">
-          <span className="flex items-center gap-2 font-bold text-slate-600">
-            <span className="h-2 w-2" style={{ backgroundColor: String(entry.color ?? "#94A3B8") }} />
-            {String(entry.name ?? "")}
-          </span>
-          <span className="font-black tabular-nums text-slate-900">{formatNumber(Number(entry.value ?? 0))}</span>
-        </div>
-      ))}
+    <div className="min-w-[180px] border border-slate-900 bg-white">
+      <p className="bg-slate-900 px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider text-white">{String(label ?? "")}</p>
+      <div className="space-y-1 px-3 py-2">
+        {payload.map((entry, index) => (
+          <div key={index} className="flex items-center justify-between gap-4 text-phx-xs">
+            <span className="flex items-center gap-2 font-bold text-slate-600">
+              <span className="h-2 w-2" style={{ backgroundColor: String(entry.color ?? entry.fill ?? "#94A3B8") }} />
+              {String(entry.name ?? "")}
+            </span>
+            {/* Lost is drawn below the line as a negative bar; it is still a count of pharmacies. */}
+            <span className="font-black tabular-nums text-slate-900">{formatNumber(Math.abs(Number(entry.value ?? 0)))}</span>
+          </div>
+        ))}
+        {depth != null ? (
+          <div className="flex items-center justify-between gap-4 border-t border-slate-100 pt-1 text-phx-xs">
+            <span className="font-bold text-slate-600">Products each</span>
+            <span className="font-black tabular-nums text-slate-900">{depth.toFixed(2)}</span>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -278,9 +383,12 @@ export function CustomerCountDashboard({ endpoint }: { endpoint: string }) {
     month: monthShort(point.month),
     Pharmacies: point.pharmacies,
     Gained: point.gained ?? 0,
-    Lost: point.lost ?? 0,
-    "Products per pharmacy": Number(point.productsPerPharmacy.toFixed(2)),
+    // Drawn below the zero line; the tooltip and the labels show it as the count it is.
+    Lost: -(point.lost ?? 0),
+    net: (point.gained ?? 0) - (point.lost ?? 0),
+    depth: Number(point.productsPerPharmacy.toFixed(2)),
   }));
+  const flowData = trendData.slice(1);
   const top = visibleRows.slice(0, 12).map((row) => ({
     name: row.label,
     [latestLabel]: row.perMonth.at(-1) ?? 0,
@@ -288,6 +396,7 @@ export function CustomerCountDashboard({ endpoint }: { endpoint: string }) {
   }));
   const hasParent = dimension === "product" || dimension === "area" || dimension === "brick";
   const parentLabel = dimension === "product" ? "Line" : dimension === "area" ? "Region" : "Area";
+  const latestMax = Math.max(1, ...visibleRows.map((row) => row.perMonth.at(-1) ?? 0));
 
   const exportColumns: ExportColumn[] = [
     { key: "label", label: DIMENSION_LABELS[dimension], text: true, width: 28 },
@@ -327,6 +436,13 @@ export function CustomerCountDashboard({ endpoint }: { endpoint: string }) {
     code: `${index}`,
     label: payload.lines.length > 1 ? `${product.name} · ${payload.lines[product.line]}` : product.name,
   }));
+
+  const pharmacySeries = view.trend.map((point) => point.pharmacies);
+  const gainedSeries = view.trend.slice(1).map((point) => point.gained ?? 0);
+  const lostSeries = view.trend.slice(1).map((point) => point.lost ?? 0);
+  const depthSeries = view.trend.map((point) => point.productsPerPharmacy);
+  const loyalShare = summary.reached > 0 ? summary.everyMonth / summary.reached : 0;
+  const latestShare = summary.reached > 0 ? summary.latest / summary.reached : 0;
 
   return (
     <div className="min-w-0 space-y-4">
@@ -391,7 +507,7 @@ export function CustomerCountDashboard({ endpoint }: { endpoint: string }) {
           onSelectedChange={(selected) => setReps((current) => ({ ...current, selected }))}
           onModeChange={(mode) => setReps((current) => ({ ...current, mode }))}
         />
-        <span className="ml-auto inline-flex items-center gap-2 text-xs font-semibold text-slate-500">
+        <span className="ml-auto inline-flex items-center gap-2 border-l-2 border-orange-600 pl-3 text-xs font-bold text-slate-700">
           {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
           {scopeLine}
         </span>
@@ -407,42 +523,56 @@ export function CustomerCountDashboard({ endpoint }: { endpoint: string }) {
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         <Tile
-          accent
+          rule={ORANGE}
           label="Pharmacies buying"
           icon={<Store className="h-4 w-4" />}
           value={formatNumber(summary.latest)}
+          valueClass="text-orange-700"
           change={summary.previous == null ? undefined : summary.latest - summary.previous}
           sub={summary.previousMonth ? `${monthLong(summary.latestMonth)}, against ${formatNumber(summary.previous ?? 0)} in ${monthShort(summary.previousMonth)}` : monthLong(summary.latestMonth)}
+          spark={{ values: pharmacySeries, color: ORANGE }}
         />
         <Tile
+          rule={GAIN}
           label="Gained"
           icon={<UserPlus className="h-4 w-4" />}
           value={summary.gained == null ? "—" : formatNumber(summary.gained)}
+          valueClass="text-emerald-700"
           sub={summary.previousMonth ? `bought in ${monthShort(summary.latestMonth)}, not in ${monthShort(summary.previousMonth)}` : "needs two months"}
+          spark={{ values: gainedSeries, color: GAIN }}
         />
         <Tile
+          rule={LOSS}
           label="Lost"
           icon={<UserMinus className="h-4 w-4" />}
           value={summary.lost == null ? "—" : formatNumber(summary.lost)}
+          valueClass="text-rose-700"
           sub={summary.previousMonth ? `bought in ${monthShort(summary.previousMonth)}, not in ${monthShort(summary.latestMonth)}` : "needs two months"}
+          spark={{ values: lostSeries, color: LOSS }}
         />
         <Tile
+          rule={INK}
           label="Reached"
           icon={<Users className="h-4 w-4" />}
           value={formatNumber(summary.reached)}
           sub={multiMonth ? `bought in any of the ${monthsOnShow.length} months` : "bought this month"}
+          share={multiMonth ? { value: latestShare, label: `${Math.round(latestShare * 100)}% of them bought in ${monthShort(summary.latestMonth)}` } : undefined}
         />
         <Tile
+          rule={INK}
           label="Every month"
           icon={<Repeat className="h-4 w-4" />}
           value={formatNumber(summary.everyMonth)}
           sub={multiMonth ? `bought in all ${monthsOnShow.length} months` : "bought this month"}
+          share={multiMonth ? { value: loyalShare, label: `${(loyalShare * 100).toFixed(1)}% of every pharmacy reached` } : undefined}
         />
         <Tile
+          rule={INK}
           label="Products each"
           icon={<Boxes className="h-4 w-4" />}
-          value={summary.productsPerPharmacy.toFixed(1)}
+          value={summary.productsPerPharmacy.toFixed(2)}
           sub={`average per buying pharmacy, ${monthShort(summary.latestMonth)}`}
+          spark={{ values: depthSeries, color: INK }}
         />
       </div>
 
@@ -455,34 +585,73 @@ export function CustomerCountDashboard({ endpoint }: { endpoint: string }) {
             icon={<BarChart3 className="h-4 w-4" />}
             action={<ExportXlsxButton columns={trendColumns} rows={trendRows} title="Customer Count by Month" subtitle={scopeLine} sheetName="By Month" />}
           >
-            <SafeResponsiveContainer minHeight={280}>
-              <ComposedChart data={trendData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+            <div className="mb-2">
+              <Key items={[{ label: latestLabel, color: ORANGE }, ...(multiMonth ? [{ label: "Months before", color: ORANGE_SOFT }] : [])]} />
+            </div>
+            <SafeResponsiveContainer minHeight={260}>
+              <BarChart data={trendData} margin={{ top: 22, right: 8, bottom: 0, left: 0 }}>
                 <CartesianGrid stroke={GRID} vertical={false} />
-                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={AXIS} />
-                <YAxis yAxisId="count" axisLine={false} tickLine={false} tick={AXIS} width={44} allowDecimals={false} />
-                <YAxis yAxisId="depth" orientation="right" axisLine={false} tickLine={false} tick={AXIS} width={32} />
-                <Tooltip content={<CountTooltip />} cursor={{ fill: "#F8FAFC" }} />
-                <Legend wrapperStyle={{ fontSize: 11, fontWeight: 700 }} />
-                <Bar yAxisId="count" dataKey="Pharmacies" fill={ORANGE} barSize={28} />
-                <Line yAxisId="depth" type="monotone" dataKey="Products per pharmacy" stroke={INK} strokeWidth={2} dot={{ r: 3, fill: INK }} />
-              </ComposedChart>
+                <XAxis dataKey="month" axisLine={{ stroke: INK }} tickLine={false} tick={AXIS} />
+                <YAxis axisLine={false} tickLine={false} tick={AXIS} width={40} allowDecimals={false} tickFormatter={compact} />
+                <Tooltip content={<CountTooltip />} cursor={{ fill: "#FFF7ED" }} />
+                <Bar dataKey="Pharmacies" maxBarSize={56} isAnimationActive={false}>
+                  {trendData.map((point, index) => (
+                    <Cell key={point.month} fill={index === trendData.length - 1 ? ORANGE : ORANGE_SOFT} />
+                  ))}
+                  <LabelList dataKey="Pharmacies" position="top" formatter={(value: unknown) => formatNumber(Number(value))} style={BAR_LABEL} />
+                </Bar>
+              </BarChart>
             </SafeResponsiveContainer>
+            {/* How deep each month went: the products a buying pharmacy took, on average. */}
+            <div className="mt-3 grid border-t border-slate-200 pt-2" style={{ gridTemplateColumns: `repeat(${trendData.length}, minmax(0, 1fr))` }}>
+              {trendData.map((point, index) => (
+                <div key={point.month} className="text-center">
+                  <p className={`text-sm font-black tabular-nums ${index === trendData.length - 1 ? "text-slate-900" : "text-slate-500"}`}>{point.depth.toFixed(2)}</p>
+                  <p className="text-phx-xs font-semibold text-slate-400">products each</p>
+                </div>
+              ))}
+            </div>
           </Panel>
         </div>
         <div className="min-w-0 xl:col-span-2">
           <Panel title="Gained and lost" subtitle="Against the month before" icon={<Repeat className="h-4 w-4" />}>
             {multiMonth ? (
-              <SafeResponsiveContainer minHeight={280}>
-                <BarChart data={trendData.slice(1)} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-                  <CartesianGrid stroke={GRID} vertical={false} />
-                  <XAxis dataKey="month" axisLine={false} tickLine={false} tick={AXIS} />
-                  <YAxis axisLine={false} tickLine={false} tick={AXIS} width={40} allowDecimals={false} />
-                  <Tooltip content={<CountTooltip />} cursor={{ fill: "#F8FAFC" }} />
-                  <Legend wrapperStyle={{ fontSize: 11, fontWeight: 700 }} />
-                  <Bar dataKey="Gained" fill={GAIN} barSize={14} />
-                  <Bar dataKey="Lost" fill={LOSS} barSize={14} />
-                </BarChart>
-              </SafeResponsiveContainer>
+              <>
+                <div className="mb-2">
+                  <Key
+                    items={[
+                      { label: "Gained", color: GAIN },
+                      { label: "Lost", color: LOSS },
+                    ]}
+                  />
+                </div>
+                <SafeResponsiveContainer minHeight={260}>
+                  <BarChart data={flowData} stackOffset="sign" margin={{ top: 20, right: 8, bottom: 20, left: 0 }}>
+                    <CartesianGrid stroke={GRID} vertical={false} />
+                    <XAxis dataKey="month" axisLine={false} tickLine={false} tick={AXIS} />
+                    <YAxis axisLine={false} tickLine={false} tick={AXIS} width={40} allowDecimals={false} tickFormatter={(value: number) => compact(Math.abs(value))} />
+                    <Tooltip content={<CountTooltip />} cursor={{ fill: "#F8FAFC" }} />
+                    <ReferenceLine y={0} stroke={INK} strokeWidth={1.5} />
+                    <Bar dataKey="Gained" stackId="flow" fill={GAIN} maxBarSize={44} isAnimationActive={false}>
+                      <LabelList dataKey="Gained" position="top" formatter={(value: unknown) => formatNumber(Number(value))} style={{ ...BAR_LABEL, fill: GAIN }} />
+                    </Bar>
+                    <Bar dataKey="Lost" stackId="flow" fill={LOSS} maxBarSize={44} isAnimationActive={false}>
+                      <LabelList dataKey="Lost" position="bottom" formatter={(value: unknown) => formatNumber(Math.abs(Number(value)))} style={{ ...BAR_LABEL, fill: LOSS }} />
+                    </Bar>
+                  </BarChart>
+                </SafeResponsiveContainer>
+                {/* The net of the two, month by month. */}
+                <div className="mt-3 grid border-t border-slate-200 pt-2" style={{ gridTemplateColumns: `repeat(${flowData.length}, minmax(0, 1fr))` }}>
+                  {flowData.map((point) => (
+                    <div key={point.month} className="text-center">
+                      <p className="text-sm">
+                        <Change value={point.net} />
+                      </p>
+                      <p className="text-phx-xs font-semibold text-slate-400">net</p>
+                    </div>
+                  ))}
+                </div>
+              </>
             ) : (
               <p className="py-16 text-center text-xs text-slate-500">Pick two months or more to see who came and who went.</p>
             )}
@@ -506,13 +675,14 @@ export function CustomerCountDashboard({ endpoint }: { endpoint: string }) {
         }
       >
         <div className="mb-4 flex flex-wrap items-center gap-2">
-          <div className="inline-flex flex-wrap border border-slate-200">
+          <div className="inline-flex flex-wrap border border-slate-900">
             {DIMENSIONS.map((option) => (
               <button
                 key={option}
                 type="button"
                 onClick={() => setDimension(option)}
-                className={`px-3 py-1.5 text-xs font-black transition ${dimension === option ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:text-orange-600"}`}
+                aria-pressed={dimension === option}
+                className={`border-r border-slate-200 px-3.5 py-2 text-xs font-black uppercase tracking-wider transition last:border-r-0 ${dimension === option ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-orange-50 hover:text-orange-700"}`}
               >
                 {DIMENSION_LABELS[option]}
               </button>
@@ -525,71 +695,100 @@ export function CustomerCountDashboard({ endpoint }: { endpoint: string }) {
             placeholder={`Search ${DIMENSION_LABELS[dimension].toLowerCase()}…`}
             className="w-full sm:w-56"
           />
-          <span className="text-xs font-semibold text-slate-500">{formatNumber(visibleRows.length)} rows</span>
+          <span className="text-xs font-bold tabular-nums text-slate-500">{formatNumber(visibleRows.length)} rows</span>
         </div>
 
         {top.length > 0 ? (
-          <div className="mb-4 border-b border-slate-100 pb-4">
-            <SafeResponsiveContainer minHeight={Math.max(180, top.length * 26 + 40)}>
-              <BarChart data={top} layout="vertical" margin={{ top: 0, right: 16, bottom: 0, left: 0 }}>
+          <div className="mb-5 border-b border-slate-200 pb-4">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500">
+                Top {top.length} · {latestLabel}
+              </p>
+              <Key items={[{ label: latestLabel, color: ORANGE }, ...(multiMonth ? [{ label: priorLabel, color: PRIOR }] : [])]} />
+            </div>
+            <SafeResponsiveContainer minHeight={Math.max(180, top.length * 30 + 24)}>
+              <BarChart data={top} layout="vertical" barGap={2} margin={{ top: 0, right: 48, bottom: 0, left: 0 }}>
                 <CartesianGrid stroke={GRID} horizontal={false} />
-                <XAxis type="number" axisLine={false} tickLine={false} tick={AXIS} allowDecimals={false} />
-                <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={AXIS} width={150} interval={0} />
-                <Tooltip content={<CountTooltip />} cursor={{ fill: "#F8FAFC" }} />
-                <Legend wrapperStyle={{ fontSize: 11, fontWeight: 700 }} />
-                {multiMonth ? <Bar dataKey={priorLabel} fill="#CBD5E1" barSize={9} /> : null}
-                <Bar dataKey={latestLabel} fill={ORANGE} barSize={9} />
+                <XAxis type="number" axisLine={false} tickLine={false} tick={AXIS} allowDecimals={false} tickFormatter={compact} />
+                <YAxis type="category" dataKey="name" axisLine={{ stroke: INK }} tickLine={false} tick={{ ...AXIS, fill: "#1E293B" }} width={160} interval={0} />
+                <Tooltip content={<CountTooltip />} cursor={{ fill: "#FFF7ED" }} />
+                {multiMonth ? <Bar dataKey={priorLabel} fill={PRIOR} barSize={8} isAnimationActive={false} /> : null}
+                <Bar dataKey={latestLabel} fill={ORANGE} barSize={10} isAnimationActive={false}>
+                  <LabelList dataKey={latestLabel} position="right" formatter={(value: unknown) => formatNumber(Number(value))} style={BAR_LABEL} />
+                </Bar>
               </BarChart>
             </SafeResponsiveContainer>
           </div>
         ) : null}
 
-        {/* Desktop: the full table */}
+        {/* Desktop: the full table, every number centred */}
         <div className="hidden md:block">
           <table className="w-full table-fixed text-xs">
             <colgroup>
-              <col className={hasParent ? "w-[22%]" : "w-[30%]"} />
-              {hasParent ? <col className="w-[14%]" /> : null}
+              <col className="w-[44px]" />
+              <col className={hasParent ? "w-[20%]" : "w-[28%]"} />
+              {hasParent ? <col className="w-[12%]" /> : null}
               {monthsOnShow.map((month) => (
                 <col key={month} />
               ))}
               {multiMonth ? <col className="w-[8%]" /> : null}
+              {multiMonth ? <col className="w-[8%]" /> : null}
               {multiMonth ? <col className="w-[9%]" /> : null}
             </colgroup>
             <thead>
-              <tr className="border-b-2 border-slate-900 text-left text-phx-sm font-black uppercase tracking-wider text-slate-600">
-                <th className="py-2 pr-2">{DIMENSION_LABELS[dimension]}</th>
-                {hasParent ? <th className="py-2 pr-2">{parentLabel}</th> : null}
+              <tr className="text-phx-sm font-black uppercase tracking-wider">
+                <th className="px-2 py-2.5">#</th>
+                <th className="px-2.5 py-2.5">{DIMENSION_LABELS[dimension]}</th>
+                {hasParent ? <th className="px-2.5 py-2.5">{parentLabel}</th> : null}
                 {monthsOnShow.map((month) => (
-                  <th key={month} className="py-2 pr-2 text-right">
+                  <th key={month} className="px-2 py-2.5">
                     {monthShort(month)}
                   </th>
                 ))}
-                {multiMonth ? <th className="py-2 pr-2 text-right">Change</th> : null}
-                {multiMonth ? <th className="py-2 text-right">Any month</th> : null}
+                {multiMonth ? <th className="px-2 py-2.5">Change</th> : null}
+                {multiMonth ? <th className="px-2 py-2.5">Any month</th> : null}
+                {multiMonth ? <th className="px-2 py-2.5">Trend</th> : null}
               </tr>
             </thead>
             <tbody>
-              {visibleRows.map((row) => (
-                <tr key={row.key} className="border-b border-slate-100 even:bg-slate-50/60">
-                  <td className="break-words py-1.5 pr-2 font-bold text-slate-900">{row.label}</td>
-                  {hasParent ? <td className="break-words py-1.5 pr-2 text-slate-600">{row.parent}</td> : null}
-                  {row.perMonth.map((count, index) => (
-                    <td
-                      key={index}
-                      className={`py-1.5 pr-2 text-right tabular-nums ${index === row.perMonth.length - 1 ? "font-black text-slate-900" : "text-slate-700"}`}
-                    >
-                      {formatNumber(count)}
+              {visibleRows.map((row, rowIndex) => {
+                const latest = row.perMonth.at(-1) ?? 0;
+                return (
+                  <tr key={row.key} className="transition-colors even:bg-slate-50/70 hover:bg-orange-50">
+                    <td className="px-2 py-2 text-center font-black tabular-nums text-slate-400">{String(rowIndex + 1).padStart(2, "0")}</td>
+                    <td className="px-2.5 py-2">
+                      <p className="break-words font-black text-slate-900">{row.label}</p>
+                      {/* The row's size against the biggest row this month. */}
+                      <div aria-hidden="true" className="mt-1 h-[3px] w-full bg-slate-100">
+                        <div className="h-full bg-orange-600" style={{ width: `${(latest / latestMax) * 100}%` }} />
+                      </div>
                     </td>
-                  ))}
-                  {multiMonth ? (
-                    <td className="py-1.5 pr-2 text-right">
-                      <Change value={row.change} />
-                    </td>
-                  ) : null}
-                  {multiMonth ? <td className="py-1.5 text-right font-bold tabular-nums text-slate-700">{formatNumber(row.total)}</td> : null}
-                </tr>
-              ))}
+                    {hasParent ? <td className="break-words px-2.5 py-2 text-center font-semibold text-slate-600">{row.parent}</td> : null}
+                    {row.perMonth.map((count, index) => {
+                      const isLatest = index === row.perMonth.length - 1;
+                      return (
+                        <td
+                          key={index}
+                          className={`px-2 py-2 text-center tabular-nums ${isLatest ? "bg-orange-50/80 text-[0.82rem] font-black text-slate-900" : "font-semibold text-slate-600"}`}
+                        >
+                          {formatNumber(count)}
+                        </td>
+                      );
+                    })}
+                    {multiMonth ? (
+                      <td className="px-2 py-2 text-center">
+                        <Change value={row.change} />
+                      </td>
+                    ) : null}
+                    {multiMonth ? <td className="px-2 py-2 text-center font-bold tabular-nums text-slate-800">{formatNumber(row.total)}</td> : null}
+                    {multiMonth ? (
+                      <td className="px-2 py-1.5">
+                        <MicroBars values={row.perMonth} />
+                      </td>
+                    ) : null}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           {visibleRows.length === 0 ? <p className="py-8 text-center text-xs text-slate-500">No pharmacy bought in this selection.</p> : null}
@@ -597,32 +796,42 @@ export function CustomerCountDashboard({ endpoint }: { endpoint: string }) {
 
         {/* Mobile: one card per row */}
         <div className="space-y-2 md:hidden">
-          {visibleRows.map((row) => (
-            <div key={row.key} className="border border-slate-200 p-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="break-words text-sm font-black text-slate-900">{row.label}</p>
-                  {row.parent ? <p className="text-xs text-slate-500">{row.parent}</p> : null}
+          {visibleRows.map((row, rowIndex) => {
+            const latest = row.perMonth.at(-1) ?? 0;
+            return (
+              <div key={row.key} className="relative border border-slate-200 bg-white p-3 pl-4">
+                <span aria-hidden="true" className="absolute inset-y-0 left-0 w-[3px] bg-orange-600" />
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-phx-xs font-black tabular-nums text-slate-400">{String(rowIndex + 1).padStart(2, "0")}</p>
+                    <p className="break-words text-sm font-black text-slate-900">{row.label}</p>
+                    {row.parent ? <p className="text-xs font-semibold text-slate-500">{row.parent}</p> : null}
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xl font-black tabular-nums leading-none text-slate-900">{formatNumber(latest)}</p>
+                    <p className="mt-1 text-xs">
+                      <Change value={row.change} />
+                    </p>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-lg font-black tabular-nums leading-none text-slate-900">{formatNumber(row.perMonth.at(-1) ?? 0)}</p>
-                  <p className="mt-1 text-xs">
-                    <Change value={row.change} />
-                  </p>
+                <div aria-hidden="true" className="mt-2 h-[3px] w-full bg-slate-100">
+                  <div className="h-full bg-orange-600" style={{ width: `${(latest / latestMax) * 100}%` }} />
                 </div>
+                {multiMonth ? (
+                  <div className="mt-2 grid grid-cols-3 gap-x-3 gap-y-1 border-t border-slate-100 pt-2 text-phx-xs">
+                    {monthsOnShow.map((month, index) => (
+                      <span key={month} className="flex flex-col items-center text-slate-500">
+                        <span>{monthShort(month)}</span>
+                        <span className={`tabular-nums ${index === monthsOnShow.length - 1 ? "font-black text-slate-900" : "font-bold text-slate-700"}`}>
+                          {formatNumber(row.perMonth[index] ?? 0)}
+                        </span>
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
               </div>
-              {multiMonth ? (
-                <div className="mt-2 grid grid-cols-3 gap-x-3 gap-y-1 border-t border-slate-100 pt-2 text-phx-xs">
-                  {monthsOnShow.map((month, index) => (
-                    <span key={month} className="flex justify-between gap-1 text-slate-600">
-                      <span>{monthShort(month)}</span>
-                      <span className="font-bold tabular-nums text-slate-900">{formatNumber(row.perMonth[index] ?? 0)}</span>
-                    </span>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          ))}
+            );
+          })}
           {visibleRows.length === 0 ? <p className="py-8 text-center text-xs text-slate-500">No pharmacy bought in this selection.</p> : null}
         </div>
       </Panel>
