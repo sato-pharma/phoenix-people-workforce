@@ -401,6 +401,51 @@ function perTeamRuleReps() {
   assert.match(callRate, /basis \?\? rep\.basis \?\? "verified"/, "an explicit basis wins, else the row's own stamp, else the old rules");
 }
 
+/**
+ * A doctor archived DURING the month still belongs to the month he was worked in (owner, 25 Nov 2026:
+ * "Fix the KPI"). Mohamed Hamed had seen every planned doctor in November and read 99%: Dr. Abanoub
+ * Heshmat Wafy, archived on the 24th, kept his two plan days in coverage while his two visits, finding
+ * him on no open list, fell to the campaign line.
+ */
+function archivedMidMonthDoctorKeepsHisVisits() {
+  const window = { dateFrom: "2026-09-01", dateTo: "2026-09-30", windowEnd: "2026-09-30" };
+  const panel: PhoenixPanelContact[] = [
+    { contactCrmId: 1, listType: "PM", grade: "A" },
+    { contactCrmId: 3, listType: "AM", grade: "A" },
+  ];
+  // Doctor 2's list period closed on the 23rd; doctor 3 is listed PM in a closed period but AM today.
+  const formerPanel: PhoenixPanelContact[] = [
+    { contactCrmId: 2, listType: "PM", grade: "B" },
+    { contactCrmId: 3, listType: "PM", grade: "C" },
+  ];
+  const planEntries: PhoenixPlanEntry[] = [
+    { contactCrmId: 1, planDate: "2026-09-07", grade: "A", speciality: null },
+    { contactCrmId: 2, planDate: "2026-09-14", grade: "B", speciality: null },
+    { contactCrmId: 2, planDate: "2026-09-21", grade: "B", speciality: null },
+  ];
+  const visits: PhoenixVisit[] = [visit(1, "2026-09-07"), visit(2, "2026-09-14"), visit(3, "2026-09-15", { ampm: "PM" })];
+  const base = { window, month: MONTH, today: "2026-10-05", panel, planEntries, visits };
+
+  const fixed = computePhoenixRepKpis({ ...base, formerPanel });
+  assert.equal(fixed.coverage.planned, 2);
+  assert.equal(fixed.coverage.visited, 2, "the archived doctor's visit before the archive covers his plan days");
+  assert.equal(fixed.coverage.pct, 100, "a rep who saw every planned doctor reads 100%");
+  assert.equal(fixed.coverage.plannedOffList, 0, "a doctor on the list earlier in the month is not off-list");
+  assert.equal(fixed.pm.visits, 2, "the visit counts as the PM visit it was, never as a campaign visit");
+  assert.equal(fixed.am.visits, 1, "the list a contact is on TODAY wins over a closed listing");
+  assert.equal(fixed.campaignVisits, 0);
+
+  const before = computePhoenixRepKpis(base);
+  assert.equal(before.coverage.visited, 1, "with no closed listings the archived doctor reads as missed — the defect");
+  assert.equal(before.campaignVisits, 1);
+  assert.equal(before.pm.visits, 1);
+
+  // The loader must hand the closed listings over, or the rule above never runs on a real board.
+  const loader = readFileSync(new URL("../src/lib/crm/phoenix-kpi-data.ts", import.meta.url), "utf8");
+  assert.ok(loader.includes("loadFormerPanelRows(input.month, narrowed?.hrIds)"), "the KPI loader reads the month's closed list periods");
+  assert.ok(loader.includes("formerPanel: formerPanelByRep.get(key) ?? [],"), "and passes each rep his own");
+}
+
 export function runPhoenixKpiRulesTests() {
   cutoverRules();
   workingDays();
@@ -411,4 +456,5 @@ export function runPhoenixKpiRulesTests() {
   callRateBasisAndWording();
   perTeamRuleReps();
   phoenixVisitIsItsOwnCheckin();
+  archivedMidMonthDoctorKeepsHisVisits();
 }
