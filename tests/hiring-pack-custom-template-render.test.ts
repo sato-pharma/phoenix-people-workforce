@@ -113,6 +113,7 @@ function profileFixture(overrides: Partial<HiringPackProfile> = {}): HiringPackP
     contractSignatoryNameAr: null,
     contractSignatoryTitleAr: null,
     contractObjectiveReasonCode: null,
+    authorizationHospitalAr: null,
     ndaSignedDate: null,
     ndaPrintedAt: null,
     updatedAt: null,

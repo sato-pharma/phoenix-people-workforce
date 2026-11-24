@@ -60776,6 +60776,7 @@ CREATE TABLE public.employee_hiring_profile (
     contract_objective_reason_code text,
     nda_signed_date date,
     nda_printed_at timestamp with time zone,
+    authorization_hospital_ar text,
     CONSTRAINT employee_hiring_profile_contract_duration_months_check CHECK (((contract_duration_months IS NULL) OR (contract_duration_months > 0))),
     CONSTRAINT employee_hiring_profile_training_bond_months_check CHECK (((training_bond_months IS NULL) OR (training_bond_months > 0))),
     CONSTRAINT employee_hiring_profile_underperformance_months_check CHECK (((underperformance_months IS NULL) OR (underperformance_months > 0))),
@@ -60825,6 +60826,12 @@ COMMENT ON COLUMN public.employee_hiring_profile.nda_signed_date IS 'The date wr
 --
 
 COMMENT ON COLUMN public.employee_hiring_profile.nda_printed_at IS 'When the confidentiality undertaking was last printed, so a reprint is visible rather than silent.';
+
+--
+-- Name: COLUMN employee_hiring_profile.authorization_hospital_ar; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.employee_hiring_profile.authorization_hospital_ar IS 'The one hospital this person''s hospital authorisation letter is addressed to, in Arabic, typed by HR on the paper. Null prints blank rules for HR to fill.';
 
 --
 -- Name: employee_history; Type: TABLE; Schema: public; Owner: postgres
@@ -62322,7 +62329,7 @@ CREATE TABLE public.hiring_pack_document_fields (
     CONSTRAINT hiring_pack_document_fields_align_known CHECK ((align = ANY (ARRAY['right'::text, 'center'::text, 'left'::text]))),
     CONSTRAINT hiring_pack_document_fields_box_real CHECK (((w > (0)::numeric) AND (h > (0)::numeric) AND (font_size > (0)::numeric))),
     CONSTRAINT hiring_pack_document_fields_created_by_upper CHECK (((created_by_hr_id IS NULL) OR (created_by_hr_id = upper(created_by_hr_id)))),
-    CONSTRAINT hiring_pack_document_fields_document_known CHECK (((document = ANY (ARRAY['contract'::text, 'form1'::text, 'workerDataForm'::text, 'custodyLaptop'::text, 'custodyMobile'::text, 'nda'::text, 'appointmentDocsReceipt'::text, 'socialStatusSheet'::text, 'absenceWarning'::text, 'deemedResignation'::text, 'disciplinaryWarning'::text, 'disciplinaryPenalty'::text, 'transferDecision'::text, 'salaryAdjustment'::text, 'socialInsuranceAuthorization'::text, 'healthInsuranceAuthorization'::text, 'insurancePrintLetter'::text, 'appointmentDocsReturn'::text, 'experienceCertificate'::text, 'experienceCertificateEn'::text, 'handoverRecord'::text, 'exitInterview'::text, 'salaryLetterEn'::text, 'salaryLetterAr'::text, 'maternityCompensation'::text, 'insuranceForm2'::text, 'carInsuranceCertificate'::text, 'wageProgressSheet'::text, 'officialHolidaysSheet'::text, 'sickLeaveSheet'::text, 'penaltiesSheet'::text, 'penaltyRegulationsApproval'::text, 'contractRenewal'::text, 'contractNonRenewal'::text, 'form6'::text, 'resignation'::text, 'mutualTermination'::text, 'clearanceEmployee'::text, 'clearanceCompany'::text])) OR (document ~* '^custom:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'::text))),
+    CONSTRAINT hiring_pack_document_fields_document_known CHECK (((document = ANY (ARRAY['contract'::text, 'form1'::text, 'workerDataForm'::text, 'custodyLaptop'::text, 'custodyMobile'::text, 'nda'::text, 'appointmentDocsReceipt'::text, 'socialStatusSheet'::text, 'absenceWarning'::text, 'deemedResignation'::text, 'disciplinaryWarning'::text, 'disciplinaryPenalty'::text, 'transferDecision'::text, 'salaryAdjustment'::text, 'socialInsuranceAuthorization'::text, 'healthInsuranceAuthorization'::text, 'insurancePrintLetter'::text, 'appointmentDocsReturn'::text, 'experienceCertificate'::text, 'experienceCertificateEn'::text, 'handoverRecord'::text, 'exitInterview'::text, 'salaryLetterEn'::text, 'salaryLetterAr'::text, 'maternityCompensation'::text, 'insuranceForm2'::text, 'carInsuranceCertificate'::text, 'wageProgressSheet'::text, 'officialHolidaysSheet'::text, 'sickLeaveSheet'::text, 'penaltiesSheet'::text, 'penaltyRegulationsApproval'::text, 'contractRenewal'::text, 'contractNonRenewal'::text, 'form6'::text, 'resignation'::text, 'mutualTermination'::text, 'clearanceEmployee'::text, 'clearanceCompany'::text, 'hospitalAuthorization'::text])) OR (document ~* '^custom:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'::text))),
     CONSTRAINT hiring_pack_document_fields_employee_hr_id_upper CHECK (((employee_hr_id IS NULL) OR (employee_hr_id = upper(employee_hr_id)))),
     CONSTRAINT hiring_pack_document_fields_hide_is_an_override CHECK (((hidden = false) OR (default_key IS NOT NULL))),
     CONSTRAINT hiring_pack_document_fields_mark_is_an_addition CHECK (((source_kind <> 'mark'::text) OR (default_key IS NULL))),

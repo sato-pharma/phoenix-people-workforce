@@ -162,6 +162,7 @@ const DOCUMENT_BINDINGS: Record<
   salaryAdjustment: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
   socialInsuranceAuthorization: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
   healthInsuranceAuthorization: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  hospitalAuthorization: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
   insurancePrintLetter: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
   handoverRecord: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
   exitInterview: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
@@ -242,6 +243,7 @@ export type ProfileDbRow = {
   address_governorate: string | null;
   address_markaz: string | null;
   address_street: string | null;
+  authorization_hospital_ar?: string | null;
   birth_place: string | null;
   contract_duration_months: number | null;
   contract_end_date: string | null;
@@ -475,6 +477,7 @@ export function emptyProfile(hrId: string): HiringPackProfile {
     contractSignatoryNameAr: null,
     contractSignatoryTitleAr: null,
     contractObjectiveReasonCode: null,
+    authorizationHospitalAr: null,
     ndaSignedDate: null,
     ndaPrintedAt: null,
     contractSignedDate: null,
@@ -518,6 +521,7 @@ export function mapProfile(row: ProfileDbRow): HiringPackProfile {
     contractObjectiveReasonCode: isRenewalObjectiveReasonCode(row.contract_objective_reason_code)
       ? cleanText(row.contract_objective_reason_code)
       : null,
+    authorizationHospitalAr: cleanText(row.authorization_hospital_ar ?? null),
     ndaSignedDate: row.nda_signed_date,
     ndaPrintedAt: row.nda_printed_at,
     contractSignedDate: row.contract_signed_date,
@@ -1481,6 +1485,12 @@ export async function saveHiringPackProfile(
         contract_objective_reason_code: isRenewalObjectiveReasonCode(input.contractObjectiveReasonCode)
           ? cleanText(input.contractObjectiveReasonCode)
           : null,
+        // WRITTEN ONLY WHEN SENT. Every other column here is written from the input whether it came
+        // or not, so a caller built before this field existed would blank the hospital on its next
+        // save. Absent means "not touched", never "cleared".
+        ...(input.authorizationHospitalAr !== undefined
+          ? { authorization_hospital_ar: cleanText(input.authorizationHospitalAr) }
+          : {}),
         ...updatedByStamp(actorHrId),
       },
       { onConflict: "hr_id" },

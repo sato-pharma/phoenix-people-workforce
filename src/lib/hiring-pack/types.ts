@@ -41,6 +41,7 @@ export type HiringPackDocument =
   | "salaryAdjustment"
   | "socialInsuranceAuthorization"
   | "healthInsuranceAuthorization"
+  | "hospitalAuthorization"
   | "insurancePrintLetter"
   | "handoverRecord"
   | "exitInterview"
@@ -222,8 +223,13 @@ export function isOfficialPackFormDocument(document: string): document is Offici
  * Arabic certificate of experience is — but it is listed here rather than spread into `HOUSE_PAPER_DOCUMENTS`,
  * because that list is already spread into `HIRING_PACK_DOCUMENTS` separately from this one, and
  * adding it to both would enter it twice. See `HR_PAPER_SALARY_LETTER_AR_V1` in `hr-paper-text.ts`.
+ *
+ * `hospitalAuthorization` (owner, 2026-11-24: "add to HR Forms") is the تفويض a medical representative
+ * carries to ONE hospital. It is a letter the company writes for somebody while he works here, so it is
+ * filed here beside the salary letters, in the Letters folder; it is an `HrPaperTemplate` drawn by the
+ * house-paper renderer, and it is listed here only, for the same reason as `salaryLetterAr`.
  */
-export const HOUSE_LETTER_DOCUMENTS = ["salaryLetterEn", "salaryLetterAr"] as const;
+export const HOUSE_LETTER_DOCUMENTS = ["salaryLetterEn", "salaryLetterAr", "hospitalAuthorization"] as const;
 
 /**
  * The two clearance papers — إخلاء طرف — which are Sato's own instruments rather than a government
@@ -463,6 +469,13 @@ export type HiringPackProfileInput = {
    * still has to answer is honest, and a guess here would be signed.
    */
   contractObjectiveReasonCode?: string | null;
+  /**
+   * THE ONE HOSPITAL A تفويض IS ADDRESSED TO — the hospital authorisation letter (owner, 2026-11-24:
+   * Rania Alaa's letter is "only Kafr El Sheikh University Hospital"). Typed by HR on the paper, per
+   * person, because Phoenix holds no register of which hospital a representative carries a letter to.
+   * Null prints the dotted rule: a letter naming the wrong hospital is the one error on it that matters.
+   */
+  authorizationHospitalAr?: string | null;
 };
 
 /**

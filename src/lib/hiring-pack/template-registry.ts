@@ -474,6 +474,18 @@ export const DOCUMENT_TEMPLATE_VERSIONS: readonly DocumentTemplateVersion[] = [
     note: "The owner's own تفويض to the Health Insurance Organisation on the house template, wording kept, with the delegate's name and national ID filled from the record.",
   },
   {
+    id: "hospital-authorization-v1",
+    document: "hospitalAuthorization",
+    version: 1,
+    status: "current",
+    labelEn: "Authorisation letter — hospital",
+    labelAr: "تفويض مستشفى",
+    effectiveFrom: "2026-11-24",
+    supersededOn: null,
+    supersededBy: null,
+    note: "The تفويض a medical representative carries to ONE hospital (owner, 2026-11-24). The hospital is typed by HR on the paper and kept on the person; it rules until then. Name, national ID and job title come from the record, and the title and verb agree with the recorded gender. HR premium identity.",
+  },
+  {
     id: "insurance-print-request-v1",
     document: "insurancePrintLetter",
     version: 1,

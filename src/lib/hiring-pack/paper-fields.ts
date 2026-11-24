@@ -257,6 +257,13 @@ export const PAPER_FIELD_BINDINGS: Readonly<Record<string, PaperFieldBinding>> =
   QUALIFICATION: { store: "profile", field: "qualification", kind: "text", labelEn: "Qualification" },
   qualification: { store: "profile", field: "qualification", kind: "text", labelEn: "Qualification" },
   BIRTH_PLACE: { store: "profile", field: "birthPlace", kind: "text", labelEn: "Place of birth" },
+  // The hospital authorisation letter's one hospital — typed on the paper, kept on this person.
+  HOSPITAL_NAME: {
+    store: "profile",
+    field: "authorizationHospitalAr",
+    kind: "text",
+    labelEn: "Hospital the authorisation is addressed to",
+  },
   // THE ONE COMPANY-SIDE VALUE THAT IS THIS EMPLOYEE'S. Everything else the company states about
   // itself — its name, its registers, its head office — is the legal entity's and is deliberately
   // read-only here, because typing over it on one contract would rewrite it for everyone. Who
@@ -1078,6 +1085,7 @@ function profilePayload(pack: HiringPackData): HiringPackProfileInput {
     addressGovernorate: profile.addressGovernorate,
     addressMarkaz: profile.addressMarkaz,
     addressStreet: profile.addressStreet,
+    authorizationHospitalAr: profile.authorizationHospitalAr,
     birthPlace: profile.birthPlace,
     contractDurationMonths: profile.contractDurationMonths,
     contractSignatoryNameAr: profile.contractSignatoryNameAr,

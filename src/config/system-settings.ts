@@ -465,6 +465,8 @@ export const systemContractDefaults = {
   salaryAdjustmentCopies: 1,
   socialInsuranceAuthorizationCopies: 2,
   healthInsuranceAuthorizationCopies: 2,
+  // The hospital authorisation: the original handed to the hospital and the copy filed.
+  hospitalAuthorizationCopies: 2,
   insurancePrintLetterCopies: 2,
   handoverRecordCopies: 1,
   exitInterviewCopies: 1,

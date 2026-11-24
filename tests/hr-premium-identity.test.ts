@@ -144,6 +144,7 @@ function packFixture(departed = false): HiringPackData {
     contractSignatoryNameAr: null,
     contractSignatoryTitleAr: null,
     contractObjectiveReasonCode: null,
+    authorizationHospitalAr: null,
     ndaSignedDate: null,
     ndaPrintedAt: null,
     updatedAt: null,
@@ -181,6 +182,8 @@ const CHANGED_PAPERS = [
   "salary letter (English)",
   "salary letter (Arabic)",
   "exit-interview-v1",
+  // The hospital authorisation letter, born in this dress (owner, 2026-11-24, on Rania Alaa's letter).
+  "hospital-authorization-v1",
 ];
 
 /**
@@ -307,12 +310,16 @@ function testThePapersTheOwnerSaidKeepPrintAsToday(): void {
     { clearance: false, custody: false, workerForm: false },
     "the clearance forms, the custody receipts and the worker data form were answered 'keep'",
   );
-  assert.deepEqual([...PREMIUM_DRESS.hrPapers], ["exit-interview"], "of the HR papers only the exit interview was answered 'change'");
+  assert.deepEqual(
+    [...PREMIUM_DRESS.hrPapers],
+    ["exit-interview", "hospital-authorization"],
+    "of the HR papers only the exit interview was answered 'change', and the hospital authorisation was made in the dress",
+  );
 
   const papers = currentNormalPapers();
-  assert.equal(papers.length, 24, "seven pack papers and the seventeen current HR papers (nineteen less two archived versions)");
+  assert.equal(papers.length, 25, "seven pack papers and the eighteen current HR papers (twenty less two archived versions)");
   const kept = papers.filter(([name]) => !CHANGED_PAPERS.includes(name));
-  assert.equal(kept.length, 19, "twenty-four papers less the five that wear the identity");
+  assert.equal(kept.length, 19, "twenty-five papers less the six that wear the identity");
   for (const [name, html] of kept) {
     assert.ok(!isPremiumPaper(html), `${name}: he said keep, so it carries no premium page chrome`);
     assert.ok(!/\bpm-[a-z]/.test(html), `${name}: he said keep, so no premium class is on it`);
@@ -324,11 +331,11 @@ function testThePapersTheOwnerSaidKeepPrintAsToday(): void {
 function testEveryPremiumBranchStillRendersWhenItsSwitchIsOn(): void {
   withEveryPaperPremium(() => {
     const papers = currentNormalPapers();
-    assert.equal(papers.length, 24);
+    assert.equal(papers.length, 25);
     for (const [name, html] of papers) assertPremiumPaper(name, html);
   });
   assert.equal(PREMIUM_DRESS.clearance, false, "the owner's answers are put back after the proof");
-  assert.deepEqual([...PREMIUM_DRESS.hrPapers], ["exit-interview"]);
+  assert.deepEqual([...PREMIUM_DRESS.hrPapers], ["exit-interview", "hospital-authorization"]);
 }
 
 /**

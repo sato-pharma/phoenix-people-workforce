@@ -73,7 +73,8 @@ export const PREMIUM_DRESS: {
   clearance: false,
   custody: false,
   workerForm: false,
-  hrPapers: new Set(["exit-interview"]),
+  // The hospital authorisation joined on 2026-11-24: he asked for Rania Alaa's letter in this dress.
+  hrPapers: new Set(["exit-interview", "hospital-authorization"]),
 };
 
 /** Whether an HR paper's current version wears the premium dress. `exit-interview-v1` → `exit-interview`. */
