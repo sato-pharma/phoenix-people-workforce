@@ -122,7 +122,7 @@ const LIST_TEXT: Record<LateVisitsTab, { title: string; description: string; emp
   waiting: {
     title: "Waiting for your decision",
     description:
-      "Visits a phone kept for want of signal and sent after their day closed. Approve enters the visit on the day it was pressed, under the same rules as a missed record; Reject keeps it on file. The person reads only that it was sent for approval.",
+      "Visits a phone sent after their day closed, and visits logged while the phone gave no location, marked No location. Approve enters the visit on the day it was pressed, under the same rules as a missed record; Reject keeps it on file. The person reads only that it was sent for approval.",
     empty: "No late visit waits for you.",
   },
   decided: {
