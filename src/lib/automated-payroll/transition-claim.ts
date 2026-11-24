@@ -44,6 +44,7 @@ export const RUN_HOLD_ACTIONS = {
   // and an add racing Confirm Part 2 used to land after the stamp, on a sheet nobody confirmed.
   nonEmployee: "Changing a non-employee entry",
   nonEmployeeSync: "Pulling in the standing non-employee list",
+  nonEmployeeCopy: "Copying last month's non-employee list",
 } as const;
 
 const HOLD_ACTION_NAMES = new Set<string>(Object.values(RUN_HOLD_ACTIONS));

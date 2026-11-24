@@ -1759,6 +1759,7 @@ import { runDeductionOpenStepSavedFigureTests } from "./deduction-open-step-save
 import { runAutomatedPayrollCellHistoryTests } from "./automated-payroll-cell-history.test.ts";
 import { runAutomatedPayrollDayCollisionTests } from "./automated-payroll-day-collisions.test.ts";
 import { runAutomatedPayrollNonEmployeeSeedingTests } from "./automated-payroll-non-employee-seeding.test.ts";
+import { runAutomatedPayrollNonEmployeeCopyPreviousTests } from "./automated-payroll-non-employee-copy-previous.test.ts";
 import { runAutomatedPayrollFailClosedReadTests } from "./automated-payroll-fail-closed-reads.test.ts";
 import { runPayrollPayslipNoticeTests } from "./payroll-payslip-notice.test.ts";
 import { runPayrollSameMonthJoinerLeaverTests } from "./payroll-same-month-joiner-leaver.test.ts";
@@ -3821,6 +3822,10 @@ await runTest(
 await runTest(
   "automated payroll: the standing roster never pays twice, nor adds to an instalment already paid",
   runAutomatedPayrollNonEmployeeSeedingTests,
+);
+await runTest(
+  "automated payroll: last month's non-employees can be copied back, never twice, and every standing-list change is recorded",
+  runAutomatedPayrollNonEmployeeCopyPreviousTests,
 );
 await runTest(
   "automated payroll: a failed read does not look like a quiet month",
