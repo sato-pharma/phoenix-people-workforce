@@ -1,7 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // The server's half of medical insurance. It reads the register and the Employee Master, runs the pure
 // rules, and writes what a person decided. Every write is audited, and none of them touches payroll or
-// `employees.medical_insurance_status`. Nothing here sends anything or pays anything.
+// `employees.medical_insurance_status`. Nothing here sends anything or pays anything. Payroll READS one thing
+// from here from the December 2026 payroll month on: each employee's monthly share
+// (getPayrollMedicalInsuranceCharges), owner, 2026-11-24.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
@@ -43,7 +45,7 @@ import {
 import { LIBANO_DELETIONS_SHEET_ROWS } from "./libano-movement-sheet";
 import { buildCostLetter, CostLetterError, type CostLetter } from "./cost-letter";
 import { cleanCostLetterCc, COST_LETTER_EMAIL_BATCH, sendCostLetterEmails, type CostLetterEmailOutcome } from "./cost-letter-email";
-import { buildMonthlySplit } from "./monthly-split";
+import { buildMonthlySplit, payrollChargesForWindow, type PayrollMedicalInsuranceCharge } from "./monthly-split";
 import { libanoLineGaps, type LibanoMemberFileKind, type LibanoMemberLine } from "./workbooks";
 import type {
   MedicalInsuranceDocumentKind,
@@ -406,6 +408,35 @@ function toInvoiceRow(row: InvoiceDbRow): MedicalInsuranceInvoiceRow {
     recordedAt: row.recorded_at,
     totalDue: Number(row.total_due),
   };
+}
+
+/**
+ * What payroll takes from each employee for the payroll month `from`..`to` (owner, 2026-11-24: "in december
+ * implement everyone med ins deductions from medical insurance module"). The policy is the one whose term
+ * touches the month and started last; no such policy means nobody is covered and nothing is charged. A read
+ * failure throws: payroll must never read a failed read as nobody owing anything. Server-only, for the payroll
+ * population (automated-payroll/recommend.ts); it carries amounts, so it is never sent to an HR seat.
+ */
+export async function getPayrollMedicalInsuranceCharges(window: { from: string; to: string }): Promise<PayrollMedicalInsuranceCharge[]> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("medical_insurance_policies")
+    .select(POLICY_COLUMNS)
+    .lte("starts_on", window.to)
+    .gte("ends_on", window.from)
+    .order("starts_on", { ascending: false })
+    .limit(1);
+  fail(error);
+  const row = ((data ?? []) as PolicyDbRow[])[0];
+  if (!row) return [];
+  const policy = toPolicyRecord(row);
+  const [memberRows, directory] = await Promise.all([loadMembers(policy.id), getEmployeeDirectoryRows({ includeInactive: true })]);
+  const employeeRows = new Map(directory.map((employee) => [employee.hrId, employee]));
+  return payrollChargesForWindow({
+    from: window.from,
+    members: memberRows.map((member) => toMemberFacts(member, employeeRows)),
+    rateCard: policy.rateCard,
+    to: window.to,
+  });
 }
 
 /** The year's cost, the rate card, the bills and the papers that carry amounts. Callers assert medical_insurance_invoices first. */
