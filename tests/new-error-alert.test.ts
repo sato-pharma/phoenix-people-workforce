@@ -156,6 +156,24 @@ function refusalTests() {
     "the browser's redacted copy of a server render error never sends: the server's own row did",
   );
   assert.equal(newErrorAlertRefusal({ appEnv: "production", message: "Minified React error #418" }), null, "a hydration mismatch is a real browser error");
+  // A tab asking for a chunk the last deploy replaced reloads itself and is stale_deploy_chunk noise on the audit; its
+  // url is new every deploy, so without this every deploy sent "New error" (24 Nov 2026, /employee-portals, iPhone).
+  for (const message of [
+    "Failed to load chunk /_next/static/chunks/2bz5o-fe59mae.js from module 538312",
+    "ChunkLoadError: Loading chunk 4821 failed.",
+    "Failed to fetch dynamically imported module: https://phoenix-hr.satopharma.com/_next/static/chunks/x.js",
+  ]) {
+    assert.equal(
+      newErrorAlertRefusal({ appEnv: "production", message }),
+      "a deploy replaced the chunk; the page reloads itself",
+      `${message} is a stale tab after a deploy, never a new error`,
+    );
+  }
+  assert.equal(
+    newErrorAlertRefusal({ appEnv: "production", message: "Cannot read properties of undefined (reading 'name')" }),
+    null,
+    "only webpack's own (reading 'call') is a stale chunk; any other undefined read is a real bug and still sends",
+  );
 
   // A locked module's refusal never reaches the error table at all, so it can never send.
   assert.equal(isModuleLockRefusal(new Error("Forbidden: sales is temporarily locked by the system administrator.")), true);
