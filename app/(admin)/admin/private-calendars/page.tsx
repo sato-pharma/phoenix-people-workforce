@@ -1,4 +1,3 @@
-import { humanizeCode } from "@/lib/format/code-label";
 import { redirect } from "next/navigation";
 
 import { PremiumHero } from "@/components/ui/premium-hero";
@@ -6,7 +5,13 @@ import { PrivateCalendar } from "@/components/employee-portal/private-calendar";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
 import { canUsePrivateCalendarAdminSurface, getPrivateCalendarWorkspace } from "@/lib/private-calendar/service";
-import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import {
+  compareByExitDayNewestFirst,
+  privateCalendarDeparture,
+  privateCalendarLinkMonth,
+  privateCalendarPickerPool,
+} from "@/lib/private-calendar/roster";
 import {
   phxFieldClassName,
   phxSelectClassName,
@@ -65,21 +70,13 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
   const month = rawMonth ? Math.max(1, Math.min(12, parseInt(rawMonth, 10))) : currentMonth;
   const year = rawYear ? parseInt(rawYear, 10) : currentYear;
 
-  const directory = await getEmployeeDirectory().catch(() => null);
-  const allEmployees = directory?.employees ?? [];
-
-  const isWorking = (emp: (typeof allEmployees)[number]) => {
-    const status = (emp.employmentStatus ?? "").toLowerCase();
-    return status === "active" || status === "on_leave";
-  };
+  // 🔴 The directory read WITH leavers. `getEmployeeDirectory()` is active-only, so reading it here
+  // left "Left the company" empty and Esraa Awad unfindable (owner, 2026-11-24).
+  const allEmployees = await getEmployeeDirectoryRows({ includeInactive: true }).catch(() => []);
 
   // The pool is the whole company. Only the employment-status choice narrows it, and the
   // dropdowns below are derived from that same pool so a filter can never offer an empty result.
-  const pool = statusFilter === "all"
-    ? allEmployees
-    : statusFilter === "left"
-      ? allEmployees.filter((emp) => !isWorking(emp))
-      : allEmployees.filter(isWorking);
+  const pool = privateCalendarPickerPool(allEmployees, statusFilter);
 
   // Derive unique lines, regions and departments for the filter dropdowns
   const lines = [...new Set(pool.map((e) => e.lineName).filter(Boolean) as string[])].sort();
@@ -89,7 +86,7 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
   // Name search spans the display name, the legal name, the nickname and the HR id — he searches
   // with whichever one he knows, and head-office people are often known by the nickname only.
   const matchesName = (emp: (typeof allEmployees)[number]) =>
-    [emp.displayName, emp.fullName, emp.nickname, emp.hrId]
+    [emp.displayName, emp.fullName, emp.nickname, emp.nameAr, emp.hrId]
       .some((value) => (value ?? "").toLowerCase().includes(nameFilter));
 
   // Apply filters for the visible list. Sorted by name, because the directory query carries no
@@ -104,7 +101,11 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
       if (titleFilter && !(emp.jobTitle ?? "").toLowerCase().includes(titleFilter)) return false;
       return true;
     })
-    .sort((left, right) => left.displayName.localeCompare(right.displayName, "en"));
+    // The Resignations list reads newest exit first (upcoming at the top); every other list by name.
+    .sort((left, right) =>
+      statusFilter === "left" ? compareByExitDayNewestFirst(left, right) : left.displayName.localeCompare(right.displayName, "en"),
+    );
+  const todayIso = currentCairoDateOnlyIso(now);
 
   // If an employee is selected, load their calendar. Resolve against the WHOLE directory, never the
   // filtered list, so a link stays valid after the filters change and a leaver opens from status=all.
@@ -229,7 +230,7 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
               name="status"
             >
               <option value="working">Active &amp; On Leave</option>
-              <option value="left">Left the company (resigned, terminated)</option>
+              <option value="left">Resignations — left and leaving</option>
               <option value="all">Everyone, leavers included</option>
             </select>
           </div>
@@ -320,13 +321,15 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
               </thead>
               <tbody>
                 {filtered.slice(0, ROW_CAP).map((emp) => {
+                  // A leaver opens on the month he left when the chosen month is after it.
+                  const linkMonth = privateCalendarLinkMonth(emp, { month, year });
                   const params = new URLSearchParams({
                     ...filterParams,
                     employee: emp.hrId,
-                    month: String(month),
-                    year: String(year),
+                    month: String(linkMonth.month),
+                    year: String(linkMonth.year),
                   });
-                  const working = isWorking(emp);
+                  const departure = privateCalendarDeparture(emp, todayIso);
                   return (
                     <tr
                       className="border-b border-phx-line bg-white text-sm last:border-b-0 hover:bg-[#FFFBF7]"
@@ -334,9 +337,13 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
                     >
                       <td className="px-5 py-3 align-top">
                         <div className="break-words font-semibold text-phx-ink">{emp.displayName}</div>
-                        {!working && (
-                          <div className="mt-1 inline-block border border-phx-line bg-phx-paper px-1.5 py-0.5 text-phx-xs font-black uppercase tracking-[0.1em] text-phx-ink-soft">
-                            {emp.employmentStatus ? humanizeCode(emp.employmentStatus) : "Not active"}
+                        {departure && (
+                          <div
+                            className={`mt-1 inline-block border px-1.5 py-0.5 text-phx-xs font-black uppercase tracking-[0.1em] ${
+                              departure.upcoming ? "border-amber-300 text-amber-800" : "border-phx-line bg-phx-paper text-phx-ink-soft"
+                            }`}
+                          >
+                            {departure.label}
                           </div>
                         )}
                         {/* The merged phone view of the three columns hidden below sm. */}

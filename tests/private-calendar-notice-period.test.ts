@@ -8,7 +8,13 @@ import {
   type EmployeeDirectoryRow,
 } from "../src/lib/employees/employee-directory.ts";
 import type { AccessContext } from "../src/lib/auth/permissions.ts";
-import { privateCalendarRosterForRequest } from "../src/lib/private-calendar/roster.ts";
+import {
+  compareByExitDayNewestFirst,
+  privateCalendarDeparture,
+  privateCalendarLinkMonth,
+  privateCalendarPickerPool,
+  privateCalendarRosterForRequest,
+} from "../src/lib/private-calendar/roster.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // A NOTICE PERIOD IS STILL WORK — the Private Calendar reads a leaver until the day AFTER his exit.
@@ -189,6 +195,43 @@ export function runPrivateCalendarNoticePeriodTests() {
     ["B-200", "B-182"],
     "inside his notice window he is on the roster already, and appears once",
   );
+
+  // ── 4c. The admin picker LISTS leavers (owner, 2026-11-24: "I CANNOT FIND ESRAA AWAD PRIVATE
+  // CALENDAR") ─────────────────────────────────────────────────────────────────────────────────
+  // The page read the active-only `getEmployeeDirectory()`, so "Left the company" showed "0 employees
+  // found of 0" and "Everyone, leavers included" showed the 130 active people and no leaver.
+  const historical = employee({ hrId: "B-70", employmentStatus: "historical_payroll_record", organogramVisible: false });
+  const pickerRows = [stillHere, alreadyLeft, historical];
+  assert.deepEqual(hrIds(privateCalendarPickerPool(pickerRows, "left")), ["B-182"], "Left the company lists the leaver");
+  assert.deepEqual(hrIds(privateCalendarPickerPool(pickerRows, "all")), ["B-200", "B-182"], "Everyone lists the leaver beside the active");
+  assert.deepEqual(hrIds(privateCalendarPickerPool(pickerRows, "working")), ["B-200"], "the default stays active only");
+  const pickerPage = readFileSync("app/(admin)/admin/private-calendars/page.tsx", "utf8");
+  assert.match(
+    pickerPage,
+    /getEmployeeDirectoryRows\(\{ includeInactive: true \}\)/,
+    "🔴 the picker reads the directory WITH leavers — the active-only directory can never list one",
+  );
+  assert.match(pickerPage, /privateCalendarPickerPool\(allEmployees, statusFilter\)/, "and narrows it through the one rule");
+
+  // ── 4d. Every resignation, historical AND upcoming (owner, 2026-11-24: "I want to see all
+  // resignations … the private calendar of any resignation, historical and upcoming") ─────────
+  const leaving = employee({ hrId: "B-300", employmentStatus: "resigned", lastWorkingDate: "2026-12-15", resignationDate: "2026-11-20" });
+  const terminated = employee({ hrId: "B-301", employmentStatus: "terminated", lastWorkingDate: "2026-08-31" });
+  assert.deepEqual(hrIds(privateCalendarPickerPool([stillHere, leaving, alreadyLeft], "left")), ["B-300", "B-182"], "an upcoming resignation is in the list too");
+  assert.equal(privateCalendarDeparture(leaving, "2026-11-24")?.label, "Leaving on 15 Dec 2026", "upcoming reads as still leaving");
+  assert.equal(privateCalendarDeparture(leaving, "2026-11-24")?.upcoming, true);
+  assert.equal(privateCalendarDeparture(alreadyLeft, "2026-11-24")?.label, "Resigned · left on 17 Oct 2026");
+  assert.equal(privateCalendarDeparture(terminated, "2026-11-24")?.label, "Terminated · left on 31 Aug 2026");
+  assert.equal(privateCalendarDeparture(stillHere, "2026-11-24"), null, "an active person carries no departure");
+  assert.deepEqual(
+    hrIds([alreadyLeft, terminated, leaving].sort(compareByExitDayNewestFirst)),
+    ["B-300", "B-182", "B-301"],
+    "the list reads newest exit first, upcoming at the top",
+  );
+  assert.deepEqual(privateCalendarLinkMonth(alreadyLeft, { month: 11, year: 2026 }), { month: 10, year: 2026 }, "a month after he left opens his exit month");
+  assert.deepEqual(privateCalendarLinkMonth(alreadyLeft, { month: 9, year: 2026 }), { month: 9, year: 2026 }, "a month he worked opens as chosen");
+  assert.deepEqual(privateCalendarLinkMonth(stillHere, { month: 11, year: 2026 }), { month: 11, year: 2026 });
+  assert.match(pickerPage, /emp\.nameAr/, "the name search reads the Arabic name too");
 
   // ── 5. The door writes no entry for an employee it never read ────────────────────────────────
   const door = service.slice(service.indexOf("export async function getPrivateCalendarDayEvidence"));

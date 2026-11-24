@@ -68,8 +68,15 @@ export function runPrivateCalendarsAdminAnyEmployeeTests() {
   );
 
   // The pool is the directory itself.
+  // The directory is read WITH leavers (owner, 2026-11-24: "I CANNOT FIND ESRAA AWAD PRIVATE CALENDAR"
+  // — the active-only getEmployeeDirectory() listed no leaver), and the status choice is the one rule
+  // privateCalendarPickerPool, whose lists are pinned in tests/private-calendar-notice-period.test.ts §4c.
   assert.ok(
-    /const pool = statusFilter === "all"\s*\? allEmployees\s*: statusFilter === "left"\s*\? allEmployees\.filter\(\(emp\) => !isWorking\(emp\)\)\s*: allEmployees\.filter\(isWorking\)/.test(source),
+    /const allEmployees = await getEmployeeDirectoryRows\(\{ includeInactive: true \}\)/.test(source),
+    "the candidate pool must be the whole directory, leavers included",
+  );
+  assert.ok(
+    /const pool = privateCalendarPickerPool\(allEmployees, statusFilter\);/.test(source),
     "the candidate pool must be the whole directory, narrowed only by the employment-status choice",
   );
   // A leaver can be listed on his own (owner, 2026-11-24: "make me able to filter and choose even if
@@ -86,7 +93,7 @@ export function runPrivateCalendarsAdminAnyEmployeeTests() {
       applied: /if \(departmentFilter && emp\.departmentName !== departmentFilter\) return false;/,
     },
     { key: "title", applied: /if \(titleFilter && !\(emp\.jobTitle \?\? ""\)\.toLowerCase\(\)\.includes\(titleFilter\)\) return false;/ },
-    { key: "status", applied: /statusFilter === "all"/ },
+    { key: "status", applied: /privateCalendarPickerPool\(allEmployees, statusFilter\)/ },
   ];
 
   for (const filter of filters) {
