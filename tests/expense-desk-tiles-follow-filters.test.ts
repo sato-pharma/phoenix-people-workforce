@@ -12,7 +12,9 @@
  *      the employee's name or hr id. "Over 7 days" narrows Waiting alone.
  *   4. The server's lines and its tiles agree: unfiltered, the lines add up to the tiles exactly.
  *   5. A press moves a trip between filtered cards as it does between plain ones.
- *   6. One line under narrowed cards says what they count.
+ *   6. One line, directly under the top line, says what the narrowed figures count.
+ *   8. The top line follows the filters too (owner, 24 Nov 2026, October picked: "Top line too"): it
+ *      counts what the filtered Waiting card counts, and "over 7 days" counts the old claims among them.
  *   7. The page draws the filtered figures on both card rows (desktop and phone); the server sends
  *      one line per decided trip, with the stored name History searches.
  */
@@ -20,7 +22,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
-import { applyDeskOutcomes, filteredTiles, tallyOf, tilesFilterWords } from "@/lib/outstation/approvals/desk-view";
+import { applyDeskOutcomes, deskTopLine, filteredTiles, tallyOf, tilesFilterWords } from "@/lib/outstation/approvals/desk-view";
 import { DECIDED_CLAIM_COLUMNS } from "@/lib/outstation/approvals/claim-row";
 import { countTripStandings } from "@/lib/outstation/approvals/standing";
 import type { DeskClaim, DeskQueue, DeskTally } from "@/lib/outstation/approvals/types";
@@ -151,15 +153,29 @@ export function runExpenseDeskTilesFollowFiltersTests() {
   assert.deepEqual(filteredTiles(back, { ...none, kind: "meeting" }).waiting, { count: 2, value: 550 });
 
   // 6. One line says what the narrowed cards count.
-  assert.equal(tilesFilterWords({ ...none, kind: "meeting" }), "These cards count only Meeting claims.");
-  assert.equal(tilesFilterWords({ ...none, overSevenDays: true }), "Waiting counts only the claims waiting over 7 days.");
-  assert.match(String(tilesFilterWords({ ...none, from: "2026-10-01", kind: "meeting", overSevenDays: true, to: "2026-10-31" })), /^These cards count only Meeting claims with a trip day in October 2026\. Waiting counts only/);
+  assert.equal(tilesFilterWords({ ...none, kind: "meeting" }), "These figures count only Meeting claims.");
+  assert.equal(tilesFilterWords({ ...none, overSevenDays: true }), "The top line and Waiting count only the claims waiting over 7 days.");
+  assert.match(String(tilesFilterWords({ ...none, from: "2026-10-01", kind: "meeting", overSevenDays: true, to: "2026-10-31" })), /^These figures count only Meeting claims with a trip day in October 2026\. The top line and Waiting count only/);
+
+  // 8. HEADLINE: the top line follows the filters, and stays the server's own count with none.
+  assert.deepEqual(deskTopLine(queue), { count: 3, overSevenDays: 1, value: 1050 }, "unfiltered, the top line is the server's Waiting tile");
+  assert.deepEqual(deskTopLine(queue, none), deskTopLine(queue), "with no filter set the view changes nothing");
+  assert.deepEqual(deskTopLine(queue, { ...none, kind: "meeting" }), { count: 2, overSevenDays: 1, value: 550 }, "HEADLINE: under Meeting the top line counts the waiting meetings");
+  assert.deepEqual(deskTopLine(queue, { ...none, from: "2026-10-01", to: "2026-10-31" }), { count: 1, overSevenDays: 0, value: 250 }, "HEADLINE: under October it counts the October claim, none of them old");
+  assert.deepEqual(deskTopLine(queue, { ...none, search: "mona" }), { count: 1, overSevenDays: 0, value: 250 }, "under a search it counts that employee's claims");
+  assert.deepEqual(deskTopLine(queue, { ...none, overSevenDays: true }), { count: 1, overSevenDays: 1, value: 300 }, "over 7 days, it counts the old claim alone");
+  assert.equal(deskTopLine(queue, { ...none, kind: "meeting" }).count, filteredTiles(queue, { ...none, kind: "meeting" }).waiting.count, "the top line and the filtered Waiting card are one number");
+  assert.equal(deskTopLine(queue, { ...none, kind: "other" }).count, 0, "a filter nothing matches says nothing waits");
 
   // 7. The page draws the filtered figures; the server sends the lines, with the stored name.
   const workspace = source("src/components/outstation/approvals-desk/desk-workspace.tsx");
   assert.match(workspace, /const tiles = queue \? filteredTiles\(queue, view\) : null;/, "the page counts the cards under its filters");
   assert.equal((workspace.match(/<DeskTiles [^>]*tiles=\{tiles \?\? queue\.tiles\}/g) ?? []).length, 2, "both card rows, desktop and phone, draw the filtered figures");
+  assert.match(workspace, /<DeskTopLine filterWords=\{tileWords\} [^\n]*queue=\{queue\} view=\{view\} \/>/, "the top line is given the view and the words");
   const tilesFile = source("src/components/outstation/approvals-desk/desk-tiles.tsx");
+  assert.ok(tilesFile.includes("const top = deskTopLine(queue, view);"), "the top line counts under the view");
+  const wordsAt = tilesFile.indexOf("data-tiles-filter-words");
+  assert.ok(wordsAt > tilesFile.indexOf("data-desk-top-line") && wordsAt < tilesFile.indexOf("export function DeskTiles"), "the words sit under the top line, which a phone sees before the list");
   assert.match(tilesFile, /const tile = tiles\[standing\];/, "a card reads the figures it was given");
   assert.doesNotMatch(tilesFile, /queue\.tiles\[/, "a card never reads the unfiltered tiles");
   const queueFile = source("src/lib/outstation/approvals/queue.ts");
