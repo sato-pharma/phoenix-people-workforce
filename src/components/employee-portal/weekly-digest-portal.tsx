@@ -76,6 +76,8 @@ function outcomeText(line: MyDigestLine): string {
       return `Dispute not accepted, so it is taken from ${methodText(line.chosenMethod)}`;
     case "confirmed":
       return "Confirmed";
+    case "month_end_decided":
+      return "Already decided in the month-end payroll review";
     default:
       return "Answered";
   }

@@ -23,7 +23,9 @@ export type DigestLineAction =
   | "dispute_upheld"
   | "dispute_rejected"
   /** The 2026-09-08 answer. Kept readable; nothing writes it any more. */
-  | "confirmed";
+  | "confirmed"
+  /** Approved at month end before the week was released (owner, 2026-11-24): out of the review. */
+  | "month_end_decided";
 
 export type DeductionMethod = "salary" | "annual_balance";
 

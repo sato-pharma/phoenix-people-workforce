@@ -40,7 +40,8 @@ import { buildAttendanceCalendarContext } from "../src/lib/attendance/working-da
 //   release gate → employee chooses salary or annual balance → may then dispute →
 //   no answer within 2 working days of release → salary. Days on leave, approved or still waiting
 //   for approval, do not count toward those 2 days, and the employee is told how a dispute was
-//   decided. Month-end payroll cannot approve a day still waiting for release or for their answer.
+//   decided. Month-end payroll cannot approve a day of a released week still waiting for their answer;
+//   approving a day of a week not released yet takes it out of that week (owner, 2026-11-24).
 
 /** Friday off for everyone, plus one named holiday. Egypt's weekend shape. */
 function workingDayWithHoliday(holidayIso: string) {
@@ -1070,31 +1071,62 @@ export async function runAttendanceDigestRulesTests() {
   );
   assert.match(cleared, /\.eq\("attendance_weekly_digests\.dry_run", false\)/, "…nor a trial-run week's dispute");
   assert.match(cleared, /if \(read\.error && !isMissingTableError\(read\.error\)\) \{\s*throw/, "the check fails CLOSED on a read error");
-  // A day still pending in a real week cannot be approved either: waiting for release (owner, 2026-09-15 —
-  // "Block until released"), or released and not answered yet (owner, 2026-09-16 — "Block until answered").
-  const undecidedStatuses = /\.eq\("action", "pending"\)[\s\S]*?\.in\("attendance_weekly_digests\.status", \[([^\]]*)\]\)/.exec(cleared)?.[1] ?? "";
+  // A day still pending in a RELEASED week the employee has not answered yet cannot be approved
+  // (owner, 2026-09-16 — "Block until answered"). A day of a week NOT RELEASED yet no longer blocks
+  // (owner, 2026-11-24 — "donot make this block deduction", replacing 2026-09-15's "Block until
+  // released"): the approval takes the day out of that week instead.
+  const undecidedRead = /\.eq\("action", "pending"\)[\s\S]*?\.eq\("attendance_weekly_digests\.dry_run", false\)/.exec(cleared)?.[0] ?? "";
   assert.match(
-    undecidedStatuses,
-    /"awaiting_release"/,
-    "a pending day of a week still waiting for release must refuse approval — the employee has not been asked",
-  );
-  assert.match(
-    undecidedStatuses,
-    /"open"/,
+    undecidedRead,
+    /\.eq\("attendance_weekly_digests\.status", "open"\)/,
     "a pending day of a released week the employee has not answered yet must refuse approval — they can still choose annual balance or dispute",
   );
+  assert.doesNotMatch(
+    undecidedRead,
+    /awaiting_release/,
+    "a pending day of a week not released yet must NOT refuse approval any more (owner, 2026-11-24)",
+  );
+  assert.doesNotMatch(cleared, /Release that week on the Weekly Attendance Review page first/, "…and the old refusal is gone");
   assert.match(cleared, /for \(const read of \[cleared, disputed, undecided\]\)/, "that read fails CLOSED too");
   assert.match(cleared, /if \(undecidedRows\.length\) \{/, "a hit refuses the approval");
   assert.match(
     cleared,
-    /=== "awaiting_release"\)/,
-    "a week waiting for release is told apart from one released and not answered, so the refusal names the right next step",
-  );
-  assert.match(cleared, /Release that week on the Weekly Attendance Review page first/, "and says what to do instead");
-  assert.match(
-    cleared,
     /Wait for their answer or for the answer deadline to settle it/,
-    "…and, for a released week, to wait for the employee's answer or the deadline",
+    "…and, for a released week, says to wait for the employee's answer or the deadline",
+  );
+
+  // An approved day leaves every week of that employee not released yet, AFTER the decision is saved,
+  // and only for an approval of a fingerprint or field-review day. It never throws over the saved
+  // decision: a failure is a notice beside it.
+  const takeOut = /const reviewNotices =\s*input\.decisionStatus === "Approved for Payroll" &&\s*\(candidateRow\.category === "fingerprint" \|\| candidateRow\.category === "field_review"\)\s*\? await takeMonthEndDecidedDaysOutOfReview\(/;
+  assert.match(record, takeOut, "approving a fingerprint day takes it out of the weekly review weeks not released yet");
+  assert.ok(
+    record.indexOf("takeMonthEndDecidedDaysOutOfReview({") > record.indexOf("writeDecisionRow(supabase, payload"),
+    "the day is taken out only once the decision is saved",
+  );
+  assert.match(record, /payrollNotices: \[\.\.\.reviewNotices, \.\.\.payrollNotices\]/, "a take-out that failed is said on the screen");
+  const takeOutFn = deductions.slice(deductions.indexOf("export async function takeMonthEndDecidedDaysOutOfReview"));
+  assert.match(takeOutFn, /rpc\("phx_attendance_take_out_month_end_decided_days"/, "it goes through the locking database function");
+  assert.match(takeOutFn, /\} catch \(error\) \{\s*const why/, "…and never throws over the saved decision");
+
+  const takeOutSql = readFileSync("supabase/migrations/20261124031229_attendance_review_day_decided_at_month_end.sql", "utf8");
+  assert.match(takeOutSql, /'confirmed', 'month_end_decided'/, "the day's new state is allowed by the action check, beside every old one");
+  assert.match(
+    takeOutSql,
+    /and g\.status = 'awaiting_release'\s+and g\.dry_run = false/,
+    "only a real week not released yet is touched — never a released, answered or trial-run week",
+  );
+  assert.match(takeOutSql, /order by g\.id\s+for update\s+loop/, "each week is locked first, as a tick and a release lock it");
+  assert.match(
+    takeOutSql,
+    /set\s+action = 'month_end_decided',[\s\S]*?and action = 'pending'\s+and work_date = any\(p_work_dates\);/,
+    "only a day still waiting moves, and only on the approved dates",
+  );
+  assert.doesNotMatch(takeOutSql, /insert into public\.attendance_settlements/, "no settlement is written, so the bridge has nothing to apply");
+  assert.match(
+    takeOutSql,
+    /revoke execute on function public\.phx_attendance_take_out_month_end_decided_days\(text, date\[\]\) from public, anon, authenticated;\s*grant execute on function public\.phx_attendance_take_out_month_end_decided_days\(text, date\[\]\) to service_role;/,
+    "the function is the service role's alone",
   );
 
   // The Employee Day-by-Day Report WRITES before it calls recordDecision, so it runs the same two
