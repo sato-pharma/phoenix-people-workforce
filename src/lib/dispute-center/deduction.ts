@@ -37,7 +37,7 @@ import {
 } from "./events.ts";
 import { notifyDisputeCase, reviewerHrIdsFor } from "./notify.ts";
 import { resolveCaseParticipant, viewerHrIdOf } from "./participants.ts";
-import { monthKeyLabel, payrollMonthState } from "./payroll-month.ts";
+import { monthKeyLabel, monthKeyLabelWithArticle, payrollMonthState } from "./payroll-month.ts";
 import { cancelLiveRefund, listRefundsForCases, recommendDisputeRefund } from "./refunds.ts";
 import { dayLabel, daysLabel, moneyLabel, tidyDisputeText } from "./text.ts";
 import type { DisputeCase, DisputeCaseEvent, DisputeCaseFact, DisputeDecision, DisputeMessage } from "./types.ts";
@@ -943,7 +943,7 @@ async function decideUnderClaim(
           deferEvents: deferredEvents,
           employeeHrId,
           kind: "deduction",
-          reason: `Refund of a ${monthKeyLabel(monthKey)} deduction${noteSuffix}`,
+          reason: `Refund of ${monthKeyLabelWithArticle(monthKey)} deduction${noteSuffix}`,
           ref: input.candidateId,
           sourceMonthKey: monthKey,
         }),
