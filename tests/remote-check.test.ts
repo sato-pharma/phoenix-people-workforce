@@ -358,14 +358,15 @@ export async function runRemoteCheckTests(): Promise<void> {
     });
     const short = (sha: string) => sha.slice(0, 9);
 
-    // a — an open PR with a green run: read it, PASS, bill nothing, record every stage.
+    // a — an open PR with a green run: read it, PASS, bill nothing, record every stage a PR can answer —
+    // never build, even when the fixture's Build step says success (a PR never builds, owner 2026-11-05).
     {
       const { dir, sha } = repo("a", "codex/feature-a", true);
       const r = run(dir, sha, { openPr: 7, runs: [prRun(sha)], jobs: green() }, "all");
       assert.equal(r.code, 0, `a green PR run must PASS:\n${r.text}`);
       assert.match(r.text, new RegExp(`remote-check: PASS — ${short(sha)}`));
       assert.equal(r.dispatched, false, "reading a PR's run must never dispatch beside it");
-      assert.deepEqual(r.record?.stages && Object.keys(r.record.stages).sort(), ["build", "lint", "test", "typecheck"]);
+      assert.deepEqual(r.record?.stages && Object.keys(r.record.stages).sort(), ["lint", "test", "typecheck"]);
     }
     // b — typecheck red in the PR run: FAIL, named, and exit 1.
     {
@@ -375,13 +376,26 @@ export async function runRemoteCheckTests(): Promise<void> {
       assert.match(r.text, new RegExp(`remote-check: FAIL — ${short(sha)}`));
       assert.equal(r.record?.stages.typecheck.verdict, "FAIL");
     }
-    // c — a PR whose Build was skipped: `all` is NO VERDICT (exit 6) and prints NO PASS line for this sha.
+    // c — a PR whose Build was skipped (every PR since 2026-11-05): `all` and a bare run leave build out,
+    // SAY so, and PASS on lint + typecheck + test — with build never recorded. Until 24 Nov 2026 this ended
+    // NO VERDICT (exit 6) on every PR, #759's run 45435419420 among them.
+    for (const args of [["all"], []] as string[][]) {
+      const { dir, sha } = repo("c" + args.length, "codex/feature-c" + args.length, true);
+      const r = run(dir, sha, { openPr: 9, runs: [prRun(sha)], jobs: with_(green(), "validate", "Build", "skipped") }, ...args);
+      assert.equal(r.code, 0, `a green PR run answers what a PR can answer (${args.join(" ") || "no stage named"}):\n${r.text}`);
+      assert.match(r.text, /build left out — a pull request never builds/, "it says build was not checked");
+      assert.match(r.text, new RegExp(`remote-check: PASS — ${short(sha)}`));
+      assert.deepEqual(r.record?.stages && Object.keys(r.record.stages).sort(), ["lint", "test", "typecheck"], "a skipped Build is never recorded as a build PASS");
+    }
+    // c2 — `build` named outright on a PR: NO VERDICT at once (exit 6), no PASS line, and it reads no run.
     {
-      const { dir, sha } = repo("c", "codex/feature-c", true);
-      const r = run(dir, sha, { openPr: 9, runs: [prRun(sha)], jobs: with_(green(), "validate", "Build", "skipped") }, "all");
-      assert.equal(r.code, 6, `a run that did not build cannot answer \`all\`:\n${r.text}`);
+      const { dir, sha } = repo("c2", "codex/feature-c2", true);
+      const r = run(dir, sha, { openPr: 9, runs: [prRun(sha)], jobs: with_(green(), "validate", "Build", "skipped") }, "build");
+      assert.equal(r.code, 6, `a PR cannot answer build:\n${r.text}`);
       assert.doesNotMatch(r.text, /remote-check: PASS/, "a NO VERDICT must never print a PASS line");
-      assert.match(r.text, /lint \+ typecheck \+ test did pass/, "it says which half it has");
+      assert.match(r.text, /build --dispatch/, "it names where a build verdict comes from");
+      assert.equal(r.record, null, "nothing is recorded");
+      assert.equal(r.calls.some((l) => l.startsWith("run view")), false, "it does not wait on a run that cannot answer");
     }
     // d — the PR run is a green run about ANOTHER commit: no evidence about this one.
     {
