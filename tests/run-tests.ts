@@ -1147,6 +1147,7 @@ import { runRegionalTeamReportsTests } from "./regional-team-reports.test.ts";
 import { runDistrictTeamReportsTests } from "./district-team-reports.test.ts";
 import { runAdminTeamReportsTests } from "./admin-team-reports.test.ts";
 import { runTeamVisitsPremiumTests } from "./team-visits-premium.test.ts";
+import { runRepVisitsExportTests } from "./rep-visits-export.test.ts";
 import { runWeeklySheetPremiumTests } from "./weekly-sheet-premium.test.ts";
 import { runMarketingRoiTrackingPremiumTests } from "./marketing-roi-tracking-premium.test.ts";
 import { runRsmHomePremiumTests } from "./rsm-home-premium.test.ts";
@@ -13035,6 +13036,7 @@ await runTest("Expense Approvals, the amount beside Approve is his to edit (owne
 await runTest("Only the owner deletes an expense request, by his own press (owner, 2026-11-24: \"never delete automatic only i from system can delete\"): a real signed-in Super Admin session only, never a system context, preview or test account; the row leaves only through phx_owner_delete_outstation_request; his Delete expense button stays; a plain DELETE and any TRUNCATE are refused", runExpenseRequestDeleteOwnerOnlyTests);
 await runTest("Expense Approvals, a paid trip whose request was deleted (owner, 2026-11-23: \"Where are the rest of the requests of the people?\" - 9 approved trips were on no screen): the sheet list keeps it, marked as filed in Phoenix with its request deleted, and never lists a trip whose request still exists", runExpenseDeskOrphanTripsTests);
 await runTest("Expense Approvals, changing a decided claim (owner, 2026-11-23: make me able to reject even if approved in history): an approved claim no payroll has taken can be rejected with a reason and never approved again or reduced, a rejected claim is approved in full and never at the idle-day cut, a claim a payroll took or whose payroll already ran is refused on every version, the verdict kept for the agreement meter stays the first decision's, approving a claim the Super Admin rejected sends no submission alert, the buttons are the desk's own on the History row and in the opened trip, and the pre-July sheet trips stay read-only", runExpenseDeskDecidedChangeTests);
+await runTest("Rep visits export (owner, 2026-11-24: one rep and a range as the workbook he reviewed, plus a Cover): the range stops at today and at 186 days, the Cover reads name, area, line, salary, hiring date, birth date and an age right around the birthday with a missing figure in words never 0, Every day is an Excel table with one record row per day and Visits summing to visits only, Visits per day lists every day with its type, two customers never share a repeat colour in one month, and the export is the Super Admin's alone, rate-limited and audited", runRepVisitsExportTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);
