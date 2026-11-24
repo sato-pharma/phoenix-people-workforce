@@ -1808,6 +1808,8 @@ export const accessRegistry = [
   // seeded from, plus the on-demand sync into an already-open run. Same
   // Super-Admin domain-helper gate as the per-run list above.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/automated-payroll/runs/:runId/non-employees/sync", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // Copy last published month's list back into an open run (owner, 2026-11-24) — GET previews, POST copies.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/automated-payroll/runs/:runId/non-employees/previous", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/automated-payroll/non-employee-recurring", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PUT", "DELETE"], pattern: "/api/automated-payroll/non-employee-recurring/:id", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/automated-payroll/finance", permission: null, guard: "domain-helper" }),
