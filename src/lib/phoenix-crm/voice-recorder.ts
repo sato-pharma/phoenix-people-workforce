@@ -17,6 +17,8 @@
  * the database. Sixty seconds of Opus at 24 kbps is about 180 KB.
  */
 
+import { closeWebmTimelineGaps, isWebmRecording } from "@/lib/ai/webm-timeline";
+
 /** A minute is long for a spoken note and short enough that a pocket cannot fill a bucket. */
 export const MAX_SECONDS = 60;
 
@@ -66,6 +68,27 @@ export function extensionFor(mimeType: string): string {
 }
 
 export type Recording = { blob: Blob; mimeType: string; seconds: number };
+
+/**
+ * The finished recording with its WebM timeline made continuous — EVERY note passes through here before it
+ * is previewed, uploaded or transcribed, and this step is never removed (24 Nov 2026).
+ *
+ * Chrome's recorder stamps the first packet at 0 and the rest on a clock that began earlier, so a 13-second
+ * note can claim 4 h 21 min: the player shows that length, seeking breaks, and Groq refused one 413
+ * `too_large`. 18 of 30 stored notes carried such a hole. `closeWebmTimelineGaps` rewrites the stamps in
+ * place at the same size and never touches the audio; a non-WebM recording (Safari's mp4), a continuous one
+ * or anything it cannot read comes back as the SAME blob, so the worst case is the note as it was recorded.
+ */
+export async function withContinuousTimeline(blob: Blob, type: string): Promise<Blob> {
+  try {
+    const audio = new Uint8Array(await blob.arrayBuffer());
+    if (!isWebmRecording("", type, audio)) return blob;
+    const repaired = closeWebmTimelineGaps(audio);
+    return repaired.closedMs > 0 ? new Blob([repaired.bytes as unknown as BlobPart], { type }) : blob;
+  } catch {
+    return blob;
+  }
+}
 
 export type VoiceRecorder = {
   stop: () => Promise<Recording>;
@@ -123,16 +146,19 @@ export async function startRecording(
   // fallback below for a recorder already inactive — cannot drift the way they once did, when one gained a
   // typed blob and a one-second floor and the other kept an untyped blob and a raw count. The typed blob
   // lets the in-form <audio> preview infer the codec, and the floor stops a recording ever reporting 0:00.
-  const settle = (): Recording => {
+  // The timeline is repaired HERE, the one place both paths pass, so no caller can receive a gapped note.
+  const settle = async (): Promise<Recording> => {
     const type = recorder.mimeType || mimeType || "audio/webm";
-    return { blob: new Blob(chunks, { type }), mimeType: type, seconds: Math.max(1, elapsed()) };
+    const seconds = Math.max(1, elapsed());
+    return { blob: await withContinuousTimeline(new Blob(chunks, { type }), type), mimeType: type, seconds };
   };
 
   let stopResolver: ((value: Recording) => void) | null = null;
 
   recorder.onstop = () => {
     release();
-    stopResolver?.(settle());
+    const resolve = stopResolver;
+    if (resolve) void settle().then(resolve);
   };
 
   // Hard cap. Without this, one forgotten recording is the storage budget.
@@ -163,7 +189,7 @@ export async function startRecording(
           // Already inactive: the hard cap, a backgrounded tab or an error stopped it before this ran. The
           // same `settle` the onstop path uses builds the result, so it cannot differ by how it ended.
           release();
-          resolve(settle());
+          void settle().then(resolve);
         }
       }),
     cancel: () => {

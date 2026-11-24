@@ -36,6 +36,7 @@
  * the prompt started carrying a sample Egyptian sentence instead of a bare list of product names.
  */
 
+import { closeWebmTimelineGaps, isWebmRecording } from "@/lib/ai/webm-timeline";
 import { recordAiCall } from "@/lib/observability/ai-metrics";
 import { logError } from "@/lib/observability/log";
 import { foldArabicLetters } from "@/lib/phoenix-crm/dictation-correct";
@@ -325,8 +326,17 @@ export async function transcribeWithGroq(request: GroqTranscriptionRequest): Pro
     throw new GroqTranscriptionError("too_large", "The recording is larger than the speech service accepts.");
   }
 
+  // 🔴 THE TIMELINE IS REPAIRED BEFORE THE SERVICE MEASURES IT. Chrome's recorder often stamps the first
+  // packet at 0 and the rest on a clock that started minutes or hours earlier, and the service measures a
+  // recording by those stamps: a 13-second note claiming 15,682 seconds was refused 413 "too_large"
+  // (24 Nov 2026), and shorter holes were billed at the length they claim. `closeWebmTimelineGaps` returns
+  // the original bytes whenever it is unsure, so this can only make a request better, never break one.
+  const audio = isWebmRecording(request.filename, request.contentType, request.audio)
+    ? closeWebmTimelineGaps(request.audio).bytes
+    : request.audio;
+
   const form = new FormData();
-  form.set("file", new Blob([request.audio as unknown as BlobPart], { type: request.contentType }), request.filename);
+  form.set("file", new Blob([audio as unknown as BlobPart], { type: request.contentType }), request.filename);
   form.set("model", GROQ_TRANSCRIPTION_MODEL);
   // 🔴 UNCONDITIONAL. A caller may choose WHICH language (the CEO composer's mic does), and no caller
   // can choose to send none: with the field off, Whisper translates the speech into English. `||`,
