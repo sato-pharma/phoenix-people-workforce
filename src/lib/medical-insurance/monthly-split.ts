@@ -206,6 +206,37 @@ export function buildMonthlySplit(input: { asOf: string; members: readonly Month
   };
 }
 
+/** What payroll takes from one employee for a payroll month (payrollChargesForWindow). */
+export type PayrollMedicalInsuranceCharge = {
+  hrId: string;
+  name: string;
+  /** `employeePays` of the employee's monthly split row: their own share, their family in full, the life insurance. */
+  amount: number;
+  /** People in the row who cannot be priced. Payroll refuses to charge a row that is short by them. */
+  unpriced: number;
+};
+
+/**
+ * What each employee pays for a payroll month, from the same split the Cost tab and the Medical Cover Statement
+ * show (owner, 2026-11-24: "in december implement everyone med ins deductions from medical insurance module").
+ * A person is in the month when their cover touches any day of `from`..`to`, and is charged the whole month, the
+ * way the Employee Master's flat figure was. Only an employee with an HR id can be charged: a relative is charged
+ * on the employee's row, and a relative whose employee is no longer on the register is charged to nobody.
+ */
+export function payrollChargesForWindow(input: {
+  from: string;
+  to: string;
+  members: readonly MonthlySplitMember[];
+  rateCard: MedicalInsuranceRateCard;
+}): PayrollMedicalInsuranceCharge[] {
+  const { from, to } = input;
+  const inMonth = input.members.filter((member) => member.coverageStart <= to && (member.coverageEnd === null || member.coverageEnd >= from));
+  const split = buildMonthlySplit({ asOf: from, members: inMonth, rateCard: input.rateCard });
+  return split.rows
+    .filter((row): row is MonthlySplitRow & { employee: MonthlySplitPerson; hrId: string } => row.employee !== null && Boolean(row.hrId))
+    .map((row) => ({ amount: row.employeePays, hrId: row.hrId, name: row.employee.name, unpriced: row.unpriced }));
+}
+
 /**
  * The rows a Medical Cover Statement can be made for (cost-letter.ts): an employee still on the register, by
  * name. A relative whose employee left has no one to hand it to. Here, not in cost-letter.ts, so the tab that

@@ -63,6 +63,12 @@ import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { listPriorMonthHolds } from "./draft-store.ts";
+import {
+  moduleChargesByCompact,
+  payrollMedicalInsuranceFor,
+  payrollMedicalInsuranceSource,
+  payrollMonthCoverWindow,
+} from "./medical-insurance-month.ts";
 import { resolveHoldReason } from "./hold-reason.ts";
 import { monthNameAndYear } from "./step-definitions.ts";
 import { loadDisputeRefunds, type DisputeRefundsForEmployee } from "./dispute-refunds.ts";
@@ -281,10 +287,20 @@ export async function resolvePayrollPopulationAndSources(period: PayrollPeriod):
   /** Every employee record, leavers included, by compact HR id — for the held-salary release. */
   directory: Map<string, EmployeeDirectoryRow>;
 }> {
-  const [employees, feeders] = await Promise.all([
+  // Where this month's medical insurance comes from (medical-insurance-month.ts, owner 2026-11-24): the
+  // Employee Master up to October 2026, nobody in November 2026, the Medical Insurance module from December.
+  const medicalSource = payrollMedicalInsuranceSource(period);
+  const [employees, feeders, medicalCharges] = await Promise.all([
     getEmployeeDirectoryRows({ includeInactive: true }),
     buildFeederStates(period),
+    // Loaded only for a module month, so earlier months and the pure tests never pull the module's service in.
+    medicalSource === "module"
+      ? import("@/lib/medical-insurance/service").then((module) =>
+          module.getPayrollMedicalInsuranceCharges(payrollMonthCoverWindow(period)),
+        )
+      : Promise.resolve(null),
   ]);
+  const moduleCharges = medicalCharges ? moduleChargesByCompact(medicalCharges, compactHrKey) : null;
   const members: PopulationMember[] = [];
   const sources = new Map<string, PayrollSalarySource>();
   const directory = new Map<string, EmployeeDirectoryRow>();
@@ -329,7 +345,17 @@ export async function resolvePayrollPopulationAndSources(period: PayrollPeriod):
     if (isPayrollIneligibleEmployee(employee) && !isLeaver && !stillActiveThroughFutureExit) continue;
 
     members.push({
-      employee,
+      // A copy carrying the month's medical insurance, so the shared directory row is never changed: Part 1's
+      // freeze, Part 2's assembly and the on-screen summary all read `employee.medicalInsurance`.
+      employee: {
+        ...employee,
+        medicalInsurance: payrollMedicalInsuranceFor({
+          compact,
+          masterFigure: employee.medicalInsurance,
+          moduleCharges,
+          source: medicalSource,
+        }),
+      },
       compact,
       lifecycle: isLeaver ? "leaver" : isJoiner ? "joiner" : "regular",
       lastWorkingDate: leaverLastWorkingDate,
