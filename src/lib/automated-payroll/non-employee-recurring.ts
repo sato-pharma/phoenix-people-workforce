@@ -311,15 +311,19 @@ export async function seedRunFromRecurring(input: {
   // person) is not mistaken for that person's own roster entry: Anwar Gaweesh is paid both on one
   // account, and the identity check below would otherwise skip his salary as a duplicate. Where the
   // column has not landed yet the narrower read is the old one exactly.
-  let { data: existing, error: existingError } = await admin
+  const wide = await admin
     .from(RUN_TABLE)
     .select("recurring_id,standing_transfer_id,part,bank_account,full_name_en,full_name_ar")
     .eq("run_id", input.runId);
+  let existing: Row[] | null = (wide.data ?? null) as Row[] | null;
+  let existingError: unknown = wide.error;
   if (existingError && isMissingStandingTransferColumnError(existingError)) {
-    ({ data: existing, error: existingError } = await admin
+    const narrow = await admin
       .from(RUN_TABLE)
       .select("recurring_id,part,bank_account,full_name_en,full_name_ar")
-      .eq("run_id", input.runId));
+      .eq("run_id", input.runId);
+    existing = (narrow.data ?? null) as Row[] | null;
+    existingError = narrow.error;
   }
   if (existingError) {
     // No provenance column yet => nothing was ever seeded, so seed everything.
