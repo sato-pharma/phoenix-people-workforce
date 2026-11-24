@@ -353,6 +353,9 @@ export const PP = {
   execStageCancelled: "ملغاة",
   execDeducted: "المخصوم من المخزون",
   execWastePct: "نسبة الفاقد",
+  execBoxesProduced: "عدد العلب المنتجة",
+  execSamplesProduced: "عدد العينات المنتجة",
+  execBoxesWord: "علبة",
 
   // ── The settings tab ──────────────────────────────────────────────────────────────────────────
   settingsTitle: "الإعدادات",
@@ -767,6 +770,9 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   execStageCancelled: "Cancelled",
   execDeducted: "Taken off stock",
   execWastePct: "Waste %",
+  execBoxesProduced: "Boxes produced",
+  execSamplesProduced: "Samples produced",
+  execBoxesWord: "boxes",
 
   // ── The settings tab ──────────────────────────────────────────────────────────────────────────
   settingsTitle: "Settings",

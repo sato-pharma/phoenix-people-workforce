@@ -2624,7 +2624,7 @@ export function RunTab({
         <section className={PANEL}>
           <SectionTitle subtitle={t.execSubtitle} title={t.execTitle} />
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Field label={S.runActualLabel(runProduct?.measureUnit ?? "ml")}>
+            <Field label={t.execBoxesProduced}>
               <input
                 className={INPUT}
                 dir="ltr"
@@ -2633,7 +2633,7 @@ export function RunTab({
                 value={boxes}
               />
             </Field>
-            <Field label={t.runActualSamples}>
+            <Field label={t.execSamplesProduced}>
               <input
                 className={INPUT}
                 dir="ltr"
@@ -2813,7 +2813,7 @@ function RunHeadline({ run, saleableWord }: { run: WireRun; saleableWord: string
   return (
     <p className="mt-0.5 break-words text-[12px] text-slate-700">
       <Num>{run.producedOn}</Num> — <Num>{formatNumberLatin(run.saleableBoxes ?? run.actualGoodUnits)}</Num>{" "}
-      {saleableWord}, <Num>{formatNumberLatin(run.actualSampleUnits)}</Num> {t.unitSample} ·{" "}
+      {run.saleableBoxes ? t.execBoxesWord : saleableWord}, <Num>{formatNumberLatin(run.actualSampleUnits)}</Num> {t.unitSample} ·{" "}
       <Num>{formatNumberLatin(run.exactRuns ?? run.runsCount)}</Num> {t.unitRuns}
     </p>
   );
