@@ -19,7 +19,7 @@
 //
 //   node scripts/remote-check.mjs typecheck
 //   node scripts/remote-check.mjs lint test
-//   node scripts/remote-check.mjs all            # lint, typecheck, unit suite, build
+//   node scripts/remote-check.mjs all            # lint, typecheck, unit suite, build (on an open PR: build is left out — a PR never builds)
 //   node scripts/remote-check.mjs test --dispatch    # no PR yet: START a ci.yml run on the branch
 //
 // WHAT IT DOES, in this order:
@@ -511,13 +511,30 @@ try {
 if (openPr) {
   console.log("remote-check: #" + openPr + " is open on " + branch + " — reading its own ci.yml run for this commit");
   console.log("    (already running and already billed; a dispatch beside it would pay twice for one answer)");
+  // 🔴 A PULL REQUEST NEVER BUILDS (owner, 2026-11-05: "Yes, skip the PR build") — ci.yml's Build step is
+  // skipped on every PR, so a PR run can never answer `build`. Before this, a bare run or `all` on a PR
+  // waited out the whole run and ended NO VERDICT (exit 6) on EVERY PR, with three green stages thrown into
+  // a "could not tell". So: `build` named outright stops at once, saying where a build verdict lives;
+  // `build` that only came in through `all` (or no stage at all) is left out, SAID, and never recorded —
+  // a skipped Build is still never a build PASS. Pinned in tests/remote-check.test.ts (c, c2).
+  const prNames = names.filter((name) => name !== "build");
+  const buildWasImplied = requested.length === 0 || requested.includes("all");
+  if (names.includes("build") && !buildWasImplied) {
+    console.error("remote-check: a pull request never builds (owner, 2026-11-05) — Railway builds every merge, and main's push run builds that commit.");
+    console.error("    For a build verdict before the merge, dispatch from a branch with no open PR: node scripts/remote-check.mjs build --dispatch");
+    console.error("remote-check: NO VERDICT — #" + openPr + "'s run cannot answer build (" + sha.slice(0, 9) + ")");
+    process.exit(6);
+  }
+  if (prNames.length < names.length) {
+    console.log("remote-check: build left out — a pull request never builds (owner, 2026-11-05); main's push run builds the merge. Checking " + prNames.join(" + ") + ".");
+  }
   settle({
     find: () => findRun({ sha, workflow: CI_WORKFLOW, event: "pull_request" }),
     sha,
-    names,
+    names: prNames,
     label: "#" + openPr + "'s own ci.yml run",
     source: "GitHub Actions — #" + openPr + "'s own run",
-    hint: "    A pull request builds only when its diff can change a build; for the build itself, dispatch from a branch with no open PR.",
+    hint: "    A pull request never builds (owner, 2026-11-05); for the build itself, dispatch from a branch with no open PR.",
   });
 }
 
