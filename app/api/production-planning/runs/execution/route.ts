@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { resolveAccessContext } from "@/lib/auth/server";
+import { assertProductionPlanningWrite } from "@/lib/production-planning/access";
+import { resolveProductionPlanningLevel } from "@/lib/production-planning/access-db";
 import { productionPlanningErrorResponse } from "@/lib/production-planning/http";
 import { ProductionPlanningInputError } from "@/lib/production-planning/rules";
 import {
@@ -32,6 +34,9 @@ export async function POST(request: Request) {
   if (csrf) return csrf;
   try {
     const access = await resolveAccessContext(request);
+    // Who is asking comes before what is asked: an unknown action from a signed-out caller or a
+    // refused role is a refusal (401/403), never a 400 that confirms the door exists.
+    assertProductionPlanningWrite(access, await resolveProductionPlanningLevel(access));
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     switch (body.action) {
       case "preview":
