@@ -134,10 +134,10 @@ function Spark({ values, color }: { values: number[]; color: string }) {
 /** The months of one row as tiny bars, the latest in orange — the row's own shape at a glance. */
 function MicroBars({ values }: { values: number[] }) {
   const max = Math.max(1, ...values);
-  const step = 7;
-  const width = Math.max(step * values.length - 2, 1);
+  const step = 11;
+  const width = Math.max(step * values.length - 3, 1);
   return (
-    <svg aria-hidden="true" viewBox={`0 0 ${width} 22`} className="mx-auto block h-[22px]" style={{ width: Math.min(width, 84) }} preserveAspectRatio="none">
+    <svg aria-hidden="true" viewBox={`0 0 ${width} 22`} className="mx-auto block h-[22px]" style={{ width: Math.min(width, 96) }} preserveAspectRatio="none">
       {values.map((value, index) => {
         const barHeight = Math.max(value > 0 ? 2 : 0, (value / max) * 20);
         return (
@@ -145,7 +145,7 @@ function MicroBars({ values }: { values: number[] }) {
             key={index}
             x={index * step}
             y={22 - barHeight}
-            width={5}
+            width={8}
             height={barHeight}
             fill={index === values.length - 1 ? ORANGE : PRIOR}
           />
@@ -235,6 +235,21 @@ function Panel({
       </header>
       <div className="p-4">{children}</div>
     </section>
+  );
+}
+
+/** The Lost figure, under the lower edge of its bar whichever way recharts reports the height. */
+function LostLabel(props: { x?: number | string; y?: number | string; width?: number | string; height?: number | string; value?: unknown }) {
+  const x = Number(props.x ?? 0);
+  const y = Number(props.y ?? 0);
+  const width = Number(props.width ?? 0);
+  const height = Number(props.height ?? 0);
+  const value = Number(props.value ?? 0);
+  if (!value) return null;
+  return (
+    <text x={x + width / 2} y={Math.max(y, y + height) + 13} textAnchor="middle" style={{ ...BAR_LABEL, fill: LOSS }}>
+      {formatNumber(Math.abs(value))}
+    </text>
   );
 }
 
@@ -636,7 +651,9 @@ export function CustomerCountDashboard({ endpoint }: { endpoint: string }) {
                       <LabelList dataKey="Gained" position="top" formatter={(value: unknown) => formatNumber(Number(value))} style={{ ...BAR_LABEL, fill: GAIN }} />
                     </Bar>
                     <Bar dataKey="Lost" stackId="flow" fill={LOSS} maxBarSize={44} isAnimationActive={false}>
-                      <LabelList dataKey="Lost" position="bottom" formatter={(value: unknown) => formatNumber(Math.abs(Number(value)))} style={{ ...BAR_LABEL, fill: LOSS }} />
+                      {/* A bar below zero reports its height negative, so recharts' own "bottom" lands on
+                          the zero line, red on red. Place the figure under the bar's real lower edge. */}
+                      <LabelList dataKey="Lost" content={<LostLabel />} />
                     </Bar>
                   </BarChart>
                 </SafeResponsiveContainer>
@@ -818,7 +835,10 @@ export function CustomerCountDashboard({ endpoint }: { endpoint: string }) {
                   <div className="h-full bg-orange-600" style={{ width: `${(latest / latestMax) * 100}%` }} />
                 </div>
                 {multiMonth ? (
-                  <div className="mt-2 grid grid-cols-3 gap-x-3 gap-y-1 border-t border-slate-100 pt-2 text-phx-xs">
+                  <div
+                    className="mt-2 grid gap-x-2 gap-y-1 border-t border-slate-100 pt-2 text-phx-xs"
+                    style={{ gridTemplateColumns: `repeat(${Math.min(monthsOnShow.length, 4)}, minmax(0, 1fr))` }}
+                  >
                     {monthsOnShow.map((month, index) => (
                       <span key={month} className="flex flex-col items-center text-slate-500">
                         <span>{monthShort(month)}</span>
