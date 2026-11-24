@@ -1,12 +1,14 @@
 ---
 name: cns-factory-price-basis-is-unresolved
-description: "The CNS ex-factory price basis is OPEN — the owner reverted an Xfactory.xlsx application on 2026-08-11; do not change any factory_price without an explicit fresh ruling"
+description: "The CNS ex-factory basis for JAN-OCT 2026 stays as closed (the 2026-08-11 revert stands); from 2026-11 the owner ruled NEW prices for 15 CNS codes on 2026-11-24 - dated overrides in source_of_sales_product_price_history, never a master edit"
 metadata: 
   node_type: memory
   type: project
   originSessionId: ff721f65-99c8-4ef2-92f2-305a08d0d465
   modified: 2026-08-12T06:18:07.062Z
 ---
+
+**FRESH RULING 2026-11-24 (owner, his price list): from period 2026-11 the 15 CNS codes CO001-CO004, DO001-DO003, RI001-RI003, TE001-TE005 carry new x-factory prices** (e.g. Conviban 100 30, Dolabactin 48, Tebofortin 120 Intens 165.7911746, Tebofortin 240 max 201.5496084, Tebofortine Forte 80 130.0320449). Applied as 15 `source_of_sales_product_price_history` rows at `2026-11` plus `marketing_products.factory_price` (migration `20261124182300_cns_factory_prices_from_november_2026.sql`, staging and production the same evening). `source_of_sales_products.factory_price` was deliberately left at the old values below, so Jan-Oct are untouched (proved: every code`s 2026-10 price unchanged after the apply). TE006/TE007 (retired, no sales rows) were not on his list and were left alone. Everything below is the history of the Jan-Oct basis.
 
 **OWNER RULING 2026-08-11: Tebofortine Forte 80 at 111.375 IS CORRECT.** So the live Tebofortine
 prices (111.375 / 81.00 / 60.75) stand, the system's **July 2026 CNS of 8,066,152.47 is the correct
