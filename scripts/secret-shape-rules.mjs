@@ -59,6 +59,17 @@ export const KEY_SHAPES = [
     describe: "must look like gsk_… — letters and digits only after the prefix, with no spaces, dots or line breaks",
   },
   {
+    // Google's Gemini API key, for the CRM voice note's first speech engine (24 Nov 2026). Registered BEFORE
+    // a key reaches Railway, for the reason GROQ_API_KEY's rule above gives: it is pasted by hand off a screen.
+    // 🔴 NOT ANCHORED ON "AIza". Google's classic keys are AIza plus 35 characters, but AI Studio now issues a
+    // newer form — measured 24 Nov 2026 on the key this was built with: 53 characters with a dot in it — and
+    // this rule must never be what rejects a real key. Length and charset catch the real failure, a truncated
+    // or dirty paste; the generic redaction-marker check still refuses "..." and "***".
+    name: "GEMINI_API_KEY",
+    pattern: /^[A-Za-z0-9_.-]{30,}$/,
+    describe: 'must be at least 30 characters of letters, digits, "_", "-" and "." only — no spaces or line breaks',
+  },
+  {
     // Google reCAPTCHA v3, for the public careers apply endpoint. Registered 2026-10-01 BEFORE a key
     // exists, same reason as GROQ_API_KEY above: it will be pasted into Railway by hand off a screen.
     // 🔴 DELIBERATELY NOT ANCHORED ON THE "6L" PREFIX. Google's classic keys begin 6L and Enterprise

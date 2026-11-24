@@ -33,6 +33,9 @@ export type AiCallComponent =
   // Its own entry: it reads a dispute's whole record and answers questions about it, so a cost or a
   // failure question about the Case Briefing is answered per feature, not per shared helper.
   | "dispute_case_briefing"
+  // `gemini_transcription` writes a CRM voice note out first since 24 Nov 2026 (owner: "Switch to Gemini");
+  // `groq_transcription` answers when it cannot. Their own entries, so each engine's failures read apart.
+  | "gemini_transcription"
   | "groq_transcription"
   | "needs_you_summary"
   | "openai_client"
@@ -72,7 +75,7 @@ type AiCallStatus = "success" | "error" | "failed_over";
  * client and the sales paths the other way round — so a Claude account out of credit paged him to top up
  * OpenAI. Every call site says which leg it ran.
  */
-export type AiCallProvider = "anthropic" | "anthropic_backup" | "generic" | "groq" | "openai" | "openrouter";
+export type AiCallProvider = "anthropic" | "anthropic_backup" | "generic" | "google" | "groq" | "openai" | "openrouter";
 
 export type AiCallRecord = {
   component: AiCallComponent;
@@ -98,6 +101,7 @@ const PROVIDER_LABELS: Record<AiCallProvider, string> = {
   anthropic: "Anthropic",
   anthropic_backup: "Anthropic backup",
   generic: "The AI provider",
+  google: "Google Gemini",
   groq: "Groq",
   openai: "OpenAI",
   openrouter: "OpenRouter",
@@ -111,6 +115,7 @@ export function aiProviderLabel(provider: AiCallProvider): string {
 const COMPONENT_LABELS: Record<AiCallComponent, string> = {
   chatgpt_connector_film_voice: "ChatGPT connector — the voice-over of a Phoenix film",
   dispute_case_briefing: "Disputes — the case briefing and its questions",
+  gemini_transcription: "CRM spoken comment — Gemini speech to text",
   groq_transcription: "CRM spoken comment — Groq speech to text",
   needs_you_summary: "What needs you — the written summary on the daily board",
   openai_client: "Shared OpenAI client",

@@ -327,6 +327,21 @@ export const INTEGRATIONS: readonly IntegrationEntry[] = [
       "Data note: a dictated clip may hold a doctor's or an employee's name. It is sent to Groq, a company in the United States, which stores customer data there.",
       "Groq's published terms (read 13 Nov 2026): it keeps nothing from a request by default, may log a request for up to 30 days to investigate a fault or abuse, and may not train on it.",
       "Not verified: whether Zero Data Retention is switched on for the company's Groq account. It is a setting in Groq's console, under Data Controls.",
+      "Since 24 Nov 2026 it is the second engine: Gemini writes a CRM voice note first, and Groq answers only when Gemini cannot.",
+    ],
+  },
+  {
+    id: "gemini",
+    name: "Gemini voice transcription",
+    provider: "Google",
+    category: "AI",
+    usedFor: "Writes a CRM visit voice note out in Egyptian Arabic, with English words in English letters, for browsers with no dictation of their own.",
+    credential: { kind: "env", anyOf: [["GEMINI_API_KEY"]] },
+    health: { kind: "ai-failures", routePrefix: "/ai/gemini_transcription/" },
+    notes: [
+      "Data note: a dictated clip may hold a doctor's or an employee's name. It is sent to Google's Gemini API.",
+      "The key must be on a paid (billing-enabled) Google project. On the free tier Google may use what it is sent to improve its products, and it allows only 20 notes a day (measured 24 Nov 2026).",
+      "With no key, or a key that refuses, every note goes to Groq's Whisper as before.",
     ],
   },
 

@@ -15,7 +15,8 @@ import { cachedIsDirectory, cachedReaddir, cachedReadFile } from "./support/sour
 //                                    reaches the OpenAI-compatible AI_BASE_URL, Groq and OpenRouter
 // A module that builds its own OpenAI client, posts to a provider URL or reads a key itself skips the
 // second and third accounts without anyone noticing: it answers until OpenAI runs dry, then fails alone.
-// Groq speech to text is the one other door (no Anthropic speech engine; owner cost ruling 2026-09-25).
+// Speech to text has its own two doors, Gemini first and Groq behind it (no Anthropic speech engine; owner,
+// 24 Nov 2026: "Switch to Gemini" — Groq's cost ruling of 2026-09-25 still holds for the second).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
@@ -23,6 +24,7 @@ const SOURCE_DIRS = ["src", "app"];
 const AI_LIBRARY = "src/lib/ai/";
 const SALES_PROVIDER = "src/lib/sales/ai/provider.ts";
 const GROQ_SPEECH = "src/lib/ai/groq-transcription.ts";
+const GEMINI_SPEECH = "src/lib/ai/gemini-transcription.ts";
 // The AI library's list of provider HOST NAMES — names the test-account fence lets through, never a call.
 const AI_HOST_NAMES = "src/lib/ai/provider-hosts.ts";
 
@@ -58,6 +60,11 @@ const RULES: DoorRule[] = [
     allowed: (file) => file === GROQ_SPEECH || file === SALES_PROVIDER || file === AI_HOST_NAMES,
     pattern: /api\.groq\.com|openrouter\.ai/,
     what: "a Groq or OpenRouter address",
+  },
+  {
+    allowed: (file) => file === GEMINI_SPEECH || file === AI_HOST_NAMES,
+    pattern: /generativelanguage\.googleapis\.com|env\s*(?:\.\s*|\[\s*["'])GEMINI_API_KEY/,
+    what: "the Gemini address or key (speech to text goes through src/lib/ai/gemini-transcription.ts)",
   },
 ];
 
@@ -107,6 +114,8 @@ export async function runAiOneDoorTests() {
     "const key = process.env.ANTHROPIC_API_KEY_2;",
     'const key = process.env["OPENAI_API_KEY"];',
     'await fetch("https://api.groq.com/openai/v1/chat/completions");',
+    'await fetch("https://generativelanguage.googleapis.com/v1beta/models/x:generateContent");',
+    "const key = process.env.GEMINI_API_KEY;",
   ];
   for (const code of planted) {
     assert.equal(findAiDoorBreaches([{ code, file: "src/lib/expenses/notes.ts" }]).length > 0, true, `the sweep must refuse: ${code}`);
@@ -115,6 +124,11 @@ export async function runAiOneDoorTests() {
     findAiDoorBreaches([{ code: 'await fetch("https://api.groq.com/openai/v1/audio/transcriptions");', file: GROQ_SPEECH }]),
     [],
     "Groq speech to text keeps its own door",
+  );
+  assert.deepEqual(
+    findAiDoorBreaches([{ code: 'const k = process.env.GEMINI_API_KEY; await fetch("https://generativelanguage.googleapis.com/v1beta");', file: GEMINI_SPEECH }]),
+    [],
+    "Gemini speech to text keeps its own door",
   );
   assert.deepEqual(
     findAiDoorBreaches([{ code: 'const k = env.OPENAI_API_KEY; const u = "https://api.openai.com/v1";', file: SALES_PROVIDER }]),
