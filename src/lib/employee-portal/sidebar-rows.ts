@@ -68,6 +68,7 @@ export const EMPLOYEE_PORTAL_SIDEBAR_ROWS: readonly EmployeePortalSidebarRow[] =
   { href: "/employee-portals/sales-vs-target", label: "Sales vs Target", section: "Performance" },
   { href: "/employee-portals/monthly-closing", label: "Monthly Closing", section: "Performance" },
   { href: "/employee-portals/monthly-closing/performance-review", label: "Performance Review", section: "Performance" },
+  { href: "/employee-portals/customer-count", label: "Customer Count", section: "Performance" },
   { href: "/employee-portals/team-performance", label: "Team Performance", section: "Performance" },
   { href: "/employee-portals/med-reps-performance", label: "MRs Performance", section: "Performance" },
   { href: "/employee-portals/dsms-performance", label: "DSMs Performance", section: "Performance" },
