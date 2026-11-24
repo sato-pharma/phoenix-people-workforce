@@ -463,6 +463,10 @@ const ROUTE_GATES: RouteGate[] = [
   post("camera-reviews/decide", "update"),
   post("camera-reviews/cap", "update"),
   post("camera-reviews/day-allowance", "update"),
+  // A held visit that missed its two hours or the 02:00 close (owner, 24 Nov 2026): the phone files it at the gate
+  // logging a visit takes, and the Super Admin decides it — `update` here, narrowed in the service to canEnterMissedRecords.
+  post("late-visits", "create"),
+  post("late-visits/decide", "update"),
   post("photos/upload-slot", "create"),
   // The native app's live photo: the phone sends the stamped JPEG as a base64 data URL and the server
   // does the PUT to the slot itself. Same create gate as upload-slot, which it calls to issue the slot.
@@ -1123,6 +1127,9 @@ const LATER_MIGRATIONS = [
   "supabase/migrations/20261103091500_phoenix_crm_visit_comment_readings.sql",
   // The visit retry (owner, 3 Nov 2026): one column, one log table and a switch. It creates and replaces no function.
   "supabase/migrations/20261103120000_phoenix_crm_visit_resend.sql",
+  // A held visit that missed its window (owner, 24 Nov 2026: "SUPER ADMIN APPROVE IT ONLY SUPER ADMIN"): one new table,
+  // kept whole for his decision. It creates and replaces no function.
+  "supabase/migrations/20261124213044_phoenix_crm_late_visits.sql",
   // "Show visit times" on a manager's plan board (owner, 5 Nov 2026): one NEW read-only function; nothing replaced.
   "supabase/migrations/20261105210430_phoenix_crm_customer_last_visits.sql",
   // A PM customer's full name (owner, 7 Nov 2026): seven columns on the customer and two NEW functions, one that

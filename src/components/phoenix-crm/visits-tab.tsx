@@ -84,7 +84,7 @@ import { outOfListVisitNote, unplannedKindLabel } from "@/lib/phoenix-crm/unplan
 import type { DayActivityRow, SavedVisit, VisitCustomerOption, VisitDayView, VisitFormView, VisitRow } from "@/lib/phoenix-crm/view-types";
 import { recordingReviewRepLabel } from "@/lib/phoenix-crm/visit-recording-rules";
 import { waitingCustomerIds } from "@/lib/phoenix-crm/visit-outbox";
-import { VISIT_WAITING_LINE, type QueuedVisit } from "@/lib/phoenix-crm/visit-resend-rules";
+import { isManagerSingleVisit, VISIT_WAITING_LINE, type QueuedVisit } from "@/lib/phoenix-crm/visit-resend-rules";
 import { cn } from "@/lib/utils";
 
 /**
@@ -1234,7 +1234,8 @@ export function VisitsTab({
   }, [heldOwner]);
   // Tells the portal's header, which says offline at the top of every page, what is true on this screen.
   useEffect(() => (heldOwner ? markVisitsCanBeHeld() : undefined), [heldOwner]);
-  const held = allHeld.filter((entry) => entry.seatId === seatId);
+  // A manager's own single visit is shown on My single visits, never here.
+  const held = allHeld.filter((entry) => entry.seatId === seatId && !isManagerSingleVisit(entry));
   const [retryOf, setRetryOf] = useState<QueuedVisit | null>(null);
 
   // 🔴 THE REP'S OWN READS START WITH THE DAY'S, NOT AFTER IT (performance work, 24 Oct 2026). The

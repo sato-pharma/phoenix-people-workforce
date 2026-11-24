@@ -14,7 +14,12 @@ import { crmGet, crmPostWithin, crmUrl } from "@/components/phoenix-crm/api";
 import { notifyVisitOutboxChanged, reportVisitResend, VISIT_RESEND_REPORT_PATH } from "@/components/phoenix-crm/visit-outbox-client";
 import { browserLocalStorage, VISIT_OUTBOX_CHANGED_EVENT } from "@/lib/browser-storage/owner-scoped";
 import { drainVisitOutbox, readQueuedVisits, type OutboxDeps } from "@/lib/phoenix-crm/visit-outbox";
-import { VISIT_RESEND_TICK_MS, VISIT_SAVE_TIMEOUT_MS } from "@/lib/phoenix-crm/visit-resend-rules";
+import { isManagerSingleVisit, VISIT_RESEND_TICK_MS, VISIT_SAVE_TIMEOUT_MS } from "@/lib/phoenix-crm/visit-resend-rules";
+
+/** A manager's own single visit (`MANAGER_SINGLE_VISIT`). Its repeat is answered as saved by its `client_ref`. */
+const MANAGER_SINGLE_VISIT_PATH = "/api/phoenix-crm/manager-plans/visits";
+/** A visit that missed its window, filed whole for the Super Admin (`server/late-visits.ts`). */
+const LATE_VISITS_PATH = "/api/phoenix-crm/late-visits";
 
 type StatusAnswer = { enabled: boolean; personHrId: string; savedVisitIds: string[]; serverNow: string };
 
@@ -45,9 +50,36 @@ export function startVisitOutbox(ownerHrId: string): VisitOutboxEngine {
     ownerHrId,
     now: () => Date.now(),
     readStatus,
-    send: async (body) => {
+    send: async (body, entry) => {
+      if (isManagerSingleVisit(entry)) {
+        // His own visit runs no location check, so the wait is evidence of nothing there and is not sent.
+        const visit = { ...body };
+        delete visit.queuedSeconds;
+        await crmPostWithin<unknown>(MANAGER_SINGLE_VISIT_PATH, visit, "today", VISIT_SAVE_TIMEOUT_MS);
+        return { duplicate: false };
+      }
       const saved = await crmPostWithin<{ duplicate?: boolean }>("/api/phoenix-crm/visits", body, "visit", VISIT_SAVE_TIMEOUT_MS);
       return { duplicate: saved?.duplicate === true };
+    },
+    fileLate: async (entry) => {
+      await crmPostWithin<unknown>(
+        LATE_VISITS_PATH,
+        {
+          record: "file",
+          visit: {
+            id: entry.visitId,
+            kind: isManagerSingleVisit(entry) ? "manager_single" : "territory",
+            seatId: entry.seatId,
+            customerId: entry.customerId,
+            customerName: entry.customerName,
+            pressedDay: entry.pressedDay,
+            pressedAtDevice: new Date(entry.pressedAtMs).toISOString(),
+            body: entry.body,
+          },
+        },
+        "filed",
+        VISIT_SAVE_TIMEOUT_MS,
+      );
     },
     report: reportVisitResend,
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),

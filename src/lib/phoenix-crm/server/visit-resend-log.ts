@@ -11,6 +11,7 @@
  * reaches nobody. The rep reads nothing from this file except the one switch and their own ids.
  */
 
+import { loadManagerVisitClientRefsOnFile } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
@@ -52,14 +53,16 @@ export async function readVisitResendStatus(viewer: Pick<PhoenixCrmViewer, "hrId
   const hrId = String(viewer.hrId ?? "").toUpperCase();
   if (ids.length === 0) return { enabled, personHrId: hrId, savedVisitIds: [], serverNow: new Date().toISOString() };
 
-  const { data, error } = await getSupabaseAdmin()
-    .from("phoenix_crm_visits")
-    .select("id")
-    .in("id", ids)
-    .or(`rep_hr_id.eq."${hrId}",entered_by_hr_id.eq."${hrId}"`);
+  const [territory, single] = await Promise.all([
+    getSupabaseAdmin().from("phoenix_crm_visits").select("id").in("id", ids).or(`rep_hr_id.eq."${hrId}",entered_by_hr_id.eq."${hrId}"`),
+    // A manager's own single visit is held under its `client_ref` (owner, 24 Nov 2026: no visit may be lost). It throws
+    // on a failed read, which fails this whole answer: nothing is decided on that pass.
+    loadManagerVisitClientRefsOnFile({ enteredByHrId: hrId, clientRefs: ids }),
+  ]);
   // A failed read must never look like "not on file": that would raise a refusal for a visit that stands.
-  if (error) throw new Error(error.message);
-  return { enabled, personHrId: hrId, savedVisitIds: (data ?? []).map((row) => String(row.id)), serverNow: new Date().toISOString() };
+  if (territory.error) throw new Error(territory.error.message);
+  const savedVisitIds = [...(territory.data ?? []).map((row) => String(row.id)), ...single];
+  return { enabled, personHrId: hrId, savedVisitIds, serverNow: new Date().toISOString() };
 }
 
 function boundedSeconds(value: unknown): number | null {

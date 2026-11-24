@@ -421,7 +421,11 @@ export type PhoenixCrmIntegrityInput = {
 };
 
 /** A fix on record with the wait its phone claimed for it, compared at arrival and again at the door. */
-export type PhoenixCrmHeldPriorFix = PhoenixCrmPriorFix & { queuedSeconds?: number | null };
+export type PhoenixCrmHeldPriorFix = PhoenixCrmPriorFix & {
+  queuedSeconds?: number | null;
+  /** Whose phone sent this save (`entered_by_hr_id`). Null or the rep is the rep's own phone. */
+  sentByHrId?: string | null;
+};
 
 export type PhoenixCrmHeldIntegrityInput = Omit<PhoenixCrmIntegrityInput, "history"> & {
   /** How long the phone says it held THIS save. Null on a save that never waited. */
@@ -430,6 +434,13 @@ export type PhoenixCrmHeldIntegrityInput = Omit<PhoenixCrmIntegrityInput, "histo
   history: readonly PhoenixCrmHeldPriorFix[];
   /** When the rep's own saves reached the server, the capture's own included. A manager's save is not one. */
   ownArrivals: readonly Date[];
+  /**
+   * Whose phone sent THIS save. Null or the rep is the rep's own phone; a manager entering a visit on the rep's
+   * territory is another phone (owner, 24 Nov 2026: the visit retry "for managers also").
+   */
+  sentByHrId?: string | null;
+  /** When each OTHER sender's saves reached the server — a manager's own phone, keyed by upper-cased HR id. */
+  arrivalsBySender?: ReadonlyMap<string, readonly Date[]>;
 };
 
 export type PhoenixCrmIntegrityVerdict = {
@@ -674,6 +685,15 @@ export function creditedHeldSeconds(claimedSeconds: number | null | undefined, a
 }
 
 /**
+ * The OTHER phone that sent a save, upper-cased — or null when it was the rep's own phone (no sender named, or the
+ * rep himself). A manager entering a visit on the rep's territory sends it from his own phone (owner, 24 Nov 2026).
+ */
+export function heldSenderOf(sentByHrId: string | null | undefined, repHrId: string): string | null {
+  const sender = String(sentByHrId ?? "").trim().toUpperCase();
+  return sender === "" || sender === repHrId.trim().toUpperCase() ? null : sender;
+}
+
+/**
  * The check for a capture when a wait is claimed on either side. A wait may correct the comparison, and it may
  * never make a reading disappear (owner, 3 Nov 2026: "this rsik is not accpeted at all must fix").
  *
@@ -689,15 +709,21 @@ export function creditedHeldSeconds(claimedSeconds: number | null | undefined, a
  * A capture with no claim on either side gets exactly what `checkLocationIntegrity` always gave it.
  */
 export function checkHeldLocationIntegrity(input: PhoenixCrmHeldIntegrityInput): PhoenixCrmIntegrityVerdict {
-  const { queuedSeconds, history, ownArrivals, ...capture } = input;
+  const { queuedSeconds, history, ownArrivals, sentByHrId, arrivalsBySender, ...capture } = input;
   const arrival = checkLocationIntegrity({ ...capture, history });
   if (!queuedSeconds && !history.some((prior) => prior.queuedSeconds)) return arrival;
 
-  const creditedSeconds = creditedHeldSeconds(queuedSeconds, capture.fix.capturedAt, ownArrivals);
+  // 🔴 A WAIT IS CONTRADICTED ONLY BY THE PHONE THAT HELD IT. The rep's phone reaching Phoenix says nothing
+  // about whether her manager's phone had signal, so a manager's held save is tested on his own arrivals.
+  const arrivalsOf = (sender: string | null | undefined): readonly Date[] => {
+    const other = heldSenderOf(sender, capture.repHrId);
+    return other === null ? ownArrivals : (arrivalsBySender?.get(other) ?? []);
+  };
+  const creditedSeconds = creditedHeldSeconds(queuedSeconds, capture.fix.capturedAt, arrivalsOf(sentByHrId));
   const door = checkLocationIntegrity({
     ...capture,
     fix: atTheDoor(capture.fix, creditedSeconds),
-    history: history.map((prior) => atTheDoor(prior, creditedHeldSeconds(prior.queuedSeconds, prior.capturedAt, ownArrivals))),
+    history: history.map((prior) => atTheDoor(prior, creditedHeldSeconds(prior.queuedSeconds, prior.capturedAt, arrivalsOf(prior.sentByHrId)))),
   });
 
   const flags = new Set<PhoenixCrmIntegrityFlag>([...door.flags, ...arrival.flags.filter((flag) => flag !== "impossible_travel")]);

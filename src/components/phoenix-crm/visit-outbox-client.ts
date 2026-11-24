@@ -68,6 +68,8 @@ export function holdVisitPress(input: {
   pressedDay: string;
   pressedAtMs: number;
   body: Record<string, unknown>;
+  /** A manager's own single visit; absent for a visit on a territory. */
+  kind?: QueuedVisit["kind"];
 }): boolean {
   return keepQueuedVisit(browserLocalStorage(), input.ownerHrId, {
     ...input,

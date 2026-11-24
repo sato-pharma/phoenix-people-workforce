@@ -1353,6 +1353,9 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/camera-reviews/decide", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/camera-reviews/cap", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/camera-reviews/day-allowance", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
+  // A held visit that missed its window: the phone files it (`create`, as logging a visit), and the Super Admin alone decides it (owner, 24 Nov 2026).
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/late-visits", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/late-visits/decide", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/photos/upload-slot", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   // The native app's live photo: it sends the stamped JPEG as a base64 data URL and the server does the
   // PUT the browser makes to the slot directly (React Native cannot PUT binary to a signed URL). Same

@@ -9334,9 +9334,9 @@ proven by test, and the browser run did not reach them.
 
 **Why two hours and 02:00.** The server dates every browser save at ARRIVAL, as it always has, and the retry does not
 change that. Past two hours, or across the 02:00 close of the visit day, an arrival-dated visit is no longer the same
-visit: it lands on the wrong day, or off plan, and a manager is told something nobody earned. So the rep is asked instead,
-one tap, in a case that should be rare. Elapsed time is measured on the phone's clock and the day on the server's,
-because each is right about only that one thing.
+visit: it lands on the wrong day, or off plan, and a manager is told something nobody earned. Until 24 Nov 2026 the rep
+was asked to log it again, and a person who never did lost it. Elapsed time is measured on the phone's clock and the day
+on the server's, because each is right about only that one thing. What happens to such a visit now is the next section.
 
 **What protects the evidence.** A held save is never dated by the phone and never reads as impossible travel. It can
 still lower the rank until settled, by his ruling below.
@@ -9365,7 +9365,17 @@ what a phone holds asks to be logged again rather than vanishing.
 `phoenix_crm_visits` it answers how many were pressed and never saved. A phone that never reopens undercounts it, and a
 rep's own Remove counts, so it reads "no visit saved", never "lost".
 
-**Who has a queue.** A rep on their own territory and day. A seat view and a test login have none, and behave as before.
+**Who has a queue.** A rep on their own territory and day, and since 24 Nov 2026 a manager entering a visit on a rep's
+territory (his words, after Zahraa Hamdy's 16 Nov visits: "make this for managers also"): it is held on HIS phone, under
+his own name, and sends the same way. His held save's wait is tested against HIS phone's own arrivals (the visits he
+entered anywhere and his own single visits, by the server's insert time `created_at` — 61 of 71 manager-entered visits
+and 38 of 202 single visits carried a `captured_at` that was not their arrival, 14 days to 24 Nov 2026), never the
+rep's, because the rep's phone reaching Phoenix says nothing about his signal (`heldSenderOf`, `arrivalsBySender`).
+His own single visit on My single visits is held too (his words, the same night: "never any visit to be lost from
+either a rep or from the manager"): kind `manager_single`, its id is the visit's `client_ref` so a press that landed is
+answered as saved, it sends to its own route, the status read answers it by client ref
+(`loadManagerVisitClientRefsOnFile`), and it shows only on My single visits, never on a territory's Visits screen. A
+seat view and a test login have none, and behave as before.
 No service worker: the push provider holds that scope, so a visit sends only while Phoenix is open, which is what the
 rep is told.
 
@@ -9401,6 +9411,32 @@ Asked how to treat a case Phoenix cannot tell apart from a forged wait, he chose
 
 **Pinned by** `tests/phoenix-crm-visit-resend-rules.test.ts`, `tests/phoenix-crm-visit-outbox.test.ts` and
 `tests/phoenix-crm-queued-evidence.test.ts`.
+
+### A late visit is filed for the Super Admin, never lost — owner, 24 Nov 2026
+
+His words, after the manager retry: "make all things to never any visit to be lost from either a rep or from for the
+manager. Must any fucking visit to be saved anywhere." Asked what should happen to a visit held past its two hours or
+across 02:00, he chose: "SUPER ADMIN APPROVE IT ONLY SUPER ADMIN".
+
+- **The phone files it whole.** When the runner finds a held visit past its window, it posts the very body the press
+  would have sent to `POST /api/phoenix-crm/late-visits` (`create`, the gate logging a visit takes), under the visit's
+  own id (a territory visit's `id`, a manager's single visit's `client_ref`; `parseLateVisitFiling` refuses any other).
+  The person comes from the session. Filing the same visit twice answers the same; an id another person filed answers
+  "not filed". Offline, or a server error, and the visit simply keeps waiting on the phone and tries again; a plain
+  refusal (the switch off, a test login) leaves it "Not sent in time" exactly as before.
+- **It counts in nothing.** `phoenix_crm_late_visits` (migration `20261124213044`, service role only) is read by no
+  figure, board or notice. The phone shows "Sent for approval" with an OK that clears it, and no word about a check.
+- **Only the Super Admin decides**, on `/admin/field-crm/late-visits` (`canEnterMissedRecords`, on the page and in the
+  service; `late-visits/decide` is `update` at the door). Approve enters it on the day it was PRESSED, at the phone's
+  press time when the phone's clock agrees with that day (`cairoPressTime`, else none), through the missed-record doors
+  (`enterMissedVisit`, `enterManagerMissedVisit`), so every rule they keep holds: one visit a customer a day, a
+  leaver's day, the line's products, an off-plan visit raising its manager-then-SFE approval. A refusal is that door's
+  own sentence, shown on the row, and the row stays waiting. The same id means approving twice is one visit.
+- **What it does not cover.** A visit pressed with no location is still refused by the form, which keeps its fields. A
+  manager's single visit approved this way drops its companions, because the manager missed-record door takes none.
+
+**Pinned by** `tests/phoenix-crm-late-visits.test.ts` and `tests/phoenix-crm-visit-outbox.test.ts`
+(`checkALateVisitIsFiled`).
 
 ## The approval reminders on WhatsApp — owner, 3 Nov 2026
 

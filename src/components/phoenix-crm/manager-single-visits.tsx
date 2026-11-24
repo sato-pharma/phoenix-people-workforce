@@ -27,7 +27,16 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 
-import { crmPatch, crmPost, crmUrl, messageOf, newClientId, useCrmGet } from "@/components/phoenix-crm/api";
+import { crmPatch, crmPost, crmPostWithin, crmUrl, isRetryableFailure, messageOf, newClientId, useCrmGet } from "@/components/phoenix-crm/api";
+import {
+  forgetHeldVisit,
+  holdVisitPress,
+  leaveVisitWaiting,
+  preloadVisitOutboxEngine,
+  reportVisitResend,
+  useHeldVisits,
+} from "@/components/phoenix-crm/visit-outbox-client";
+import { VisitOutboxNote } from "@/components/phoenix-crm/visit-outbox-note";
 import { CaptureLocation, type CapturedPin } from "@/components/phoenix-crm/capture-location";
 import { ManagerCustomerForm } from "@/components/phoenix-crm/manager-customer-form";
 import { ManagerSingleVisitDayAsk } from "@/components/phoenix-crm/manager-single-visit-day-ask";
@@ -54,6 +63,14 @@ import {
 } from "@/components/phoenix-crm/ui";
 import { dmSingleVisitLimitLine, MANAGER_CUSTOMER_ADDRESS_MAX, VACANT_AREA_NOTE, VACANT_LIST_LABEL, vacantVisitPlaceError } from "@/lib/phoenix-crm/manager-plan-rules";
 import { MANAGER_VISIT_DETAIL_MAX } from "@/lib/phoenix-crm/manager-visit-detail-rules";
+import {
+  isManagerSingleVisit,
+  loggedAgainStart,
+  MANAGER_SINGLE_VISIT,
+  VISIT_SAVE_TIMEOUT_MS,
+  VISIT_WAITING_PILL,
+  type QueuedVisit,
+} from "@/lib/phoenix-crm/visit-resend-rules";
 // The rep's own words for the same act, imported rather than retyped: one wording for "write up the
 // visit afterwards", on his screen and on the manager's (owner, 2026-10-15 and 2026-10-23).
 import { VISIT_DETAIL_EDIT_AGAIN, VISIT_DETAIL_EDIT_PROMPT, visitDetailEditedLine } from "@/lib/phoenix-crm/visit-detail-edit-rules";
@@ -148,6 +165,41 @@ function areaLogging(customer: AreaCustomer, areaSeatId: string | null): Logging
   };
 }
 
+/** The territory a held visit names when its customer is on no area: his own list's, with none on file. */
+const HELD_WITHOUT_AREA = "own";
+
+function textOf(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+/**
+ * Log it again, on a visit this phone could not send: the customer as today's list offers him, so the form asks what
+ * it would ask today, or else the held press itself. Always a NEW visit under a new id; the held row goes only once it
+ * lands or is held in its turn.
+ */
+function loggingFromHeld(entry: QueuedVisit, view: ManagerTodayView): Logging {
+  const customerId = textOf(entry.body.customerId);
+  const managerCustomerId = textOf(entry.body.managerCustomerId);
+  const planned = view.planned.find((customer) => !customer.logged && (customerId ? customer.customerId === customerId : customer.managerCustomerId === managerCustomerId));
+  if (planned) return loggingOf(planned);
+  const own = managerCustomerId ? view.ownList.find((customer) => customer.id === managerCustomerId) : undefined;
+  if (own) return ownLogging(own);
+  const companions = Array.isArray(entry.body.companionHrIds) ? entry.body.companionHrIds.filter((hrId): hrId is string => typeof hrId === "string") : [];
+  return {
+    clientRef: newClientId(),
+    slotId: null,
+    customerId,
+    managerCustomerId,
+    name: entry.customerName,
+    // The server still asks a vacant area's visit for its address or location, in its own words.
+    vacant: false,
+    seatId: entry.seatId === HELD_WITHOUT_AREA ? null : entry.seatId,
+    areaSeatId: textOf(entry.body.areaSeatId),
+    address: textOf(entry.body.address) ?? "",
+    withHrIds: companions,
+  };
+}
+
 export function ManagerSingleVisits({ test }: { test: boolean }) {
   const today = useCrmGet<ManagerTodayView>(crmUrl(VISITS, { test }), "today");
   const [logging, setLogging] = useState<Logging | null>(null);
@@ -155,6 +207,24 @@ export function ManagerSingleVisits({ test }: { test: boolean }) {
   const [writingUp, setWritingUp] = useState<string | null>(null);
   const [finding, setFinding] = useState(false);
   const view = today.data;
+  // 🔴 NO VISIT HE LOGS IS LOST TO A DROPPED SIGNAL (owner, 24 Nov 2026: "never any visit to be lost from either a
+  // rep or from the manager"). What this phone holds of his own single visits, and the one he chose to log again.
+  const heldOwner = view?.heldVisitsOwnerHrId ?? null;
+  const held = useHeldVisits(heldOwner).filter(isManagerSingleVisit);
+  const [retryOf, setRetryOf] = useState<QueuedVisit | null>(null);
+  // The day answered, so there is signal now: the sending code cannot be fetched on the press that loses it.
+  useEffect(() => {
+    if (heldOwner) preloadVisitOutboxEngine();
+  }, [heldOwner]);
+  const waitingIds = new Set(held.filter((entry) => entry.status === "waiting").map((entry) => textOf(entry.body.customerId) ?? textOf(entry.body.managerCustomerId)));
+  // A held visit that lands while he is looking appears at once: nothing else reads the day again.
+  const waitingHere = waitingIds.size;
+  const waitingBefore = useRef(waitingHere);
+  const reloadToday = today.reload;
+  useEffect(() => {
+    if (waitingHere < waitingBefore.current) reloadToday();
+    waitingBefore.current = waitingHere;
+  }, [reloadToday, waitingHere]);
   // The form opens at the top of the panel, and on a phone the Log he pressed can sit a screen or more
   // below it — so it is brought into view, or the press looks like it did nothing.
   const formRef = useRef<HTMLDivElement | null>(null);
@@ -178,17 +248,41 @@ export function ManagerSingleVisits({ test }: { test: boolean }) {
                 <LogForm
                   areas={view.areas}
                   companionOffers={view.companionOffers}
+                  key={logging.clientRef}
                   logging={logging}
-                  onCancel={() => setLogging(null)}
+                  onCancel={() => {
+                    setLogging(null);
+                    setRetryOf(null);
+                  }}
                   onLogged={(next) => {
                     today.replace(next);
                     setLogging(null);
+                    setRetryOf(null);
+                  }}
+                  onQueued={() => {
+                    setLogging(null);
+                    setRetryOf(null);
                   }}
                   products={view.products}
+                  queueOwnerHrId={view.visitQueueOwnerHrId ?? null}
+                  retryOf={retryOf}
                   test={test}
+                  visitDay={view.visitDay}
                 />
               </CrmBlock>
             </div>
+          ) : null}
+
+          {heldOwner ? (
+            <VisitOutboxNote
+              entries={held}
+              onLogAgain={(entry) => {
+                setFinding(false);
+                setRetryOf(entry);
+                setLogging(loggingFromHeld(entry, view));
+              }}
+              ownerHrId={heldOwner}
+            />
           ) : null}
 
           <CrmBlock title="Planned for today">
@@ -205,7 +299,7 @@ export function ManagerSingleVisits({ test }: { test: boolean }) {
                   <CrmCard
                     accent={customer.logged ? "border-l-emerald-500" : "border-l-orange-400"}
                     actions={
-                      !customer.logged && !logging ? (
+                      !customer.logged && !logging && !waitingIds.has(customer.customerId ?? customer.managerCustomerId) ? (
                         <CrmButton onClick={() => setLogging(loggingOf(customer))} size="sm" variant="primary">
                           Log
                         </CrmButton>
@@ -219,7 +313,11 @@ export function ManagerSingleVisits({ test }: { test: boolean }) {
                         {customer.withSenior ? <CrmPill tone="info">{`With ${customer.withSenior}`}</CrmPill> : null}
                         {customer.own ? <CrmPill tone="orange">Manager&apos;s own list</CrmPill> : null}
                         {customer.vacant ? <CrmPill tone="warn">Vacant area</CrmPill> : null}
-                        {customer.logged ? <CrmPill tone="good">Logged</CrmPill> : null}
+                        {customer.logged ? (
+                          <CrmPill tone="good">Logged</CrmPill>
+                        ) : waitingIds.has(customer.customerId ?? customer.managerCustomerId) ? (
+                          <CrmPill tone="orange">{VISIT_WAITING_PILL}</CrmPill>
+                        ) : null}
                       </>
                     }
                     title={
@@ -698,22 +796,35 @@ function LogForm({
   logging,
   onCancel,
   onLogged,
+  onQueued,
   products,
+  queueOwnerHrId,
+  retryOf,
   test,
+  visitDay,
 }: {
   areas: ManagerTodayView["areas"];
   companionOffers: ManagerTodayView["companionOffers"];
   logging: Logging;
   onCancel: () => void;
   onLogged: (view: ManagerTodayView) => void;
+  /** No signal: the visit is on this phone and sends by itself. */
+  onQueued: () => void;
   products: string[];
+  /** Whose phone holds this visit if the signal drops, or null when none may (a test login, or the off switch). */
+  queueOwnerHrId: string | null;
+  /** The held visit he is logging again, which goes once this one lands or is held in its turn. */
+  retryOf: QueuedVisit | null;
   test: boolean;
+  visitDay: string;
 }) {
   const idPrefix = useId();
-  const [picked, setPicked] = useState<string[]>([]);
+  // Log it again starts from his own words and picks, not a blank page.
+  const start = loggedAgainStart(retryOf);
+  const [picked, setPicked] = useState<string[]>(() => (start ? start.products.filter((product) => products.includes(product)) : []));
   /** Who went with him, in the order he ticked them — none when he went alone. */
   const [companions, setCompanions] = useState<string[]>(() => logging.withHrIds.filter((hrId) => companionOffers.some((offer) => offer.hrId === hrId)));
-  const [comment, setComment] = useState("");
+  const [comment, setComment] = useState(() => start?.comment ?? "");
   const [pin, setPin] = useState<CapturedPin | null>(null);
   const [address, setAddress] = useState(logging.address);
   const [areaSeatId, setAreaSeatId] = useState(logging.areaSeatId ?? "");
@@ -763,7 +874,15 @@ function LogForm({
     }
   }
 
-  async function log() {
+  /** The held visit he logged again has been replaced by this one: it goes, and is filed as logged again. */
+  function settleRetry() {
+    if (!retryOf) return;
+    forgetHeldVisit(retryOf.ownerHrId, retryOf.visitId);
+    reportVisitResend(retryOf, "relogged");
+  }
+
+  // `pressedAt` is read at the BUTTON, the one place React allows an impure call, and handed in.
+  async function log(pressedAt: number) {
     const placeError = vacantVisitPlaceError({ vacant: logging.vacant, address, captured: pin !== null });
     if (placeError) {
       setError(placeError);
@@ -771,27 +890,56 @@ function LogForm({
     }
     setBusy(true);
     setError(null);
+    const body = {
+      clientRef: logging.clientRef,
+      slotId: logging.slotId,
+      customerId: logging.customerId,
+      managerCustomerId: logging.managerCustomerId,
+      products: picked,
+      companionHrIds: companions,
+      comment: comment.trim() || null,
+      address: address.trim() || null,
+      areaSeatId: areaSeatId || null,
+      brickId: brickId || null,
+      ...(pin ? { pin: { lat: pin.lat, lon: pin.lon, accuracyMeters: pin.accuracyMeters } } : {}),
+      test,
+    };
+    // 🔴 THE PRESS IS KEPT ON THIS PHONE BEFORE THE REQUEST GOES (owner, 24 Nov 2026: "never any visit to be lost from
+    // either a rep or from the manager"), so a dropped signal, a reload or a dead battery cannot lose it. Its id is the
+    // visit's client ref, so a press that did land is answered as saved, never as a second visit. Not kept, the save
+    // behaves as it always did: he is never told a visit is safe on this phone when it is not.
+    const kept =
+      queueOwnerHrId !== null &&
+      holdVisitPress({
+        ownerHrId: queueOwnerHrId,
+        visitId: logging.clientRef,
+        seatId: logging.seatId ?? logging.areaSeatId ?? HELD_WITHOUT_AREA,
+        customerId: String(logging.customerId ?? logging.managerCustomerId ?? ""),
+        customerName: logging.name,
+        pressedDay: visitDay,
+        pressedAtMs: pressedAt,
+        body,
+        kind: MANAGER_SINGLE_VISIT,
+      });
     try {
-      const next = await crmPost<ManagerTodayView>(
-        VISITS,
-        {
-          clientRef: logging.clientRef,
-          slotId: logging.slotId,
-          customerId: logging.customerId,
-          managerCustomerId: logging.managerCustomerId,
-          products: picked,
-          companionHrIds: companions,
-          comment: comment.trim() || null,
-          address: address.trim() || null,
-          areaSeatId: areaSeatId || null,
-          brickId: brickId || null,
-          ...(pin ? { pin: { lat: pin.lat, lon: pin.lon, accuracyMeters: pin.accuracyMeters } } : {}),
-          test,
-        },
-        "today",
-      );
+      const next = kept
+        ? await crmPostWithin<ManagerTodayView>(VISITS, body, "today", VISIT_SAVE_TIMEOUT_MS)
+        : await crmPost<ManagerTodayView>(VISITS, body, "today");
+      if (kept) forgetHeldVisit(queueOwnerHrId, logging.clientRef);
+      settleRetry();
       onLogged(next);
     } catch (failure) {
+      if (kept) {
+        // Only no signal is held. A refusal is an answer, and it is shown here as it always was.
+        if (isRetryableFailure(failure)) {
+          leaveVisitWaiting(queueOwnerHrId, logging.clientRef);
+          settleRetry();
+          setBusy(false);
+          onQueued();
+          return;
+        }
+        forgetHeldVisit(queueOwnerHrId, logging.clientRef);
+      }
       setError(messageOf(failure));
       setBusy(false);
     }
@@ -912,7 +1060,7 @@ function LogForm({
       </div>
       {error ? <CrmNote tone="bad">{error}</CrmNote> : null}
       <div className="flex flex-wrap gap-2">
-        <CrmButton busy={busy} disabled={locating} onClick={() => void log()} variant="primary">
+        <CrmButton busy={busy} disabled={locating} onClick={() => void log(Date.now())} variant="primary">
           Log the visit
         </CrmButton>
         <CrmButton disabled={busy} onClick={onCancel} variant="ghost">

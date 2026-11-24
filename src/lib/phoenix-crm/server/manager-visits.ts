@@ -258,6 +258,13 @@ export type ManagerTodayView = {
   singleVisitLimit: SingleVisitAllowance | null;
   /** Who he may say went with him — the people above him and his line's product side, each by title. */
   companionOffers: ManagerCompanionOffer[];
+  /**
+   * Whose phone holds a visit he logs when the signal drops, or null when none may: a test login or the off switch
+   * (owner, 24 Nov 2026: "never any visit to be lost from either a rep or from the manager").
+   */
+  visitQueueOwnerHrId: string | null;
+  /** Whose held visits this screen shows — his own, the off switch either way, so one it stopped still tells him. */
+  heldVisitsOwnerHrId: string | null;
 };
 
 /** His line's product families, or none when the line has none on file. */
@@ -425,6 +432,8 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
     products,
     singleVisitLimit,
     companionOffers,
+    visitQueueOwnerHrId: !isTest && viewer.config.settings.visitResendEnabled ? viewer.hrId : null,
+    heldVisitsOwnerHrId: isTest ? null : viewer.hrId,
   };
 }
 

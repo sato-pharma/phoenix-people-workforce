@@ -758,7 +758,8 @@ export function VisitLogForm({
   async function save(savedAt: number) {
     if (saving) return;
     // 🔴 THE SAME VISIT GOES UNDER THE SAME ID. If a press the phone is holding did land, the server answers with
-    // that visit rather than a second one. Null when this person has no queue: a manager, a test login, or off.
+    // that visit rather than a second one. Null when this person has no queue: a test login, or off. A manager entering
+    // a visit has one too (owner, 24 Nov 2026: "make this for managers also").
     const queueOwner = form.visitQueueOwnerHrId ?? null;
     const heldForThisVisit = queueOwner
       ? findHeldVisit(readQueuedVisits(browserLocalStorage(), queueOwner), { seatId, customerId: customer.customerId, pressedDay: form.cairoToday })

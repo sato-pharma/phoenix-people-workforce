@@ -67620,6 +67620,41 @@ CREATE TABLE public.phoenix_crm_field_camera_releases (
 ALTER TABLE public.phoenix_crm_field_camera_releases OWNER TO postgres;
 
 --
+-- Name: phoenix_crm_late_visits; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.phoenix_crm_late_visits (
+    id uuid NOT NULL,
+    kind text NOT NULL,
+    sender_hr_id text NOT NULL,
+    seat_id text NOT NULL,
+    customer_id uuid NOT NULL,
+    customer_name text NOT NULL,
+    pressed_at_device timestamp with time zone,
+    pressed_day date NOT NULL,
+    arrived_at timestamp with time zone DEFAULT now() NOT NULL,
+    body jsonb NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    decided_by_hr_id text,
+    decided_at timestamp with time zone,
+    approved_visit_id uuid,
+    is_test boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT phoenix_crm_late_visits_check CHECK (((status = 'pending'::text) OR ((decided_by_hr_id IS NOT NULL) AND (decided_at IS NOT NULL)))),
+    CONSTRAINT phoenix_crm_late_visits_kind_check CHECK ((kind = ANY (ARRAY['territory'::text, 'manager_single'::text]))),
+    CONSTRAINT phoenix_crm_late_visits_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text])))
+);
+
+ALTER TABLE public.phoenix_crm_late_visits OWNER TO postgres;
+
+--
+-- Name: TABLE phoenix_crm_late_visits; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.phoenix_crm_late_visits IS 'A held visit that missed its window, kept whole until the Super Admin approves it onto its pressed day or rejects it. Counts in nothing until approved. Service role only. See src/lib/phoenix-crm/server/late-visits.ts.';
+
+--
 -- Name: phoenix_crm_line_lookalike_answers; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -78761,6 +78796,13 @@ ALTER TABLE ONLY public.phoenix_crm_ireports360_checkin_matches
     ADD CONSTRAINT phoenix_crm_ireports360_checkin_matches_pkey PRIMARY KEY (crm_visit_id);
 
 --
+-- Name: phoenix_crm_late_visits phoenix_crm_late_visits_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.phoenix_crm_late_visits
+    ADD CONSTRAINT phoenix_crm_late_visits_pkey PRIMARY KEY (id);
+
+--
 -- Name: phoenix_crm_line_lookalike_answers phoenix_crm_line_lookalike_answers_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -86447,6 +86489,12 @@ CREATE INDEX phoenix_crm_imported_visit_sources_visit_idx ON public.phoenix_crm_
 --
 
 CREATE INDEX phoenix_crm_ireports360_checkin_matches_checkin_idx ON public.phoenix_crm_ireports360_checkin_matches USING btree (crm_checkin_id);
+
+--
+-- Name: phoenix_crm_late_visits_pending_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX phoenix_crm_late_visits_pending_idx ON public.phoenix_crm_late_visits USING btree (status, arrived_at DESC);
 
 --
 -- Name: phoenix_crm_line_lookalike_answers_pair_uidx; Type: INDEX; Schema: public; Owner: postgres
@@ -98036,6 +98084,18 @@ ALTER TABLE public.phoenix_crm_imported_visit_sources ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.phoenix_crm_ireports360_checkin_matches ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: phoenix_crm_late_visits; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.phoenix_crm_late_visits ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: phoenix_crm_late_visits phoenix_crm_late_visits_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY phoenix_crm_late_visits_service_role ON public.phoenix_crm_late_visits TO service_role USING (true) WITH CHECK (true);
+
+--
 -- Name: phoenix_crm_line_lookalike_answers; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
@@ -108880,6 +108940,12 @@ GRANT ALL ON TABLE public.phoenix_crm_double_visit_requests TO service_role;
 --
 
 GRANT ALL ON TABLE public.phoenix_crm_field_camera_releases TO service_role;
+
+--
+-- Name: TABLE phoenix_crm_late_visits; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.phoenix_crm_late_visits TO service_role;
 
 --
 -- Name: TABLE phoenix_crm_line_lookalike_answers; Type: ACL; Schema: public; Owner: postgres
