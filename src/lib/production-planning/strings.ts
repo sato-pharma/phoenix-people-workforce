@@ -362,6 +362,41 @@ export const PP = {
   stockCountAfter: "بعد الإنتاج — يُحفظ كما هو",
   stockCountTimingHint: "تم تسجيل إنتاج من هذه الخامة وما زال في انتظار رصيد المصنع",
 
+  // ── The audit of 24 Nov 2026 (Dr. Sahar) ──────────────────────────────────────────────────────
+  productBarHint: "كل التبويبات تعرض هذا المنتج",
+  awaitingBannerTitle: "إنتاج في انتظار رصيد المصنع",
+  awaitingBannerOpen: "الانتقال إلى التنفيذ",
+  listSeparator: "، ",
+  stockBalancesTitle: "الأرصدة الحالية",
+  stockFormsTitle: "تسجيل وتصحيح",
+  stockFormsHint: "نموذج واحد في كل مرة — الأرصدة أعلاه تتحدث بعد الحفظ",
+  stockFormClose: "إغلاق",
+  stockDateDefaultToday: "بدون تاريخ = اليوم",
+  stockHistoryTitle: "سجل الإدخالات",
+  stockHistorySubtitle: "كل ما سُجِّل لهذا المنتج، الأحدث أولًا — الإدخال الخاطئ يُلغى بإدخال عكسي، ولا يُحذف شيء",
+  stockHistoryBy: "بواسطة",
+  stockHistoryNone: "لا توجد إدخالات بعد",
+  stockHistoryShowAll: "عرض كل الإدخالات",
+  stockHistoryProduction: "إنتاج",
+  stockReverse: "إلغاء هذا الإدخال",
+  stockReverseConfirm: "تأكيد الإلغاء",
+  stockReverseReason: "سبب الإلغاء (اختياري)",
+  stockReverseExplain: "يرجع رصيد هذه الخامة في هذا المخزن إلى ما كان عليه قبل هذا الإدخال",
+  stockRefusalProduction: "من إنتاج — الإلغاء من تبويب التنفيذ",
+  stockRefusalPaired: "جزء من نقل أو تعديل تاريخ — التصحيح بنقل عكسي",
+  stockRefusalNotNewest: "سُجِّل بعده رصيد أحدث",
+  stockRefusalAfterProduction: "بعد إنتاج — التصحيح بجرد جديد",
+  planProgressTitle: "تقدم الخطة المعتمدة",
+  planProgressCommitted: "اعتُمدت في",
+  planProgressTarget: "المطلوب في الخطة",
+  planProgressDone: "تم إنتاجه",
+  planProgressLeft: "المتبقي",
+  planProgressOver: "زيادة عن الخطة",
+  planProgressSamples: "العينات",
+  planProgressRunsWord: "تشغيلة",
+  planProgressTotalNote: "إجمالي العلب يشمل العينات، كما في الخطة",
+  planProgressNone: "لا توجد خطة معتمدة لهذا المنتج",
+
   // ── The settings tab ──────────────────────────────────────────────────────────────────────────
   settingsTitle: "الإعدادات",
   settingsDefaultOverage: "نسبة الفاقد الافتراضية",
@@ -783,6 +818,41 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   stockCountBefore: "Before the production — the production comes off it",
   stockCountAfter: "After the production — kept as typed",
   stockCountTimingHint: "A production waiting for the factory's balance has drawn on this material",
+
+  // ── The audit of 24 Nov 2026 (Dr. Sahar) ──────────────────────────────────────────────────────
+  productBarHint: "Every tab shows this product",
+  awaitingBannerTitle: "A production is waiting for the factory's balance",
+  awaitingBannerOpen: "Go to Execution",
+  listSeparator: ", ",
+  stockBalancesTitle: "Current balances",
+  stockFormsTitle: "Record and correct",
+  stockFormsHint: "One form at a time — the balances above update after saving",
+  stockFormClose: "Close",
+  stockDateDefaultToday: "No date = today",
+  stockHistoryTitle: "Entries",
+  stockHistorySubtitle: "Everything recorded for this product, newest first — a wrong entry is reversed by a new row; nothing is deleted",
+  stockHistoryBy: "By",
+  stockHistoryNone: "No entries yet",
+  stockHistoryShowAll: "Show every entry",
+  stockHistoryProduction: "Production",
+  stockReverse: "Reverse this entry",
+  stockReverseConfirm: "Confirm the reversal",
+  stockReverseReason: "Reason (optional)",
+  stockReverseExplain: "Puts this material's balance in this store back to what it was before this entry",
+  stockRefusalProduction: "From a production — cancelled from the Execution tab",
+  stockRefusalPaired: "Part of a move or an expiry change — corrected by moving it back",
+  stockRefusalNotNewest: "A newer balance has been recorded since",
+  stockRefusalAfterProduction: "After a production — corrected by a new count",
+  planProgressTitle: "Progress of the committed plan",
+  planProgressCommitted: "Committed on",
+  planProgressTarget: "Planned",
+  planProgressDone: "Produced",
+  planProgressLeft: "Left",
+  planProgressOver: "Over the plan",
+  planProgressSamples: "Samples",
+  planProgressRunsWord: "runs",
+  planProgressTotalNote: "The total counts samples inside it, as the plan does",
+  planProgressNone: "No committed plan for this product",
 
   // ── The settings tab ──────────────────────────────────────────────────────────────────────────
   settingsTitle: "Settings",
@@ -1816,7 +1886,14 @@ export type ProductionPlanningErrorKey =
   | "cancelReasonRequired"
   | "unknownExecutionAction"
   | "countTimingRequired"
-  | "countBeforeBelowTaken";
+  | "countBeforeBelowTaken"
+  | "dateInFuture"
+  | "stockEntryNotFound"
+  | "stockReverseProduction"
+  | "stockReversePaired"
+  | "stockReverseNotNewest"
+  | "stockReverseAfterProduction"
+  | "stockReverseNote";
 
 export const PRODUCTION_PLANNING_ERRORS: Record<ProductionPlanningErrorKey, string> = {
   unknownBasis: "أساس الحساب غير معروف.",
@@ -1859,6 +1936,13 @@ export const PRODUCTION_PLANNING_ERRORS: Record<ProductionPlanningErrorKey, stri
   countTimingRequired:
     "تم تسجيل إنتاج من هذا المخزون وما زال في انتظار رصيد المصنع. يلزم تحديد هل هذا الجرد قبل الإنتاج أم بعده، حتى لا يضيع خصم الإنتاج.",
   countBeforeBelowTaken: "الجرد قبل الإنتاج أقل مما أخذه الإنتاج من هذا المخزون — يلزم التحقق من الجرد، أو إلغاء الإنتاج وتسجيله من جديد.",
+  dateInFuture: "التاريخ بعد اليوم — الرصيد أو الإنتاج لا يُسجَّل بتاريخ لم يأتِ بعد. يلزم التحقق من ترتيب اليوم والشهر.",
+  stockEntryNotFound: "هذا الإدخال غير موجود.",
+  stockReverseProduction: "هذا الإدخال من إنتاج — الإنتاج يُلغى من تبويب التنفيذ، فيرجع كل ما أخذه مرة واحدة.",
+  stockReversePaired: "هذا الإدخال جزء من نقل بين مخزنين أو تعديل تاريخ انتهاء — التصحيح بنقل عكسي حتى لا يبقى نصفه.",
+  stockReverseNotNewest: "سُجِّل بعد هذا الإدخال رصيد أحدث لنفس الخامة في نفس المخزن — التصحيح بتسجيل الرصيد الصحيح الآن.",
+  stockReverseAfterProduction: "هذا الجرد سُجِّل بعد إنتاج — التصحيح بتسجيل جرد جديد، مع تحديد هل هو قبل الإنتاج أم بعده.",
+  stockReverseNote: "إلغاء إدخال خاطئ",
 };
 
 export const PRODUCTION_PLANNING_ERRORS_EN: Record<ProductionPlanningErrorKey, string> = {
@@ -1903,6 +1987,13 @@ export const PRODUCTION_PLANNING_ERRORS_EN: Record<ProductionPlanningErrorKey, s
     "A production waiting for the factory's balance has already drawn on this stock. Say whether this count is from before the production or after it, so the production's deduction is not lost.",
   countBeforeBelowTaken:
     "The count from before the production is smaller than what the production took from this stock — check the count, or cancel the production and record it again.",
+  dateInFuture: "This date is after today — a balance or a production cannot be dated in the future. Check that the day and the month are not swapped.",
+  stockEntryNotFound: "This entry does not exist.",
+  stockReverseProduction: "A production wrote this entry — cancel the production from the Execution tab, and everything it took comes back at once.",
+  stockReversePaired: "This entry is half of a move between stores or an expiry change — move it back instead, so no half is left standing.",
+  stockReverseNotNewest: "A newer balance for the same material in the same store has been recorded since — record the right balance now instead.",
+  stockReverseAfterProduction: "This count was recorded after a production — record a new count instead, saying whether it is from before the production or after it.",
+  stockReverseNote: "Reversal of a wrong entry",
 };
 
 /**

@@ -290,3 +290,125 @@ export function countAgainstProduction(args: {
     openingDelta: args.typedQty - (args.standingQty + args.movedQty),
   };
 }
+
+// ── How far the committed plan has got (owner, 2026-11-24) ───────────────────────────────────────
+//
+// "I want to be in full control to either plan, either execute" — but a committed plan and the
+// productions recorded against it never met on the screen: Saginkgo's plan said 17 runs and the
+// Execution tab could not say how much of it had been made. This reads the NEWEST committed plan of
+// the product against every production that is not cancelled and belongs to it — linked by its plan,
+// or, for a production recorded before productions carried their plan, made on or after the day the
+// plan was committed.
+//
+// In the plan's own terms: a "total boxes" plan counts samples inside the total (his own rule: 100
+// thousand with 10 thousand samples is 90 and 10), a "saleable boxes" plan counts the boxes and the
+// samples apart, a "runs" plan counts runs.
+
+export type PlanProgressPlan = {
+  readonly id: string;
+  readonly title: string;
+  readonly status: string;
+  readonly requestMode: string;
+  readonly requestedQty: string;
+  readonly sampleUnits: string;
+  readonly committedAt: string | null;
+};
+
+export type PlanProgressRun = {
+  readonly planId: string | null;
+  readonly stage: string;
+  readonly producedOn: string;
+  readonly saleableBoxes: string | null;
+  readonly actualSampleUnits: string;
+  readonly exactRuns: string | null;
+};
+
+export type PlanProgress = {
+  readonly planId: string;
+  readonly title: string;
+  readonly mode: "total_boxes" | "good_units" | "runs";
+  readonly committedOn: string;
+  /** Integers for boxes; runs to two decimals. */
+  readonly target: string;
+  readonly done: string;
+  readonly left: string;
+  readonly over: string;
+  readonly samplesTarget: string;
+  readonly samplesDone: string;
+  readonly productionsCounted: number;
+};
+
+const MICRO = BigInt(1_000_000);
+
+function wholeOf(value: string | null | undefined): bigint {
+  const text = (value ?? "").trim();
+  return /^\d+$/.test(text) ? BigInt(text) : BigInt(0);
+}
+
+function microOf(value: string | null | undefined): bigint {
+  const match = /^(\d+)(?:\.(\d{1,6}))?\d*$/.exec((value ?? "").trim());
+  if (!match) return BigInt(0);
+  return BigInt(match[1]) * MICRO + BigInt((match[2] ?? "").padEnd(6, "0"));
+}
+
+function microText(value: bigint): string {
+  const hundredths = (value + BigInt(5_000)) / BigInt(10_000);
+  const whole = hundredths / BigInt(100);
+  const part = (hundredths % BigInt(100)).toString().padStart(2, "0");
+  return part === "00" ? whole.toString() : `${whole}.${part}`.replace(/0$/, "");
+}
+
+export function planProgress(
+  plans: readonly PlanProgressPlan[],
+  runs: readonly PlanProgressRun[],
+  committedOnOf: (committedAt: string) => string,
+): PlanProgress | null {
+  const plan = plans
+    .filter((candidate) => candidate.status === "committed" && candidate.committedAt)
+    .slice()
+    .sort((a, b) => String(b.committedAt).localeCompare(String(a.committedAt)))[0];
+  if (!plan || !plan.committedAt) return null;
+  const committedOn = committedOnOf(plan.committedAt);
+  const counted = runs.filter(
+    (run) =>
+      run.stage !== "cancelled" &&
+      (run.planId === plan.id || (run.planId === null && run.producedOn >= committedOn)),
+  );
+  const mode = plan.requestMode === "good_units" || plan.requestMode === "runs" ? plan.requestMode : "total_boxes";
+  const boxes = counted.reduce((sum, run) => sum + wholeOf(run.saleableBoxes), BigInt(0));
+  const samples = counted.reduce((sum, run) => sum + wholeOf(run.actualSampleUnits), BigInt(0));
+
+  if (mode === "runs") {
+    const target = wholeOf(plan.requestedQty) * MICRO;
+    const done = counted.reduce((sum, run) => sum + microOf(run.exactRuns), BigInt(0));
+    return {
+      planId: plan.id,
+      title: plan.title,
+      mode,
+      committedOn,
+      target: microText(target),
+      done: microText(done),
+      left: microText(target > done ? target - done : BigInt(0)),
+      over: microText(done > target ? done - target : BigInt(0)),
+      samplesTarget: wholeOf(plan.sampleUnits).toString(),
+      samplesDone: samples.toString(),
+      productionsCounted: counted.length,
+    };
+  }
+
+  const target = wholeOf(plan.requestedQty);
+  const done = mode === "total_boxes" ? boxes + samples : boxes;
+  return {
+    planId: plan.id,
+    title: plan.title,
+    mode,
+    committedOn,
+    target: target.toString(),
+    done: done.toString(),
+    left: (target > done ? target - done : BigInt(0)).toString(),
+    over: (done > target ? done - target : BigInt(0)).toString(),
+    samplesTarget: wholeOf(plan.sampleUnits).toString(),
+    samplesDone: samples.toString(),
+    productionsCounted: counted.length,
+  };
+}

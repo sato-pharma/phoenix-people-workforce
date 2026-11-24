@@ -70,7 +70,7 @@ import {
   type CountTiming,
   type DeductionPlan,
 } from "./execution";
-import type { WireExecutionPreview, WireRetiredMaterial, WireRun, WireWorkspace } from "./wire";
+import type { WireExecutionPreview, WireRetiredMaterial, WireRun, WireStockEntry, WireWorkspace } from "./wire";
 import {
   resolveMaterialRequirement,
   sortRequirements,
@@ -112,7 +112,17 @@ import {
   productionPlanningStrings,
   storedPlanTitle,
 } from "./strings";
-import { expiryChangeRows, isStockMovement, isStockSource, moveStockRows, storedStockQty, type StockSource } from "./stock";
+import { isAfterToday } from "./dates";
+import {
+  expiryChangeRows,
+  isStockMovement,
+  isStockSource,
+  moveStockRows,
+  type StockHistoryRow,
+  stockReversal,
+  storedStockQty,
+  type StockSource,
+} from "./stock";
 
 const T = {
   products: "prodplan_products",
@@ -156,7 +166,7 @@ const LOCATION_COLUMNS = "id, code, name_ar, name_en, is_factory, is_active, sor
 // `expiry_date` makes a stock row a LOT: the same material at the same location can be held in two
 // batches that die on different dates, which is the whole reason the owner asked for this column.
 const STOCK_COLUMNS =
-  "id, material_id, unit_kind, location_id, expiry_date, qty::text, as_of_date, source, note, created_at";
+  "id, material_id, unit_kind, location_id, expiry_date, qty::text, as_of_date, source, note, created_at, recorded_by_login";
 const PRICE_COLUMNS =
   "id, material_id, unit_kind, currency, price_per_display_unit::text, effective_from, supplier_name, note, created_at";
 const FX_COLUMNS =
@@ -341,6 +351,12 @@ type LoadedSettings = {
 };
 
 /** Everything the planner needs in one shape, loaded once per request. */
+/** Every stock row, newest first — the entry list on the Stock tab and the reversal rule read it. */
+export type LoadedStockHistory = StockHistoryRow & {
+  readonly note: string | null;
+  readonly recordedByLogin: string | null;
+};
+
 export type ProductionPlanningData = {
   readonly level: ProductionPlanningLevel;
   readonly products: LoadedProduct[];
@@ -372,6 +388,8 @@ export type ProductionPlanningData = {
    * held by nothing. Optional so a hand-built fixture need not carry it.
    */
   readonly expiredStock?: LoadedStock[];
+  /** Every stock row, newest first. Optional so a hand-built fixture need not carry it. */
+  readonly stockHistory?: LoadedStockHistory[];
   readonly prices: LoadedPrice[];
   readonly settings: LoadedSettings;
   readonly fx: EffectiveFxRate;
@@ -567,9 +585,22 @@ async function loadProductionPlanningDataAtLevel(level: ProductionPlanningLevel)
   // Guamusin every row had a null expiry, so each pair had exactly one lot and this fold returns the
   // identical array it always did — which is why the pinned Ivyronc figures do not move.
   const lots: LoadedStock[] = [];
+  const stockHistory: LoadedStockHistory[] = [];
   const seenStock = new Set<string>();
   for (const row of stockRes.data ?? []) {
     const expiryDate = asText(row.expiry_date);
+    stockHistory.push({
+      id: String(row.id),
+      materialId: String(row.material_id),
+      locationId: String(row.location_id),
+      expiryDate,
+      qty: parseNonNegativeQty(String(row.qty), "qty"),
+      asOfDate: String(row.as_of_date),
+      source: String(row.source),
+      createdAt: String(row.created_at),
+      note: asText(row.note),
+      recordedByLogin: asText(row.recorded_by_login),
+    });
     const key = `${String(row.material_id)}/${String(row.location_id)}/${expiryDate ?? ""}`;
     if (seenStock.has(key)) continue;
     seenStock.add(key);
@@ -655,6 +686,7 @@ async function loadProductionPlanningDataAtLevel(level: ProductionPlanningLevel)
     compositionsByProductId,
     stock,
     expiredStock,
+    stockHistory,
     prices,
     settings,
     fx,
@@ -1655,10 +1687,62 @@ export async function getProductionPlanningWorkspace(
     }),
     runs,
     plans,
+    stockEntries: await stockEntriesFor(data, selectedProduct, materials),
   };
 }
 
+/**
+ * The selected product's stock entries, newest first, each saying whether it can be reversed and,
+ * when it cannot, why — the list Dr. Sahar asked for so a wrong entry can be put right from the
+ * screen (owner, 2026-11-24). Only the product's own factory and Sato's stores, like the stock table.
+ */
+const STOCK_ENTRIES_SHOWN = 150;
+
+async function stockEntriesFor(
+  data: ProductionPlanningData,
+  product: LoadedProduct | null | undefined,
+  materials: readonly LoadedMaterial[],
+): Promise<WireStockEntry[]> {
+  const history = data.stockHistory ?? [];
+  const byId = new Map(materials.map((material) => [material.id, material]));
+  const ownFactoryId = product ? factoryLocationIdFor(data, product) : null;
+  const otherFactories = new Set(
+    data.locations.filter((location) => location.isFactory && location.id !== ownFactoryId).map((location) => location.id),
+  );
+  const shown = history
+    .filter((row) => byId.has(row.materialId) && !otherFactories.has(row.locationId))
+    .slice(0, STOCK_ENTRIES_SHOWN);
+  const names = await namesByHrId(shown.map((row) => row.recordedByLogin));
+  return shown.map((row) => {
+    const material = byId.get(row.materialId);
+    const verdict = stockReversal(history, row.id);
+    return {
+      id: row.id,
+      materialId: row.materialId,
+      locationId: row.locationId,
+      expiryDate: row.expiryDate,
+      qtyDisplay: material ? display(row.qty, material.basePerDisplay) : formatQty(row.qty),
+      asOfDate: row.asOfDate,
+      source: row.source,
+      note: row.note,
+      recordedBy: row.recordedByLogin ? names.get(row.recordedByLogin) ?? row.recordedByLogin : null,
+      createdAt: row.createdAt,
+      reversible: verdict.ok,
+      refusal: verdict.ok ? null : verdict.reason,
+    };
+  });
+}
+
 // ── Writes ─────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 🔴 A balance or a production cannot be dated after today (owner, 2026-11-24). Dr. Sahar's three
+ * deliveries typed on 12 October were stored as 10 November — the date box reads month/day — and
+ * nothing refused them. `isAfterToday` is the pure half; this is where every writer asks it.
+ */
+function refuseFutureDate(date: string, field: string, body: Record<string, unknown>): void {
+  if (isAfterToday(date, todayCairo())) throw new ProductionPlanningInputError(errorsFor(body).dateInFuture, field);
+}
 
 async function assertWrite(access: AccessContext): Promise<ProductionPlanningLevel> {
   const level = await resolveProductionPlanningLevel(access);
@@ -1686,6 +1770,7 @@ export async function addStockEntry(access: AccessContext, body: Record<string, 
   if (!unitKind) throw new ProductionPlanningInputError(errorsFor(body).unknownUnitKind, "unitKind");
   const qty = parseNonNegativeQty(asScalar(body.qty), "qty");
   const asOfDate = asText(body.asOfDate) ?? todayCairo();
+  refuseFutureDate(asOfDate, "asOfDate", body);
   // The LOT this report is about. Absent means "the undated lot" — packaging, which never expires,
   // and every Ivyronc row recorded before the column existed.
   const expiryDate = asText(body.expiryDate);
@@ -1999,6 +2084,7 @@ export async function moveStock(access: AccessContext, body: Record<string, unkn
   const typedQty = asScalar(body.qty);
   const asOfDate = asText(body.asOfDate) ?? todayCairo();
   if (!isIsoDate(asOfDate)) throw new ProductionPlanningInputError(errorsFor(body).expiryDateInvalid, "asOfDate");
+  refuseFutureDate(asOfDate, "asOfDate", body);
 
   const db = getSupabaseAdmin();
   const standingOn = (material: string, location: string) => {
@@ -2109,6 +2195,96 @@ export async function moveStock(access: AccessContext, body: Record<string, unkn
  * formula save makes from the other side). The limits are the table's own CHECKs, checked here so a
  * refusal reads as a sentence and not a raw database message.
  */
+/**
+ * Reverse ONE wrong stock entry: a new row puts its lot back to the balance it held before it
+ * (owner, 2026-11-24 — Dr. Sahar: how can a wrong entry be put right without a database write).
+ * Append-only like every stock write; the wrong entry stays in the list, and so does its reversal.
+ * `stockReversal` decides, over the entry's lot and every row written in the same insert.
+ */
+export async function reverseStockEntry(access: AccessContext, body: Record<string, unknown>) {
+  await assertWrite(access);
+  const who = actor(access);
+  const entryId = asText(body.entryId);
+  if (!entryId) throw new ProductionPlanningInputError(errorsFor(body).stockEntryNotFound, "entryId");
+  const db = getSupabaseAdmin();
+  const entry = await db.from(T.stock).select(STOCK_COLUMNS).eq("id", entryId).maybeSingle();
+  if (entry.error) failure(entry.error, "read the entry to reverse");
+  if (!entry.data) throw new ProductionPlanningInputError(errorsFor(body).stockEntryNotFound, "entryId");
+  const expiryDate = asText(entry.data.expiry_date);
+  const lotQuery = db
+    .from(T.stock)
+    .select(STOCK_COLUMNS)
+    .eq("material_id", String(entry.data.material_id))
+    .eq("location_id", String(entry.data.location_id));
+  const [lot, sameInsert] = await Promise.all([
+    expiryDate === null ? lotQuery.is("expiry_date", null) : lotQuery.eq("expiry_date", expiryDate),
+    db.from(T.stock).select(STOCK_COLUMNS).eq("created_at", String(entry.data.created_at)),
+  ]);
+  if (lot.error) failure(lot.error, "read the lot this entry belongs to");
+  if (sameInsert.error) failure(sameInsert.error, "read the rows written with this entry");
+  const seen = new Set<string>();
+  const rows: StockHistoryRow[] = [];
+  for (const row of [...(lot.data ?? []), ...(sameInsert.data ?? [])]) {
+    if (seen.has(String(row.id))) continue;
+    seen.add(String(row.id));
+    rows.push({
+      id: String(row.id),
+      materialId: String(row.material_id),
+      locationId: String(row.location_id),
+      expiryDate: asText(row.expiry_date),
+      qty: parseNonNegativeQty(String(row.qty), "qty"),
+      asOfDate: String(row.as_of_date),
+      source: String(row.source),
+      createdAt: String(row.created_at),
+    });
+  }
+  const verdict = stockReversal(rows, entryId);
+  if (!verdict.ok) {
+    const refusals = {
+      notFound: errorsFor(body).stockEntryNotFound,
+      production: errorsFor(body).stockReverseProduction,
+      paired: errorsFor(body).stockReversePaired,
+      notNewest: errorsFor(body).stockReverseNotNewest,
+      afterProduction: errorsFor(body).stockReverseAfterProduction,
+    } as const;
+    throw new ProductionPlanningInputError(refusals[verdict.reason], "entryId");
+  }
+  const reason = asText(body.reason);
+  const reversed = entry.data;
+  const { error } = await db.from(T.stock).insert({
+    material_id: String(reversed.material_id),
+    unit_kind: String(reversed.unit_kind),
+    location_id: String(reversed.location_id),
+    expiry_date: expiryDate,
+    qty: formatQty(verdict.restoreQty),
+    as_of_date: String(reversed.as_of_date),
+    source: "adjustment",
+    note: reason ?? errorsFor(body).stockReverseNote,
+    recorded_by_hr_id: who.hrId,
+    recorded_by_login: who.login,
+  });
+  if (error) failure(error, "reverse the stock entry");
+
+  await writeRequiredAuditLog({
+    actorLoginId: who.login,
+    entityType: "production_stock_entry",
+    entityId: entryId,
+    newValues: {
+      reversesEntryId: entryId,
+      materialId: String(reversed.material_id),
+      locationId: String(reversed.location_id),
+      expiryDate,
+      reversedQty: String(reversed.qty),
+      reversedSource: String(reversed.source),
+      restoredQty: formatQty(verdict.restoreQty),
+      asOfDate: String(reversed.as_of_date),
+      reason,
+    },
+    summary: `Production planner: reversed the ${String(reversed.source)} entry of ${String(reversed.qty)} for material ${String(reversed.material_id)} at ${String(reversed.location_id)} — the lot is back to ${formatQty(verdict.restoreQty)} as of ${String(reversed.as_of_date)}`,
+  });
+  return { reversed: entryId, restoredQty: formatQty(verdict.restoreQty) };
+}
+
 export async function updateProductPackaging(access: AccessContext, body: Record<string, unknown>) {
   await assertWrite(access);
   const who = actor(access);
@@ -2422,6 +2598,7 @@ function parseExecution(data: ProductionPlanningData, body: Record<string, unkno
   }
   const producedOn = asText(body.producedOn) ?? todayCairo();
   if (!isIsoDate(producedOn)) throw new ProductionPlanningInputError(errorsFor(body).expiryDateInvalid, "producedOn");
+  refuseFutureDate(producedOn, "producedOn", body);
   const produced = executedYield(product.geometry, { saleableBoxes, sampleUnits });
   return { product, saleableBoxes, sampleUnits, producedOn, produced };
 }
@@ -2507,10 +2684,22 @@ export async function executeProduction(access: AccessContext, body: Record<stri
   const runLabel = asText(body.runLabel) ?? `${product.code} ${producedOn}`;
 
   const db = getSupabaseAdmin();
+  // The production belongs to the product's NEWEST committed plan, so the Execution tab can say how
+  // far that plan has got (`planProgress`). No committed plan → no link, never a guess.
+  const committedPlan = await db
+    .from(T.plans)
+    .select("id")
+    .eq("product_id", product.id)
+    .eq("status", "committed")
+    .order("committed_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (committedPlan.error) failure(committedPlan.error, "read the plan this production belongs to");
   const { data: inserted, error } = await db
     .from(T.runs)
     .insert({
       product_id: product.id,
+      plan_id: committedPlan.data?.id ? String(committedPlan.data.id) : null,
       run_label: runLabel,
       runs_count: Number(produced.runs),
       actual_good_units: produced.goodUnits.toString(),
@@ -2642,6 +2831,7 @@ export async function recordFactoryBalance(access: AccessContext, body: Record<s
   if (run.stage === "cancelled") throw new ProductionPlanningInputError(errorsFor(body).runCancelled, "runId");
   const balanceDate = asText(body.balanceDate) ?? todayCairo();
   if (!isIsoDate(balanceDate)) throw new ProductionPlanningInputError(errorsFor(body).expiryDateInvalid, "balanceDate");
+  refuseFutureDate(balanceDate, "balanceDate", body);
 
   const data = await loadProductionPlanningData(access);
   const product = data.products.find((candidate) => candidate.id === run.productId);

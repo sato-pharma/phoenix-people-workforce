@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { resolveAccessContext } from "@/lib/auth/server";
 import { productionPlanningErrorResponse } from "@/lib/production-planning/http";
-import { addStockEntry } from "@/lib/production-planning/service";
+import { addStockEntry, reverseStockEntry } from "@/lib/production-planning/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
@@ -21,7 +21,9 @@ export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-    const saved = await addStockEntry(access, body);
+    // `action: "reverse"` puts one wrong entry right (owner, 2026-11-24). Both writers assert write
+    // access before they read anything else from the body, so an anonymous call is still a 401/403.
+    const saved = body.action === "reverse" ? await reverseStockEntry(access, body) : await addStockEntry(access, body);
     return NextResponse.json(saved, { status: 201 });
   } catch (error) {
     return productionPlanningErrorResponse(error, "Could not record the stock report.");

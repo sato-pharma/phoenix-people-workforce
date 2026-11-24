@@ -73,7 +73,7 @@
  * will not break on its own.
  */
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import {
@@ -90,6 +90,7 @@ import { downloadXlsxFrom } from "@/lib/export/download-xlsx-client";
 // explicitly client-safe, so the editor's selects offer exactly the values the service accepts.
 // Retyping them here is how a select and a server-side CHECK start to disagree.
 import { costCoverage } from "@/lib/production-planning/costing";
+import { cairoDate, spellDate } from "@/lib/production-planning/dates";
 import {
   fromBaseUnits,
   isPerThousandBoxBasis,
@@ -97,6 +98,7 @@ import {
   toBaseUnits,
 } from "@/lib/production-planning/display-units";
 import { shownUnitWeights } from "@/lib/production-planning/display-weights";
+import { planProgress } from "@/lib/production-planning/execution";
 import { dataGapsFor, type DataGap } from "@/lib/production-planning/gaps";
 import { createRequestSequence, planForSelection } from "@/lib/production-planning/request-sequence";
 import { basisFitsProduct, COMPOSITION_BASES, isBoughtBySato, MATERIAL_SUPPLIERS, SETTLED_SUPPLIERS } from "@/lib/production-planning/rules";
@@ -118,6 +120,7 @@ import type {
   WireGrant,
   WireMaterial,
   WireMaterialRef,
+  WireStockEntry,
   WireStockRow,
   WirePlan,
   WirePlanRow,
@@ -381,6 +384,35 @@ const ProductionPlanningLanguageContext = createContext<{
  * instead of not rendering at all.
  */
 const LANGUAGE_STORAGE_KEY = "phoenix.production-planning.language";
+
+/**
+ * 🔴 THE PRODUCT IS REMEMBERED, AND SHOWN ON EVERY TAB (owner, 2026-11-24, the audit for Dr. Sahar).
+ *
+ * The page always opened on the first product (Carvipradin, which she never works on) and the only
+ * product picker was on the Planner tab — so the Stock tab listed whichever product the Planner had
+ * last been left on, with nothing on it to say which. On 3 November 576 kg of Saginkgo foil was
+ * typed against another product's aluminium film that way. Per browser, like the language, and
+ * wrapped the same way: a blocked store must never stop the module from rendering.
+ */
+const PRODUCT_STORAGE_KEY = "phoenix.production-planning.product";
+
+function rememberedProduct(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return window.localStorage.getItem(PRODUCT_STORAGE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function rememberProduct(productId: string): void {
+  try {
+    if (productId) window.localStorage.setItem(PRODUCT_STORAGE_KEY, productId);
+    else window.localStorage.removeItem(PRODUCT_STORAGE_KEY);
+  } catch {
+    // A blocked store only means the next visit opens on the first product again.
+  }
+}
 
 export function ProductionPlanningLanguageProvider({
   children,
@@ -654,7 +686,10 @@ export function ProductionPlanningWorkspace() {
   // The planner form. The default is the owner's own headline shape: a TOTAL box count, with the
   // samples coming out of it rather than sitting on top — "انا 100 الف اقول لك 100 الف وعايز 10000
   // فده معناه انك هتديني 90 و100".
-  const [productId, setProductId] = useState<string>("");
+  // Seeded from the browser's memory. The first render on the server and in the browser is the same
+  // loading line either way, so the two can differ here without a hydration mismatch.
+  const [productId, setProductId] = useState<string>(rememberedProduct);
+  const errorRef = useRef<HTMLParagraphElement | null>(null);
   const [mode, setMode] = useState<WireRequestMode>(DEFAULT_MODE);
   const [requestedQty, setRequestedQty] = useState(DEFAULT_REQUESTED_QTY);
   const [sampleUnits, setSampleUnits] = useState(DEFAULT_SAMPLE_UNITS);
@@ -695,6 +730,12 @@ export function ProductionPlanningWorkspace() {
         return;
       }
       const workspace = payload as WireWorkspace;
+      // A remembered product that has since been retired is forgotten, and the first one answers.
+      if (productId && !workspace.products.some((product) => product.id === productId)) {
+        rememberProduct("");
+        setProductId("");
+        return;
+      }
       setData(workspace);
       setPlan(workspace.plan);
       // The form follows the plan it is showing. A load replaces the plan with this product's default
@@ -805,6 +846,19 @@ export function ProductionPlanningWorkspace() {
 
   const canWrite = data?.canWrite === true;
 
+  // 🔴 A REFUSAL IS BROUGHT INTO VIEW (owner, 2026-11-24). The message is written above the tabs, and
+  // the Stock tab's forms sit two screens below it on a desktop and three on a phone — so a refused
+  // save looked like a button that did nothing.
+  useEffect(() => {
+    if (error) errorRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [error]);
+
+  const chooseProduct = useCallback((next: string) => {
+    rememberProduct(next);
+    setProductId(next);
+  }, []);
+  const awaitingRuns = (data?.runs ?? []).filter((run) => run.stage === "awaiting_balance");
+
   if (loading && !data) {
     return (
       <div
@@ -829,6 +883,7 @@ export function ProductionPlanningWorkspace() {
       {error ? (
         <p
           className="mt-4 border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] font-bold text-rose-900 shadow-[0_1px_2px_rgba(127,29,29,0.06),0_12px_28px_rgba(127,29,29,0.08)] break-words"
+          ref={errorRef}
           role="alert"
         >
           {error}
@@ -839,6 +894,31 @@ export function ProductionPlanningWorkspace() {
         <p className="mt-4 border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] font-bold text-emerald-900 shadow-[0_1px_2px_rgba(6,78,59,0.06),0_12px_28px_rgba(6,78,59,0.07)]">
           {notice}
         </p>
+      ) : null}
+
+      {data && data.products.length > 0 ? (
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <Field hint={t.productBarHint} label={t.productLabel}>
+            <select className={INPUT} onChange={(event) => chooseProduct(event.target.value)} value={selectedProductId}>
+              {data.products.map((product) => (
+                <option key={product.id} value={product.id}>
+                  {S.name(product)}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+      ) : null}
+
+      {awaitingRuns.length > 0 && tab !== "run" ? (
+        <div className={`${NOTICE} mt-4 flex flex-wrap items-center justify-between gap-2 border-amber-300 bg-amber-50`}>
+          <p className="min-w-0 break-words text-[12px] font-bold text-amber-900">
+            {t.awaitingBannerTitle}: {awaitingRuns.map((run) => run.runLabel).join(t.listSeparator)}
+          </p>
+          <button className={BUTTON_QUIET} onClick={() => setTab("run")} type="button">
+            {t.awaitingBannerOpen}
+          </button>
+        </div>
       ) : null}
 
       {data ? <DataGapsBanner gaps={dataGapsFor(data.materials)} /> : null}
@@ -885,7 +965,6 @@ export function ProductionPlanningWorkspace() {
             }}
             onModeChange={setMode}
             onOverrideChange={setOverridePct}
-            onProductChange={setProductId}
             onRequestedChange={setRequestedQty}
             onSamplesChange={setSampleUnits}
             onWillSendChange={(materialId, value) =>
@@ -939,7 +1018,6 @@ type PlannerTabProps = {
   onCommit: (commit: boolean) => void;
   onModeChange: (mode: WireRequestMode) => void;
   onOverrideChange: (value: string) => void;
-  onProductChange: (value: string) => void;
   onRequestedChange: (value: string) => void;
   onSamplesChange: (value: string) => void;
   onWillSendChange: (materialId: string, value: string) => void;
@@ -1002,20 +1080,7 @@ export function PlannerTab(props: PlannerTabProps) {
       <section className={PANEL}>
         <SectionTitle subtitle={t.moduleSubtitle} title={t.plannerTitle} />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <Field label={t.productLabel}>
-            <select
-              className={INPUT}
-              onChange={(event) => props.onProductChange(event.target.value)}
-              value={props.productId}
-            >
-              {data.products.map((product) => (
-                <option key={product.id} value={product.id}>
-                  {S.name(product)}
-                </option>
-              ))}
-            </select>
-          </Field>
-
+          {/* The product is chosen once, above the tabs, for every tab (the audit of 2026-11-24). */}
           <Field label={t.requestModeLabel}>
             <select
               className={INPUT}
@@ -1519,6 +1584,7 @@ export function StockTab({
   const [source, setSource] = useState("factory_report");
   const [note, setNote] = useState("");
   const [countTiming, setCountTiming] = useState("");
+  const [openForm, setOpenForm] = useState<"add" | "expiry" | "move" | "material" | null>(null);
 
   if (!data) return <p className={`${PANEL} text-[13px] text-slate-500`}>{t.notLoaded}</p>;
   const locationName = (id: string) => {
@@ -1567,157 +1633,8 @@ export function StockTab({
 
   return (
     <>
-      {canWrite ? (
-        <section className={PANEL}>
-          <SectionTitle subtitle={t.stockSubtitle} title={t.stockAdd} />
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <Field label={t.colMaterial}>
-              <select
-                className={INPUT}
-                onChange={(event) => setMaterialId(event.target.value)}
-                value={materialId}
-              >
-                <option value="">{t.colMaterial}</option>
-                {data.materials.map((material) => (
-                  <option key={material.id} value={material.id}>
-                    {S.name(material)}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label={t.stockLocation}>
-              <select
-                className={INPUT}
-                onChange={(event) => setLocationId(event.target.value)}
-                value={locationId}
-              >
-                <option value="">{t.stockLocation}</option>
-                {ownLocations.map((location) => (
-                  <option key={location.id} value={location.id}>
-                    {S.name(location)}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field hint={qtyHint} label={isDelivery ? t.stockDeliveredQty : t.stockQty}>
-              <input
-                className={INPUT}
-                dir="ltr"
-                inputMode="decimal"
-                onChange={(event) => setQty(event.target.value)}
-                value={qty}
-              />
-            </Field>
-            <Field label={t.stockAsOf}>
-              <input
-                className={INPUT}
-                dir="ltr"
-                onChange={(event) => setAsOfDate(event.target.value)}
-                type="date"
-                value={asOfDate}
-              />
-            </Field>
-            {/* The owner, 2026-10-08: "خانة الاكسبايري ديت مهمة جدا جدا جدا يا عمر" — and left blank
-                for packaging, because the film, the cartons and the stickers do not expire. */}
-            <Field hint={t.stockExpiryHint} label={t.stockExpiry}>
-              <input
-                className={INPUT}
-                dir="ltr"
-                onChange={(event) => setExpiryDate(event.target.value)}
-                type="date"
-                value={expiryDate}
-              />
-            </Field>
-            <Field label={t.stockSource}>
-              <select
-                className={INPUT}
-                onChange={(event) => setSource(event.target.value)}
-                value={source}
-              >
-                {Object.entries(stockSourceLabels(t)).map(([key, label]) => (
-                  <option key={key} value={key}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label={t.stockNote}>
-              <input className={INPUT} onChange={(event) => setNote(event.target.value)} value={note} />
-            </Field>
-            {drawnByAwaitingRun ? (
-              <Field hint={t.stockCountTimingHint} label={t.stockCountTiming}>
-                <select
-                  className={INPUT}
-                  onChange={(event) => setCountTiming(event.target.value)}
-                  value={countTiming}
-                >
-                  <option value="">{t.stockCountTimingChoose}</option>
-                  <option value="before_production">{t.stockCountBefore}</option>
-                  <option value="after_production">{t.stockCountAfter}</option>
-                </select>
-              </Field>
-            ) : null}
-          </div>
-          <div className="mt-3">
-            <button
-              className={BUTTON}
-              disabled={busy || !materialId || !locationId || qty.trim() === "" || (drawnByAwaitingRun && countTiming === "")}
-              onClick={() => {
-                const material = data.materials.find((candidate) => candidate.id === materialId);
-                void onSave("/stock", {
-                  materialId,
-                  locationId,
-                  unitKind: material?.unitKind,
-                  // Typed in the display unit the person reads; the service stores base units.
-                  qty: toBaseUnits(qty, material),
-                  asOfDate: asOfDate || undefined,
-                  // `null` is the undated lot, which is what packaging has — not "unknown".
-                  expiryDate: typedExpiry,
-                  source,
-                  note: note.trim() === "" ? null : note.trim(),
-                  countTiming: drawnByAwaitingRun && countTiming !== "" ? countTiming : undefined,
-                });
-              }}
-              type="button"
-            >
-              {t.save}
-            </button>
-          </div>
-        </section>
-      ) : null}
-
-      {canWrite ? (
-        <LotExpiryEditor busy={busy} locationName={locationName} materials={data.materials} onSave={onSave} />
-      ) : null}
-
-      {canWrite ? (
-        <StockMoveEditor
-          allMaterials={data.allMaterials}
-          busy={busy}
-          locationName={locationName}
-          locations={ownLocations.map((location) => ({ id: location.id, label: S.name(location) }))}
-          materials={data.materials}
-          mode="location"
-          onSave={onSave}
-          products={data.products}
-        />
-      ) : null}
-
-      {canWrite ? (
-        <StockMoveEditor
-          allMaterials={data.allMaterials}
-          busy={busy}
-          locationName={locationName}
-          locations={[]}
-          materials={workspace?.materials ?? data.materials}
-          mode="material"
-          onSave={onSave}
-          products={data.products}
-        />
-      ) : null}
-
       {data.expiry.length > 0 ? <ExpiryBanner rows={data.expiry} /> : null}
-
+      <SectionTitle title={t.stockBalancesTitle} />
       <section className="min-w-0">
         <FactoryHiddenNote count={factoryHidden} />
         {/* 34/22/22/22. The factory and Sato's warehouse each have their OWN column (2026-11-11, a
@@ -1857,8 +1774,386 @@ export function StockTab({
         </div>
       </section>
 
+      {canWrite ? (
+        <section className={PANEL}>
+          <SectionTitle subtitle={t.stockFormsHint} title={t.stockFormsTitle} />
+          <div className="flex flex-wrap gap-2">
+            {(
+              [
+                ["add", t.stockAdd],
+                ["expiry", t.stockChangeExpiry],
+                ["move", t.stockMove],
+                ["material", t.stockFixMaterial],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                aria-pressed={openForm === key}
+                className={openForm === key ? BUTTON : BUTTON_QUIET}
+                key={key}
+                onClick={() => setOpenForm(openForm === key ? null : key)}
+                type="button"
+              >
+                {label}
+              </button>
+            ))}
+            {openForm ? (
+              <button className={BUTTON_QUIET} onClick={() => setOpenForm(null)} type="button">
+                {t.stockFormClose}
+              </button>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
+      {canWrite && openForm === "add" ? (
+        <section className={PANEL}>
+          <SectionTitle subtitle={t.stockSubtitle} title={t.stockAdd} />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <Field label={t.colMaterial}>
+              <select
+                className={INPUT}
+                onChange={(event) => setMaterialId(event.target.value)}
+                value={materialId}
+              >
+                <option value="">{t.colMaterial}</option>
+                {data.materials.map((material) => (
+                  <option key={material.id} value={material.id}>
+                    {S.name(material)}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label={t.stockLocation}>
+              <select
+                className={INPUT}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  setLocationId(next);
+                  // 🔴 The source follows the store (the audit of 2026-11-24): every Sato-warehouse
+                  // count she typed was saved as a "factory report", the form's default. A count at
+                  // a factory is that factory's report; a count at a Sato store is Sato's own count.
+                  // A delivery or an adjustment she picked herself is left alone.
+                  if (source === "factory_report" || source === "own_count") {
+                    const store = data.locations.find((location) => location.id === next);
+                    if (store) setSource(store.isFactory ? "factory_report" : "own_count");
+                  }
+                }}
+                value={locationId}
+              >
+                <option value="">{t.stockLocation}</option>
+                {ownLocations.map((location) => (
+                  <option key={location.id} value={location.id}>
+                    {S.name(location)}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field hint={qtyHint} label={isDelivery ? t.stockDeliveredQty : t.stockQty}>
+              <input
+                className={INPUT}
+                dir="ltr"
+                inputMode="decimal"
+                onChange={(event) => setQty(event.target.value)}
+                value={qty}
+              />
+            </Field>
+            <Field hint={asOfDate ? spellDate(asOfDate, S.lang) : t.stockDateDefaultToday} label={t.stockAsOf}>
+              <input
+                className={INPUT}
+                dir="ltr"
+                max={cairoDate()}
+                onChange={(event) => setAsOfDate(event.target.value)}
+                type="date"
+                value={asOfDate}
+              />
+            </Field>
+            {/* The owner, 2026-10-08: "خانة الاكسبايري ديت مهمة جدا جدا جدا يا عمر" — and left blank
+                for packaging, because the film, the cartons and the stickers do not expire. */}
+            <Field hint={expiryDate ? spellDate(expiryDate, S.lang) : t.stockExpiryHint} label={t.stockExpiry}>
+              <input
+                className={INPUT}
+                dir="ltr"
+                onChange={(event) => setExpiryDate(event.target.value)}
+                type="date"
+                value={expiryDate}
+              />
+            </Field>
+            <Field label={t.stockSource}>
+              <select
+                className={INPUT}
+                onChange={(event) => setSource(event.target.value)}
+                value={source}
+              >
+                {Object.entries(stockSourceLabels(t)).map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label={t.stockNote}>
+              <input className={INPUT} onChange={(event) => setNote(event.target.value)} value={note} />
+            </Field>
+            {drawnByAwaitingRun ? (
+              <Field hint={t.stockCountTimingHint} label={t.stockCountTiming}>
+                <select
+                  className={INPUT}
+                  onChange={(event) => setCountTiming(event.target.value)}
+                  value={countTiming}
+                >
+                  <option value="">{t.stockCountTimingChoose}</option>
+                  <option value="before_production">{t.stockCountBefore}</option>
+                  <option value="after_production">{t.stockCountAfter}</option>
+                </select>
+              </Field>
+            ) : null}
+          </div>
+          <div className="mt-3">
+            <button
+              className={BUTTON}
+              disabled={busy || !materialId || !locationId || qty.trim() === "" || (drawnByAwaitingRun && countTiming === "")}
+              onClick={() => {
+                const material = data.materials.find((candidate) => candidate.id === materialId);
+                void onSave("/stock", {
+                  materialId,
+                  locationId,
+                  unitKind: material?.unitKind,
+                  // Typed in the display unit the person reads; the service stores base units.
+                  qty: toBaseUnits(qty, material),
+                  asOfDate: asOfDate || undefined,
+                  // `null` is the undated lot, which is what packaging has — not "unknown".
+                  expiryDate: typedExpiry,
+                  source,
+                  note: note.trim() === "" ? null : note.trim(),
+                  countTiming: drawnByAwaitingRun && countTiming !== "" ? countTiming : undefined,
+                });
+              }}
+              type="button"
+            >
+              {t.save}
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      {canWrite && openForm === "expiry" ? (
+        <LotExpiryEditor busy={busy} locationName={locationName} materials={data.materials} onSave={onSave} />
+      ) : null}
+
+      {canWrite && openForm === "move" ? (
+        <StockMoveEditor
+          allMaterials={data.allMaterials}
+          busy={busy}
+          locationName={locationName}
+          locations={ownLocations.map((location) => ({ id: location.id, label: S.name(location) }))}
+          materials={data.materials}
+          mode="location"
+          onSave={onSave}
+          products={data.products}
+        />
+      ) : null}
+
+      {canWrite && openForm === "material" ? (
+        <StockMoveEditor
+          allMaterials={data.allMaterials}
+          busy={busy}
+          locationName={locationName}
+          locations={[]}
+          materials={workspace?.materials ?? data.materials}
+          mode="material"
+          onSave={onSave}
+          products={data.products}
+        />
+      ) : null}
+
+      <StockHistory
+        busy={busy}
+        canWrite={canWrite}
+        entries={workspace?.stockEntries ?? []}
+        locationName={locationName}
+        materials={data.materials}
+        onSave={onSave}
+      />
+
       <ExpiredStock locationName={locationName} materials={data.materials} />
     </>
+  );
+}
+
+/**
+ * Every stock entry of the selected product, newest first, with a reverse button on each entry the
+ * service will accept and the reason on each it will not (owner, 2026-11-24 — Dr. Sahar asked how a
+ * wrong entry could be put right without a database write). Desktop table, phone cards.
+ */
+const STOCK_HISTORY_FIRST = 30;
+
+function StockHistory({
+  entries,
+  materials,
+  locationName,
+  canWrite,
+  busy,
+  onSave,
+}: {
+  entries: WireStockEntry[];
+  materials: WireMaterial[];
+  locationName: (id: string) => string;
+  canWrite: boolean;
+  busy: boolean;
+  onSave: SaveFn;
+}) {
+  const S = useProductionPlanningStrings();
+  const t = S.t;
+  const [showAll, setShowAll] = useState(false);
+  const [reversing, setReversing] = useState<string | null>(null);
+  const [reason, setReason] = useState("");
+  const byId = new Map(materials.map((material) => [material.id, material]));
+  const sources = stockSourceLabels(t);
+  const shown = showAll ? entries : entries.slice(0, STOCK_HISTORY_FIRST);
+  const refusalText = (entry: WireStockEntry): string | null => {
+    if (entry.reversible || !entry.refusal) return null;
+    if (entry.refusal === "production") return t.stockRefusalProduction;
+    if (entry.refusal === "paired") return t.stockRefusalPaired;
+    if (entry.refusal === "afterProduction") return t.stockRefusalAfterProduction;
+    return t.stockRefusalNotNewest;
+  };
+  const sourceText = (source: string) =>
+    source === "production" ? t.stockHistoryProduction : sources[source] ?? source;
+
+  const action = (entry: WireStockEntry) => {
+    if (!canWrite) return null;
+    if (!entry.reversible) {
+      return <p className="break-words text-[11px] text-slate-500">{refusalText(entry)}</p>;
+    }
+    if (reversing !== entry.id) {
+      return (
+        <button
+          className={BUTTON_QUIET}
+          disabled={busy}
+          onClick={() => {
+            setReversing(entry.id);
+            setReason("");
+          }}
+          type="button"
+        >
+          {t.stockReverse}
+        </button>
+      );
+    }
+    return (
+      <div className="space-y-2">
+        <p className="break-words text-[11px] text-slate-600">{t.stockReverseExplain}</p>
+        <input
+          aria-label={t.stockReverseReason}
+          className={INPUT}
+          onChange={(event) => setReason(event.target.value)}
+          placeholder={t.stockReverseReason}
+          value={reason}
+        />
+        <div className="flex flex-wrap gap-2">
+          <button
+            className={BUTTON}
+            disabled={busy}
+            onClick={() => {
+              void onSave("/stock", {
+                action: "reverse",
+                entryId: entry.id,
+                reason: reason.trim() === "" ? null : reason.trim(),
+              });
+              setReversing(null);
+            }}
+            type="button"
+          >
+            {t.stockReverseConfirm}
+          </button>
+          <button className={BUTTON_QUIET} onClick={() => setReversing(null)} type="button">
+            {t.stockFormClose}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <section className="min-w-0">
+      <SectionTitle subtitle={t.stockHistorySubtitle} title={t.stockHistoryTitle} />
+      {entries.length === 0 ? <p className={`${PANEL} text-[12px] text-slate-500`}>{t.stockHistoryNone}</p> : null}
+      {entries.length > 0 ? (
+        <>
+          <table className={TABLE}>
+            <colgroup>
+              <col className="w-[22%]" />
+              <col className="w-[30%]" />
+              <col className="w-[18%]" />
+              <col className="w-[30%]" />
+            </colgroup>
+            <thead>
+              <tr className="border-b border-slate-300 bg-slate-50">
+                {[t.stockAsOf, t.colMaterial, t.stockQty, t.stockHistoryBy].map((heading) => (
+                  <th className={TH} key={heading} scope="col">
+                    {heading}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((entry) => {
+                const material = byId.get(entry.materialId);
+                return (
+                  <tr className="border-b border-slate-200 last:border-b-0" key={entry.id}>
+                    <td className={TD}>
+                      <p className="font-bold">{spellDate(entry.asOfDate, S.lang)}</p>
+                      <p className="text-[11px] text-slate-500">{sourceText(entry.source)}</p>
+                    </td>
+                    <td className={TD}>
+                      <p className="font-bold break-words">{material ? S.name(material) : entry.materialId}</p>
+                      <p className="break-words text-[11px] text-slate-500">
+                        {locationName(entry.locationId)}
+                        {entry.expiryDate ? ` · ${spellDate(entry.expiryDate, S.lang)}` : ""}
+                      </p>
+                      {entry.note ? <p className="break-words text-[11px] text-slate-500">{entry.note}</p> : null}
+                    </td>
+                    <td className={TD}>
+                      <Qty unit={material?.displayUnit} value={entry.qtyDisplay} />
+                    </td>
+                    <td className={TD}>
+                      <p className="break-words text-[11px] text-slate-600">{entry.recordedBy ?? "—"}</p>
+                      <div className="mt-1">{action(entry)}</div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <div className="space-y-2 lg:hidden">
+            {shown.map((entry) => {
+              const material = byId.get(entry.materialId);
+              return (
+                <article className={CARD} key={entry.id}>
+                  <div className="flex flex-wrap justify-between gap-2">
+                    <p className="font-bold break-words text-slate-900">{material ? S.name(material) : entry.materialId}</p>
+                    <p className="font-bold text-slate-900">
+                      <Qty unit={material?.displayUnit} value={entry.qtyDisplay} />
+                    </p>
+                  </div>
+                  <p className="mt-1 break-words text-[11px] text-slate-500">
+                    {spellDate(entry.asOfDate, S.lang)} · {sourceText(entry.source)} · {locationName(entry.locationId)}
+                    {entry.recordedBy ? ` · ${entry.recordedBy}` : ""}
+                  </p>
+                  {entry.note ? <p className="break-words text-[11px] text-slate-500">{entry.note}</p> : null}
+                  <div className="mt-2">{action(entry)}</div>
+                </article>
+              );
+            })}
+          </div>
+          {entries.length > STOCK_HISTORY_FIRST ? (
+            <button className={`${BUTTON_QUIET} mt-2`} onClick={() => setShowAll(!showAll)} type="button">
+              {showAll ? t.stockFormClose : t.stockHistoryShowAll}
+            </button>
+          ) : null}
+        </>
+      ) : null}
+    </section>
   );
 }
 
@@ -2644,9 +2939,11 @@ export function RunTab({
   const nothingTyped = boxes.trim() === "" && samples.trim() === "";
   const awaiting = data.runs.filter((run) => run.stage === "awaiting_balance");
   const history = data.runs.filter((run) => run.stage !== "awaiting_balance");
+  const progress = planProgress(data.plans, data.runs, cairoDate);
 
   return (
     <>
+      <PlanProgressPanel progress={progress} />
       {canWrite ? (
         <section className={PANEL}>
           <SectionTitle subtitle={t.execSubtitle} title={t.execTitle} />
@@ -2669,10 +2966,11 @@ export function RunTab({
                 value={samples}
               />
             </Field>
-            <Field label={t.runProducedOn}>
+            <Field hint={producedOn ? spellDate(producedOn, S.lang) : t.stockDateDefaultToday} label={t.runProducedOn}>
               <input
                 className={INPUT}
                 dir="ltr"
+                max={cairoDate()}
                 onChange={(event) => setProducedOn(event.target.value)}
                 type="date"
                 value={producedOn}
@@ -2827,6 +3125,44 @@ export function RunTab({
 }
 
 /** (consumed − formula) ÷ formula, signed, to two places — display only; the learner keeps BigInt. */
+/**
+ * How far the product's newest committed plan has got (owner, 2026-11-24: "I want to be in full
+ * control to either plan, either execute"). The arithmetic is `planProgress`; this only shows it.
+ */
+function PlanProgressPanel({ progress }: { progress: ReturnType<typeof planProgress> }) {
+  const S = useProductionPlanningStrings();
+  const t = S.t;
+  if (!progress) return <p className={`${NOTICE} text-[12px] text-slate-600`}>{t.planProgressNone}</p>;
+  const unit = progress.mode === "runs" ? t.planProgressRunsWord : t.execBoxesWord;
+  const over = progress.over !== "0";
+  return (
+    <section className={PANEL}>
+      <SectionTitle
+        subtitle={`${progress.title} · ${t.planProgressCommitted} ${spellDate(progress.committedOn, S.lang)}`}
+        title={t.planProgressTitle}
+      />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Tile label={t.planProgressTarget} unit={unit} value={progress.target} />
+        <Tile label={t.planProgressDone} unit={unit} value={progress.done} />
+        <Tile
+          label={over ? t.planProgressOver : t.planProgressLeft}
+          tone={over ? "warn" : "plain"}
+          unit={unit}
+          value={over ? progress.over : progress.left}
+        />
+        <Tile
+          label={t.planProgressSamples}
+          unit={`/ ${formatNumberLatin(progress.samplesTarget)}`}
+          value={progress.samplesDone}
+        />
+      </div>
+      {progress.mode === "total_boxes" ? (
+        <p className="mt-2 text-[11px] text-slate-500">{t.planProgressTotalNote}</p>
+      ) : null}
+    </section>
+  );
+}
+
 function wastePctText(consumed: string, formula: string | null): string | null {
   if (formula === null) return null;
   const formulaValue = Number(formula);
@@ -3089,10 +3425,11 @@ function FactoryBalanceForm({
 
       {canWrite ? (
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label={t.execBalanceDate}>
+          <Field hint={balanceDate ? spellDate(balanceDate, S.lang) : t.stockDateDefaultToday} label={t.execBalanceDate}>
             <input
               className={INPUT}
               dir="ltr"
+              max={cairoDate()}
               onChange={(event) => setBalanceDate(event.target.value)}
               type="date"
               value={balanceDate}
