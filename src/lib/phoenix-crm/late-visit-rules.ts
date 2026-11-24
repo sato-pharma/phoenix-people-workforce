@@ -12,6 +12,7 @@
  * Pure, so every branch is provable with no database: `tests/phoenix-crm-late-visits.test.ts`.
  */
 
+import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 import { cairoBusinessDay } from "@/lib/phoenix-crm/calendar";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { UNPLANNED_REASON_MIN } from "@/lib/phoenix-crm/unplanned-rules";
@@ -122,9 +123,9 @@ export function cairoPressTime(pressedAtDevice: string | null, pressedDay: strin
   return hour && minute ? `${hour}:${minute}` : null;
 }
 
-function hrKey(value: unknown): string | null {
-  const text = typeof value === "string" ? value.trim().toUpperCase() : "";
-  return text || null;
+// The upper-case stored form, through the one HR id door (tests/hrid-normalizer-ratchet.test.ts).
+function personOf(value: unknown): string | null {
+  return typeof value === "string" ? canonicalHrIdForDisplay(value) : null;
 }
 
 function strings(value: unknown): string[] {
@@ -139,9 +140,9 @@ export const LATE_VISIT_DEFAULT_REASON = "Logged on the day and sent once the ph
  * takes. The sender is on it when the sender is not the rep: a manager who logged a visit on a rep's territory was there.
  */
 export function pickedOnTerritoryVisit(body: Record<string, unknown>, senderHrId: string, repHrId: string): string[] {
-  const rep = hrKey(repHrId);
-  const companions = Array.isArray(body.companions) ? body.companions.map((entry) => hrKey((entry as { hrId?: unknown } | null)?.hrId)) : [];
-  const ordered = [hrKey(senderHrId), hrKey(body.managerHrId), hrKey(body.seniorHrId), ...companions, hrKey(body.productManagerHrId)];
+  const rep = personOf(repHrId);
+  const companions = Array.isArray(body.companions) ? body.companions.map((entry) => personOf((entry as { hrId?: unknown } | null)?.hrId)) : [];
+  const ordered = [personOf(senderHrId), personOf(body.managerHrId), personOf(body.seniorHrId), ...companions, personOf(body.productManagerHrId)];
   const picked: string[] = [];
   for (const hrId of ordered) if (hrId && hrId !== rep && !picked.includes(hrId)) picked.push(hrId);
   return picked;
