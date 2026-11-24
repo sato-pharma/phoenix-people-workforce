@@ -195,6 +195,11 @@ export type EmployeePortalNavVisibility = {
   // the enforcing gate this flag must stay level with is PORTAL_PERFORMANCE_REVIEW_ROLES in
   // closing-performance-review-access.ts, and the bound itself is applied server-side.
   showPerformanceReviewTab?: boolean;
+  // Customer Count — how many pharmacies bought, month by month (owner, 24 Nov 2026: "a dashboard
+  // specialized for now customer count", "Managers, own team"). Every Monthly Closing reader EXCEPT
+  // the Medical Rep; the enforcing gates are canAccessPortalClosing and loadPortalCustomerCount,
+  // which refuses a Medical Rep and reads the viewer's own closing scope.
+  showCustomerCountTab?: boolean;
   // Sales vs Target (/employee-portals/sales-vs-target) — Source of Sales + Direct Orders measured
   // against target, from July 2026 onwards. The FIRST sales surface a Medical Rep can open (owner
   // decision 2026-08-04, reversing the 2026-07-30 call that kept reps out of portal Targets); a rep
@@ -1088,6 +1093,13 @@ export function resolveEmployeePortalNavVisibility(
     // (closing-performance-review-access.ts), the server-side gate this flag must stay level with.
     // The Head-Office rung is excluded for the same reason as the row above it: it holds no district
     // seat, so the page could only ever answer "couldn't resolve a product line".
+    showCustomerCountTab:
+      (isDistrictManager && !isHeadOfficeManagerRung) ||
+      isRegionalManager ||
+      isNationalSalesManager ||
+      isProductManager ||
+      isGroupProductManager ||
+      isMarketingManager,
     showPerformanceReviewTab:
       (isDistrictManager && !isHeadOfficeManagerRung) || isRegionalManager || isNationalSalesManager,
     // Same exclusion, same day: the rung gets TEAM sales scope but holds no district seat, so
