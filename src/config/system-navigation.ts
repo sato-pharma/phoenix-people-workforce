@@ -5527,6 +5527,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/sales/monthly-dashboard",
           "/sales/monthly-closing",
           "/sales/monthly-closing/performance-review",
+          "/sales/customer-count",
           "/sales/closing-corrections",
         ],
       },
