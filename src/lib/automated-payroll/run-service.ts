@@ -151,6 +151,7 @@ import {
 } from "./held-settlements.ts";
 import { getNonEmployeePayrollRows, nonEmployeesForPart } from "./non-employees.ts";
 import { seedRunFromRecurring } from "./non-employee-recurring.ts";
+import { seedRunFromStandingTransfers } from "./standing-transfers.ts";
 import { heldDraftHrIds, readPublishedHoldRecord } from "./published-holds.ts";
 import {
   auditPayrollDataQuality,
@@ -679,6 +680,21 @@ export async function startOrResumeRun(
   } catch (error) {
     logError("Automated payroll: seeding the recurring non-employee roster failed", {
       labels: { event: "automated_payroll_recurring_seed_failed", runId: run.id },
+      error,
+    });
+  }
+  // The standing transfers due this month (part of an employee's salary paid to a non-employee) —
+  // best-effort for the same reason, and the panel's Sync adds them if this fails.
+  try {
+    await seedRunFromStandingTransfers({
+      runId: run.id,
+      actorHrId: actorId(access),
+      phase: run.phase,
+      period: { month: run.month, year: run.year },
+    });
+  } catch (error) {
+    logError("Automated payroll: seeding the standing transfers failed", {
+      labels: { event: "automated_payroll_standing_transfer_seed_failed", runId: run.id },
       error,
     });
   }

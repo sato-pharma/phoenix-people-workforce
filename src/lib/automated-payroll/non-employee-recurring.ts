@@ -6,6 +6,7 @@ import { getRunById } from "./draft-store.ts";
 import { validateNonEmployeePayrollInput } from "./non-employees.ts";
 import { actorId, assertAutomatedPayrollHrActor } from "./permissions.ts";
 import { holdRun } from "./run-hold.ts";
+import { seedRunFromStandingTransfers } from "./standing-transfers.ts";
 import { RUN_HOLD_ACTIONS } from "./transition-claim.ts";
 import type {
   MonthlySalaryRun,
@@ -68,6 +69,13 @@ function isMissingTableError(error: unknown): boolean {
   const code = (error as { code?: string } | null)?.code;
   const message = String((error as { message?: string } | null)?.message ?? error ?? "").toLowerCase();
   return code === "42P01" || code === "PGRST205" || (message.includes("relation") && message.includes("does not exist"));
+}
+
+/** True when `standing_transfer_id` isn't in this environment yet. */
+function isMissingStandingTransferColumnError(error: unknown): boolean {
+  const code = (error as { code?: string } | null)?.code;
+  const message = String((error as { message?: string } | null)?.message ?? error ?? "").toLowerCase();
+  return (code === "42703" || code === "PGRST204") && message.includes("standing_transfer_id");
 }
 
 /** True when `recurring_id` isn't in this environment yet — one column narrower. */
@@ -299,10 +307,20 @@ export async function seedRunFromRecurring(input: {
   // Read the run's OWN entries, not just the seeded ones: a hand-typed row has no recurring_id and
   // was therefore invisible to the old guard, which is exactly how the same person could be seeded
   // on top of themselves and paid twice.
-  const { data: existing, error: existingError } = await admin
+  // standing_transfer_id is read so a transfer line (part of an EMPLOYEE's salary paid to the same
+  // person) is not mistaken for that person's own roster entry: Anwar Gaweesh is paid both on one
+  // account, and the identity check below would otherwise skip his salary as a duplicate. Where the
+  // column has not landed yet the narrower read is the old one exactly.
+  let { data: existing, error: existingError } = await admin
     .from(RUN_TABLE)
-    .select("recurring_id,part,bank_account,full_name_en,full_name_ar")
+    .select("recurring_id,standing_transfer_id,part,bank_account,full_name_en,full_name_ar")
     .eq("run_id", input.runId);
+  if (existingError && isMissingStandingTransferColumnError(existingError)) {
+    ({ data: existing, error: existingError } = await admin
+      .from(RUN_TABLE)
+      .select("recurring_id,part,bank_account,full_name_en,full_name_ar")
+      .eq("run_id", input.runId));
+  }
   if (existingError) {
     // No provenance column yet => nothing was ever seeded, so seed everything.
     if (!isMissingRecurringColumnError(existingError) && !isMissingTableError(existingError)) {
@@ -319,6 +337,7 @@ export async function seedRunFromRecurring(input: {
   // salary is split — production carries that case today.
   const alreadyOnTheRun = new Set(
     rows
+      .filter((row) => !row.standing_transfer_id)
       .map((row) => {
         const identity = identityOf({
           bankAccount: row.bank_account as string | null,
@@ -420,7 +439,20 @@ export async function syncRunFromRecurring(
   // passed it while Part 2 was being confirmed inserted rows after the confirm. The hold re-checks that
   // the run is still in this phase, and Confirm waits for the sync to finish.
   const phase = run.phase;
-  return holdRun({ runId, expected: [phase], action: RUN_HOLD_ACTIONS.nonEmployeeSync }, () =>
-    seedRunFromRecurring({ runId, actorHrId: actorId(access), phase }),
-  );
+  return holdRun({ runId, expected: [phase], action: RUN_HOLD_ACTIONS.nonEmployeeSync }, async () => {
+    const roster = await seedRunFromRecurring({ runId, actorHrId: actorId(access), phase });
+    // The same press also adds any standing transfer due this month (standing-transfers.ts) — a run
+    // opened before the transfer was registered (November 2026) gets its lines here.
+    const transfers = await seedRunFromStandingTransfers({
+      runId,
+      actorHrId: actorId(access),
+      phase,
+      period: { month: run.month, year: run.year },
+    });
+    return {
+      ...roster,
+      heldBackPartClosed: [...roster.heldBackPartClosed, ...transfers.heldBackPartClosed],
+      standingTransfersAdded: transfers.inserted,
+    };
+  });
 }

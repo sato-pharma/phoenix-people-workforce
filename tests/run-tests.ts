@@ -1853,6 +1853,7 @@ import { runAutomatedPayrollReadsDeductionsModuleTests } from "./automated-payro
 import { runAutomatedPayrollManualExpensesAndPart2NonEmployeesTests } from "./automated-payroll-manual-expenses-and-part2-non-employees.test.ts";
 import { runAutomatedPayrollRecurringNonEmployeesTests } from "./automated-payroll-recurring-non-employees.test.ts";
 import { runAutomatedPayrollStandingAdditionsTests } from "./automated-payroll-standing-additions.test.ts";
+import { runAutomatedPayrollStandingTransfersTests } from "./automated-payroll-standing-transfers.test.ts";
 import { runPayrollAcknowledgmentTokenTests } from "./payroll-acknowledgment-token.test.ts";
 import { runClosingPdfLinkSealTests } from "./closing-pdf-link-seal.test.ts";
 import { runPayrollSilentScreensTests } from "./payroll-silent-screens.test.ts";
@@ -6913,6 +6914,7 @@ await runTest("automated payroll reads the Deductions module (only what HR confi
 await runTest("automated payroll manual expenses + Part 2 non-employees (a hand-added employee survives reload; a Part 2 non-employee reaches the bank file)", runAutomatedPayrollManualExpensesAndPart2NonEmployeesTests);
 await runTest("automated payroll recurring non-employees (a new run seeds itself from the standing roster; the full finance sheet carries bank details)", runAutomatedPayrollRecurringNonEmployeesTests);
 await runTest("automated payroll standing additions (a quarterly incentive pre-fills Part 2 Additions when due; August's missed one lands in September only; HR's saved value wins)", runAutomatedPayrollStandingAdditionsTests);
+await runTest("automated payroll standing transfers (1,500 from each part of Omar Gawish to Anwar Gaweesh, Nov 2026 to Oct 2027: Part 1 pre-fills Special Situations as a first-part deduction, Part 2 pre-fills Any more deductions, HR's saved figure wins, the payee lines seed once and never onto a confirmed part, and his own salary is never skipped as a duplicate)", runAutomatedPayrollStandingTransfersTests);
 await runTest("field workforce Thursday half day (Thu costs 0.5; Sat title-dependent; holiday-outage guard)", runFieldWorkforceThursdayHalfDayTests);
 await runTest("deductions no-records scope (crm owns the field workforce; Head Office keeps its only coverage; SFE Manager never deducted)", runDeductionsModuleNoRecordsScopeTests);
 await runTest("outstation approved amount (payroll pays HR's approved figure, not the claim; null still pays the claim)", runOutstationApprovedAmountTests);

@@ -74,6 +74,7 @@ function nonEmployee(overrides: Partial<NonEmployeePayrollRow> = {}): NonEmploye
     bankName: "CIB",
     bankAccount: "100000000009",
     recurringId: null,
+    standingTransferId: null,
     createdBy: null,
     createdAt: "",
     updatedAt: "",
