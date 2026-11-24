@@ -56,8 +56,11 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
   const departmentFilter = getString("department") ?? "";
   const titleFilter = (getString("title") ?? "").trim().toLowerCase();
   // Active-and-on-leave by default, because that is who somebody is normally looking for; "all"
-  // keeps a leaver reachable, since a past month's calendar is exactly when one is wanted.
-  const statusFilter = getString("status") === "all" ? "all" : "working";
+  // keeps a leaver reachable, since a past month's calendar is exactly when one is wanted; "left"
+  // lists only the people who have left (owner, 2026-11-24: "make me able to filter and choose even if
+  // employee is resigned"), and a leaver's calendar opens for any month (privateCalendarRosterForRequest).
+  const rawStatus = getString("status");
+  const statusFilter = rawStatus === "all" ? "all" : rawStatus === "left" ? "left" : "working";
 
   const month = rawMonth ? Math.max(1, Math.min(12, parseInt(rawMonth, 10))) : currentMonth;
   const year = rawYear ? parseInt(rawYear, 10) : currentYear;
@@ -72,7 +75,11 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
 
   // The pool is the whole company. Only the employment-status choice narrows it, and the
   // dropdowns below are derived from that same pool so a filter can never offer an empty result.
-  const pool = statusFilter === "all" ? allEmployees : allEmployees.filter(isWorking);
+  const pool = statusFilter === "all"
+    ? allEmployees
+    : statusFilter === "left"
+      ? allEmployees.filter((emp) => !isWorking(emp))
+      : allEmployees.filter(isWorking);
 
   // Derive unique lines, regions and departments for the filter dropdowns
   const lines = [...new Set(pool.map((e) => e.lineName).filter(Boolean) as string[])].sort();
@@ -114,7 +121,7 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
   }
 
   const hasFilters = Boolean(
-    nameFilter || lineFilter || regionFilter || departmentFilter || titleFilter || statusFilter === "all",
+    nameFilter || lineFilter || regionFilter || departmentFilter || titleFilter || statusFilter !== "working",
   );
 
   // Carried on every link so a chosen filter set survives opening a calendar and coming back.
@@ -124,7 +131,7 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
     ...(regionFilter ? { region: regionFilter } : {}),
     ...(departmentFilter ? { department: departmentFilter } : {}),
     ...(titleFilter ? { title: titleFilter } : {}),
-    ...(statusFilter === "all" ? { status: "all" } : {}),
+    ...(statusFilter !== "working" ? { status: statusFilter } : {}),
   };
   const backToListHref = `/admin/private-calendars?${new URLSearchParams({
     ...filterParams,
@@ -222,6 +229,7 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
               name="status"
             >
               <option value="working">Active &amp; On Leave</option>
+              <option value="left">Left the company (resigned, terminated)</option>
               <option value="all">Everyone, leavers included</option>
             </select>
           </div>
