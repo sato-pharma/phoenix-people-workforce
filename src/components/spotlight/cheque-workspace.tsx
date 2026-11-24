@@ -561,7 +561,9 @@ export function ChequeWorkspace({ payees }: Props) {
                 className="absolute left-0 top-0 origin-top-left border-0 bg-white"
                 sandbox="allow-scripts"
                 srcDoc={framedPreviewHtml}
-                style={{ height: SHEET_H, transform: `scale(${scale})`, width: SHEET_W }}
+                // maxWidth none: the admin shell caps every iframe at 100% of its box, which squeezed the
+                // 914 mm sheet to the card's width BEFORE the scale and left a thin strip of it showing.
+                style={{ height: SHEET_H, maxWidth: "none", transform: `scale(${scale})`, width: SHEET_W }}
                 title="Cheque preview"
               />
             ) : (

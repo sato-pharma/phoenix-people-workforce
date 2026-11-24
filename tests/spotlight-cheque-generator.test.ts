@@ -134,4 +134,23 @@ export function runSpotlightChequeGeneratorTests() {
   assert.match(page, /assertPermission\(access, "spotlight", "export"\)/, "the page redirects anyone without the permission");
   const store = readFileSync("src/lib/spotlight/cheque-signature.ts", "utf8");
   assert.match(store, /public: false/, "the signature bucket is private");
+
+  // The Arabic words SIT ON their rule (owner, 2026-11-25: the rule ran through the letters). The rule
+  // is 34 mm down a 42 mm box; at line-height 1 Chrome puts Amiri Quran's baseline on the box's bottom
+  // (measured at 76 pt and 34 pt), so the box is anchored 8 + 2 mm up and the baseline lands 2 mm
+  // above the rule at any size the fitting script picks. The old fixed `line-height: 34mm; top: 5.8mm`
+  // put the baseline 4.6 mm BELOW the rule.
+  const sheet = awardChequeDocumentHtml();
+  const wordsRule = /\.words__ar \{([^}]*)\}/.exec(sheet)?.[1] ?? "";
+  assert.match(sheet, /\.words__rule \{[^}]*top: 34mm;/, "the words rule is 34 mm down its box");
+  assert.match(sheet, /\.words__ruled \{[^}]*height: 42mm;/, "the words box is 42 mm tall");
+  assert.match(wordsRule, /position: absolute;/, "the words are placed by their box's bottom");
+  assert.match(wordsRule, /bottom: 10mm;/, "the baseline is held 2 mm above the rule");
+  assert.match(wordsRule, /line-height: 1;/, "line-height 1 puts the baseline on the box's bottom");
+  assert.doesNotMatch(wordsRule, /line-height: \d+(\.\d+)?mm/, "no fixed line-height in mm: it let the baseline drift below the rule");
+
+  // The preview frame is laid out at the sheet's full width and scaled down; the admin shell caps every
+  // iframe at max-width 100%, which squeezed it to the card's width first and showed a thin strip.
+  const workspace = readFileSync("src/components/spotlight/cheque-workspace.tsx", "utf8");
+  assert.match(workspace, /maxWidth: "none", transform: `scale\(\$\{scale\}\)`, width: SHEET_W/, "the preview frame escapes the shell's iframe width cap");
 }

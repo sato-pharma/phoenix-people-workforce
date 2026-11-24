@@ -51,6 +51,8 @@ const BOXES_WIDTH_MM = STAT_ROW_WIDTH_MM + FOOT_GAP_MM + AMOUNT_WIDTH_MM;
 const WORDS_LABEL_EN_MM = 54;
 const WORDS_LABEL_AR_MM = 40;
 const WORDS_GUTTER_MM = WORDS_LABEL_EN_MM + WORDS_LABEL_AR_MM;
+/** How far the Arabic words' baseline sits above the words rule (the rule is 34 mm down a 42 mm box). */
+const WORDS_BASELINE_GAP_MM = 2;
 
 // The house documents are A4 (210 mm wide); this sheet is 914 mm wide. Every house measure that is
 // drawn (the band, the hairlines, the mark) is scaled by this factor so the identity keeps its
@@ -532,9 +534,15 @@ const CSS = `
     font-size: 16pt; font-weight: 700; letter-spacing: .24em; text-transform: uppercase; color: var(--gold-deep); }
   .words__lab--en { left: 0; }
   .words__lab--ar { right: 0; font-family: var(--arabic); font-size: 25pt; letter-spacing: 0; text-transform: none; color: var(--deep); }
-  .words__ar { position: relative; top: 5.8mm; font-family: var(--quran); font-weight: 400; font-size: 70pt;
-    line-height: 34mm; word-spacing: .12em; color: var(--ink); text-align: right; white-space: nowrap;
-    margin-left: ${WORDS_LABEL_EN_MM}mm; margin-right: ${WORDS_LABEL_AR_MM}mm; }
+  /* The words SIT ON the rule: their baseline is held ${WORDS_BASELINE_GAP_MM} mm above it, only the tails
+     (ي ر ق) dipping through. At line-height 1 Chrome puts Amiri Quran's baseline exactly on the bottom
+     of its box (measured at 76 pt and at 34 pt), so anchoring the box's bottom holds the words on the
+     line at whatever size the fitting script shrinks them to. The old fixed line-height in mm let the
+     baseline drift 4.6 mm BELOW the rule at 76 pt and the rule struck through the letters. */
+  .words__ar { position: absolute; left: ${WORDS_LABEL_EN_MM}mm; right: ${WORDS_LABEL_AR_MM}mm; margin: 0;
+    bottom: ${42 - 34 + WORDS_BASELINE_GAP_MM}mm;
+    font-family: var(--quran); font-weight: 400; font-size: 70pt;
+    line-height: 1; word-spacing: .12em; color: var(--ink); text-align: right; white-space: nowrap; }
 
   .amount { width: ${AMOUNT_WIDTH_MM}mm; display: flex; flex-direction: column; padding-bottom: 8mm; }
   /* A double keyline — Deep outside, Light inside — instead of a fill. */
