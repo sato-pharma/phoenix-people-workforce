@@ -56,7 +56,7 @@ import { dayLabel } from "@/components/phoenix-crm/format";
 import { customerMetaText, monthVisitsText, PENDING_COUNTS_NOTE, PENDING_PILL, pendingVisitsText } from "@/components/phoenix-crm/labels";
 import { CrmSpeak, type VoiceNoteValue } from "@/components/phoenix-crm/speak";
 import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
-import { silentFixPayload, useSilentFix } from "@/components/phoenix-crm/use-silent-fix";
+import { silentFixAllowed, silentFixPayload, useSilentFix } from "@/components/phoenix-crm/use-silent-fix";
 import { crmStepBackClassName, crmStepNextClassName } from "@/components/phoenix-crm/step-form";
 import { customerDirectionsUrl, PlaceWindows } from "@/components/phoenix-crm/visit-customer-picker";
 import { DirectionsLink } from "@/components/phoenix-crm/directions-link";
@@ -782,6 +782,30 @@ export function VisitLogForm({
     // Read in silence; he sees only "Saving…" while a first reading arrives.
     const fix = await readFix();
     if (!fix) {
+      // 🔴 NO READING, BUT NOT SWITCHED OFF: the press is kept and filed for the Super Admin, never lost (owner,
+      // 24 Nov 2026). The phone holds the body with no reading in it, and the sending pass files it at once.
+      if (queueOwner !== null && (await silentFixAllowed())) {
+        const held = holdVisitPress({
+          ownerHrId: queueOwner,
+          visitId,
+          seatId,
+          customerId: customer.customerId,
+          customerName: next.customerName,
+          pressedDay: form.cairoToday,
+          pressedAtMs: savedAt,
+          body: { ...next.payload, deviceCapturedAt: new Date(savedAt).toISOString(), deviceInstallId: deviceInstallId() },
+        });
+        if (held) {
+          leaveVisitWaiting(queueOwner, visitId);
+          if (retryOf && retryOf.visitId !== visitId) {
+            forgetHeldVisit(queueOwner, retryOf.visitId);
+            reportVisitResend(retryOf, "relogged");
+          }
+          setSaving(false);
+          onQueued?.();
+          return;
+        }
+      }
       setProblem(NO_FIX_FOR_A_VISIT);
       setSaving(false);
       return;

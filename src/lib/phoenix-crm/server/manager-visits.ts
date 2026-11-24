@@ -74,7 +74,7 @@ export type ManagerCompanionOffer = { hrId: string; name: string; title: string;
  * people his With a manager or product manager half-day offers, from the organogram and his line's product
  * side, each under their own title. Lazily: manager-plans.ts reads this module.
  */
-async function loadCompanionOffers(viewer: PhoenixCrmViewer, writer: ManagerPlanWriter): Promise<ManagerCompanionOffer[]> {
+export async function loadCompanionOffers(viewer: PhoenixCrmViewer, writer: ManagerPlanWriter): Promise<ManagerCompanionOffer[]> {
   const { managerSeniorOffers } = await import("@/lib/phoenix-crm/server/manager-plans");
   const offers = await managerSeniorOffers(viewer, writer);
   const names = await loadPeopleNames(offers.map((offer) => offer.hrId));

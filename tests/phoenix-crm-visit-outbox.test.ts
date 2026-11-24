@@ -14,6 +14,7 @@ import {
   type OutboxDeps,
 } from "../src/lib/phoenix-crm/visit-outbox.ts";
 import { MANAGER_SINGLE_VISIT, VISIT_OUTBOX_MAX_ENTRIES, VISIT_RESEND_GAP_MS, type QueuedVisit } from "../src/lib/phoenix-crm/visit-resend-rules.ts";
+import { pressedWithNoLocation } from "../src/lib/phoenix-crm/late-visit-rules.ts";
 import { markVisitsCanBeHeld, visitsCanBeHeldNow } from "../src/components/phoenix-crm/visit-hold-signal.ts";
 
 /**
@@ -65,7 +66,8 @@ function entry(overrides: Partial<QueuedVisit> = {}): QueuedVisit {
     status: "waiting",
     refusalCode: null,
     refusalMessage: null,
-    body: { id: visitId, comment: "Saw the doctor" },
+    // A real press carries the reading; one without it is the no-location press, filed at once (24 Nov 2026).
+    body: { id: visitId, comment: "Saw the doctor", lat: 30.0444, lon: 31.2357 },
     ...overrides,
   };
 }
@@ -225,6 +227,36 @@ async function checkALateVisitIsFiled(): Promise<void> {
   assert.equal(readQueuedVisits(full, ME).some((held) => held.visitId === "full-3"), false, "the filed one went");
   assert.equal(keepQueuedVisit(full, ME, entry({ visitId: "another-press" })), false, "with nothing filed left, a full phone still refuses");
   assert.equal(readQueuedVisits(full, ME).length, VISIT_OUTBOX_MAX_ENTRIES);
+
+  // 🔴 A PRESS WITH NO READING IS FILED AT ONCE, never sent and never lost (owner, 24 Nov 2026: "build the three
+  // follow-ups"). Sent, the server could only refuse it; filed, the Super Admin decides it.
+  const noReadingFiled: QueuedVisit[] = [];
+  const noReading = harness({
+    entries: [entry({ body: { id: "visit-1", comment: "Saw the doctor" } })],
+    nowMs: START + 60_000,
+    fileLate: async (held) => void noReadingFiled.push(held),
+  });
+  assert.equal(await drainVisitOutbox(noReading.deps), 0);
+  assert.equal(noReading.sent.length, 0, "🔴 a press with no reading is never sent as a visit");
+  assert.equal(noReadingFiled.length, 1, "🔴 it is filed for the Super Admin, inside its window");
+  assert.equal(noReading.held()[0]?.status, "filed", "and the phone says it was sent for approval");
+  assert.equal(pressedWithNoLocation(undefined, { lat: 30, lon: 31 }), false, "a press with its reading is a visit");
+  assert.equal(pressedWithNoLocation(undefined, { lat: Number.NaN, lon: 31 }), true, "a reading that is not a number is none");
+  assert.equal(pressedWithNoLocation(MANAGER_SINGLE_VISIT, {}), false, "🔴 a manager's own single visit reads no location, so it is sent as ever");
+
+  // With a reading, inside its window, it is sent as before.
+  const withReading = harness({ entries: [entry()], nowMs: START + 60_000, fileLate: async () => assert.fail("never filed") });
+  await drainVisitOutbox(withReading.deps);
+  assert.equal(withReading.sent.length, 1, "a press with its reading is sent");
+
+  // The form holds an empty press only when location is ALLOWED; switched off, the server's own sentence still asks for it.
+  const form = stripComments(readFileSync("src/components/phoenix-crm/visit-log-form.tsx", "utf8"));
+  const empty = form.slice(form.indexOf("const fix = await readFix();"), form.indexOf("const body = { ...next.payload, ...silentFixPayload(fix, savedAt)"));
+  assert.ok(empty.includes("if (queueOwner !== null && (await silentFixAllowed())) {"), "🔴 only a phone that allows location files an empty press");
+  assert.ok(empty.includes("holdVisitPress({"), "🔴 the empty press is kept on the phone before anything else");
+  assert.ok(empty.indexOf("holdVisitPress({") < empty.indexOf("setProblem(NO_FIX_FOR_A_VISIT);"), "and the refusal is what is left when it cannot be kept");
+  const reader = stripComments(readFileSync("src/components/phoenix-crm/use-silent-fix.ts", "utf8"));
+  assert.ok(reader.includes('return answer.state === "granted";'), "🔴 allowed means granted, never a prompt still open");
 }
 
 /**
@@ -541,7 +573,7 @@ async function checkTheSwitch(): Promise<void> {
 }
 
 async function checkTheVoiceNote(): Promise<void> {
-  const withVoice = { id: "visit-1", comment: "Saw the doctor", voiceNotePath: "voice/a.webm", voiceNoteSeconds: 12, voiceNoteBytes: 900 };
+  const withVoice = { id: "visit-1", comment: "Saw the doctor", voiceNotePath: "voice/a.webm", voiceNoteSeconds: 12, voiceNoteBytes: 900, lat: 30.0444, lon: 31.2357 };
   const typed = harness({
     entries: [entry({ body: withVoice })],
     send: async (body) => {
