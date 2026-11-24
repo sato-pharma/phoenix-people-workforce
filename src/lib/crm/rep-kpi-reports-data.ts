@@ -39,6 +39,7 @@ import {
 import { CRM_CONTACT_ASSIGNMENTS_TABLE } from "@/lib/crm/tables";
 import { classifyVisit } from "@/lib/crm/visit-types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 
 /** PostgREST caps a page at 1000 rows; the open contact lists were 9,756 rows on 2026-09-14. */
@@ -119,6 +120,34 @@ export async function loadPanelRows(options: { reuseRecentWindow?: boolean } = {
   if (options.reuseRecentWindow !== true) return readPanelRows();
   const { rows } = await getOrLoadShared(CRM_OPEN_ASSIGNMENTS, "open", readPanelRows, OPEN_ASSIGNMENTS_LIMITS);
   return rows ?? [];
+}
+
+/**
+ * The list periods that CLOSED inside a month — a doctor archived after the month began (owner, 25 Nov
+ * 2026: "Fix the KPI"). The Phoenix KPIs count each as on the rep's list for that month, so the visits
+ * he made before the archive still credit the plan days that stay in coverage. About 1,800 rows for a
+ * month (November 2026), read by keyset on `id`, live — never the shared copy, which holds open rows only.
+ */
+export async function loadFormerPanelRows(
+  month: { start: string; end: string },
+  /** A board of a few reps reads only their rows (every alias of each hr id); omitted, the company. */
+  agentHrIds?: readonly string[],
+): Promise<ContactRecord[]> {
+  if (agentHrIds && agentHrIds.length === 0) return [];
+  const rows = await fetchAllRowsKeyset<OpenPanelAssignment & { id: number }>(
+    () => {
+      let query = getSupabaseAdmin()
+        .from(CRM_CONTACT_ASSIGNMENTS_TABLE)
+        .select("id, agent_crm_id, agent_hr_id, contact_crm_id, grade, list_type")
+        .not("effective_to", "is", null)
+        .gte("effective_to", month.start)
+        .lte("effective_from", month.end);
+      if (agentHrIds) query = query.in("agent_hr_id", [...agentHrIds]);
+      return query;
+    },
+    { cursorColumn: "id", cursorOf: (row) => row.id },
+  );
+  return rows.map((row) => toPanelContactRecord(row));
 }
 
 const OPEN_ASSIGNMENTS_RPC = "phx_crm_open_assignments";

@@ -30,7 +30,7 @@ import {
 import { KPI_NARROW_MAX_CRM_IDS, resolveKpiBoardAgents, type KpiBoardAgents } from "@/lib/crm/kpi-board-agents";
 import { queryCheckins, queryVisits } from "@/lib/crm/reads";
 import { inPlanEntryOrder, scanPlanEntries, type PlanChunkMemo } from "@/lib/crm/rep-doctor-lists";
-import { loadPanelRows, narrowListType } from "@/lib/crm/rep-kpi-reports-data";
+import { loadFormerPanelRows, loadPanelRows, narrowListType } from "@/lib/crm/rep-kpi-reports-data";
 import type { RepKpiStandards } from "@/lib/crm/rep-kpi-reports";
 import { canonicalHrIdKey, hrIdAliasSources } from "@/lib/hr-id";
 
@@ -178,7 +178,7 @@ export async function loadPhoenixRepKpis(input: {
       )
     : null;
   const people = narrowed ? { agentCrmOrHrIds: { crmIds: narrowed.crmIds, hrIds: narrowed.hrIds } } : {};
-  const [planRows, visitRows, checkinRows] = await Promise.all([
+  const [planRows, visitRows, checkinRows, formerPanelRows] = await Promise.all([
     narrowed
       ? // Two passes (CRM ids, then hr ids) are folded one after the other; the company-wide read
         // comes back in entry-id order, so the union is put back into it.
@@ -212,6 +212,9 @@ export async function loadPhoenixRepKpis(input: {
           ...people,
         })
       : Promise.resolve([] as CheckinRecord[]),
+    // The list periods that closed inside the month: a doctor archived mid-month still belongs to it,
+    // so his visits there credit the plan days coverage still counts (owner, 25 Nov 2026).
+    loadFormerPanelRows(input.month, narrowed?.hrIds),
   ]);
 
   // Rule 10 (owner, 2026-09-20): which Regular visits have a matching GPS check-in. The SAME
@@ -250,6 +253,17 @@ export async function loadPhoenixRepKpis(input: {
     const bucket = panelByRep.get(key) ?? [];
     bucket.push({ contactCrmId: row.contact_crm_id, listType, grade: row.contact_grade });
     panelByRep.set(key, bucket);
+  }
+  // Never fed to phoenixHrKeyByCrmId: a closed period says nothing about who holds a CRM account now.
+  const formerPanelByRep = new Map<string, PhoenixPanelContact[]>();
+  for (const row of formerPanelRows) {
+    const key = canonicalHrIdKey(row.agent_hr_id);
+    if (!key || !isAgentInScope(input.scope, row.agent_hr_id)) continue;
+    const listType = narrowListType(row.list_type);
+    if (!listType || row.contact_crm_id == null) continue;
+    const bucket = formerPanelByRep.get(key) ?? [];
+    bucket.push({ contactCrmId: row.contact_crm_id, listType, grade: row.contact_grade });
+    formerPanelByRep.set(key, bucket);
   }
 
   const keyOf = (hrId: string | null, crmId: number | null): string | null => phoenixRowKey(hrKeyByCrmId, hrId, crmId);
@@ -295,6 +309,7 @@ export async function loadPhoenixRepKpis(input: {
       lastWorkingDate: dates?.lastWorkingDate ?? null,
       holidays: holidays.dates,
       panel: panelByRep.get(key) ?? [],
+      formerPanel: formerPanelByRep.get(key) ?? [],
       planEntries: plansByRep.get(key) ?? [],
       visits: visitsByRep.get(key) ?? [],
       standards: input.standards,

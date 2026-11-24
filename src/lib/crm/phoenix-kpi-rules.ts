@@ -355,6 +355,9 @@ export type PhoenixRepInput = {
   lastWorkingDate?: string | null;
   holidays?: CallRateHolidays;
   panel: readonly PhoenixPanelContact[];
+  /** The rep's list periods that CLOSED inside the month (a doctor archived mid-month). Each one counts
+   * as on his list for this month, unless the contact is on `panel` already. */
+  formerPanel?: readonly PhoenixPanelContact[];
   planEntries: readonly PhoenixPlanEntry[];
   visits: readonly PhoenixVisit[];
   standards?: RepKpiStandards;
@@ -427,13 +430,23 @@ function scorePhoenixRep(input: PhoenixRepInput): {
 
   const listsByContact = new Map<number, Set<CrmListType>>();
   const panelGrade = new Map<number, string | null>();
-  for (const contact of input.panel) {
+  const addToPanel = (contact: PhoenixPanelContact) => {
     const lists = listsByContact.get(contact.contactCrmId) ?? new Set<CrmListType>();
     lists.add(contact.listType);
     listsByContact.set(contact.contactCrmId, lists);
     if (contact.listType !== "Pharmacy" && (panelGrade.get(contact.contactCrmId) ?? null) == null) {
       panelGrade.set(contact.contactCrmId, contact.grade);
     }
+  };
+  for (const contact of input.panel) addToPanel(contact);
+  // A doctor archived DURING the month still belongs to the month he was worked in (owner, 25 Nov
+  // 2026: "Fix the KPI"). Without this his plan days stayed in coverage's denominator while his
+  // visits, finding him on no list, fell to the campaign line — so a rep who had seen every planned
+  // doctor read 99%. The monthly report (phoenix_crm_report_coverage) has always counted him. The
+  // list he is on TODAY wins: a former listing only fills in for a contact the open panel lacks.
+  const openContacts = new Set(listsByContact.keys());
+  for (const contact of input.formerPanel ?? []) {
+    if (!openContacts.has(contact.contactCrmId)) addToPanel(contact);
   }
 
   // Ruling C1: the call rate's days and its calls both stop at `callRateTo`, never one without the other.
