@@ -594,7 +594,8 @@ export type VisitDayView = {
   canSetDayActivity: boolean;
   /**
    * Whose held visits to show on this screen (owner, 3 Nov 2026): his own, on his own current day, with the
-   * off switch either way, so a visit the switch stopped from sending still tells him to log it again.
+   * off switch either way, so a visit the switch stopped from sending still tells him to log it again. A manager
+   * who enters visits on this territory reads his own held ones here too (owner, 24 Nov 2026).
    */
   heldVisitsOwnerHrId: string | null;
   /**
@@ -684,7 +685,8 @@ export async function loadVisitDay(viewer: PhoenixCrmViewer, raw: { seatId: unkn
     canAdd: date === today && canEnterVisits(viewer, seat.seatId, isTest),
     dayActivity: activity,
     canSetDayActivity: date === today && canWriteAsRep(viewer, seat, isTest),
-    heldVisitsOwnerHrId: date === today && !isTest && canWriteAsRep(viewer, seat, isTest) ? viewer.hrId : null,
+    // A manager who enters visits on this territory holds them too (owner, 24 Nov 2026: "make this for managers also").
+    heldVisitsOwnerHrId: date === today && !isTest && (canWriteAsRep(viewer, seat, isTest) || canEnterVisits(viewer, seat.seatId, isTest)) ? viewer.hrId : null,
     canSetOwnDayActivity: ownSeat !== null,
     ownDayActivity,
     canAddVisitDetail: canWriteAsRep(viewer, seat, isTest),
@@ -905,8 +907,9 @@ export type VisitFormView = {
    */
   recordingRequired: boolean;
   /**
-   * Whose phone may hold this visit if the signal drops (owner, 3 Nov 2026), or null when none may: a manager
-   * entering, a test login, or the off switch. Null is the save exactly as it was before the queue existed.
+   * Whose phone may hold this visit if the signal drops (owner, 3 Nov 2026), or null when none may: a test login or
+   * the off switch. A manager entering a visit holds it on his own phone too (owner, 24 Nov 2026). Null is the save
+   * exactly as it was before the queue existed.
    */
   visitQueueOwnerHrId: string | null;
 };
@@ -1407,7 +1410,8 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     blockedReason,
     offPlan: offPlanAllowance({ rows: offPlanRows, day: today, caps: settings, exemptions: offPlanExemptions }),
     recordingRequired,
-    visitQueueOwnerHrId: enteredAs === "rep" && !isTest && settings.visitResendEnabled ? viewer.hrId : null,
+    // The rep on his own territory AND a manager entering on it (owner, 24 Nov 2026: "make this for managers also").
+    visitQueueOwnerHrId: !isTest && settings.visitResendEnabled ? viewer.hrId : null,
     doubleVisitDays: enteredAs === "rep" ? doubleVisitDayChoices(viewer.cairoToday, doubleVisitHolidays) : [],
   });
 }
@@ -1970,6 +1974,7 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
         isTest,
         fix: { lat: visit.lat, lon: visit.lon, accuracyMeters: visit.accuracyMeters, capturedAt },
         queuedSeconds,
+        sentByHrId: viewer.hrId,
         deviceMocked: visit.deviceMocked,
         readerReplaced: visit.readerReplaced ?? null,
         readerFindings: visit.readerFindings ?? [],

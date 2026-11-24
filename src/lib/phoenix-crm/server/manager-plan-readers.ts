@@ -608,6 +608,37 @@ export async function loadManagerVisitFixes(
 }
 
 /**
+ * When each named person's phone reached Phoenix with one of his own single visits since a moment, by upper-cased HR
+ * id — the server's insert time (`created_at`), never `captured_at`, which 38 of 202 such visits on production did
+ * not carry as their arrival (24 Nov 2026). For testing a wait a manager's phone claimed for a held visit (owner,
+ * 24 Nov 2026: the visit retry "for managers also"). No count, no flag. A failed read throws.
+ */
+export async function loadManagerPhoneArrivals(input: {
+  hrIds: ReadonlyArray<string>;
+  sinceIso: string;
+  isTest: boolean;
+}): Promise<Map<string, Date[]>> {
+  const arrivals = new Map<string, Date[]>();
+  const wanted = new Set(input.hrIds.map((hrId) => hrId.trim().toUpperCase()).filter(Boolean));
+  if (wanted.size === 0) return arrivals;
+  const { data, error } = await getSupabaseAdmin()
+    .from("phoenix_crm_manager_visits")
+    .select("created_at, entered_by_hr_id")
+    .in("entered_by_hr_id", [...wanted])
+    .eq("is_test", input.isTest)
+    .gte("created_at", input.sinceIso)
+    .limit(500);
+  if (error) throw new Error(`Could not read when the managers' phones reached Phoenix: ${error.message}`);
+  for (const row of (data ?? []) as Array<{ created_at: string | null; entered_by_hr_id: string | null }>) {
+    const sender = String(row.entered_by_hr_id ?? "").toUpperCase();
+    const arrivedAt = new Date(String(row.created_at));
+    if (!wanted.has(sender) || Number.isNaN(arrivedAt.getTime())) continue;
+    arrivals.set(sender, [...(arrivals.get(sender) ?? []), arrivedAt]);
+  }
+  return arrivals;
+}
+
+/**
  * Every manager's own visit on an empty territory since a day, as the seat it fell on and its date, and nothing
  * else: no manager, no customer, no verdict. For the Empty Seats board, which asks only whether anybody is going
  * there, so unlike the rest of this file it is keyed by TERRITORY. It is no KPI: the board prints it as "logged".

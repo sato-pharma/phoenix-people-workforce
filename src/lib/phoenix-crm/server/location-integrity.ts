@@ -20,12 +20,14 @@ import { assessCaptureTrust, fixesAreBitIdentical, type CaptureFix } from "@/lib
 import { cairoBusinessDay } from "@/lib/phoenix-crm/calendar";
 import {
   checkHeldLocationIntegrity,
+  heldSenderOf,
   PHOENIX_CRM_STRONG_INTEGRITY_FLAGS,
   REPLAY_DECIMALS,
   type PhoenixCrmHeldPriorFix,
   type PhoenixCrmIntegrityFlag,
   type PhoenixCrmPriorFix,
 } from "@/lib/phoenix-crm/location-integrity";
+import { loadManagerPhoneArrivals } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
@@ -77,14 +79,45 @@ function toPriorFix(row: Row, customerKey: string): PhoenixCrmPriorFix | null {
   };
 }
 
-type LoadedHistory = { history: PhoenixCrmHeldPriorFix[]; ownArrivals: Date[] };
+type LoadedHistory = { history: PhoenixCrmHeldPriorFix[]; ownArrivals: Date[]; arrivalsBySender: Map<string, Date[]> };
+
+/**
+ * When each OTHER phone that held a save reached the server — a manager entering visits on a rep's territory
+ * (owner, 24 Nov 2026: the visit retry "for managers also"). A visit he entered anywhere, and his own single visit,
+ * are each his phone online. Read by the server's insert time (`created_at`): a manager's entry often carries a
+ * `captured_at` that is not its arrival (61 of 71 on production, 14 days to 24 Nov 2026). A failed read answers
+ * nothing, so the claim is then believed — which only ever CORRECTS a reading, never erases one.
+ */
+async function loadSenderArrivals(senders: ReadonlySet<string>, isTest: boolean, since: string): Promise<Map<string, Date[]>> {
+  if (senders.size === 0) return new Map();
+  const who = [...senders];
+  const [entered, ownSingles] = await Promise.all([
+    getSupabaseAdmin()
+      .from("phoenix_crm_visits")
+      .select("created_at, entered_by_hr_id")
+      .in("entered_by_hr_id", who)
+      .eq("is_test", isTest)
+      .is("imported_from_ireports360_at", null)
+      .gte("created_at", since)
+      .limit(500),
+    loadManagerPhoneArrivals({ hrIds: who, sinceIso: since, isTest }).catch(() => new Map<string, Date[]>()),
+  ]);
+  const arrivals = new Map<string, Date[]>(ownSingles);
+  for (const row of (entered.data ?? []) as Row[]) {
+    const sender = String(row.entered_by_hr_id ?? "").toUpperCase();
+    const arrivedAt = new Date(String(row.created_at));
+    if (!senders.has(sender) || Number.isNaN(arrivedAt.getTime())) continue;
+    arrivals.set(sender, [...(arrivals.get(sender) ?? []), arrivedAt]);
+  }
+  return arrivals;
+}
 
 /**
  * Everything the detectors compare one fix against: this rep's recent captures, plus any capture by
  * ANYONE that sits on the same coordinate. Visits and validated places both count as fixes — a rep
  * who spoofs a place and then visits it honestly is still a rep who spoofed a place.
  */
-async function loadHistory(repHrId: string, fix: { lat: number; lon: number }, isTest: boolean): Promise<LoadedHistory> {
+async function loadHistory(repHrId: string, fix: { lat: number; lon: number }, isTest: boolean, heldSender: string | null): Promise<LoadedHistory> {
   const supabase = getSupabaseAdmin();
   const ownSince = new Date(Date.now() - OWN_HISTORY_DAYS * 86_400_000).toISOString();
   const replaySince = new Date(Date.now() - REPLAY_HISTORY_DAYS * 86_400_000).toISOString();
@@ -152,9 +185,19 @@ async function loadHistory(repHrId: string, fix: { lat: number; lon: number }, i
   for (const result of [ownVisits, ownPlaces, replayVisits, replayPlaces]) {
     for (const row of (result.data ?? []) as Row[]) {
       const prior = toPriorFix(row, "customer_id");
-      if (prior) history.push({ ...prior, queuedSeconds: heldSeconds.get(String(row.id)) ?? null });
+      if (prior) history.push({ ...prior, queuedSeconds: heldSeconds.get(String(row.id)) ?? null, sentByHrId: row.entered_by_hr_id ? String(row.entered_by_hr_id) : null });
     }
   }
+
+  // The other phones whose held saves are judged here: this save's own, when a manager's phone held it, and each
+  // held save on record that a manager entered.
+  const senders = new Set<string>();
+  if (heldSender) senders.add(heldSender);
+  for (const prior of history) {
+    const other = prior.queuedSeconds ? heldSenderOf(prior.sentByHrId, repHrId) : null;
+    if (other) senders.add(other);
+  }
+  const arrivalsBySender = await loadSenderArrivals(senders, isTest, ownSince).catch(() => new Map<string, Date[]>());
 
   // When this rep's phone reached the server, for testing a claimed wait. Their own visits only, because a save by a
   // manager or an admin is not this phone online, and a place's `captured_at` is not confirmed to be a receipt.
@@ -164,7 +207,7 @@ async function loadHistory(repHrId: string, fix: { lat: number; lon: number }, i
     const arrivedAt = new Date(String(row.captured_at));
     if (String(row.entered_by_hr_id ?? "").toUpperCase() === repHrId && !Number.isNaN(arrivedAt.getTime())) ownArrivals.push(arrivedAt);
   }
-  return { history, ownArrivals };
+  return { history, ownArrivals, arrivalsBySender };
 }
 
 export type JudgeCaptureInput = {
@@ -177,6 +220,8 @@ export type JudgeCaptureInput = {
   fix: { lat: number; lon: number; accuracyMeters: number | null; capturedAt: Date };
   /** How long the phone held this save before it arrived (visit-resend-rules.ts). Places never carry one. */
   queuedSeconds?: number | null;
+  /** Whose phone sent this save — the signed-in person. A manager entering on the rep's territory is not the rep. */
+  sentByHrId?: string | null;
   /** Android's mock-provider flag as the phone reported it; null where it cannot be asked. */
   deviceMocked: boolean | null;
   /** Whether the browser's own location reader was replaced (location-reader-probe.ts); null when not asked. */
@@ -194,13 +239,18 @@ export type JudgeCaptureInput = {
 export async function judgeCapture(input: JudgeCaptureInput): Promise<void> {
   try {
     const repHrId = input.repHrId.toUpperCase();
-    const { history, ownArrivals } = await loadHistory(repHrId, input.fix, input.isTest).catch((): LoadedHistory => ({ history: [], ownArrivals: [] }));
+    const heldSender = input.queuedSeconds ? heldSenderOf(input.sentByHrId, repHrId) : null;
+    const { history, ownArrivals, arrivalsBySender } = await loadHistory(repHrId, input.fix, input.isTest, heldSender).catch(
+      (): LoadedHistory => ({ history: [], ownArrivals: [], arrivalsBySender: new Map() }),
+    );
     // The capture being judged is already on file by now, so it would otherwise match itself.
     // Judged at arrival and again at the door. What is FILED below keeps the arrival: it must agree with the visit.
     const verdict = checkHeldLocationIntegrity({
       fix: input.fix,
       queuedSeconds: input.queuedSeconds,
       ownArrivals,
+      sentByHrId: input.sentByHrId ?? null,
+      arrivalsBySender,
       repHrId,
       customerId: input.customerId,
       deviceMocked: input.deviceMocked,

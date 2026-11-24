@@ -11,6 +11,7 @@ import {
   checkLocationIntegrity,
   creditedHeldSeconds,
   HELD_WAIT_CONTACT_GRACE_MINUTES,
+  heldSenderOf,
   PHOENIX_CRM_INTEGRITY_LABELS,
   PHOENIX_CRM_PRECISION_INTEGRITY_FLAGS,
   PHOENIX_CRM_STRONG_INTEGRITY_FLAGS,
@@ -67,6 +68,7 @@ export function runPhoenixCrmQueuedEvidenceTests(): void {
   checkALoneHeldVisitRaisesNothing();
   checkAWaitCorrectsAReadingAndNeverErasesIt();
   checkAClaimTheServerContradictsIsNotCredited();
+  checkAManagersWaitIsTestedOnHisOwnPhone();
   checkAWaitCannotHideAnotherReading();
   checkItCostsTheRankUntilSettled();
   checkTheCaseReadsInPlainWords();
@@ -218,6 +220,64 @@ function checkAClaimTheServerContradictsIsNotCredited(): void {
   assert.equal(after.flags.includes(HELD_FLAG), false);
 }
 
+/**
+ * A manager entering a visit on the rep's territory holds it on HIS phone (owner, 24 Nov 2026: "a manager's phone
+ * doesn't make this for managers also"). The rep's phone reaching Phoenix says nothing about whether the manager had
+ * signal, so the wait is tested on the manager's own arrivals, and only on those.
+ */
+function checkAManagersWaitIsTestedOnHisOwnPhone(): void {
+  assert.equal(heldSenderOf(null, "MR-0412"), null, "no sender named is the rep's own phone");
+  assert.equal(heldSenderOf(" mr-0412 ", "MR-0412"), null, "the rep himself is the rep's own phone");
+  assert.equal(heldSenderOf("pd-0031", "MR-0412"), "PD-0031", "a manager is another phone, upper-cased");
+
+  // The rep's own phone was online at 11:00. The manager's phone held this save for two hours.
+  const online = prior(fixAt("2026-11-03T11:00:00.000Z", 0), "online");
+  const last = prior(fixAt("2026-11-03T12:00:00.000Z", 0.2), "last");
+  const claimed = fixAt("2026-11-03T12:00:30.000Z", 200);
+  const repArrivals = [online.capturedAt, last.capturedAt];
+  const byManager = (arrivalsBySender: ReadonlyMap<string, readonly Date[]>) =>
+    checkHeldLocationIntegrity({
+      fix: claimed,
+      queuedSeconds: 7_200,
+      ownArrivals: repArrivals,
+      sentByHrId: "PD-0031",
+      arrivalsBySender,
+      repHrId: "MR-0412",
+      customerId: "next",
+      deviceMocked: null,
+      readerReplaced: null,
+      readerFindings: [],
+      history: [online, last],
+    });
+
+  const believed = byManager(new Map([["PD-0031", [claimed.capturedAt]]]));
+  assert.equal(believed.flags.includes("impossible_travel"), false, "🔴 the rep's phone being online does not contradict the manager's wait");
+  assert.ok(believed.flags.includes(HELD_FLAG), "it still rests on the wait, and still costs the rank until settled");
+  assert.equal(believed.signals.heldWait?.creditedSeconds, 7_200, "the manager's claim is credited");
+
+  const contradicted = byManager(new Map([["PD-0031", [new Date("2026-11-03T11:00:00.000Z"), claimed.capturedAt]]]));
+  assert.ok(contradicted.flags.includes("impossible_travel"), "🔴 the manager's OWN phone reaching Phoenix inside the wait contradicts it");
+  assert.equal(contradicted.signals.heldWait?.creditedSeconds, 0);
+
+  // The same on a manager's held save already on record: the rep's arrivals never void it.
+  const heldBefore = { ...prior(fixAt("2026-11-03T12:29:00.000Z", 20), "held"), queuedSeconds: 3_540, sentByHrId: "PD-0031" };
+  const after = (managerArrivals: readonly Date[]) =>
+    checkHeldLocationIntegrity({
+      fix: fixAt("2026-11-03T12:30:00.000Z", 30),
+      queuedSeconds: null,
+      ownArrivals: [new Date("2026-11-03T12:00:00.000Z")],
+      arrivalsBySender: new Map([["PD-0031", managerArrivals]]),
+      repHrId: "MR-0412",
+      customerId: "next",
+      deviceMocked: null,
+      readerReplaced: null,
+      readerFindings: [],
+      history: [heldBefore],
+    });
+  assert.equal(after([heldBefore.capturedAt]).flags.includes("impossible_travel"), false, "🔴 a manager's held save on record is tested on his phone, not the rep's");
+  assert.ok(after([new Date("2026-11-03T12:00:00.000Z"), heldBefore.capturedAt]).flags.includes("impossible_travel"), "and his own contact voids it");
+}
+
 function checkAWaitCannotHideAnotherReading(): void {
   // The same coordinate, half an hour apart on the server's clock. A 25 minute wait would bring them inside the gap
   // a preset is excused by.
@@ -292,6 +352,9 @@ function checkTheWiring(): void {
   assert.ok(integrity.includes("queuedSeconds: heldSeconds.get(String(row.id)) ?? null"), "and each one on record with its own");
   assert.equal(integrity.includes("atTheDoor"), false, "🔴 this file moves nothing itself, so nothing is moved twice");
   assert.ok(integrity.includes("ownArrivals,"), "🔴 what can contradict a claim reaches the check");
+  assert.ok(integrity.includes("sentByHrId: input.sentByHrId ?? null,"), "🔴 whose phone held this save reaches the check");
+  assert.ok(integrity.includes("arrivalsBySender,"), "🔴 and the arrivals of a manager's own phone with it");
+  assert.ok(integrity.includes("const heldSender = input.queuedSeconds ? heldSenderOf(input.sentByHrId, repHrId) : null;"), "only a held save sends for another phone's arrivals");
   assert.ok(integrity.includes("for (const row of (ownVisits.data ?? []) as Row[]) {"), "🔴 a contact is this rep's own visit, never a place or somebody else's row");
   assert.ok(integrity.includes('String(row.entered_by_hr_id ?? "").toUpperCase() === repHrId'), "🔴 a save by a manager or an admin is not this phone online");
   assert.ok(integrity.includes("captured_at: input.fix.capturedAt.toISOString()"), "what is FILED keeps the arrival, so it agrees with the visit");
@@ -300,6 +363,8 @@ function checkTheWiring(): void {
 
   // The wait is filed AFTER the judgement, so the visit being judged carries no claim in its own history.
   const visits = code("src/lib/phoenix-crm/server/visits.ts");
+  assert.ok(visits.includes("sentByHrId: viewer.hrId,"), "🔴 the save names the phone that sent it, the signed-in person");
+  assert.ok(visits.includes("visitQueueOwnerHrId: !isTest && settings.visitResendEnabled ? viewer.hrId : null,"), "🔴 a manager entering a visit holds it on his phone too (owner, 24 Nov 2026)");
   const judged = visits.indexOf("await judgeCapture(");
   const filed = visits.indexOf("await recordCaptureProvenance(", judged);
   assert.ok(judged !== -1 && filed > judged, "🔴 judged first, then filed: the visit being judged must not carry a claim in its own history");

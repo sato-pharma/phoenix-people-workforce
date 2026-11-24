@@ -9365,7 +9365,12 @@ what a phone holds asks to be logged again rather than vanishing.
 `phoenix_crm_visits` it answers how many were pressed and never saved. A phone that never reopens undercounts it, and a
 rep's own Remove counts, so it reads "no visit saved", never "lost".
 
-**Who has a queue.** A rep on their own territory and day. A seat view and a test login have none, and behave as before.
+**Who has a queue.** A rep on their own territory and day, and since 24 Nov 2026 a manager entering a visit on a rep's
+territory (his words, after Zahraa Hamdy's 16 Nov visits: "make this for managers also"): it is held on HIS phone, under
+his own name, and sends the same way. His held save's wait is tested against HIS phone's own arrivals (the visits he
+entered anywhere and his own single visits), never the rep's, because the rep's phone reaching Phoenix says nothing about
+his signal (`heldSenderOf`, `arrivalsBySender`). A manager's own single visit on My single visits is a separate form and
+has no queue yet. A seat view and a test login have none, and behave as before.
 No service worker: the push provider holds that scope, so a visit sends only while Phoenix is open, which is what the
 rep is told.
 
