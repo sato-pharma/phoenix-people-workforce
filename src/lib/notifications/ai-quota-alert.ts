@@ -106,7 +106,9 @@ export function aiQuotaIdempotencyKey(provider: AiCallProvider, day: string, hrI
 export function buildAiQuotaExhaustedMessage(record: AiCallRecord): string {
   const provider = aiQuotaProviderLabel(record.provider);
   const affected =
-    record.component === "groq_transcription"
+    record.component === "gemini_transcription"
+      ? "CRM spoken visit comments are being written out by Groq's Whisper instead, which mishears names and numbers, until it is topped up."
+      : record.component === "groq_transcription"
       ? "Speech to text for CRM spoken visit comments is failing until it is topped up — on a browser with no speech engine of its own, that is the only way a rep can dictate one."
       : record.provider === "anthropic" || record.provider === "anthropic_backup"
         ? `${record.provider === "anthropic" ? "The first Anthropic account" : "The backup Anthropic account"} refuses every call until it is topped up. Claude's calls move to the ${record.provider === "anthropic" ? "backup" : "first"} Anthropic account while that one has credit and a key, and the Phoenix CRM signboard reads, which ask Claude first, fall back to OpenAI; if both Anthropic accounts and OpenAI are out, no AI feature has a stand-in.`
@@ -138,6 +140,8 @@ export function aiProviderKeyVariable(provider: AiCallProvider): string {
       return "ANTHROPIC_API_KEY";
     case "anthropic_backup":
       return "ANTHROPIC_API_KEY_2";
+    case "google":
+      return "GEMINI_API_KEY";
     case "groq":
       return "GROQ_API_KEY";
     case "openrouter":
@@ -168,7 +172,9 @@ export function aiKeyAlertIdempotencyKey(provider: AiCallProvider, day: string, 
 export function buildAiKeyRejectedMessage(record: AiCallRecord): string {
   const provider = aiQuotaProviderLabel(record.provider);
   const affected =
-    record.component === "groq_transcription"
+    record.component === "gemini_transcription"
+      ? "CRM spoken visit comments are being written out by Groq's Whisper instead, which mishears names and numbers, until the key is replaced."
+      : record.component === "groq_transcription"
       ? "Speech to text for CRM spoken visit comments is failing until the key is replaced — on a browser with no speech engine of its own, that is the only way a rep can dictate one."
       : record.provider === "openai"
         ? "Every AI feature (CV extraction, invoice reading, the Sales normalizer's AI suggest, CRM notes, the coach, expense notes, email assist and the What Needs You summary) moves to the first Anthropic account, then the backup one, while they have credit and a working key; if all three are out, no AI feature has a stand-in."

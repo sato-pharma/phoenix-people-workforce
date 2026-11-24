@@ -38,7 +38,6 @@ const DRY_RUN_RPC = "phx_test_dry_run_rpc";
 /** Hosts whose POST is a read: asking an AI, pricing a route, looking up a place, a Google token. */
 const READ_ONLY_POST_HOSTS = [
   ...AI_PROVIDER_HOSTS,
-  "generativelanguage.googleapis.com",
   "routes.googleapis.com",
   "places.googleapis.com",
   "maps.googleapis.com",

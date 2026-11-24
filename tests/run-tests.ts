@@ -2993,7 +2993,7 @@ import { runSquareEdgePortalRatchetTests } from "./square-edge-portal-ratchet.te
 import { runPhoenixCrmDictationTests } from "./phoenix-crm-dictation.test.ts";
 import { runPhoenixCrmSpeakTests } from "./phoenix-crm-speak.test.ts";
 import { runPhoenixCrmPerformanceTests } from "./phoenix-crm-performance.test.ts";
-import { runPhoenixCrmVoiceTranscribeTests } from "./phoenix-crm-voice-transcribe.test.ts";
+import { runPhoenixCrmVoiceGeminiTests, runPhoenixCrmVoiceTranscribeTests } from "./phoenix-crm-voice-transcribe.test.ts";
 import { runWebmTimelineRepairTests } from "./webm-timeline-repair.test.ts";
 import { runPhoenixCrmDictationCorrectTests } from "./phoenix-crm-dictation-correct.test.ts";
 import { runPhoenixCrmDictationCorpusTests } from "./phoenix-crm-dictation-corpus.test.ts";
@@ -11931,6 +11931,10 @@ await runTest(
 await runTest(
   "Phoenix CRM spoken comment on a browser with NO speech engine (owner, 2026-09-25 — \"un browsers must be text and audio\"): Firefox has no SpeechRecognition on any platform, so the finished recording is written out server-side by Groq and NEVER by OpenAI, which he refused on cost — the endpoint is fixed rather than read from AI_BASE_URL, the language is the API's `ar` and never the browser's `ar-EG` (which it rejects, and which omitted makes Whisper translate to fluent English), subtitle boilerplate and a stuck decoder are DROPPED rather than filed as something a doctor said, only the person who just recorded a note may have it transcribed because it is charged per second of audio, and the key's shape is pinned before any key exists",
   runPhoenixCrmVoiceTranscribeTests,
+);
+await runTest(
+  "Phoenix CRM voice notes are written out by Gemini 3.5 Flash first (owner, 24 Nov 2026: Switch to Gemini, after a listening test of 20 real notes): Whisper answers only when Gemini has no key, refuses, is busy or out of credit, times out or answers unreadably, and NEVER when Gemini heard nobody, where Whisper writes a subtitle credit; a rescued Gemini failure is failed over, a refused key still pages; the model, the Egyptian instruction and the key shape are pinned",
+  runPhoenixCrmVoiceGeminiTests,
 );
 await runTest(
   "A voice note's timeline is repaired before the speech service measures it (24 Nov 2026): Chrome's recorder stamps the first packet at 0 and the rest on a clock that began minutes or hours earlier, so a 13-second note claiming 15,682 seconds was refused 413 too_large — the hole is closed in place (cluster start, packet offset, cue, duration) on known-size and unknown-size files, a continuous, non-WebM or unreadable file is returned untouched, and transcribeWithGroq sends the repaired bytes",
