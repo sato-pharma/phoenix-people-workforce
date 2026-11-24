@@ -2994,6 +2994,7 @@ import { runPhoenixCrmDictationTests } from "./phoenix-crm-dictation.test.ts";
 import { runPhoenixCrmSpeakTests } from "./phoenix-crm-speak.test.ts";
 import { runPhoenixCrmPerformanceTests } from "./phoenix-crm-performance.test.ts";
 import { runPhoenixCrmVoiceTranscribeTests } from "./phoenix-crm-voice-transcribe.test.ts";
+import { runWebmTimelineRepairTests } from "./webm-timeline-repair.test.ts";
 import { runPhoenixCrmDictationCorrectTests } from "./phoenix-crm-dictation-correct.test.ts";
 import { runPhoenixCrmDictationCorpusTests } from "./phoenix-crm-dictation-corpus.test.ts";
 import { runTerritorySyncPanelRoleScopingTests } from "./territory-sync-panel-role-scoping.test.ts";
@@ -11930,6 +11931,10 @@ await runTest(
 await runTest(
   "Phoenix CRM spoken comment on a browser with NO speech engine (owner, 2026-09-25 — \"un browsers must be text and audio\"): Firefox has no SpeechRecognition on any platform, so the finished recording is written out server-side by Groq and NEVER by OpenAI, which he refused on cost — the endpoint is fixed rather than read from AI_BASE_URL, the language is the API's `ar` and never the browser's `ar-EG` (which it rejects, and which omitted makes Whisper translate to fluent English), subtitle boilerplate and a stuck decoder are DROPPED rather than filed as something a doctor said, only the person who just recorded a note may have it transcribed because it is charged per second of audio, and the key's shape is pinned before any key exists",
   runPhoenixCrmVoiceTranscribeTests,
+);
+await runTest(
+  "A voice note's timeline is repaired before the speech service measures it (24 Nov 2026): Chrome's recorder stamps the first packet at 0 and the rest on a clock that began minutes or hours earlier, so a 13-second note claiming 15,682 seconds was refused 413 too_large — the hole is closed in place (cluster start, packet offset, cue, duration) on known-size and unknown-size files, a continuous, non-WebM or unreadable file is returned untouched, and transcribeWithGroq sends the repaired bytes",
+  runWebmTimelineRepairTests,
 );
 await runTest(
   "Phoenix CRM dictation product correction: the lexicon is built from 136,983 real old-CRM comments, an Arabic clitic is preserved while only the stem is respelled, each token is corrected in its OWN script, and the corrector REFUSES to touch ordinary Arabic, a rep's short form, or a token equally near two products — because inventing a drug name in a clinical note is the expensive direction of the error",
