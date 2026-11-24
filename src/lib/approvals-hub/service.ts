@@ -26,6 +26,7 @@ import { earlierWaitingMessage, loadEarlierWaitingRequest } from "@/lib/vacation
 import { currentCairoDateOnlyIso, formatPhoenixLongDate } from "@/lib/i18n/format";
 import { addDaysIso } from "@/lib/crm/dates";
 import {
+  canManageExcuseRecords,
   getExcuseRequestForActionCenterDeepLink,
   getManagerPendingExcuses,
   type EmployeeExcuseRequest,
@@ -831,12 +832,17 @@ export type ExcuseApprovalDetail = {
   request: EmployeeExcuseRequest | null;
   canAct: boolean;
   readOnlyReason: string | null;
+  // The Super Admin's Admin controls — Edit and Delete on the request page (owner, 2026-11-24). The
+  // PATCH and DELETE on /api/excuses/:id ask the same gate again; this only keeps the panel off a
+  // screen where pressing it would be refused.
+  canAdminManage: boolean;
 };
 
 export async function getExcuseApprovalDetail(access: AccessContext, id: string): Promise<ExcuseApprovalDetail> {
   const hrId = access.hrId?.trim() ?? "";
+  const canAdminManage = canManageExcuseRecords(access);
   const result = await getExcuseRequestForActionCenterDeepLink(access, id).catch(() => null);
-  if (!result) return { notFound: true, request: null, canAct: false, readOnlyReason: null };
+  if (!result) return { notFound: true, request: null, canAct: false, readOnlyReason: null, canAdminManage: false };
 
   const own = isViewer(result.request.employeeHrId, hrId);
   const decided = result.request.status !== "pending_manager";
@@ -848,7 +854,7 @@ export async function getExcuseApprovalDetail(access: AccessContext, id: string)
       : result.canAct
         ? null
         : "Direct manager owns this approval. HR has visibility only.";
-  return { notFound: false, request: result.request, canAct, readOnlyReason };
+  return { notFound: false, request: result.request, canAct, readOnlyReason, canAdminManage };
 }
 
 // ── View builders (page-ready card data; keeps admin & portal pages identical) ─
