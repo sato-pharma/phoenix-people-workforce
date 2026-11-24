@@ -608,6 +608,22 @@ export async function loadManagerVisitFixes(
 }
 
 /**
+ * Which of these client refs are on file as his own single visits — entered by him. For the phone that holds a visit
+ * he logged when the signal dropped (owner, 24 Nov 2026: "never any visit to be lost"), so a press that landed is
+ * settled with no second POST. A failed read throws: it must never look like "not on file".
+ */
+export async function loadManagerVisitClientRefsOnFile(input: { enteredByHrId: string; clientRefs: ReadonlyArray<string> }): Promise<string[]> {
+  if (input.clientRefs.length === 0) return [];
+  const { data, error } = await getSupabaseAdmin()
+    .from("phoenix_crm_manager_visits")
+    .select("client_ref")
+    .in("client_ref", [...input.clientRefs])
+    .eq("entered_by_hr_id", input.enteredByHrId);
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as Array<{ client_ref: string | null }>).map((row) => String(row.client_ref ?? "").toLowerCase()).filter(Boolean);
+}
+
+/**
  * When each named person's phone reached Phoenix with one of his own single visits since a moment, by upper-cased HR
  * id — the server's insert time (`created_at`), never `captured_at`, which 38 of 202 such visits on production did
  * not carry as their arrival (24 Nov 2026). For testing a wait a manager's phone claimed for a held visit (owner,

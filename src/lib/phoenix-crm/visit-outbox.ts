@@ -13,6 +13,7 @@
 import { isOwnedByViewer, ownerScopedStorageKey, VISIT_OUTBOX_KEY_BASE } from "@/lib/browser-storage/owner-scoped";
 import {
   answerToRefusal,
+  isManagerSingleVisit,
   isReadyToSend,
   isTooLateToSend,
   queuedSecondsAt,
@@ -37,7 +38,9 @@ function isEntry(value: unknown): value is QueuedVisit {
     typeof entry.pressedAtMs === "number" &&
     typeof entry.body === "object" &&
     entry.body !== null &&
-    (entry.status === "waiting" || entry.status === "refused" || entry.status === "too_late")
+    (entry.status === "waiting" || entry.status === "refused" || entry.status === "too_late") &&
+    // A kind this phone's code does not know is never sent to the wrong route.
+    (entry.kind === undefined || isManagerSingleVisit(entry))
   );
 }
 
@@ -93,12 +96,17 @@ export function forgetQueuedVisit(storage: OutboxStorage | null, ownerHrId: unkn
  * goes under the SAME id, so if the first one did land the server answers with it rather than a second visit.
  */
 export function findHeldVisit(entries: readonly QueuedVisit[], where: { seatId: string; customerId: string; pressedDay: string }): QueuedVisit | null {
-  return entries.find((entry) => entry.seatId === where.seatId && entry.customerId === where.customerId && entry.pressedDay === where.pressedDay) ?? null;
+  // A manager's own single visit to the same customer is another visit, under another route: never its id.
+  return (
+    entries.find(
+      (entry) => !isManagerSingleVisit(entry) && entry.seatId === where.seatId && entry.customerId === where.customerId && entry.pressedDay === where.pressedDay,
+    ) ?? null
+  );
 }
 
 /** The customers not to offer again on this territory: their visit is already on this phone. */
 export function waitingCustomerIds(entries: readonly QueuedVisit[], seatId: string): ReadonlySet<string> {
-  return new Set(entries.filter((entry) => entry.seatId === seatId && entry.status === "waiting").map((entry) => entry.customerId));
+  return new Set(entries.filter((entry) => !isManagerSingleVisit(entry) && entry.seatId === seatId && entry.status === "waiting").map((entry) => entry.customerId));
 }
 
 /** A failed send, as the network layer reports it. */
@@ -111,8 +119,11 @@ export type OutboxDeps = {
   now: () => number;
   /** Which of these ids are on file, the switch, the server's clock and who is signed in. Throws when it cannot be read. */
   readStatus: (visitIds: string[]) => Promise<{ enabled: boolean; personHrId: string; savedVisitIds: string[]; serverNowMs: number }>;
-  /** Sends one body. Answers whether the server called it a repeat, and throws a SendFailure when refused or unreachable. */
-  send: (body: Record<string, unknown>) => Promise<{ duplicate: boolean }>;
+  /**
+   * Sends one body, to the route its entry's kind names. Answers whether the server called it a repeat, and throws a
+   * SendFailure when refused or unreachable.
+   */
+  send: (body: Record<string, unknown>, entry: QueuedVisit) => Promise<{ duplicate: boolean }>;
   /** Files how an entry ended. Answers nothing and must never throw. */
   report: (entry: QueuedVisit, outcome: VisitResendOutcome, queuedSeconds: number | null) => void;
   sleep: (ms: number) => Promise<void>;
@@ -194,7 +205,7 @@ async function sendOne(deps: OutboxDeps, first: QueuedVisit): Promise<boolean> {
   for (let round = 0; round < 2; round += 1) {
     const queuedSeconds = queuedSecondsAt(entry, deps.now());
     try {
-      const answer = await deps.send({ ...entry.body, queuedSeconds });
+      const answer = await deps.send({ ...entry.body, queuedSeconds }, entry);
       forgetQueuedVisit(storage, ownerHrId, entry.visitId);
       deps.report(entry, answer.duplicate ? "already_saved" : "landed_late", queuedSeconds);
       deps.changed();

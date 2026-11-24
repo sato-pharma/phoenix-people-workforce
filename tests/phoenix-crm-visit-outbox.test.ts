@@ -13,7 +13,7 @@ import {
   waitingCustomerIds,
   type OutboxDeps,
 } from "../src/lib/phoenix-crm/visit-outbox.ts";
-import { VISIT_OUTBOX_MAX_ENTRIES, VISIT_RESEND_GAP_MS, type QueuedVisit } from "../src/lib/phoenix-crm/visit-resend-rules.ts";
+import { MANAGER_SINGLE_VISIT, VISIT_OUTBOX_MAX_ENTRIES, VISIT_RESEND_GAP_MS, type QueuedVisit } from "../src/lib/phoenix-crm/visit-resend-rules.ts";
 import { markVisitsCanBeHeld, visitsCanBeHeldNow } from "../src/components/phoenix-crm/visit-hold-signal.ts";
 
 /**
@@ -74,6 +74,8 @@ type Harness = {
   deps: OutboxDeps;
   storage: FakeStorage;
   sent: Array<Record<string, unknown>>;
+  /** What each send was handed beside its body: the entry, whose kind names the route. */
+  sentEntries: QueuedVisit[];
   reports: Array<{ visitId: string; outcome: string; queuedSeconds: number | null }>;
   reportedCodes: Array<string | null>;
   sleeps: number[];
@@ -95,6 +97,7 @@ function harness(options: {
   const storage = new FakeStorage();
   for (const held of options.entries ?? []) keepQueuedVisit(storage, ME, held);
   const sent: Harness["sent"] = [];
+  const sentEntries: QueuedVisit[] = [];
   const reports: Harness["reports"] = [];
   const reportedCodes: Harness["reportedCodes"] = [];
   const sleeps: number[] = [];
@@ -110,9 +113,10 @@ function harness(options: {
       if (fails) throw new Error("no signal");
       return { enabled: options.enabled ?? true, personHrId: options.personHrId ?? ME, savedVisitIds: options.savedVisitIds ?? [], serverNowMs: options.serverNowMs ?? SERVER_NOON };
     },
-    send: async (body) => {
+    send: async (body, held) => {
       sent.push(body);
-      return options.send ? options.send(body) : { duplicate: false };
+      sentEntries.push(held);
+      return options.send ? options.send(body, held) : { duplicate: false };
     },
     report: (held, outcome, queuedSeconds) => {
       reports.push({ visitId: held.visitId, outcome, queuedSeconds });
@@ -125,7 +129,7 @@ function harness(options: {
       changes += 1;
     },
   };
-  return { deps, storage, sent, reports, reportedCodes, sleeps, statusReads, changes: () => changes, held: () => readQueuedVisits(storage, ME) };
+  return { deps, storage, sent, sentEntries, reports, reportedCodes, sleeps, statusReads, changes: () => changes, held: () => readQueuedVisits(storage, ME) };
 }
 
 export async function runPhoenixCrmVisitOutboxTests(): Promise<void> {
@@ -141,6 +145,52 @@ export async function runPhoenixCrmVisitOutboxTests(): Promise<void> {
   checkTheFormKeepsThePressFirst();
   await checkAnotherPersonSignedIn();
   await checkTheCloseIsStrict();
+  await checkAManagersOwnSingleVisit();
+}
+
+/**
+ * A manager's own single visit is held on his phone too (owner, 24 Nov 2026: "never any visit to be lost from either a
+ * rep or from the manager"). It sends to its own route, and the territory screens never take it for one of theirs.
+ */
+async function checkAManagersOwnSingleVisit(): Promise<void> {
+  const territory = entry({ visitId: "visit-1", customerId: "customer-1" });
+  const single = entry({ visitId: "ref-1", customerId: "customer-1", kind: MANAGER_SINGLE_VISIT, body: { clientRef: "ref-1", customerId: "customer-1" } });
+
+  const both = harness({ entries: [territory, single] });
+  assert.equal(both.held().length, 2, "both are on the phone");
+  assert.equal(findHeldVisit([single], { seatId: "seat-1", customerId: "customer-1", pressedDay: "2026-11-03" }), null, "🔴 a territory visit never reuses the id of his own single visit");
+  assert.equal(findHeldVisit(both.held(), { seatId: "seat-1", customerId: "customer-1", pressedDay: "2026-11-03" })?.visitId, "visit-1");
+  assert.equal(waitingCustomerIds([single], "seat-1").size, 0, "and the territory's list does not hide the customer for it");
+
+  await drainVisitOutbox(both.deps);
+  assert.equal(both.sentEntries.length, 2, "🔴 his own single visit is sent by the same pass");
+  assert.equal(both.sentEntries.find((held) => held.visitId === "ref-1")?.kind, MANAGER_SINGLE_VISIT, "and the send is told what it is, so it goes to its own route");
+  assert.equal(both.held().length, 0, "landed, both leave the phone");
+
+  // Already on file under its client ref: settled with no second POST.
+  const landed = harness({ entries: [single], savedVisitIds: ["ref-1"] });
+  await drainVisitOutbox(landed.deps);
+  assert.equal(landed.sent.length, 0, "a single visit that had landed is not sent again");
+  assert.deepEqual(landed.reports.map((report) => report.outcome), ["already_saved"]);
+
+  // A kind this code does not know is never read, so it can never be sent to the wrong route.
+  const storage = new FakeStorage();
+  storage.setItem(ownerScopedStorageKey(VISIT_OUTBOX_KEY_BASE, ME) ?? "", JSON.stringify([{ ...entry(), kind: "something_else" }]));
+  assert.equal(readQueuedVisits(storage, ME).length, 0);
+
+  const engine = stripComments(readFileSync("src/components/phoenix-crm/visit-outbox-engine.ts", "utf8"));
+  assert.match(engine, /if \(isManagerSingleVisit\(entry\)\) \{[\s\S]*?crmPostWithin<unknown>\(MANAGER_SINGLE_VISIT_PATH, visit, "today", VISIT_SAVE_TIMEOUT_MS\)/, "🔴 it is sent to My single visits' own route");
+  const status = stripComments(readFileSync("src/lib/phoenix-crm/server/visit-resend-log.ts", "utf8"));
+  assert.ok(status.includes("loadManagerVisitClientRefsOnFile({ enteredByHrId: hrId, clientRefs: ids })"), "🔴 the status read answers his single visits by their client ref");
+  const screen = stripComments(readFileSync("src/components/phoenix-crm/manager-single-visits.tsx", "utf8"));
+  assert.ok(screen.includes("kind: MANAGER_SINGLE_VISIT,"), "🔴 My single visits keeps the press on the phone before the request goes");
+  assert.ok(screen.indexOf("holdVisitPress({") < screen.indexOf("await crmPostWithin<ManagerTodayView>(VISITS, body"), "kept first, then sent");
+  assert.match(screen, /if \(isRetryableFailure\(failure\)\) \{\s*leaveVisitWaiting\(queueOwnerHrId, logging\.clientRef\);/, "only no signal is held; a refusal is shown as before");
+  assert.ok(screen.includes("<VisitOutboxNote"), "and what it holds is shown on his screen, with Log it again and Remove");
+  const view = stripComments(readFileSync("src/lib/phoenix-crm/server/manager-visits.ts", "utf8"));
+  assert.ok(view.includes("visitQueueOwnerHrId: !isTest && viewer.config.settings.visitResendEnabled ? viewer.hrId : null,"), "the same off switch, never a test login");
+  const tab = stripComments(readFileSync("src/components/phoenix-crm/visits-tab.tsx", "utf8"));
+  assert.ok(tab.includes("entry.seatId === seatId && !isManagerSingleVisit(entry)"), "🔴 a territory's Visits screen never shows his own single visit as one of its own");
 }
 
 async function checkAnotherPersonSignedIn(): Promise<void> {
