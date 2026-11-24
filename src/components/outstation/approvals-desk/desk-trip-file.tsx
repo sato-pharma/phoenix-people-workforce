@@ -14,6 +14,7 @@ import type { ClaimCheck, DeskClaim } from "@/lib/outstation/approvals/types";
 import type { CrmTripReading } from "@/lib/outstation/crm-trip-evidence";
 import { tripKmText } from "@/lib/outstation/trip-km";
 
+import { DeskAmounts, type OnEdited, amountsOpen } from "./desk-amounts";
 import { DeskDays } from "./desk-days";
 import { type DecisionMode, DecisionButtons, DecisionPanel, type OnPress } from "./desk-decision";
 import { StandingPill, TripLine, WaitFigure, egp } from "./desk-parts";
@@ -56,6 +57,7 @@ export function DeskTripFile({
   canDecide,
   mode,
   notice,
+  onEdited,
   onGo,
   onMode,
   onPress,
@@ -66,6 +68,7 @@ export function DeskTripFile({
   canDecide: boolean;
   mode: DecisionMode;
   notice: DeskNotice | null;
+  onEdited: OnEdited;
   onGo: (requestId: number) => void;
   onMode: (mode: DecisionMode) => void;
   onPress: OnPress;
@@ -178,6 +181,17 @@ export function DeskTripFile({
               </p>
             ) : null}
           </section>
+
+          {canDecide && amountsOpen(claim) ? (
+            <DeskAmounts
+              claim={claim}
+              disabled={pressed}
+              onSaved={(after) => {
+                onEdited(claim, after);
+                readAgain();
+              }}
+            />
+          ) : null}
 
           <Sheet name="found" title="What the system found">
             <p className="min-w-0 break-words text-sm font-black text-slate-950" data-found-lane={claim.verdict.lane}>

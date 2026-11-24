@@ -30,3 +30,19 @@ export const DeskDecideBodySchema = z.strictObject({
 });
 
 export type DeskDecideBody = z.infer<typeof DeskDecideBodySchema>;
+
+/**
+ * "Save amounts" on one claim: the four parts he typed, the version he saw, and the reason. The
+ * figures are the ones he sets (owner, 24 Nov 2026: any figure, above the claim too); each is
+ * capped at the same EGP 1,000,000 the stored edit is read with (hr-amounts.ts).
+ */
+const part = z.number().finite().min(0).max(1_000_000);
+
+export const DeskAmountsBodySchema = z.strictObject({
+  parts: z.strictObject({ allowance: part, meeting: part, other: part, travel: part }),
+  reason: z.string().max(2000),
+  requestId: z.number().int().positive(),
+  revision: z.string().min(1).max(200),
+});
+
+export type DeskAmountsBody = z.infer<typeof DeskAmountsBodySchema>;

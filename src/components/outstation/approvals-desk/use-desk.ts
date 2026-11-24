@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { DESK_REFUSAL } from "@/lib/outstation/approvals/decision-plan";
-import { type DeskLane, type DeskView, applyDeskOutcomes, deskViewFromSearch, deskViewToSearch, openingLane } from "@/lib/outstation/approvals/desk-view";
+import { type DeskLane, type DeskView, applyDeskOutcomes, applyEditedClaim, deskViewFromSearch, deskViewToSearch, openingLane } from "@/lib/outstation/approvals/desk-view";
 import {
   type DeskNotice,
   type DeskPress,
@@ -187,6 +187,12 @@ export function useDesk(initialSearch: string) {
 
   const undo = useCallback((id: number) => setPressQueue(undoPress(pressesRef.current, id)), [setPressQueue]);
 
+  /** A claim whose amounts were just saved on the opened trip, as the server now reads it. */
+  const edited = useCallback((before: DeskClaim | null, after: DeskClaim) => {
+    setLoaded((current) => (current ? applyEditedClaim(current, before, after) : current));
+    setHistoryVersion((current) => current + 1);
+  }, []);
+
   const dismissNotice = useCallback((requestId: number) => setNotices((current) => current.filter((notice) => notice.requestId !== requestId)), []);
 
   /** The view, kept in the address so a reload or a shared link opens the same thing. */
@@ -202,6 +208,7 @@ export function useDesk(initialSearch: string) {
   return {
     canDecide: Boolean(queue?.canDecide),
     dismissNotice,
+    edited,
     historyVersion,
     lane,
     load,

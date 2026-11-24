@@ -6,6 +6,7 @@
  */
 
 import type { TripStanding } from "@/lib/outstation/approvals/standing";
+import type { ExpenseParts, HrAmounts } from "@/lib/outstation/hr-amounts";
 
 /** A check never says "probably": it passed, it failed, or it could not be checked. */
 export type CheckAnswer = "pass" | "fail" | "unknown";
@@ -84,6 +85,12 @@ export type DeskClaim = {
   holdReason: string | null;
   hrComment: string;
   hrId: string | null;
+  /**
+   * The trip's four parts: as the employee claimed them, and the Super Admin's own figures when he
+   * set them (hr-amounts.ts). `total` and `payable` already follow the edit; this is what the amounts
+   * box prints beside its inputs. Absent on a claim built before the box existed.
+   */
+  parts?: { claimed: ExpenseParts; claimedTotal: number; edited: HrAmounts | null };
   /** Traveling, Meeting or Other — what the desk filters on (owner, 2026-11-23). */
   kind: ClaimKind;
   /** True once a payroll took it: nothing here can change it any more. */
@@ -168,6 +175,14 @@ export type DeskDecisionRequest = {
    * carry this is paid in full only while the server's own reading finds no idle-day cut.
    */
   keepFull?: boolean;
+  requestId: number;
+  revision: string;
+};
+
+/** "Save amounts" on one claim: the four parts he typed, the version he saw, and why. */
+export type DeskAmountsRequest = {
+  parts: ExpenseParts;
+  reason: string;
   requestId: number;
   revision: string;
 };

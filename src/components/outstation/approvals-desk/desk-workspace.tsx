@@ -222,6 +222,7 @@ function DeskWorkspaceBody({ initialSearch }: { initialSearch: string }) {
           canDecide={canDecide}
           notice={desk.notices.find((notice) => notice.requestId === view.trip) ?? null}
           onClose={() => desk.setView({ trip: null })}
+          onEdited={desk.edited}
           onGo={open}
           onPress={desk.press}
           onUndo={desk.undo}
