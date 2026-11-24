@@ -15,6 +15,7 @@ import {
   DISPUTE_ATTACHMENT_MAX_FILES,
 } from "../src/lib/dispute-center/attachment-rules.ts";
 import { payrollCharge } from "../src/lib/dispute-center/charge.ts";
+import { monthKeyLabelWithArticle } from "../src/lib/dispute-center/payroll-month.ts";
 
 /**
  * MONEY BACK AFTER A DISPUTE IS WON LATE.
@@ -95,6 +96,44 @@ export async function runDisputeCenterRefundsTests() {
   assert.equal(two?.amount, 520.75, "the amounts are summed to the cent");
   assert.match(two?.reason ?? "", /September 2026/);
   assert.match(two?.reason ?? "", /August 2026/, "both months are named, so neither refund becomes invisible");
+
+  // ---- THE REASON NEVER REPEATS ITSELF (production, October 2026 Other additions) -------------------
+  //
+  // The Dispute Center stores "Refund of a <Month YYYY> deduction" as the refund's own reason, and the
+  // payroll side prefixed the same phrase again — Hanan's three September refunds printed
+  // "Refund of a September 2026 deduction: Refund of a September 2026 deduction; …" three times over.
+  const stored = (reason: string, sourceMonthKey: string, targetMonthKey: string): DisputeRefundRow => ({
+    ...REFUND,
+    amount: 225,
+    reason,
+    sourceMonthKey,
+    targetMonthKey,
+  });
+  const hanan = disputeRefundsByCompact(
+    [1, 2, 3].map(() => stored("Refund of a September 2026 deduction", "2026-09", "2026-10")),
+    p(2026, 10),
+  ).get("B77");
+  assert.equal(hanan?.amount, 675, "three refunds still add up to the cent");
+  assert.equal(hanan?.reason, "Refund of 3 September 2026 deductions", "the phrase is written once and the refunds are counted");
+  const mahmoud = disputeRefundsByCompact(
+    [1, 2].map(() => stored("Refund of a October 2026 deduction", "2026-10", "2026-11")),
+    p(2026, 11),
+  ).get("B77");
+  assert.equal(mahmoud?.reason, "Refund of 2 October 2026 deductions");
+  const one = disputeRefundsByCompact([stored("Refund of a October 2026 deduction", "2026-10", "2026-11")], p(2026, 11)).get("B77");
+  assert.equal(one?.reason, "Refund of an October 2026 deduction", "October takes 'an', and a stored 'a October' is not copied");
+  const withNote = disputeRefundsByCompact(
+    [stored("Refund of a September 2026 deduction: Dispute accepted — he was in training", "2026-09", "2026-10")],
+    p(2026, 10),
+  ).get("B77");
+  assert.equal(
+    withNote?.reason,
+    "Refund of a September 2026 deduction: Dispute accepted — he was in training",
+    "the decision's own note is kept, after the phrase written once",
+  );
+  assert.equal(monthKeyLabelWithArticle("2026-10"), "an October 2026");
+  assert.equal(monthKeyLabelWithArticle("2026-08"), "an August 2026");
+  assert.equal(monthKeyLabelWithArticle("2026-09"), "a September 2026");
 
   // ---- THE ADDITIONS STEP: it lands in Other Additions, with its reason ---------------------------
   const refunds = disputeRefundsByCompact([REFUND], p(2026, 10));

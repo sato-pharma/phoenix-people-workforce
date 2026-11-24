@@ -5,7 +5,7 @@ import { recordDecision } from "@/lib/deductions/service.ts";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { payrollCharge, type ChargeCandidateRow, type ChargeDecisionRow } from "./charge.ts";
-import { monthKeyLabel, payrollMonthState } from "./payroll-month.ts";
+import { monthKeyLabel, monthKeyLabelWithArticle, payrollMonthState } from "./payroll-month.ts";
 import { cancelLiveRefund, recommendDisputeRefund } from "./refunds.ts";
 import { dayLabel, moneyLabel } from "./text.ts";
 
@@ -177,7 +177,7 @@ export async function applyDigestRevisionToDeduction(input: {
         candidateId: candidate.id,
         employeeHrId: input.employeeHrId,
         kind: "digest",
-        reason: `Refund of a ${monthKeyLabel(monthKey)} deduction: ${dayLabel(input.workDate)} dispute upheld on review`,
+        reason: `Refund of ${monthKeyLabelWithArticle(monthKey)} deduction: ${dayLabel(input.workDate)} dispute upheld on review`,
         ref: String(input.lineId),
         sourceMonthKey: monthKey,
       });

@@ -67,3 +67,9 @@ export function monthKeyLabel(monthKey: string): string {
   const names = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   return `${names[Number(match[2]) - 1]} ${match[1]}`;
 }
+
+/** "2026-09" -> "a September 2026", "2026-10" -> "an October 2026". */
+export function monthKeyLabelWithArticle(monthKey: string): string {
+  const label = monthKeyLabel(monthKey);
+  return `${/^[AEIOU]/i.test(label) ? "an" : "a"} ${label}`;
+}
