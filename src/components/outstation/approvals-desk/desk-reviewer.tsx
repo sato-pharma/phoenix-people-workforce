@@ -11,6 +11,7 @@ import { type DeskNotice, type PressQueue, pressedRequestIds } from "@/lib/outst
 
 import type { DecisionMode, OnPress } from "./desk-decision";
 import { DeskExportPdfButton, DeskExportPdfNote, useCaseExport } from "./desk-export-pdf";
+import { type OnEdited } from "./desk-amounts";
 import { DeskTripFile } from "./desk-trip-file";
 import { DeskUndoBar } from "./desk-undo-bar";
 
@@ -51,6 +52,7 @@ export function DeskReviewer({
   canDecide,
   notice,
   onClose,
+  onEdited,
   onGo,
   onPress,
   onUndo,
@@ -62,6 +64,8 @@ export function DeskReviewer({
   /** What came back about this claim (a decision that did not land, a hold), if anything. */
   notice: DeskNotice | null;
   onClose: () => void;
+  /** A claim whose amounts were saved on the opened trip, as the server now reads it. */
+  onEdited: OnEdited;
   onGo: (requestId: number) => void;
   onPress: OnPress;
   onUndo: (pressId: number) => void;
@@ -175,6 +179,7 @@ export function DeskReviewer({
         key={requestId}
         mode={mode}
         notice={notice}
+        onEdited={onEdited}
         onGo={go}
         onMode={setMode}
         onPress={pressAndMove}

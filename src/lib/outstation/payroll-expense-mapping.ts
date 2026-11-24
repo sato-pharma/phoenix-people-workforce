@@ -3,6 +3,7 @@ import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 import { usablePosition } from "@/lib/outstation/captured-coordinates";
 import { outstationClaimRevision } from "@/lib/outstation/claim-revision";
 import { parseOutstationDescription } from "@/lib/outstation/description-format";
+import { partsTotal, readHrAmounts, type HrAmounts } from "@/lib/outstation/hr-amounts";
 import { ticketReceiptFingerprint } from "@/lib/outstation/duplicate-ticket-guard";
 import { normalizeExpenseType, normalizeTransportation } from "@/lib/outstation/expense-taxonomy";
 import { nextPayrollPeriod } from "@/lib/outstation/payroll-period";
@@ -203,6 +204,18 @@ function snapshotKindCount(
  *
  * A caller that IS the decision passes `preserveExistingDecision: false`.
  */
+/**
+ * The trip's four parts and total as payroll pays them: the claim's own, or — when the Super Admin set
+ * his own figures (hr-amounts.ts) — exactly his, totalled. Above the claim is allowed: it is his word.
+ */
+export function withHrAmounts(
+  hr: HrAmounts | null,
+  claimed: { allowance: number; meeting: number; other: number; total: number; travel: number },
+): { allowance: number; meeting: number; other: number; total: number; travel: number } {
+  if (!hr) return claimed;
+  return { allowance: hr.allowance, meeting: hr.meeting, other: hr.other, total: partsTotal(hr), travel: hr.travel };
+}
+
 export function mapOutstationRequestToPayrollExpenseRecord(
   request: OutstationExpenseRequest,
   options: {
@@ -222,18 +235,29 @@ export function mapOutstationRequestToPayrollExpenseRecord(
   const tripEndDate = request.tripEndDate ? request.tripEndDate.slice(0, 10) : tripStartDate;
   // Prefer the override (survives an extra-ticket append, which updates report_travel_cost
   // without touching fuel_amount/ticket_amount) over the raw fuel+ticket sum.
-  const travelCost = request.reportTravelCost ?? request.fuelAmount + request.ticketAmount;
-  const { meetingAmount, total } = outstationPayableTotal({
+  const claimedTravel = request.reportTravelCost ?? request.fuelAmount + request.ticketAmount;
+  const claimed = outstationPayableTotal({
     allowanceAmount: request.allowanceAmount,
     expectedTotalAmount: request.expectedTotalAmount,
     isMeetingTrip: request.expenseType === "meeting",
     meetingAmount: outstationReportOverride(request.reportMeetingAmount, request.meetingAmount),
     otherAmount: outstationReportOverride(request.reportOtherAmount, request.otherAmount),
-    travelCost,
+    travelCost: claimedTravel,
   });
+  // The Super Admin's own figures, when he set them, ARE the trip's money (hr-amounts.ts).
+  const paid = withHrAmounts(request.hrAmounts ?? null, {
+    allowance: request.allowanceAmount,
+    meeting: claimed.meetingAmount,
+    other: outstationReportOverride(request.reportOtherAmount, request.otherAmount),
+    total: claimed.total,
+    travel: claimedTravel,
+  });
+  const travelCost = paid.travel;
+  const meetingAmount = paid.meeting;
+  const total = paid.total;
 
   return {
-    allowance: request.allowanceAmount,
+    allowance: paid.allowance,
     amWorkload: outstationWorkloadCount(request.amWorkload),
     capturedLatitude: request.capturedLatitude,
     capturedLongitude: request.capturedLongitude,
@@ -253,7 +277,7 @@ export function mapOutstationRequestToPayrollExpenseRecord(
     km: request.distanceFromResidenceKm ?? 0,
     location: request.toLabel ?? request.toCity ?? request.toArea ?? "",
     meetingAmount,
-    other: outstationReportOverride(request.reportOtherAmount, request.otherAmount),
+    other: paid.other,
     pharmacyVisits: snapshotKindCount(request.workloadEvidenceSnapshot, "pharmacyVisits"),
     pharmacyWorkload: outstationPharmacyWorkload(request.pharmacyWorkload),
     pmWorkload: outstationWorkloadCount(request.pmWorkload),
@@ -290,11 +314,11 @@ export function mapOutstationRequestRowToPayrollApproval(
     toText(row.residence_address) ||
     [row.residence_area, row.residence_city].map(toText).filter(Boolean).join(", ");
   const payout = nextPayrollPeriod(tripStartDate);
-  const allowance = toNumber(row.allowance_amount);
+  const claimedAllowance = toNumber(row.allowance_amount);
   const expectedTotal = toNumber(row.expected_total_amount);
 
   // Use report_* override columns when set; fall back to original columns.
-  const travelCost =
+  const claimedTravel =
     row.report_travel_cost != null
       ? toNumber(row.report_travel_cost)
       : toNumber(row.fuel_amount) + toNumber(row.ticket_amount);
@@ -302,7 +326,7 @@ export function mapOutstationRequestRowToPayrollApproval(
     row.report_meeting_amount,
     toNumber(row.meeting_amount),
   );
-  const other = outstationReportOverride(row.report_other_amount, toNumber(row.other_amount));
+  const claimedOther = outstationReportOverride(row.report_other_amount, toNumber(row.other_amount));
   // Workload is NOT resolved like the money columns above — see outstationWorkloadCount for why
   // report_am_workload/report_pm_workload are never read on either side.
   const amWorkload = outstationWorkloadCount(row.am_workload);
@@ -333,14 +357,23 @@ export function mapOutstationRequestRowToPayrollApproval(
   const isMeetingTrip = toText(row.expense_type).toLowerCase() === "meeting";
   const notesParts = parseOutstationDescription(typeof row.notes === "string" ? row.notes : toText(row.notes));
 
-  const { meetingAmount, total } = outstationPayableTotal({
-    allowanceAmount: allowance,
+  const claimed = outstationPayableTotal({
+    allowanceAmount: claimedAllowance,
     expectedTotalAmount: expectedTotal,
     isMeetingTrip,
     meetingAmount: rawMeetingAmount,
-    otherAmount: other,
-    travelCost,
+    otherAmount: claimedOther,
+    travelCost: claimedTravel,
   });
+  // The Super Admin's own figures, when he set them, ARE the trip's money (hr-amounts.ts).
+  const paid = withHrAmounts(readHrAmounts(row.hr_amounts), {
+    allowance: claimedAllowance,
+    meeting: claimed.meetingAmount,
+    other: claimedOther,
+    total: claimed.total,
+    travel: claimedTravel,
+  });
+  const { allowance, meeting: meetingAmount, other, total, travel: travelCost } = paid;
 
   return {
     allowance,

@@ -19,6 +19,7 @@ import { cache } from "react";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { auditLogRow } from "@/lib/admin/audit-outbox";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
+import { readHrAmounts } from "@/lib/outstation/hr-amounts";
 import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import {
   OUTSTATION_CLAIM_CHANGED_CODE,
@@ -3052,6 +3053,7 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
     reportPmWorkload: numberValue(row.report_pm_workload),
     reportTravelCost:
       row.report_travel_cost == null ? null : numberValue(row.report_travel_cost),
+    hrAmounts: readHrAmounts(row.hr_amounts),
     reportTripType: text(row.report_trip_type) || null,
     residenceAddress: text(row.residence_address) || null,
     residenceArea: text(row.residence_area) || null,
@@ -5410,6 +5412,45 @@ async function writeOutstationRequestPayableAmount(input: {
   );
 
   return true;
+}
+
+/**
+ * Re-writes an APPROVED claim's payroll row after the Super Admin edited its figures on the desk
+ * (hr-amounts.ts, approvals/amounts.ts): the row then carries the edited parts and their total, and
+ * no earlier reduced amount — the edited figures are the decision now. The row's own comment is kept.
+ *
+ * The same one decision-write the approvals queue uses, so the payroll save's checks are inherited.
+ * Refused when the request is not approved, has no payroll row (a held trip: the edit reaches payroll
+ * when it is released), or a payroll already took the row.
+ */
+export async function rewriteOutstationRequestPayrollFigures(
+  requestId: number,
+  access: AccessContext,
+): Promise<"written" | "no_payroll_row"> {
+  await assertOutstationAdminAccess(access, "approve");
+  const request = await getOutstationRequestById(requestId);
+  if (!request) throw new Error("The request no longer exists.");
+  if (!request.status.startsWith("accepted")) throw new Error("Only an approved claim's payroll row is re-written.");
+  const linked = await getLinkedOutstationPayrollExpense(requestId);
+  if (!linked) return "no_payroll_row";
+  if (isOutstationExpenseInPayroll(linked)) {
+    throw new Error("This outstation expense has already been added to payroll and cannot be edited.");
+  }
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("outstation_expenses")
+    .select("hr_comment")
+    .eq("id", linked.id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+
+  const written = await writeOutstationRequestPayableAmount({
+    access,
+    approvedAmount: null,
+    hrComment: cleanText((data as { hr_comment?: unknown } | null)?.hr_comment) ?? "",
+    request,
+  });
+  return written ? "written" : "no_payroll_row";
 }
 
 /**
