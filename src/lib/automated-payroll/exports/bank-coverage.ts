@@ -1,5 +1,6 @@
 import type { AssembledRow } from "../assemble.ts";
 import type { NonEmployeePayrollRow } from "../types.ts";
+import { mergeStandingTransferLinesForExport } from "./merge-standing-transfers.ts";
 
 /**
  * Who the bank files carry, and — the part that did not exist before — who they DON'T.
@@ -167,7 +168,8 @@ export function buildBankCoverage(input: {
     });
   }
 
-  for (const entry of input.nonEmployees) {
+  // Counted exactly as the bank files carry them: one line per payee per part.
+  for (const entry of mergeStandingTransferLinesForExport(input.nonEmployees)) {
     if (entry.part !== part) continue;
     take({
       name: entry.fullNameEn,

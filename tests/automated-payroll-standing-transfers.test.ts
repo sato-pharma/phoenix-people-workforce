@@ -13,7 +13,11 @@ import {
   standingTransfersByCompact,
   type StandingTransfer,
 } from "../src/lib/automated-payroll/standing-transfers.ts";
-import type { DraftRow } from "../src/lib/automated-payroll/types.ts";
+import { buildBankCoverage } from "../src/lib/automated-payroll/exports/bank-coverage.ts";
+import { cibRowsForNonEmployees } from "../src/lib/automated-payroll/exports/cib-sheet.ts";
+import { fabRowsForNonEmployees } from "../src/lib/automated-payroll/exports/fab-sheet.ts";
+import { mergeStandingTransferLinesForExport } from "../src/lib/automated-payroll/exports/merge-standing-transfers.ts";
+import type { DraftRow, NonEmployeePayrollRow } from "../src/lib/automated-payroll/types.ts";
 import { fakeSupabaseClient } from "./fixtures/fake-supabase-table.ts";
 import { stripSqlComments } from "./support/comment-strip.ts";
 
@@ -250,4 +254,68 @@ export async function runAutomatedPayrollStandingTransfersTests() {
   assert.match(migration, /'b10', p\.part, 1500, '2026-11', '2027-10'/, "the owner's two entries: 1,500 a part, November 2026 to October 2027");
   assert.match(migration, /values \('first'\), \('second'\)/);
   assert.doesNotMatch(migration, /grant[^;]*\bto (anon|authenticated)\b/i, "no grant to anon or authenticated");
+
+  // ---- ONE LINE PER PAYEE PER PART ON THE SHEETS AND THE BANK FILES (owner, 2026-11-24) ----------
+  // "One line: 159,987" — the 1,500 transfer is ADDED onto Anwar's own line of the same part and the
+  // same account in the Excel and the CIB / FAB files; the run keeps the two stored rows.
+  const line = (id: string, part: "first" | "second", amount: number, over: Partial<NonEmployeePayrollRow> = {}): NonEmployeePayrollRow => ({
+    id,
+    runId: RUN,
+    part,
+    fullNameAr: "أنور",
+    fullNameEn: "Anwar Ibrahim Ahmed Ibrahim Gaweesh",
+    totalSalary: amount,
+    bankName: "CIB",
+    bankAccount: "100023050538",
+    recurringId: null,
+    standingTransferId: null,
+    createdBy: "B-10",
+    createdAt: "",
+    updatedAt: "",
+    ...over,
+  });
+  const november: NonEmployeePayrollRow[] = [
+    line("salary-1", "first", 158487),
+    line("transfer-1", "first", 1500, { standingTransferId: "st-first" }),
+    line("walaa", "first", 5000, { fullNameEn: "Walaa Abdelwahab", bankName: "Instapay", bankAccount: "01000000000" }),
+    line("salary-2", "second", 90000),
+    line("transfer-2", "second", 1500, { standingTransferId: "st-second", bankAccount: "1000 2305 0538" }),
+  ];
+  const merged = mergeStandingTransferLinesForExport(november);
+  assert.deepEqual(
+    merged.map((row) => [row.part, row.fullNameEn, row.totalSalary]),
+    [
+      ["first", "Anwar Ibrahim Ahmed Ibrahim Gaweesh", 159987],
+      ["first", "Walaa Abdelwahab", 5000],
+      ["second", "Anwar Ibrahim Ahmed Ibrahim Gaweesh", 91500],
+    ],
+    "one line per payee per part: 159,987 in Part 1 and 91,500 in Part 2 (spaces in the account do not matter)",
+  );
+  const sum = (rows: NonEmployeePayrollRow[]) => rows.reduce((total, row) => total + row.totalSalary, 0);
+  assert.equal(sum(merged), sum(november), "merging never changes a total");
+  assert.equal(november[0].totalSalary, 158487, "the stored rows are never mutated");
+
+  const cibPart1 = cibRowsForNonEmployees(november, "part1");
+  assert.deepEqual(cibPart1.map((row) => row.salary), [159987], "the CIB file sends Anwar ONE Part 1 transfer");
+  assert.deepEqual(cibRowsForNonEmployees(november, "part2").map((row) => row.salary), [91500]);
+  for (const scope of ["part1", "part2"] as const) {
+    const coverage = buildBankCoverage({ rows: [], nonEmployees: november, scope });
+    const cibEmitted = cibRowsForNonEmployees(november, scope);
+    const fabEmitted = fabRowsForNonEmployees(november, scope);
+    assert.equal(coverage.cib.rows, cibEmitted.length, `${scope}: coverage counts the lines the CIB file carries`);
+    assert.equal(coverage.fab.rows, fabEmitted.length, `${scope}: coverage counts the lines the FAB file carries`);
+  }
+
+  // A transfer whose payee has no other line that part, or another account, stays its own line.
+  const alone = mergeStandingTransferLinesForExport([
+    line("transfer-only", "first", 1500, { standingTransferId: "st-first" }),
+    line("other-account", "second", 90000, { bankAccount: "999" }),
+    line("transfer-2b", "second", 1500, { standingTransferId: "st-second" }),
+  ]);
+  assert.deepEqual(alone.map((row) => row.totalSalary), [1500, 90000, 1500], "nothing is lost when there is no matching line");
+
+  const exportSource = readFileSync(new URL("../src/lib/automated-payroll/run-service.ts", import.meta.url), "utf8");
+  assert.match(exportSource, /nonEmployees: mergeStandingTransferLinesForExport\(await getNonEmployeePayrollRows\(runId, "first"\)\)/, "the Part 1 sheet merges");
+  assert.match(exportSource, /nonEmployees: mergeStandingTransferLinesForExport\(await getNonEmployeePayrollRows\(runId\)\)/, "the full sheet merges");
+  assert.match(exportSource, /nonEmployees: mergeStandingTransferLinesForExport\(\s*scope === "part1"/, "the finance sheet merges");
 }
