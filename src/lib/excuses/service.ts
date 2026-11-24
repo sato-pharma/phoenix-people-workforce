@@ -7,7 +7,14 @@ import {
   resolveEmployeeIdentityId,
   type AccessContext,
 } from "@/lib/auth/permissions";
-import { writeAuditLog, type AuditEntityType } from "@/lib/admin/audit";
+import { writeAuditLog, writeRequiredAuditLog, type AuditEntityType } from "@/lib/admin/audit";
+import {
+  canManageExcuseRecordsFor,
+  excuseAdminDecisionColumns,
+  excuseAdminEditRefusal,
+  parseExcuseAdminStatus,
+  type ExcuseAdminChange,
+} from "@/lib/excuses/admin-edit";
 import { EMAIL_TEMPLATE_KEYS } from "@/lib/email-templates/service";
 import {
   getEmployeeDirectory,
@@ -917,6 +924,107 @@ export async function reassignExcuseManager(
   }
 
   return request;
+}
+
+// ── The Super Admin's tools on one request: edit and delete (owner, 2026-11-24) ─────────────────
+//
+// The rules are in admin-edit.ts. These two write the row, then a REQUIRED audit row with the old
+// and the new values, and notify nobody — as a leave request's admin edit notifies nobody. They are
+// never the bulk bar's path and never a manager's decision: decideExcuseRequestAsManager is unchanged.
+
+/** Shows the Admin controls panel on the request page; the two functions below ask it again. */
+export function canManageExcuseRecords(access: AccessContext): boolean {
+  return canManageExcuseRecordsFor(access);
+}
+
+function assertExcuseAdmin(access: AccessContext) {
+  if (!canManageExcuseRecords(access)) {
+    throw new Error("Forbidden: only the Super Admin can edit or delete an excuse request.");
+  }
+}
+
+export async function updateExcuseRequestAsAdmin(
+  access: AccessContext,
+  input: { excuseDate?: unknown; excuseType?: unknown; reply?: unknown; requestId: string; status?: unknown },
+): Promise<EmployeeExcuseRequest> {
+  assertExcuseAdmin(access);
+  const existing = await fetchRequestById(input.requestId);
+  if (!existing) throw new Error("Excuse request was not found.");
+
+  const excuseType = parseExcuseType(input.excuseType);
+  if (!excuseType) throw new Error("Excuse type must be morning or afternoon.");
+  const status = parseExcuseAdminStatus(input.status);
+  if (!status) throw new Error("Choose a valid status.");
+  const next: ExcuseAdminChange = {
+    excuseDate: validateDateOnly(input.excuseDate),
+    excuseType,
+    reply: typeof input.reply === "string" ? cleanText(input.reply) : null,
+    status,
+  };
+  const current = {
+    excuseDate: existing.excuse_date,
+    excuseType: existing.excuse_type,
+    managerDecisionComment: existing.manager_decision_comment,
+    status: existing.status,
+  };
+  const actorHrId = resolveEmployeeIdentityId(access);
+  const refusal = excuseAdminEditRefusal({
+    current,
+    next,
+    ownRequest: Boolean(actorHrId) && normalizeHrId(actorHrId) === normalizeHrId(existing.employee_hr_id),
+  });
+  if (refusal) throw new Error(refusal);
+
+  // Stored in the employee master's casing, never the lowercase comparison key.
+  const directory = await getEmployeeDirectory();
+  const adminHrId = actorHrId ? resolveStoredHrId(actorHrId, employeeRowByHrId(directory)) ?? actorHrId : null;
+  const now = new Date().toISOString();
+  const { data: updated, error: updateError } = await getSupabaseAdmin()
+    .from("v2_excuse_requests")
+    .update({
+      ...excuseAdminDecisionColumns({ adminHrId, current, next, now }),
+      excuse_date: next.excuseDate,
+      excuse_type: next.excuseType,
+      updated_at: now,
+    })
+    .eq("id", existing.id)
+    .eq("status", existing.status)
+    .select(excuseColumnsWithEmail)
+    .maybeSingle();
+
+  if (updateError) throw updateError;
+  if (!updated) throw conflictError("This excuse request was changed by someone else. Refresh and try again.");
+
+  const request = mapExcuseRequestRow(updated as ExcuseRequestRow);
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? adminHrId ?? "system",
+    entityId: request.id,
+    entityType: excuseAuditEntityType,
+    oldValues: { request: mapExcuseRequestRow(existing) },
+    newValues: { request },
+    summary: "Excuse request edited by the Super Admin.",
+  });
+  return request;
+}
+
+export async function deleteExcuseRequestAsAdmin(access: AccessContext, requestId: string): Promise<EmployeeExcuseRequest> {
+  assertExcuseAdmin(access);
+  const existing = await fetchRequestById(requestId);
+  if (!existing) throw new Error("Excuse request was not found.");
+
+  const { error } = await getSupabaseAdmin().from("v2_excuse_requests").delete().eq("id", existing.id);
+  if (error) throw error;
+
+  const deleted = mapExcuseRequestRow(existing);
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? resolveEmployeeIdentityId(access) ?? "system",
+    entityId: deleted.id,
+    entityType: excuseAuditEntityType,
+    oldValues: { request: deleted },
+    newValues: {},
+    summary: "Excuse request deleted by the Super Admin.",
+  });
+  return deleted;
 }
 
 export async function resubmitExcuseRequest(
