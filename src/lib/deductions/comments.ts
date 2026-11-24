@@ -15,6 +15,7 @@ import { deductionOpenForDispute } from "./dispute-open.ts";
 import type { CheckedDisputeImage } from "./comment-attachment-rules.ts";
 import { attachCommentAttachments, discardDisputeComment, removeCommentPictures, storeDisputeAttachments } from "./comment-attachments.ts";
 import { loadTelegramReach, resolveDisputeAudience } from "./dispute-audience.ts";
+import { pickReplyRecipient, type ReplyRecipientSource } from "./reply-recipient.ts";
 import { picturesNotice, picturesOnlyBody, tidyDisputeText } from "@/lib/dispute-center/text.ts";
 import { caseDates, explanationSummary } from "@/lib/dispute-center/explain-reasons.ts";
 import { prepareCaseExplanation, recordCaseExplanation } from "@/lib/dispute-center/explanations.ts";
@@ -412,22 +413,36 @@ async function notifyDeductionsReply(input: {
 }): Promise<DeductionDisputeDelivery | null> {
   try {
     // The employee and their name come from the active published line — the same row the portal
-    // shows them, so the notification names the person the deduction belongs to, not an HR id.
-    const { data: lineRow } = await getSupabaseAdmin()
-      .from("deductions_publication_lines")
-      .select("employee_hr_id, employee_name")
-      .eq("candidate_id", input.candidateId)
-      .eq("line_status", "active")
-      .limit(1)
-      .maybeSingle();
-    const employeeHrId = (lineRow as { employee_hr_id?: string | null } | null)?.employee_hr_id ?? null;
-    const storedEmployeeName = String((lineRow as { employee_name?: string | null } | null)?.employee_name ?? "").trim() || null;
-    if (!employeeHrId) {
-      logError("Deductions reply has no published line to address", {
-        labels: { event: "deductions_reply_no_line", candidateId: input.candidateId },
+    // shows them — and, for a deduction disputed before it was published (allowed since
+    // 2026-11-13), from the deduction's own record (`pickReplyRecipient`, reply-recipient.ts).
+    const supabase = getSupabaseAdmin();
+    const [lineResult, candidateResult] = await Promise.all([
+      supabase
+        .from("deductions_publication_lines")
+        .select("employee_hr_id, employee_name")
+        .eq("candidate_id", input.candidateId)
+        .eq("line_status", "active")
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from("deductions_candidates")
+        .select("employee_hr_id, employee_name")
+        .eq("id", input.candidateId)
+        .maybeSingle(),
+    ]);
+    if (lineResult.error) throw lineResult.error;
+    if (candidateResult.error) throw candidateResult.error;
+    const recipient = pickReplyRecipient(
+      lineResult.data as ReplyRecipientSource,
+      candidateResult.data as ReplyRecipientSource,
+    );
+    if (!recipient) {
+      logError("Deductions reply names no employee to address", {
+        labels: { event: "deductions_reply_no_employee", candidateId: input.candidateId },
       });
       return null;
     }
+    const { employeeHrId, storedEmployeeName } = recipient;
 
     const pictureCount = input.pictureCount ?? 0;
     const audience = await resolveDisputeAudience(employeeHrId);
@@ -455,7 +470,8 @@ async function notifyDeductionsReply(input: {
       recordId: input.candidateId,
       submitterHrId: employeeHrId,
       subjectLabel: employeeName ?? "your deduction",
-      threadLabel: "published deduction for",
+      // An unpublished deduction is never called "published" in the message the employee reads.
+      threadLabel: recipient.source === "published_line" ? "published deduction for" : "deduction for",
     });
 
     // What the sender is shown afterwards. Built from the same audience the send used, plus the
