@@ -10,6 +10,9 @@
 -- prints it for every rep: the hospital is typed on the paper and kept on the person's hiring
 -- profile, and a moved field on the paper is stored against document 'hospitalAuthorization'.
 --
+-- Written as `document in (...)`, the form tests/hiring-pack-field-layout.test.ts reads; Postgres stores
+-- it as `= ANY (ARRAY[...])`, exactly as applied on 2026-11-24.
+--
 -- ADDITIVE: no row is touched. The constraint admits strictly more than the old one did.
 --
 -- ROLLBACK:
@@ -33,7 +36,7 @@ alter table public.hiring_pack_document_fields
 
 alter table public.hiring_pack_document_fields
   add constraint hiring_pack_document_fields_document_known check (
-    document = any (array[
+    document in (
       'contract', 'form1', 'workerDataForm', 'custodyLaptop', 'custodyMobile', 'nda',
       'appointmentDocsReceipt', 'socialStatusSheet', 'absenceWarning', 'deemedResignation',
       'disciplinaryWarning', 'disciplinaryPenalty', 'transferDecision', 'salaryAdjustment',
@@ -44,7 +47,7 @@ alter table public.hiring_pack_document_fields
       'penaltiesSheet', 'penaltyRegulationsApproval', 'contractRenewal', 'contractNonRenewal',
       'form6', 'resignation', 'mutualTermination', 'clearanceEmployee', 'clearanceCompany',
       'hospitalAuthorization'
-    ]::text[])
+    )
     or document ~* '^custom:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
   );
 
