@@ -58,6 +58,8 @@ type World = {
   tick: number;
   writes: string[];
   notified: number;
+  /** The last notice the decision handed the notifier. */
+  lastNotice?: Parameters<DecideDeductionDisputeDeps["notify"]>[0];
 };
 
 const CANDIDATE_ID = "11111111-1111-1111-1111-111111111111";
@@ -273,8 +275,9 @@ function fakeDeps(
       }
       return { candidates, decisions, lines };
     }),
-    notify: failing("notify", async () => {
+    notify: failing("notify", async (notice: Parameters<DecideDeductionDisputeDeps["notify"]>[0]) => {
       w.notified += 1;
+      w.lastNotice = notice;
       return undefined;
     }),
     payrollMonthState: failing("payrollMonthState", async () => w.monthState),
@@ -526,6 +529,10 @@ async function runBehaviour() {
     );
     assert.equal(w.claims.size, 0, "a completed decision releases its claim");
     assert.equal(w.notified, 1, "the employee is told once");
+    // Owner, 2026-11-24: "the email and a telegram to be sent to them, CC their manager and their national sales manager".
+    assert.ok(w.lastNotice?.copyManagers, "a decided deduction dispute asks for the managers' copy (email + Telegram, CC)");
+    assert.match(w.lastNotice!.copyManagers!.message("Yassin Khalifa"), /^Yassin Khalifa's dispute was accepted/, "the managers' copy names the employee");
+    assert.match(w.lastNotice!.message, /^Your dispute was accepted/, "the employee's own notice still speaks to him");
   }
 
   // Where even the undo fails, the case reads "needs attention" — never open, never decided.

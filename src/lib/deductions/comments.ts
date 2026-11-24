@@ -464,7 +464,10 @@ async function notifyDeductionsReply(input: {
       // Per-message key, so a second reply on one deduction is its own notification rather than
       // collapsing onto the first — the same reason the employee→HR path carries one.
       messageKey: input.messageKey,
-      metadata: { candidateId: input.candidateId, pictureCount, reply: true },
+      // authorizedRecipient: the managers are not the deduction's subject, and the deductions module
+      // refuses a non-subject recipient without it — on 2026-10-08 every manager copy of a reply was
+      // recorded "no exact authorized recipient" and never reached them.
+      metadata: { authorizedRecipient: true, candidateId: input.candidateId, pictureCount, reply: true },
       module: "deductions",
       participantHrIds: [employeeHrId, input.authorHrId, ...managerHrIds].filter((id): id is string => Boolean(id)),
       recordId: input.candidateId,

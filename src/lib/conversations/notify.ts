@@ -81,7 +81,7 @@ export type ConversationNotificationInput = {
  * from the cc line rather than raising anything, which is the exact defect this module exists to
  * end, so it must not be reintroduced by "tidying" this lookup back to a single key.
  */
-async function loadWorkEmails(hrIds: Array<string | null>): Promise<Map<string, string>> {
+export async function loadWorkEmails(hrIds: Array<string | null>): Promise<Map<string, string>> {
   const output = new Map<string, string>();
   const lookups = Array.from(new Set(hrIds.flatMap((hrId) => hrIdLookupKeys(hrId))));
   if (lookups.length === 0) return output;

@@ -1029,23 +1029,32 @@ async function decideUnderClaim(
     throw await undoHalfDecision({ access, deps, error, input, left, monthKey, participant, snapshot, uncertainStep });
   }
 
-  const headline =
+  // What happened, after "<whose> dispute was" — so the employee's notice and the managers' copy
+  // (owner, 2026-11-24) say the same thing, the one in "your", the other naming the employee.
+  const outcomeTail = (salaryOf: string) =>
     input.outcome === "accept"
-      ? `Your dispute was accepted — the ${monthKeyLabel(monthKey)} deduction is cancelled.`
+      ? `accepted — the ${monthKeyLabel(monthKey)} deduction is cancelled.`
       : input.outcome === "reduce"
-        ? `Your dispute was accepted in part — the ${monthKeyLabel(monthKey)} deduction is now ${
+        ? `accepted in part — the ${monthKeyLabel(monthKey)} deduction is now ${
             unit === "days" ? daysLabel(chargedValue) : moneyLabel(chargedValue)
           } (${moneyLabel(chargedAmount)}).`
         : undecided
-          ? `Your dispute was rejected — the ${monthKeyLabel(monthKey)} deduction is taken from your salary (${moneyLabel(
+          ? `rejected — the ${monthKeyLabel(monthKey)} deduction is taken from ${salaryOf} salary (${moneyLabel(
               chargedAmount,
             )}).`
-          : `Your dispute was reviewed and the ${monthKeyLabel(monthKey)} deduction stands.`;
+          : `reviewed and the ${monthKeyLabel(monthKey)} deduction stands.`;
+  const headline = `Your dispute was ${outcomeTail("your")}`;
 
   return {
     notice: {
       actorHrId: participant.viewerHrId,
       audience: "employee",
+      // Owner, 2026-11-24: "the email and a telegram to be sent to them, CC their manager and their
+      // national sales manager" — see notify.ts, DECISION_EMPLOYEE_CHANNELS.
+      copyManagers: {
+        message: (name: string) => [`${name}'s dispute was ${outcomeTail("their")}`, note].filter(Boolean).join("\n\n"),
+        title: (name: string) => `Deduction dispute decided — ${name} — ${monthKeyLabel(monthKey)}`,
+      },
       employeeHrId,
       eventKey: `decided:${new Date().toISOString()}`,
       kind: "deduction",
