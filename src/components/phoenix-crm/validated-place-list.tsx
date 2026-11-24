@@ -45,7 +45,6 @@ import {
 import { Approve, LastColumn, RejectInUse } from "@/components/phoenix-crm/validated-place-list-decision";
 import { PHOTO_CLASS, photoAlt, Place, readingText, SCHEDULE_TEXT, signboardText, Who } from "@/components/phoenix-crm/validated-place-list-evidence";
 import { adviseOnPlaceInUse } from "@/lib/phoenix-crm/place-check-advice";
-import { approvalNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import { TRUSTED_POINT_NO_PHOTO } from "@/lib/phoenix-crm/trusted-point-rules";
 import { refusalTakeBack } from "@/lib/phoenix-crm/validation-feedback";
 import type { PlaceNoteIndex, ValidatedPlaceRow } from "@/lib/phoenix-crm/view-types";
@@ -72,7 +71,8 @@ const inUseActions = (canRestore: boolean): ReadonlyArray<BulkAction<ValidatedPl
     busyLabel: "Approving",
     variant: "primary",
     needsReason: false,
-    takes: (row) => !approvalNeedsFullName(row),
+    // Every row, a short name included: the Super Admin is never blocked (owner, 24 Nov 2026).
+    takes: () => true,
     run: (row, answer) => crmPost<unknown>("/api/phoenix-crm/validation-reviews/approve", { placeId: row.placeId, note: answer.note }, "approved"),
     outcomeOf: () => "approved",
   },

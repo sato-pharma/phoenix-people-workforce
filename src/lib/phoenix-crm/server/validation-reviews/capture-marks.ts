@@ -15,19 +15,22 @@ import { deciderLabel, type Row, text } from "@/lib/phoenix-crm/server/validatio
 import type { ValidationReviewRow } from "@/lib/phoenix-crm/server/validation-reviews/types";
 
 /**
- * "Approve it after all" is drawn only where the database will take it (19 Nov 2026: the Super Admin pressed
- * it on a customer captured again at the same door and met `restore_door_captured_again`). For every
- * rejection still `restorable`, reads the customer's ACTIVE places once and asks `doorCapturedAgain` — the
- * restore function's own test. A captured-again row loses `restorable` and carries `capturedAgain`, so it
- * shows the reason, offers no button and no tick, and drops back under the ordinary 14-day window like any
- * rejection with nothing left to undo.
+ * A rejection whose door was captured again since says so (19 Nov 2026). For every rejection whose place is
+ * still retired, reads the customer's ACTIVE places once and asks `doorCapturedAgain` — the restore
+ * function's own test — and marks the row `capturedAgain`.
+ *
+ * 🔴 IT NO LONGER TAKES THE BUTTON AWAY (owner, 24 Nov 2026: "never block admin"). The row keeps
+ * `restorable`: approving it records the approval and keeps the place in use, and the old place is not
+ * brought back beside it (migration 20261124113734). The mark is information, never a refusal.
  *
  * 🔴 A FAILED READ CHANGES NOTHING — the row keeps its button and the database still refuses by name, which
  * is how the board behaved before; the page never fails over this.
  */
 export async function markDoorsCapturedAgain(rows: ValidationReviewRow[], reviews: Row[], placeById: Map<string, Row>): Promise<void> {
   const customerByReview = new Map(reviews.map((review) => [String(review.id), String(review.customer_id)]));
-  const candidates = rows.filter((row) => row.restorable && customerByReview.has(row.reviewId));
+  const candidates = rows.filter(
+    (row) => row.restorable && placeById.get(row.placeId)?.status === "retired" && customerByReview.has(row.reviewId),
+  );
   if (candidates.length === 0) return;
   let active: Row[];
   try {
@@ -59,7 +62,6 @@ export async function markDoorsCapturedAgain(rows: ValidationReviewRow[], review
     const place = placeById.get(row.placeId);
     if (!place) continue;
     if (doorCapturedAgain(doorOf({ ...place, id: row.placeId, customer_id: customerId }), activeByCustomer.get(customerId) ?? [])) {
-      row.restorable = false;
       row.capturedAgain = true;
     }
   }

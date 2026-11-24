@@ -398,5 +398,13 @@ export function approvalNeedsFullName(row: { listType: unknown; customerName: un
 }
 
 /** Beside the disabled Approve, and the server's refusal of one. */
+/**
+ * What the decider's screen says beside Approve on a short name (owner, 24 Nov 2026: "never block admin").
+ * The Super Admin's Approve is never greyed out for it: he approves the name as it stands, or rejects with
+ * the short-name reason so the rep writes all three. A fact, never a refusal.
+ */
+export const SHORT_NAME_APPROVAL_NOTE =
+  "This customer has only one or two names, or one name written twice. Approve accepts the name as it stands; Reject sends it back so the rep writes the first, middle and last name.";
+
 export const APPROVAL_NEEDS_FULL_NAME =
   "This customer has only one or two names, or one name written twice. Send it back so the rep writes the first, middle and last name.";

@@ -30,7 +30,6 @@ import { CrmCardsOnPhone, CrmPill, CrmTable, crmTdClassName, crmThClassName, typ
 import { Decision, LastColumn } from "@/components/phoenix-crm/validation-review-queue-decision";
 import { Evidence, PHOTO_CLASS, photoAlt, Who } from "@/components/phoenix-crm/validation-review-queue-evidence";
 import { adviseOnReview, PLACE_CHECK_ADVICE_LABEL, type PlaceCheckAdviceKind } from "@/lib/phoenix-crm/place-check-advice";
-import { approvalNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import type { PlaceNoteIndex, ValidationReviewRow } from "@/lib/phoenix-crm/view-types";
 
 /**
@@ -59,8 +58,8 @@ const WAITING_ACTIONS: ReadonlyArray<BulkAction<ValidationReviewRow>> = [
     busyLabel: "Approving",
     variant: "primary",
     needsReason: false,
-    // Never a clinic customer with one or two names: he is sent back for all three (owner, 2026-11-07).
-    takes: (row) => row.status === "pending" && !approvalNeedsFullName(row),
+    // Every waiting row, a short name included: the Super Admin is never blocked (owner, 24 Nov 2026).
+    takes: (row) => row.status === "pending",
     run: (row, answer) => bulkDecide(row, "approve", answer.note, ""),
     outcomeOf: (answer) => approvalOutcome(answer, "approved"),
   },
