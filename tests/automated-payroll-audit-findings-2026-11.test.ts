@@ -225,7 +225,9 @@ export async function runAutomatedPayrollAuditFindings202611Tests() {
   }
   assert.match(
     bodyOf(RECURRING, "export async function syncRunFromRecurring("),
-    /holdRun\(\{ runId, expected: \[phase\], action: RUN_HOLD_ACTIONS\.nonEmployeeSync \}, \(\) =>\s*seedRunFromRecurring\(/,
+    // Both writes Sync makes — the standing list and the standing transfers (2026-11-24) — run inside
+    // the one hold, so neither can land after a confirm that started meanwhile.
+    /holdRun\(\{ runId, expected: \[phase\], action: RUN_HOLD_ACTIONS\.nonEmployeeSync \}, async \(\) => \{\s*const roster = await seedRunFromRecurring\([^]*?await seedRunFromStandingTransfers\(/,
     "S1: pulling in the standing list holds the run too",
   );
   assert.equal(isRunHoldAction(RUN_HOLD_ACTIONS.nonEmployee), true, "S1: a transition waits a non-employee write out");

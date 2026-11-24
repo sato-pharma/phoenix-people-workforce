@@ -49,6 +49,7 @@ function mapRow(row: Row): NonEmployeePayrollRow {
     // reads identically to "HR typed this one in by hand" — the safe default,
     // since it only ever drives a UI badge and never an amount.
     recurringId: (row.recurring_id as string | null) ?? null,
+    standingTransferId: (row.standing_transfer_id as string | null) ?? null,
     createdBy: (row.created_by as string | null) ?? null,
     createdAt: String(row.created_at ?? ""),
     updatedAt: String(row.updated_at ?? ""),

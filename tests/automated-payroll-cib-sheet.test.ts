@@ -107,6 +107,7 @@ function buildNonEmployeeRow(overrides: {
     bankName: overrides.bankName === undefined ? "CIB" : overrides.bankName,
     bankAccount: overrides.bankAccount === undefined ? "100222220001" : overrides.bankAccount,
     recurringId: null,
+    standingTransferId: null,
     createdBy: null,
     createdAt: "",
     updatedAt: "",
