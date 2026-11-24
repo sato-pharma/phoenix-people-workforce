@@ -2445,6 +2445,10 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/production-planning/runs", permission: { resource: "production_planning", action: "read" }, guard: "domain-helper" }),
   // The recorded actuals are what turn the owner's guessed 3% overage into a measured figure.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/production-planning/runs", permission: { resource: "production_planning", action: "create" }, guard: "domain-helper", csrfRequired: true }),
+  // The execution phase (owner, 2026-11-24): preview, record a production and take its formula off
+  // stock, the factory's balance days later, or a cancel that gives the stock back. REQUIRED audit row
+  // (production_run) on every write; the preview writes nothing.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/production-planning/runs/execution", permission: { resource: "production_planning", action: "create" }, guard: "domain-helper", csrfRequired: true }),
   // Carries the four arming flags. Switching the reorder email on or off writes a REQUIRED audit
   // row, because it is the moment this module starts speaking to people outside it.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/production-planning/settings", permission: { resource: "production_planning", action: "update" }, guard: "domain-helper", csrfRequired: true }),

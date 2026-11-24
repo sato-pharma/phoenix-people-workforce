@@ -110,8 +110,9 @@ export function runProductionPlanningPremiumDepthTests() {
   const tableTags = [...source.matchAll(/<table className=(\{[^}]*\}|"[^"]*")/g)].map((match) => match[1]);
   assert.equal(
     tableTags.length,
-    5,
-    `${WORKSPACE}: found ${tableTags.length} tables, expected 5. A new one needs the TABLE constant ` +
+    // 6 since 2026-11-24: the execution's preview and factory-balance tables replaced the run entry.
+    6,
+    `${WORKSPACE}: found ${tableTags.length} tables, expected 6. A new one needs the TABLE constant ` +
       `(and its own colgroup and card list — see production-planning-fits-the-screen.test.ts).`,
   );
   for (const [index, tag] of tableTags.entries()) {

@@ -113,6 +113,7 @@ import {
 } from "@/lib/production-planning/strings";
 import type {
   WireBasis,
+  WireExecutionPreview,
   WireExpiryVerdict,
   WireGrant,
   WireMaterial,
@@ -122,6 +123,7 @@ import type {
   WirePlanRow,
   WireProduct,
   WireRequestMode,
+  WireRun,
   WireSupplier,
   WireWorkspace,
 } from "@/lib/production-planning/wire";
@@ -912,6 +914,7 @@ export function ProductionPlanningWorkspace() {
             canWrite={canWrite}
             data={data}
             materialsById={materialsById}
+            onPost={post}
             onSave={saveAndReload}
             productId={selectedProductId}
           />
@@ -2547,11 +2550,22 @@ export function CostTab({
 // ── The run tab ──────────────────────────────────────────────────────────────────────────────────
 
 /** Exported for scripts/measure-production-planning-fit.mjs - see the note at the top of this file. */
+/**
+ * The Execution tab (owner, 2026-11-24): "I want to be in full control to either plan, either
+ * execute." Three parts, in the order the work happens:
+ *
+ *   1. what was produced — boxes and samples, a preview of what comes off stock at the NET formula
+ *      (no overage), then the confirm;
+ *   2. the runs waiting for the factory's balance — the factory's own closing per material, which is
+ *      when the waste is measured, "على الactual only"; or a cancel that gives the stock back;
+ *   3. the history, with consumed, formula and waste per material once a run is balanced.
+ */
 export function RunTab({
   data: workspace,
   canWrite,
   busy,
   onSave,
+  onPost,
   materialsById,
   productId,
 }: {
@@ -2559,6 +2573,8 @@ export function RunTab({
   canWrite: boolean;
   busy: boolean;
   onSave: SaveFn;
+  /** The raw POST, for the preview — it writes nothing, so it must not reload the workspace. */
+  onPost?: (path: string, body: Record<string, unknown>) => Promise<unknown | null>;
   materialsById: Map<string, WireMaterial>;
   /**
    * The product the Planner tab is on.
@@ -2573,69 +2589,48 @@ export function RunTab({
   const S = useProductionPlanningStrings();
   const t = S.t;
   const [runLabel, setRunLabel] = useState("");
-  const [runsCount, setRunsCount] = useState("1");
   const [producedOn, setProducedOn] = useState("");
-  const [goodUnits, setGoodUnits] = useState("");
-  const [samples, setSamples] = useState("0");
-  const [excluded, setExcluded] = useState(false);
+  const [boxes, setBoxes] = useState("");
+  const [samples, setSamples] = useState("");
+  const [preview, setPreview] = useState<WireExecutionPreview | null>(null);
   // Only what Sato supplies, like every other tab (owner, 2026-11-11, "Every tab, every product").
   const { data, factoryHidden } = satoBoughtView(workspace);
-  const [exclusionReason, setExclusionReason] = useState("");
-  const [lines, setLines] = useState<Record<string, { opening: string; delivered: string; closing: string }>>({});
 
   if (!data) return <p className={`${PANEL} text-[13px] text-slate-500`}>{t.notLoaded}</p>;
 
-  // The run tab records what the factory actually produced, and it counts in the product's own
-  // saleable unit — "العلب الناتجة فعليًا" was asking DBK for a box count and storing it as a sachet
-  // one. `actual_good_units` has always been a saleable-unit column; only the label was wrong.
   const runProduct = data.products.find((candidate) => candidate.id === productId);
   const runSaleableWord = S.saleableUnitWord(runProduct?.measureUnit ?? "ml");
-
-  const setLine = (materialId: string, field: "opening" | "delivered" | "closing", value: string) =>
-    setLines((current) => ({
-      ...current,
-      [materialId]: {
-        opening: current[materialId]?.opening ?? "",
-        delivered: current[materialId]?.delivered ?? "",
-        closing: current[materialId]?.closing ?? "",
-        [field]: value,
-      },
-    }));
+  const selectedProductId = productId || data.productId;
+  const executionBody = () => ({
+    productId: selectedProductId,
+    runLabel: runLabel.trim() === "" ? null : runLabel.trim(),
+    producedOn: producedOn || undefined,
+    saleableBoxes: boxes.trim() === "" ? "0" : boxes.trim(),
+    sampleUnits: samples.trim() === "" ? "0" : samples.trim(),
+  });
+  // A preview is of the figures as typed; a changed figure takes the confirm away until it is redone.
+  const previewIsCurrent =
+    preview !== null &&
+    preview.productId === selectedProductId &&
+    preview.saleableBoxes === (boxes.trim() === "" ? "0" : boxes.trim()) &&
+    preview.sampleUnits === (samples.trim() === "" ? "0" : samples.trim());
+  const nothingTyped = boxes.trim() === "" && samples.trim() === "";
+  const awaiting = data.runs.filter((run) => run.stage === "awaiting_balance");
+  const history = data.runs.filter((run) => run.stage !== "awaiting_balance");
 
   return (
     <>
       {canWrite ? (
         <section className={PANEL}>
-          <SectionTitle subtitle={t.runSubtitle} title={t.runTitle} />
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <Field label={t.runLabel}>
-              <input className={INPUT} onChange={(event) => setRunLabel(event.target.value)} value={runLabel} />
-            </Field>
-            <Field label={t.runCount}>
-              <input
-                className={INPUT}
-                dir="ltr"
-                inputMode="numeric"
-                onChange={(event) => setRunsCount(event.target.value)}
-                value={runsCount}
-              />
-            </Field>
-            <Field label={t.runProducedOn}>
-              <input
-                className={INPUT}
-                dir="ltr"
-                onChange={(event) => setProducedOn(event.target.value)}
-                type="date"
-                value={producedOn}
-              />
-            </Field>
+          <SectionTitle subtitle={t.execSubtitle} title={t.execTitle} />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Field label={S.runActualLabel(runProduct?.measureUnit ?? "ml")}>
               <input
                 className={INPUT}
                 dir="ltr"
                 inputMode="numeric"
-                onChange={(event) => setGoodUnits(event.target.value)}
-                value={goodUnits}
+                onChange={(event) => setBoxes(event.target.value)}
+                value={boxes}
               />
             </Field>
             <Field label={t.runActualSamples}>
@@ -2647,159 +2642,131 @@ export function RunTab({
                 value={samples}
               />
             </Field>
-            <Field hint={excluded ? t.runExcludeHint : null} label={t.runExclude}>
-              <select
+            <Field label={t.runProducedOn}>
+              <input
                 className={INPUT}
-                onChange={(event) => setExcluded(event.target.value === "yes")}
-                value={excluded ? "yes" : "no"}
-              >
-                <option value="no">{t.no}</option>
-                <option value="yes">{t.yes}</option>
-              </select>
+                dir="ltr"
+                onChange={(event) => setProducedOn(event.target.value)}
+                type="date"
+                value={producedOn}
+              />
             </Field>
-            {excluded ? (
-              <div className="sm:col-span-2 lg:col-span-3">
-                <Field label={t.runExcludeReason}>
-                  <input
-                    className={INPUT}
-                    onChange={(event) => setExclusionReason(event.target.value)}
-                    value={exclusionReason}
-                  />
-                </Field>
-              </div>
-            ) : null}
+            <Field label={t.runLabel}>
+              <input className={INPUT} onChange={(event) => setRunLabel(event.target.value)} value={runLabel} />
+            </Field>
           </div>
 
-          <div className="mt-4">
-            <FactoryHiddenNote count={factoryHidden} />
-          </div>
-          {/* 28/24/24/24. The three editable figures each need a real input, and a fifth column
-              would take them under their natural width in the 669px box. */}
-          <table className={TABLE}>
-            <colgroup>
-              <col className="w-[28%]" />
-              <col className="w-[24%]" />
-              <col className="w-[24%]" />
-              <col className="w-[24%]" />
-            </colgroup>
-            <thead>
-              <tr className="border-b border-slate-300 bg-slate-50">
-                {[t.colMaterial, t.runOpening, t.runDelivered, t.runClosing].map((heading) => (
-                  <th className={TH} key={heading} scope="col">
-                    {heading}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {data.materials.map((material) => (
-                <tr className="border-b border-slate-200 last:border-b-0" key={material.id}>
-                  <td className={TD}>
-                    <p className="font-bold text-slate-900 break-words">{S.name(material)}</p>
-                    <p className="mt-0.5 text-[11px] text-slate-500">{S.unitLabel(material.displayUnit)}</p>
-                  </td>
-                  {(["opening", "delivered", "closing"] as const).map((field) => (
-                    <td className={TD} key={field}>
-                      <input
-                        className={INPUT}
-                        dir="ltr"
-                        inputMode="decimal"
-                        onChange={(event) => setLine(material.id, field, event.target.value)}
-                        value={lines[material.id]?.[field] ?? ""}
-                      />
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          {/* The card's own `lg:hidden` is on this wrapper, so each one takes the soft panel's
-              depth alone rather than the shared CARD constant. */}
-          <div className="mt-4 space-y-2 lg:hidden">
-            {data.materials.map((material) => (
-              <article className={`${adminSoftPanelClassName} px-3 py-3`} key={material.id}>
-                <p className="font-bold text-slate-900 break-words">{S.name(material)}</p>
-                <div className="mt-2 grid grid-cols-1 gap-2">
-                  {(["opening", "delivered", "closing"] as const).map((field) => (
-                    <Field
-                      key={field}
-                      label={
-                        field === "opening"
-                          ? t.runOpening
-                          : field === "delivered"
-                            ? t.runDelivered
-                            : t.runClosing
-                      }
-                    >
-                      <input
-                        className={INPUT}
-                        dir="ltr"
-                        inputMode="decimal"
-                        onChange={(event) => setLine(material.id, field, event.target.value)}
-                        value={lines[material.id]?.[field] ?? ""}
-                      />
-                    </Field>
-                  ))}
-                </div>
-              </article>
-            ))}
-          </div>
-
-          <div className="mt-3">
+          <div className="mt-3 flex flex-wrap gap-2">
             <button
-              className={BUTTON}
-              disabled={busy || runLabel.trim() === "" || goodUnits.trim() === ""}
-              onClick={() =>
-                void onSave("/runs", {
-                  productId: productId || data.productId,
-                  runLabel: runLabel.trim(),
-                  runsCount,
-                  producedOn: producedOn || undefined,
-                  actualGoodUnits: goodUnits,
-                  actualSampleUnits: samples,
-                  isExcludedFromLearning: excluded,
-                  exclusionReason: excluded ? exclusionReason.trim() : null,
-                  materials: Object.entries(lines)
-                    .filter(([, line]) => line.closing.trim() !== "" || line.opening.trim() !== "")
-                    .map(([id, line]) => {
-                      const material = materialsById.get(id);
-                      return {
-                        materialId: id,
-                        openingQty: toBaseUnits(line.opening || "0", material),
-                        deliveredQty: toBaseUnits(line.delivered || "0", material),
-                        closingQty: toBaseUnits(line.closing || "0", material),
-                      };
-                    }),
-                })
-              }
+              className={BUTTON_QUIET}
+              disabled={busy || nothingTyped || !onPost}
+              onClick={async () => {
+                if (!onPost) return;
+                const result = (await onPost("/runs/execution", { action: "preview", ...executionBody() })) as
+                  | WireExecutionPreview
+                  | null;
+                if (result) setPreview(result);
+              }}
               type="button"
             >
-              {t.runSave}
+              {t.execPreview}
+            </button>
+            <button
+              className={BUTTON}
+              disabled={busy || !previewIsCurrent}
+              onClick={async () => {
+                await onSave("/runs/execution", { action: "execute", ...executionBody() });
+                setPreview(null);
+                setBoxes("");
+                setSamples("");
+                setRunLabel("");
+              }}
+              type="button"
+            >
+              {t.execConfirm}
             </button>
           </div>
+
+          {preview && previewIsCurrent ? (
+            <ExecutionPreviewTable factoryHidden={factoryHidden} materialsById={materialsById} preview={preview} />
+          ) : null}
         </section>
       ) : null}
 
       <section className={PANEL}>
+        <SectionTitle subtitle={t.execAwaitingSubtitle} title={t.execAwaitingTitle} />
+        {awaiting.length === 0 ? (
+          <p className="text-[12px] text-slate-500">{t.execNoneAwaiting}</p>
+        ) : (
+          <div className="space-y-4">
+            {awaiting.map((run) => (
+              <FactoryBalanceForm
+                busy={busy}
+                canWrite={canWrite}
+                key={run.id}
+                materialsById={materialsById}
+                onSave={onSave}
+                run={run}
+                saleableWord={runSaleableWord}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className={PANEL}>
         <SectionTitle title={t.runHistory} />
-        {data.runs.length === 0 ? (
+        {history.length === 0 ? (
           <p className="text-[12px] text-slate-500">{t.runNoneYet}</p>
         ) : (
           <ul className="space-y-2">
-            {data.runs.map((run) => (
+            {history.map((run) => (
               <li className="border border-slate-200 px-3 py-2" key={run.id}>
-                <p className="font-bold text-slate-900 break-words">{run.runLabel}</p>
-                <p className="mt-0.5 text-[12px] text-slate-700">
-                  <Num>{run.producedOn}</Num> — <Num>{formatNumberLatin(run.runsCount)}</Num>{" "}
-                  {t.unitRuns}, <Num>{formatNumberLatin(run.actualGoodUnits)}</Num> {runSaleableWord},{" "}
-                  <Num>{formatNumberLatin(run.actualSampleUnits)}</Num> {t.unitSample}
-                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-bold text-slate-900 break-words">{run.runLabel}</p>
+                  <Chip tone={run.stage === "cancelled" ? "slate" : "emerald"}>
+                    {run.stage === "cancelled" ? t.execStageCancelled : t.execStageBalanced}
+                  </Chip>
+                </div>
+                <RunHeadline run={run} saleableWord={runSaleableWord} />
                 {run.isExcludedFromLearning ? (
                   <p className="mt-1 break-words text-[11px] text-amber-800">
                     {t.runExclude}: {run.exclusionReason}
                   </p>
                 ) : null}
+                {run.stage === "cancelled" ? (
+                  <p className="mt-1 break-words text-[11px] text-slate-600">
+                    {t.execCancelReason}: {run.cancelledReason}
+                  </p>
+                ) : (
+                  <ul className="mt-2 space-y-1 text-[12px] text-slate-700">
+                    {run.materials
+                      .filter((line) => line.closingSource === "factory")
+                      .map((line) => {
+                        const material = materialsById.get(line.materialId);
+                        const waste = wastePctText(line.consumedQty, line.theoreticalQty);
+                        return (
+                          <li className="break-words" key={line.materialId}>
+                            <span className="font-bold">{material ? S.name(material) : line.materialId}</span>{" "}
+                            {t.runConsumed}: <Qty unit={material?.displayUnit} value={fromBaseUnits(line.consumedQty, material)} />
+                            {line.theoreticalQty !== null ? (
+                              <>
+                                {" "}
+                                · {t.execColFormula}:{" "}
+                                <Qty unit={material?.displayUnit} value={fromBaseUnits(line.theoreticalQty, material)} />
+                              </>
+                            ) : null}
+                            {waste !== null ? (
+                              <>
+                                {" "}
+                                · {t.execWastePct}: <Num>{waste}%</Num>
+                              </>
+                            ) : null}
+                          </li>
+                        );
+                      })}
+                  </ul>
+                )}
               </li>
             ))}
           </ul>
@@ -2829,6 +2796,331 @@ export function RunTab({
         </ul>
       </section>
     </>
+  );
+}
+
+/** (consumed − formula) ÷ formula, signed, to two places — display only; the learner keeps BigInt. */
+function wastePctText(consumed: string, formula: string | null): string | null {
+  if (formula === null) return null;
+  const formulaValue = Number(formula);
+  if (!(formulaValue > 0)) return null;
+  const pct = ((Number(consumed) - formulaValue) / formulaValue) * 100;
+  return `${pct > 0 ? "+" : ""}${pct.toFixed(2)}`;
+}
+
+function RunHeadline({ run, saleableWord }: { run: WireRun; saleableWord: string }) {
+  const t = useProductionPlanningStrings().t;
+  return (
+    <p className="mt-0.5 break-words text-[12px] text-slate-700">
+      <Num>{run.producedOn}</Num> — <Num>{formatNumberLatin(run.saleableBoxes ?? run.actualGoodUnits)}</Num>{" "}
+      {saleableWord}, <Num>{formatNumberLatin(run.actualSampleUnits)}</Num> {t.unitSample} ·{" "}
+      <Num>{formatNumberLatin(run.exactRuns ?? run.runsCount)}</Num> {t.unitRuns}
+    </p>
+  );
+}
+
+/** What a production would take off stock: formula, from the factory, from Sato, and what no lot held. */
+function ExecutionPreviewTable({
+  preview,
+  materialsById,
+  factoryHidden,
+}: {
+  preview: WireExecutionPreview;
+  materialsById: Map<string, WireMaterial>;
+  factoryHidden: number;
+}) {
+  const S = useProductionPlanningStrings();
+  const t = S.t;
+  const short = preview.lines.some((line) => Number(line.unrecordedQty) > 0);
+  const figure = (base: string, materialId: string) => {
+    const material = materialsById.get(materialId);
+    return <Qty unit={material?.displayUnit} value={fromBaseUnits(base, material)} />;
+  };
+  const taken = (line: WireExecutionPreview["lines"][number]) => (
+    <>
+      <p>
+        <span className="text-[10px] text-slate-500">{t.execColFromFactory}:</span> {figure(line.fromFactoryQty, line.materialId)}
+      </p>
+      <p>
+        <span className="text-[10px] text-slate-500">{t.execColFromSato}:</span> {figure(line.fromSatoQty, line.materialId)}
+      </p>
+    </>
+  );
+  return (
+    <div className="mt-4">
+      <p className="mb-2 break-words text-[12px] text-slate-700">
+        {t.execComesTo}: <Num>{formatNumberLatin(preview.exactRuns)}</Num> {t.unitRuns} ·{" "}
+        <Num>{formatNumberLatin(preview.totalDoses)}</Num> {t.execDoses}
+        {preview.stripCount !== "0" ? (
+          <>
+            {" "}
+            · <Num>{formatNumberLatin(preview.stripCount)}</Num> {t.execStrips}
+          </>
+        ) : null}
+      </p>
+      <FactoryHiddenNote count={factoryHidden} />
+      {short ? <p className={`${NOTICE} mb-2 break-words text-[12px] text-amber-800`}>{t.execUnrecordedHint}</p> : null}
+      {/* 28/24/24/24 — the two stores share one column, a line each, so four columns fit the box. */}
+      <table className={TABLE}>
+        <colgroup>
+          <col className="w-[28%]" />
+          <col className="w-[24%]" />
+          <col className="w-[24%]" />
+          <col className="w-[24%]" />
+        </colgroup>
+        <thead>
+          <tr className="border-b border-slate-300 bg-slate-50">
+            {[t.colMaterial, t.execColFormula, t.execDeducted, t.execColUnrecorded].map((heading) => (
+              <th className={TH} key={heading} scope="col">
+                {heading}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {preview.lines.map((line) => {
+            const material = materialsById.get(line.materialId);
+            return (
+              <tr className="border-b border-slate-200 last:border-b-0" key={line.materialId}>
+                <td className={TD}>
+                  <p className="font-bold text-slate-900 break-words">{material ? S.name(material) : line.materialId}</p>
+                </td>
+                <td className={TD}>
+                  {line.formulaQty === null ? (
+                    <span className="break-words text-[11px] text-slate-500">{t.execMeasuredLater}</span>
+                  ) : (
+                    figure(line.formulaQty, line.materialId)
+                  )}
+                </td>
+                <td className={TD}>{taken(line)}</td>
+                <td className={TD}>
+                  {Number(line.unrecordedQty) > 0 ? (
+                    <span className="font-bold text-amber-800">{figure(line.unrecordedQty, line.materialId)}</span>
+                  ) : (
+                    figure(line.unrecordedQty, line.materialId)
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <div className="space-y-2 lg:hidden">
+        {preview.lines.map((line) => {
+          const material = materialsById.get(line.materialId);
+          return (
+            <article className={`${adminSoftPanelClassName} px-3 py-3 text-[12px]`} key={line.materialId}>
+              <p className="font-bold text-slate-900 break-words">{material ? S.name(material) : line.materialId}</p>
+              <p className="mt-1">
+                <span className="text-[10px] text-slate-500">{t.execColFormula}:</span>{" "}
+                {line.formulaQty === null ? t.execMeasuredLater : figure(line.formulaQty, line.materialId)}
+              </p>
+              {taken(line)}
+              <p className={Number(line.unrecordedQty) > 0 ? "font-bold text-amber-800" : undefined}>
+                <span className="text-[10px] font-normal text-slate-500">{t.execColUnrecorded}:</span>{" "}
+                {figure(line.unrecordedQty, line.materialId)}
+              </p>
+            </article>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One run waiting for the factory's balance: per material the opening and delivered amounts (filled
+ * in from the records at production, editable) and the factory's closing — or a cancel with a reason.
+ */
+function FactoryBalanceForm({
+  run,
+  canWrite,
+  busy,
+  onSave,
+  materialsById,
+  saleableWord,
+}: {
+  run: WireRun;
+  canWrite: boolean;
+  busy: boolean;
+  onSave: SaveFn;
+  materialsById: Map<string, WireMaterial>;
+  saleableWord: string;
+}) {
+  const S = useProductionPlanningStrings();
+  const t = S.t;
+  const [balanceDate, setBalanceDate] = useState("");
+  const [lines, setLines] = useState<Record<string, { opening: string; delivered: string; closing: string }>>(() =>
+    Object.fromEntries(
+      run.materials.map((line) => {
+        const material = materialsById.get(line.materialId);
+        return [
+          line.materialId,
+          {
+            opening: fromBaseUnits(line.openingQty, material),
+            delivered: fromBaseUnits(line.deliveredQty, material),
+            closing: "",
+          },
+        ];
+      }),
+    ),
+  );
+  const [cancelling, setCancelling] = useState(false);
+  const [reason, setReason] = useState("");
+
+  const setLine = (materialId: string, field: "opening" | "delivered" | "closing", value: string) =>
+    setLines((current) => ({
+      ...current,
+      [materialId]: { opening: "", delivered: "", closing: "", ...current[materialId], [field]: value },
+    }));
+  const anyClosing = Object.values(lines).some((line) => line.closing.trim() !== "");
+  const input = (materialId: string, field: "opening" | "delivered" | "closing") => (
+    <input
+      className={INPUT}
+      disabled={!canWrite}
+      dir="ltr"
+      inputMode="decimal"
+      onChange={(event) => setLine(materialId, field, event.target.value)}
+      value={lines[materialId]?.[field] ?? ""}
+    />
+  );
+  const deducted = (line: WireRun["materials"][number]) => {
+    const material = materialsById.get(line.materialId);
+    return (
+      <p className="mt-0.5 text-[11px] text-slate-500">
+        {t.execDeducted}: <Qty unit={material?.displayUnit} value={fromBaseUnits(line.deductedQty ?? "0", material)} />
+        {Number(line.unrecordedQty) > 0 ? (
+          <span className="text-amber-800">
+            {" "}
+            · {t.execColUnrecorded}: <Qty unit={material?.displayUnit} value={fromBaseUnits(line.unrecordedQty, material)} />
+          </span>
+        ) : null}
+      </p>
+    );
+  };
+
+  return (
+    <article className="border border-slate-200 px-3 py-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="font-bold text-slate-900 break-words">{run.runLabel}</p>
+        <Chip tone="amber">{t.execStageAwaiting}</Chip>
+      </div>
+      <RunHeadline run={run} saleableWord={saleableWord} />
+      {canWrite ? <p className="mt-2 break-words text-[11px] text-slate-500">{t.execBalanceHint}</p> : null}
+
+      {/* 28/24/24/24, as the run form always was: three editable figures each need a real input. */}
+      <table className={`${TABLE} mt-2`}>
+        <colgroup>
+          <col className="w-[28%]" />
+          <col className="w-[24%]" />
+          <col className="w-[24%]" />
+          <col className="w-[24%]" />
+        </colgroup>
+        <thead>
+          <tr className="border-b border-slate-300 bg-slate-50">
+            {[t.colMaterial, t.runOpening, t.runDelivered, t.execFactoryBalance].map((heading) => (
+              <th className={TH} key={heading} scope="col">
+                {heading}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {run.materials.map((line) => {
+            const material = materialsById.get(line.materialId);
+            return (
+              <tr className="border-b border-slate-200 last:border-b-0" key={line.materialId}>
+                <td className={TD}>
+                  <p className="font-bold text-slate-900 break-words">{material ? S.name(material) : line.materialId}</p>
+                  <p className="mt-0.5 text-[11px] text-slate-500">{S.unitLabel(material?.displayUnit)}</p>
+                  {deducted(line)}
+                </td>
+                <td className={TD}>{input(line.materialId, "opening")}</td>
+                <td className={TD}>{input(line.materialId, "delivered")}</td>
+                <td className={TD}>{input(line.materialId, "closing")}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <div className="mt-2 space-y-2 lg:hidden">
+        {run.materials.map((line) => {
+          const material = materialsById.get(line.materialId);
+          return (
+            <div className={`${adminSoftPanelClassName} px-3 py-3`} key={line.materialId}>
+              <p className="font-bold text-slate-900 break-words">{material ? S.name(material) : line.materialId}</p>
+              {deducted(line)}
+              <div className="mt-2 grid grid-cols-1 gap-2">
+                <Field label={t.runOpening}>{input(line.materialId, "opening")}</Field>
+                <Field label={t.runDelivered}>{input(line.materialId, "delivered")}</Field>
+                <Field label={t.execFactoryBalance}>{input(line.materialId, "closing")}</Field>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {canWrite ? (
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label={t.execBalanceDate}>
+            <input
+              className={INPUT}
+              dir="ltr"
+              onChange={(event) => setBalanceDate(event.target.value)}
+              type="date"
+              value={balanceDate}
+            />
+          </Field>
+          <div className="flex flex-wrap items-end gap-2">
+            <button
+              className={BUTTON}
+              disabled={busy || !anyClosing}
+              onClick={() =>
+                void onSave("/runs/execution", {
+                  action: "balance",
+                  runId: run.id,
+                  balanceDate: balanceDate || undefined,
+                  materials: Object.entries(lines)
+                    .filter(([, line]) => line.closing.trim() !== "")
+                    .map(([id, line]) => {
+                      const material = materialsById.get(id);
+                      return {
+                        materialId: id,
+                        openingQty: toBaseUnits(line.opening || "0", material),
+                        deliveredQty: toBaseUnits(line.delivered || "0", material),
+                        closingQty: toBaseUnits(line.closing, material),
+                      };
+                    }),
+                })
+              }
+              type="button"
+            >
+              {t.execBalanceSave}
+            </button>
+            {!cancelling ? (
+              <button className={BUTTON_QUIET} disabled={busy} onClick={() => setCancelling(true)} type="button">
+                {t.execCancel}
+              </button>
+            ) : null}
+          </div>
+          {cancelling ? (
+            <div className="grid grid-cols-1 gap-2 sm:col-span-2 sm:grid-cols-[1fr_auto] sm:items-end">
+              <Field label={t.execCancelReason}>
+                <input className={INPUT} onChange={(event) => setReason(event.target.value)} value={reason} />
+              </Field>
+              <button
+                className={BUTTON_QUIET}
+                disabled={busy || reason.trim() === ""}
+                onClick={() => void onSave("/runs/execution", { action: "cancel", runId: run.id, reason: reason.trim() })}
+                type="button"
+              >
+                {t.execCancelConfirm}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </article>
   );
 }
 

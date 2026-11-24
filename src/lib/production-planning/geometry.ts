@@ -107,8 +107,12 @@ export function dosesPerRun(geometry: RunGeometry): bigint {
   return geometry.runVolumeMl / geometry.doseMl;
 }
 
-/** How a good-unit count and a sample count become sets and boxes. */
-function packingFor(
+/**
+ * How a good-unit count and a sample count become sets and boxes. Exported as `packingForUnits` for
+ * the execution phase (`execution.ts`), which counts what was PRODUCED rather than a whole number of
+ * runs — one function, so a produced strip and a planned strip are the same strip.
+ */
+export function packingForUnits(
   geometry: RunGeometry,
   goodUnits: bigint,
   sampleUnits: bigint,
@@ -163,7 +167,7 @@ export function yieldForRuns(geometry: RunGeometry, runs: bigint, sampleUnits: b
     runs,
     goodUnits,
     sampleUnits,
-    ...packingFor(geometry, goodUnits, sampleUnits),
+    ...packingForUnits(geometry, goodUnits, sampleUnits),
     totalVolumeMl,
     totalDoses: totalVolumeMl / geometry.doseMl,
     leftoverMl,
@@ -241,7 +245,7 @@ export function resolveRunGeometry(geometry: RunGeometry, request: PlanRequest):
       runs: ceilDiv(exactRunsMicro, QTY_SCALE),
       goodUnits: targetGoodUnits,
       sampleUnits: samples,
-      ...packingFor(geometry, targetGoodUnits, samples),
+      ...packingForUnits(geometry, targetGoodUnits, samples),
       totalVolumeMl: requiredVolumeMl,
       totalDoses,
       leftoverMl: BigInt(0),

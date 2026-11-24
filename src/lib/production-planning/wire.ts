@@ -326,14 +326,57 @@ export type WireRun = {
   exclusionReason: string | null;
   notes: string | null;
   recordedByLogin: string | null;
+  /**
+   * awaiting_balance: produced and taken off stock at the formula, waste not measured yet.
+   * balanced: the factory's balance is in. cancelled: the deduction was given back (owner, 2026-11-24).
+   */
+  stage: "awaiting_balance" | "balanced" | "cancelled";
+  /** The saleable boxes as typed, on an execution; null on a run recorded the old way. */
+  saleableBoxes: string | null;
+  /** The batches an execution came to, unrounded ("23.294167"). */
+  exactRuns: string | null;
+  balancedOn: string | null;
+  cancelledReason: string | null;
   materials: {
     materialId: string;
     openingQty: string;
     deliveredQty: string;
     closingQty: string;
     consumedQty: string;
+    /** The NET formula figure — what the waste is measured against. */
     theoreticalQty: string | null;
     note: string | null;
+    /** What the execution took off recorded stock. */
+    deductedQty: string | null;
+    /** What the formula needed and no recorded lot held. */
+    unrecordedQty: string;
+    /** provisional until the factory's own balance replaces the closing figure. */
+    closingSource: "provisional" | "factory";
+  }[];
+};
+
+/**
+ * What a production would take off stock — the preview shown before the confirm. Every quantity is
+ * in BASE units as decimal text, like the rest of the wire.
+ */
+export type WireExecutionPreview = {
+  productId: string;
+  saleableBoxes: string;
+  sampleUnits: string;
+  producedOn: string;
+  goodUnits: string;
+  exactRuns: string;
+  totalDoses: string;
+  stripCount: string;
+  lines: {
+    materialId: string;
+    /** Null for a Sato material with no formula line: measured from the factory's balance. */
+    formulaQty: string | null;
+    fromFactoryQty: string;
+    fromSatoQty: string;
+    unrecordedQty: string;
+    heldAtFactoryBefore: string;
+    heldElsewhereBefore: string;
   }[];
 };
 
