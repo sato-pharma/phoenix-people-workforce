@@ -82,6 +82,7 @@ const MANUAL_FIELDS: Readonly<Record<string, FieldSpec>> = {
   "profile.trainingBondMonths": { labelEn: "Training bond (months)", kind: "number" },
   "profile.contractSignatoryNameAr": { labelEn: "Signed for the company by", kind: "text" },
   "profile.contractSignatoryTitleAr": { labelEn: "Signatory's capacity", kind: "text" },
+  "profile.authorizationHospitalAr": { labelEn: "Hospital the authorisation is addressed to", kind: "text" },
 
   "offboarding.lastWorkingDate": { labelEn: "Last working day", kind: "date" },
   "offboarding.endReasonAr": { labelEn: "Reason for leaving (Arabic)", kind: "text" },
@@ -216,6 +217,7 @@ export function buildManualHiringPack(
     trainingBondMonths: number(values, "profile.trainingBondMonths"),
     contractSignatoryNameAr: text(values, "profile.contractSignatoryNameAr"),
     contractSignatoryTitleAr: text(values, "profile.contractSignatoryTitleAr"),
+    authorizationHospitalAr: text(values, "profile.authorizationHospitalAr"),
   };
 
   const offboarding: OffboardingProfile = {

@@ -33,6 +33,7 @@ import {
   HR_PAPER_EXPERIENCE_CERTIFICATE_V1,
   HR_PAPER_HANDOVER_RECORD_V1,
   HR_PAPER_HEALTH_INSURANCE_AUTHORIZATION_V1,
+  HR_PAPER_HOSPITAL_AUTHORIZATION_V1,
   HR_PAPER_INSURANCE_PRINT_LETTER_V1,
   HR_PAPER_NDA_V1,
   HR_PAPER_SALARY_ADJUSTMENT_V1,
@@ -183,6 +184,7 @@ function profileFixture(overrides: Partial<HiringPackProfile> = {}): HiringPackP
     contractSignatoryNameAr: null,
     contractSignatoryTitleAr: null,
     contractObjectiveReasonCode: null,
+    authorizationHospitalAr: null,
     ndaSignedDate: null,
     ndaPrintedAt: null,
     updatedAt: null,
@@ -413,11 +415,12 @@ function testEveryPaperIsRegisteredAndCurrent(): void {
   // SIXTEEN since 2026-09-13: the letters pack added nine of the owner's own papers.
   // EIGHTEEN since 2026-09-17: both absence papers gained a version 2, and version 1 of each stays.
   // NINETEEN since 2026-09-20: the Arabic HR letter (salaryLetterAr) joined beside the English one.
+  // TWENTY since 2026-11-24: the hospital authorisation letter (hospitalAuthorization).
   assert.equal(
     HR_PAPERS.length,
-    19,
+    20,
     "six papers were supplied, the certificate makes seven, the letters pack adds nine, the two " +
-      "absence papers each keep their archived version 1 beside version 2, and the Arabic HR letter is the nineteenth",
+      "absence papers each keep their archived version 1 beside version 2, the Arabic HR letter is the nineteenth, and the hospital authorisation letter the twentieth",
   );
 
   for (const document of HOUSE_PAPER_DOCUMENTS) {
@@ -456,6 +459,7 @@ function testEveryPaperIsRegisteredAndCurrent(): void {
     ["salaryAdjustment", HR_PAPER_SALARY_ADJUSTMENT_V1],
     ["socialInsuranceAuthorization", HR_PAPER_SOCIAL_INSURANCE_AUTHORIZATION_V1],
     ["healthInsuranceAuthorization", HR_PAPER_HEALTH_INSURANCE_AUTHORIZATION_V1],
+    ["hospitalAuthorization", HR_PAPER_HOSPITAL_AUTHORIZATION_V1],
     ["insurancePrintLetter", HR_PAPER_INSURANCE_PRINT_LETTER_V1],
     ["handoverRecord", HR_PAPER_HANDOVER_RECORD_V1],
     ["exitInterview", HR_PAPER_EXIT_INTERVIEW_V1],
@@ -523,6 +527,9 @@ function testEveryPaperHasUniqueIdAndKnownTokens(): void {
     "BASE_SALARY",
     "BASE_SALARY_WORDS",
     "COPIES_CLAUSE",
+    "HOSPITAL_NAME",
+    "DELEGATE_TITLE",
+    "DELEGATE_WORKS",
   ]);
   for (const paper of HR_PAPERS) {
     for (const token of hrPaperTemplateTokens(paper)) {
@@ -687,6 +694,7 @@ function testCopyCountsAreEachPapersOwnRequirement(): void {
     [HR_PAPER_SALARY_ADJUSTMENT_V1, systemContractDefaults.salaryAdjustmentCopies],
     [HR_PAPER_SOCIAL_INSURANCE_AUTHORIZATION_V1, systemContractDefaults.socialInsuranceAuthorizationCopies],
     [HR_PAPER_HEALTH_INSURANCE_AUTHORIZATION_V1, systemContractDefaults.healthInsuranceAuthorizationCopies],
+    [HR_PAPER_HOSPITAL_AUTHORIZATION_V1, systemContractDefaults.hospitalAuthorizationCopies],
     [HR_PAPER_INSURANCE_PRINT_LETTER_V1, systemContractDefaults.insurancePrintLetterCopies],
     [HR_PAPER_HANDOVER_RECORD_V1, systemContractDefaults.handoverRecordCopies],
     [HR_PAPER_EXIT_INTERVIEW_V1, systemContractDefaults.exitInterviewCopies],
