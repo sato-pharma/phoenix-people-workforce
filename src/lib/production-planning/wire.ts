@@ -446,6 +446,27 @@ export type WireMaterialRef = {
   productIds: string[];
 };
 
+/**
+ * One stock entry as typed, for the Stock tab's entry list (owner, 2026-11-24). `reversible` and
+ * `refusal` come from `stockReversal`, so the screen offers the reverse button only where the
+ * service would accept it, and says why where it would not.
+ */
+export type WireStockEntry = {
+  id: string;
+  materialId: string;
+  locationId: string;
+  expiryDate: string | null;
+  qtyDisplay: string;
+  asOfDate: string;
+  source: string;
+  note: string | null;
+  /** The person's name, never a login. */
+  recordedBy: string | null;
+  createdAt: string;
+  reversible: boolean;
+  refusal: "notFound" | "production" | "paired" | "notNewest" | "afterProduction" | null;
+};
+
 export type WireWorkspace = {
   level: WireLevel;
   canWrite: boolean;
@@ -479,4 +500,6 @@ export type WireWorkspace = {
   expiry: WireExpiryVerdict[];
   runs: WireRun[];
   plans: WireSavedPlan[];
+  /** The selected product's stock entries, newest first. Optional so a hand-built fixture need not carry it. */
+  stockEntries?: WireStockEntry[];
 };

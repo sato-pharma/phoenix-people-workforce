@@ -118,3 +118,69 @@ export function moveStockRows(args: {
     to: { asOfDate, qty: (target?.qty ?? BigInt(0)) + qty },
   };
 }
+
+// ── Reversing one wrong entry (owner, 2026-11-24) ────────────────────────────────────────────────
+//
+// Dr. Sahar asked how she could put right an entry she typed by mistake — the 576 kg of foil at
+// Sato's warehouse needed a database write to undo. A reversal is a NEW row that puts the lot back
+// to the balance it held before that entry: nothing is deleted, and the wrong entry stays readable.
+//
+// Three entries cannot be reversed this way, each for a reason a person can act on:
+//   - one written by a PRODUCTION — the production is cancelled from the Execution tab instead, which
+//     gives back every lot it drew on at once;
+//   - one written TOGETHER with another row (a move between stores, a change of expiry date, a
+//     production's lots): those rows share one insert and one timestamp, and reversing one half
+//     would leave the other standing — the move is made back instead;
+//   - one that is no longer the NEWEST row of its lot: a later count has already replaced it, so
+//     "before it" is no longer what the lot holds — a new count is typed instead;
+//   - a COUNT typed right after a production: going back would land on the production's own row and
+//     leave that production's opening figure standing on the count — a new count is typed instead,
+//     which asks whether it is from before the production or after it. A delivery is fine: it only
+//     added on top of the production's balance.
+
+export type StockHistoryRow = {
+  readonly id: string;
+  readonly materialId: string;
+  readonly locationId: string;
+  readonly expiryDate: string | null;
+  readonly qty: bigint;
+  readonly asOfDate: string;
+  readonly source: string;
+  readonly createdAt: string;
+};
+
+export type StockReversalRefusal = "notFound" | "production" | "paired" | "notNewest" | "afterProduction";
+
+export type StockReversal =
+  | { readonly ok: true; readonly restoreQty: bigint }
+  | { readonly ok: false; readonly reason: StockReversalRefusal };
+
+function newestFirst(a: StockHistoryRow, b: StockHistoryRow): number {
+  if (a.asOfDate !== b.asOfDate) return a.asOfDate < b.asOfDate ? 1 : -1;
+  if (a.createdAt !== b.createdAt) return a.createdAt < b.createdAt ? 1 : -1;
+  return 0;
+}
+
+/** Whether `entryId` can be reversed, and the balance its lot goes back to. Rows may come in any order. */
+export function stockReversal(rows: readonly StockHistoryRow[], entryId: string): StockReversal {
+  const entry = rows.find((row) => row.id === entryId);
+  if (!entry) return { ok: false, reason: "notFound" };
+  if (entry.source === "production") return { ok: false, reason: "production" };
+  if (rows.some((row) => row.id !== entry.id && row.createdAt === entry.createdAt)) {
+    return { ok: false, reason: "paired" };
+  }
+  const lot = rows
+    .filter(
+      (row) =>
+        row.materialId === entry.materialId &&
+        row.locationId === entry.locationId &&
+        row.expiryDate === entry.expiryDate,
+    )
+    .slice()
+    .sort(newestFirst);
+  if (lot[0]?.id !== entry.id) return { ok: false, reason: "notNewest" };
+  if (lot[1]?.source === "production" && entry.source !== STOCK_MOVEMENT_SOURCE) {
+    return { ok: false, reason: "afterProduction" };
+  }
+  return { ok: true, restoreQty: lot[1]?.qty ?? BigInt(0) };
+}
