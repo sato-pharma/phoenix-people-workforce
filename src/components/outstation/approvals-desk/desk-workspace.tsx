@@ -128,11 +128,11 @@ function DeskWorkspaceBody({ initialSearch }: { initialSearch: string }) {
         </section>
       ) : (
         <>
-          <DeskTopLine onToggleOld={() => desk.setView({ overSevenDays: !view.overSevenDays })} overOnly={view.overSevenDays} queue={queue} />
+          <DeskTopLine filterWords={tileWords} onToggleOld={() => desk.setView({ overSevenDays: !view.overSevenDays })} overOnly={view.overSevenDays} queue={queue} view={view} />
           {/* A desktop reads the tiles first. On a phone they stood between the count and the first
               claim, which began 904 px down (measured at 375, 23 Nov 2026), so there they are drawn
               after the list: the one line above already says what waits. */}
-          <DeskTiles className="hidden md:block" filterWords={tileWords} onOpen={openTile} queue={queue} tiles={tiles ?? queue.tiles} />
+          <DeskTiles className="hidden md:block" filtered={tileWords !== null} onOpen={openTile} queue={queue} tiles={tiles ?? queue.tiles} />
 
           {queue.unavailable.length > 0 ? (
             <CrmNote title="Some of the checks could not be made just now" tone="warn">
@@ -211,7 +211,7 @@ function DeskWorkspaceBody({ initialSearch }: { initialSearch: string }) {
             />
           )}
 
-          <DeskTiles className="md:hidden" filterWords={tileWords} onOpen={openTile} queue={queue} tiles={tiles ?? queue.tiles} />
+          <DeskTiles className="md:hidden" filtered={tileWords !== null} onOpen={openTile} queue={queue} tiles={tiles ?? queue.tiles} />
 
           <DeskUndoBar onUndo={desk.undo} presses={desk.presses} />
         </>

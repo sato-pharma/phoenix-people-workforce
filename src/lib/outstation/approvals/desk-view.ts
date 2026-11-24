@@ -176,12 +176,12 @@ export function tilesNarrowed(view: Pick<DeskView, "from" | "kind" | "overSevenD
   return narrowsHistory(view) || view.overSevenDays;
 }
 
-/** The line under narrowed tiles, saying what they count. Null when nothing is filtered. */
+/** The line under the top line when a filter narrows it and the cards, saying what they count. Null when nothing is filtered. */
 export function tilesFilterWords(view: Pick<DeskView, "from" | "kind" | "overSevenDays" | "search" | "to">): string | null {
   if (!tilesNarrowed(view)) return null;
   const parts: string[] = [];
-  if (narrowsHistory(view)) parts.push(`These cards count only ${filterWords(view)}.`);
-  if (view.overSevenDays) parts.push("Waiting counts only the claims waiting over 7 days.");
+  if (narrowsHistory(view)) parts.push(`These figures count only ${filterWords(view)}.`);
+  if (view.overSevenDays) parts.push("The top line and Waiting count only the claims waiting over 7 days.");
   return parts.join(" ");
 }
 
@@ -599,9 +599,22 @@ export function applyDeskOutcomes(
   return { ...queue, agreement, claims: list, decided: Array.from(decided.values()), overSevenDays: list.filter((claim) => claim.daysWaiting > 7).length, tiles };
 }
 
-/** The top line: how many decisions wait, what they are worth, how many are old. One unit, one function. */
-export function deskTopLine(queue: Pick<DeskQueue, "overSevenDays" | "tiles">): { count: number; overSevenDays: number; value: number } {
-  return { count: queue.tiles.waiting.count, overSevenDays: queue.overSevenDays, value: queue.tiles.waiting.value };
+/**
+ * The top line: how many decisions wait, what they are worth, how many are old. One unit, one function.
+ *
+ * Under a filter it counts what the filtered Waiting card counts, and "over 7 days" counts the old
+ * claims among them (owner, 24 Nov 2026, October picked: "Top line too"). It had gone on saying
+ * "66 decisions wait" over a Waiting card of 0. With no filter it is the server's own count, unchanged.
+ */
+export function deskTopLine(
+  queue: Pick<DeskQueue, "claims" | "decided" | "overSevenDays" | "tiles">,
+  view?: Pick<DeskView, "from" | "kind" | "overSevenDays" | "search" | "to">,
+): { count: number; overSevenDays: number; value: number } {
+  if (!view || !tilesNarrowed(view)) return { count: queue.tiles.waiting.count, overSevenDays: queue.overSevenDays, value: queue.tiles.waiting.value };
+  const waiting = filteredTiles(queue, view).waiting;
+  const old = { ...view, overSevenDays: true };
+  const overSevenDays = claimsInLane(queue.claims, "ready", old).length + claimsInLane(queue.claims, "your_call", old).length;
+  return { count: waiting.count, overSevenDays, value: waiting.value };
 }
 
 /** What the Undo bar says about a press that has not been sent yet. */
