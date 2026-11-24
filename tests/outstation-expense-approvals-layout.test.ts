@@ -122,7 +122,7 @@ export function runOutstationExpenseApprovalsLayoutTests() {
 
   // The one line: what waits, in one unit, with what is over a week.
   assert.match(tiles, /data-desk-top-line>\s*<span data-desk-waiting=\{top\.count\}>/, "HEADLINE: the page opens on one line that says how many decisions wait");
-  assert.ok(tiles.includes("const top = deskTopLine(queue);"), "read from the one function every waiting figure comes from");
+  assert.ok(tiles.includes("const top = deskTopLine(queue, view);"), "read from the one function every waiting figure comes from");
   assert.ok(tiles.includes("{formatNumberValue(top.overSevenDays)} over 7 days"), "HEADLINE: and how many have waited more than a week");
   assert.ok(tiles.includes("aria-pressed={overOnly}"), "which is a press that shows only those");
 

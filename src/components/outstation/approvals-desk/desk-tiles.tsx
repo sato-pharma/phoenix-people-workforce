@@ -4,6 +4,7 @@ import { formatNumberValue } from "@/lib/i18n/format";
 import { agreementLine } from "@/lib/outstation/approvals/agreement";
 import { deskTopLine } from "@/lib/outstation/approvals/desk-view";
 import { TRIP_STANDINGS, TRIP_STANDING_LABEL, TRIP_STANDING_MEANING, type TripStanding } from "@/lib/outstation/approvals/standing";
+import type { DeskView } from "@/lib/outstation/approvals/desk-view";
 import type { DeskQueue } from "@/lib/outstation/approvals/types";
 import { cn } from "@/lib/utils";
 
@@ -24,62 +25,78 @@ const TILE_RULE: Record<TripStanding, string> = {
  * Every figure here is read from `queue.tiles`, which the server counts with the one function that
  * says where a trip stands (`standing.ts`) — so "Approved" can no longer hold a trip a payroll
  * already took, and a held trip says held. The line and the Waiting tile are the same number by
- * construction (`deskTopLine`), and the two waiting lanes add up to it.
+ * construction (`deskTopLine`), and the two waiting lanes add up to it. Under a filter both count
+ * what it matches, and the words under the line say so (owner, 24 Nov 2026: "Top line too").
  *
  * Under the tiles, the desk's own meter: how often the system's lane matched the answer he gave over
  * the last 30 days. It starts empty — only decisions made on this page are counted.
  */
-export function DeskTopLine({ onToggleOld, overOnly, queue }: { onToggleOld: () => void; overOnly: boolean; queue: DeskQueue }) {
-  const top = deskTopLine(queue);
+export function DeskTopLine({
+  filterWords,
+  onToggleOld,
+  overOnly,
+  queue,
+  view,
+}: {
+  filterWords: string | null;
+  onToggleOld: () => void;
+  overOnly: boolean;
+  queue: DeskQueue;
+  view: DeskView;
+}) {
+  const top = deskTopLine(queue, view);
   return (
-    <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 text-base font-black text-slate-950" data-desk-top-line>
-      <span data-desk-waiting={top.count}>
-        {top.count === 0 ? "Nothing waits for you" : `${formatNumberValue(top.count)} ${top.count === 1 ? "decision waits" : "decisions wait"}`}
-      </span>
-      {top.count > 0 ? <span className="font-bold tabular-nums text-slate-500">· {egp(top.value)}</span> : null}
-      {top.overSevenDays > 0 || overOnly ? (
-        <button
-          aria-pressed={overOnly}
-          className={cn(
-            "inline-flex min-h-11 items-center border px-2 py-0.5 text-xs font-black transition md:min-h-8",
-            overOnly ? "border-orange-600 bg-orange-600 text-white" : "border-orange-300 bg-orange-50 text-orange-800 hover:border-orange-500",
-          )}
-          data-over-seven={top.overSevenDays}
-          onClick={onToggleOld}
-          type="button"
-        >
-          {formatNumberValue(top.overSevenDays)} over 7 days
-        </button>
+    <>
+      <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 text-base font-black text-slate-950" data-desk-top-line>
+        <span data-desk-waiting={top.count}>
+          {top.count === 0 ? "Nothing waits for you" : `${formatNumberValue(top.count)} ${top.count === 1 ? "decision waits" : "decisions wait"}`}
+        </span>
+        {top.count > 0 ? <span className="font-bold tabular-nums text-slate-500">· {egp(top.value)}</span> : null}
+        {top.overSevenDays > 0 || overOnly ? (
+          <button
+            aria-pressed={overOnly}
+            className={cn(
+              "inline-flex min-h-11 items-center border px-2 py-0.5 text-xs font-black transition md:min-h-8",
+              overOnly ? "border-orange-600 bg-orange-600 text-white" : "border-orange-300 bg-orange-50 text-orange-800 hover:border-orange-500",
+            )}
+            data-over-seven={top.overSevenDays}
+            onClick={onToggleOld}
+            type="button"
+          >
+            {formatNumberValue(top.overSevenDays)} over 7 days
+          </button>
+        ) : null}
+      </p>
+      {/* Directly under the line it explains, so a phone sees it too: there the cards sit below the list. */}
+      {filterWords ? (
+        <p className="min-w-0 break-words text-xs font-bold text-orange-800" data-tiles-filter-words>
+          {filterWords}
+        </p>
       ) : null}
-    </p>
+    </>
   );
 }
 
 /**
  * `tiles` are what the cards show: the server's own count, or the same count under the filters
  * (`filteredTiles`, owner, 24 Nov 2026: "make the key cards in expense approvals follow the filter and
- * show the real filtered count"). `filterWords` says what a narrowed card counts; null when nothing is filtered.
+ * show the real filtered count"). `filtered` marks narrowed cards; the words saying what they count sit under the top line.
  */
 export function DeskTiles({
   className,
-  filterWords,
+  filtered,
   onOpen,
   queue,
   tiles,
 }: {
   className?: string;
-  filterWords: string | null;
+  filtered: boolean;
   onOpen: (standing: TripStanding) => void;
   queue: DeskQueue;
   tiles: DeskQueue["tiles"];
 }) {
   return (
-    <div className={cn("min-w-0", className)} data-desk-tiles data-tiles-filtered={filterWords ? "true" : undefined}>
-      {filterWords ? (
-        <p className="mb-1.5 min-w-0 break-words text-xs font-bold text-orange-800" data-tiles-filter-words>
-          {filterWords}
-        </p>
-      ) : null}
+    <div className={cn("min-w-0", className)} data-desk-tiles data-tiles-filtered={filtered ? "true" : undefined}>
       <div className="grid min-w-0 grid-cols-2 border border-slate-200 bg-white sm:grid-cols-3 xl:grid-cols-6">
         {TRIP_STANDINGS.map((standing) => {
           const tile = tiles[standing];
