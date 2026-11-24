@@ -235,7 +235,11 @@ export async function loadValidationReviews(
       // One review row per place (the UNIQUE index), so this row IS the place's whole story: a
       // rejection can be taken back while the place it retired is still retired, and since
       // 2026-10-15 an APPROVAL can be taken back while the place it approved is still active.
-      restorable: status === "rejected" && place.status === "retired",
+      // 🔴 THE SUPER ADMIN IS NEVER BLOCKED (owner, 24 Nov 2026: "never block admin from appproving
+      // rejecting re approving or rejecdting never ever ever never"): every rejection can be approved after
+      // all, whatever has happened to its place, its building or its customer since; the take-back clears
+      // what stands in the way (migration 20261124113734).
+      restorable: status === "rejected",
       // 🔴 Not when the Super Admin approved it, unless the viewer is the Super Admin (owner, 2026-11-16).
       refusable: status === "approved" && place.status === "active" && !locked,
       lockedBySuperAdmin: locked,
@@ -261,7 +265,10 @@ export async function loadValidationReviews(
   for (const row of rows) {
     const decided = row.decidedAt;
     row.recent =
-      row.status === "pending" || decided === null || decided >= since || (row.status === "rejected" && row.restorable && decided >= rejectedSince);
+      row.status === "pending" ||
+      decided === null ||
+      decided >= since ||
+      (row.status === "rejected" && placeById.get(row.placeId)?.status === "retired" && decided >= rejectedSince);
   }
   const keep = options.everyDecision ? rows : rows.filter((row) => row.recent);
   // 🔴 WHAT IS WAITING IS LISTED OLDEST FIRST (owner, 14 Nov 2026). The decided rows keep the

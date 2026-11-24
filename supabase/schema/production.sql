@@ -16569,6 +16569,16 @@ declare
   -- 2026-11-14 (left items): the building the place is seated in, and whether the approval waits for it.
   v_building_status text;
   v_waiting boolean := false;
+  -- 2026-11-24 (owner: "never block admin"): what was cleared for the Super Admin, and the refusal as it was.
+  v_super boolean;
+  v_rejected_by text;
+  v_rejected_at timestamptz;
+  v_rejection_note text;
+  v_building_restored boolean := false;
+  v_customer_restored boolean := false;
+  v_kept_place_in_use boolean := false;
+  v_merged_away boolean := false;
+  v_door_captured_again boolean;
 begin
   -- 🔴 THE NOTE IS OPTIONAL SINCE 2026-10-15 (owner: "admin comment is optional"). It used to raise
   -- bad_input on a null note; the four events and the review row this writes all accept one, and
@@ -16586,32 +16596,17 @@ begin
   if v_review.status <> 'rejected' then
     raise exception 'phoenix_crm:review_not_rejected';
   end if;
+  v_rejected_by := v_review.decided_by_hr_id;
+  v_rejected_at := v_review.decided_at;
+  v_rejection_note := v_review.decision_note;
+  v_super := public.phoenix_crm_is_super_admin(v_actor);
 
   select c.* into v_customer from public.phoenix_crm_customers c where c.id = v_review.customer_id for update;
   select pl.* into v_place from public.phoenix_crm_places pl where pl.id = v_review.place_id for update;
 
-  -- The place must still be in the state the rejection left it in. A moved or already-active place is
-  -- a different story and is not undone here.
-  if v_place.status <> 'retired' then
-    raise exception 'phoenix_crm:place_not_retired';
-  end if;
-
-  -- 🔴 "APPROVE IT AFTER ALL" STOPS AND SAYS WHY (owner, 14 Nov 2026: "Stop and say why"). It used to
-  -- bring the place back whatever had happened since the refusal, and 15 customers ended with two active
-  -- places at one door, one with an active seat in a retired building. Each of the three is refused by
-  -- name before anything is written; he clears what is in the way, then approves.
-  if v_customer.status = 'dropped' then
-    raise exception 'phoenix_crm:restore_customer_dropped';
-  end if;
-  if v_place.shared_place_id is not null and exists (
-    select 1 from public.phoenix_crm_shared_places sp
-    where sp.id = v_place.shared_place_id and sp.status = 'retired'
-  ) then
-    raise exception 'phoenix_crm:restore_building_retired';
-  end if;
   -- The same door, captured again since: another active place of this customer in the same building, or
   -- within 150 m of this one (the line the Google check draws round a door).
-  if exists (
+  v_door_captured_again := exists (
     select 1 from public.phoenix_crm_places o
     where o.customer_id = v_place.customer_id
       and o.id <> v_place.id
@@ -16626,8 +16621,72 @@ begin
           ))) <= 150
         )
       )
-  ) then
-    raise exception 'phoenix_crm:restore_door_captured_again';
+  );
+
+  if not v_super then
+    -- The place must still be in the state the rejection left it in. A moved or already-active place is
+    -- a different story and is not undone here.
+    if v_place.status <> 'retired' then
+      raise exception 'phoenix_crm:place_not_retired';
+    end if;
+
+    -- "APPROVE IT AFTER ALL" STOPS AND SAYS WHY (owner, 14 Nov 2026: "Stop and say why") — for everyone but
+    -- the Super Admin, who is never blocked (24 Nov 2026, below).
+    if v_customer.status = 'dropped' then
+      raise exception 'phoenix_crm:restore_customer_dropped';
+    end if;
+    if v_place.shared_place_id is not null and exists (
+      select 1 from public.phoenix_crm_shared_places sp
+      where sp.id = v_place.shared_place_id and sp.status = 'retired'
+    ) then
+      raise exception 'phoenix_crm:restore_building_retired';
+    end if;
+    if v_door_captured_again then
+      raise exception 'phoenix_crm:restore_door_captured_again';
+    end if;
+  else
+    -- 🔴 THE SUPER ADMIN IS NEVER BLOCKED (owner, 24 Nov 2026: "never block admin from appproving rejecting re
+    -- approving or rejecdting never ever ever never"). Each of the three things the 14 Nov rule refused by name
+    -- is CLEARED here, in this transaction, and then he approves.
+    --
+    -- 1. A retired building is brought back first, through its own take-back, so its seats, its reopened
+    --    reviews and its events are exactly those of pressing "Approve it after all" on the building.
+    if v_place.shared_place_id is not null and exists (
+      select 1 from public.phoenix_crm_shared_places sp
+      where sp.id = v_place.shared_place_id and sp.status = 'retired'
+    ) then
+      perform public.phoenix_crm_restore_shared_place(jsonb_build_object(
+        'shared_place_id', v_place.shared_place_id, 'actor_hr_id', v_actor, 'note', v_note
+      ));
+      v_building_restored := true;
+      -- It may have brought this place back too (retired at the building's own moment) and reopened this review.
+      select r.* into v_review from public.phoenix_crm_validation_reviews r where r.id = v_id for update;
+      select c.* into v_customer from public.phoenix_crm_customers c where c.id = v_review.customer_id for update;
+      select pl.* into v_place from public.phoenix_crm_places pl where pl.id = v_review.place_id for update;
+    end if;
+
+    -- 2. A dropped customer goes back on the list — never a merged-away twin, which the kept entry answers for.
+    if v_customer.status = 'dropped' then
+      if public.phoenix_crm_customer_merged_away(v_customer.id) then
+        v_merged_away := true;
+      else
+        update public.phoenix_crm_customers c
+        set status = 'pending', dropped_reason = null, dropped_note = null, status_changed_at = now(), updated_at = now()
+        where c.id = v_customer.id;
+        insert into public.phoenix_crm_list_events (seat_id, customer_id, event_type, actor_hr_id, details, is_test)
+        values (
+          v_review.seat_id, v_customer.id, 'customer_restored', v_actor,
+          jsonb_build_object('why', 'validation_restored', 'review_id', v_id, 'dropped_reason', v_customer.dropped_reason),
+          v_review.is_test
+        );
+        select c.* into v_customer from public.phoenix_crm_customers c where c.id = v_customer.id;
+        v_customer_restored := true;
+      end if;
+    end if;
+
+    -- 3. The door captured again since: the place in use stands and the old one stays where it is, so the
+    --    customer never has two active places at one door. The approval is still his and still recorded.
+    v_kept_place_in_use := v_place.status = 'retired' and v_door_captured_again;
   end if;
 
   -- The corrected name first, so everything below reads the customer as he now is. The rep's own rename:
@@ -16656,17 +16715,21 @@ begin
     v_renamed := true;
   end if;
 
-  update public.phoenix_crm_places pl
-  set status = 'active', retired_at = null, retired_by_hr_id = null, updated_at = now()
-  where pl.id = v_place.id;
+  -- The place comes back only when it is still retired, nothing stands at its door and the customer is not a
+  -- merged-away twin.
+  if v_place.status = 'retired' and not v_kept_place_in_use and not v_merged_away then
+    update public.phoenix_crm_places pl
+    set status = 'active', retired_at = null, retired_by_hr_id = null, updated_at = now()
+    where pl.id = v_place.id;
 
-  insert into public.phoenix_crm_list_events (seat_id, customer_id, place_id, event_type, actor_hr_id, details, is_test)
-  values (
-    v_review.seat_id, v_customer.id, v_place.id, 'place_restored', v_actor,
-    jsonb_build_object('reason', v_note, 'label', v_place.label, 'why', 'validation_restored', 'review_id', v_id,
-      'rejected_by_hr_id', v_review.decided_by_hr_id, 'rejection_note', v_review.decision_note),
-    v_review.is_test
-  );
+    insert into public.phoenix_crm_list_events (seat_id, customer_id, place_id, event_type, actor_hr_id, details, is_test)
+    values (
+      v_review.seat_id, v_customer.id, v_place.id, 'place_restored', v_actor,
+      jsonb_build_object('reason', v_note, 'label', v_place.label, 'why', 'validation_restored', 'review_id', v_id,
+        'rejected_by_hr_id', v_rejected_by, 'rejection_note', v_rejection_note),
+      v_review.is_test
+    );
+  end if;
 
   -- The rejection sent him back to To validate when this was his only place; the restore undoes that,
   -- in the REP's own name — he validated it, and a reversal does not take that away from him.
@@ -16704,9 +16767,9 @@ begin
       decision_note = v_note,
       google = coalesce(r.google, '{}'::jsonb) || jsonb_build_object(
         'restored', true,
-        'rejected_by_hr_id', v_review.decided_by_hr_id,
-        'rejected_at', v_review.decided_at,
-        'rejection_note', v_review.decision_note
+        'rejected_by_hr_id', v_rejected_by,
+        'rejected_at', v_rejected_at,
+        'rejection_note', v_rejection_note
       )
   where r.id = v_id;
 
@@ -16714,7 +16777,9 @@ begin
   values (
     v_review.seat_id, v_customer.id, v_place.id, 'validation_review_approved', v_actor,
     jsonb_build_object('review_id', v_id, 'note', v_note, 'validated', v_validated, 'why', 'restored_after_rejection',
-      'renamed', v_renamed, 'waiting_for_building', v_waiting),
+      'renamed', v_renamed, 'waiting_for_building', v_waiting,
+      'building_restored', v_building_restored, 'customer_restored', v_customer_restored,
+      'kept_place_in_use', v_kept_place_in_use, 'merged_away', v_merged_away),
     v_review.is_test
   );
 
@@ -16727,7 +16792,12 @@ begin
     'is_test', v_review.is_test,
     'validated', v_validated,
     'waiting_for_building', v_waiting,
-    'renamed', v_renamed
+    'renamed', v_renamed,
+    'restored_after_rejection', true,
+    'building_restored', v_building_restored,
+    'customer_restored', v_customer_restored,
+    'kept_place_in_use', v_kept_place_in_use,
+    'merged_away', v_merged_away
   );
 end;
 $$;

@@ -8,7 +8,7 @@ import { conflictError, forbiddenError, notFoundError, validationError } from "@
 import { afterResponse } from "@/lib/http/after-response";
 import { cleanText } from "@/lib/phoenix-crm/entry-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
-import { canDecideValidationReviews, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { canDecideValidationReviews, canRestoreValidation, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { approvalLockFor } from "@/lib/phoenix-crm/server/super-admin-approval";
 import { SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT } from "@/lib/phoenix-crm/super-admin-approval-rules";
 import { callPhoenixCrm, throwIfError } from "@/lib/phoenix-crm/server/db";
@@ -180,7 +180,8 @@ export async function approveValidatedPlace(viewer: PhoenixCrmViewer, raw: unkno
     await tellDecisionComment(viewer, "place", placeId, note);
     return { placeId, approved: false };
   }
-  await refuseApprovalOfShortName(place.customer_id);
+  // The Super Admin is never blocked (owner, 24 Nov 2026); no short name refuses him.
+  if (!canRestoreValidation(viewer)) await refuseApprovalOfShortName(place.customer_id);
 
   let reviewId = existing ? String(existing.id) : null;
   if (!reviewId) {

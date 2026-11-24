@@ -104,11 +104,10 @@ function checkService(): void {
  * database is the authority on what may be reversed, so it is pinned first.
  */
 function checkRestoreDatabase(): void {
-  // 🔴 THE LIVE BODY IS THE ONE 20261110214512 INSTALLED (the Super Admin's corrected name, 2026-11-10),
-  // which restated 20261015212903's (the note made optional) whole. Reading an older file would pin a
-  // body the database no longer has.
+  // 🔴 THE LIVE BODY IS THE ONE 20261124113734 INSTALLED (the Super Admin is never blocked, 24 Nov 2026),
+  // which restated 20261114062049's whole. Reading an older file would pin a body the database no longer has.
   const migration = readFileSync(
-    new URL("supabase/migrations/20261110214512_phoenix_crm_restore_validation_corrected_name.sql", ROOT),
+    new URL("supabase/migrations/20261124113734_phoenix_crm_super_admin_never_blocked.sql", ROOT),
     "utf8",
   ).replace(/\r\n/g, "\n");
   const fn = /create or replace function public\.phoenix_crm_restore_validation\(p jsonb\)([\s\S]*?)\n\$\$;/.exec(migration);
@@ -134,8 +133,32 @@ function checkRestoreDatabase(): void {
   assert.match(fn[1], /update public\.phoenix_crm_validation_reviews/, "the place's one review row is UPDATED to approved");
   assert.doesNotMatch(fn[1], /insert into public\.phoenix_crm_validation_reviews/, "never a second row — place_id is UNIQUE and a second insert raises 23505");
   assert.match(fn[1], /'restored', true/, "the row says it came back");
-  assert.match(fn[1], /'rejected_by_hr_id', v_review\.decided_by_hr_id/, "and keeps who had rejected it");
-  assert.match(fn[1], /'rejection_note', v_review\.decision_note/, "and why");
+  // Who rejected it and why are read BEFORE anything is cleared: bringing a building back can reopen the review.
+  assert.match(fn[1], /v_rejected_by := v_review\.decided_by_hr_id;\s+v_rejected_at := v_review\.decided_at;\s+v_rejection_note := v_review\.decision_note;/, "the refusal is kept before anything moves");
+  assert.match(fn[1], /'rejected_by_hr_id', v_rejected_by/, "and keeps who had rejected it");
+  assert.match(fn[1], /'rejection_note', v_rejection_note/, "and why");
+
+  // 🔴 THE SUPER ADMIN IS NEVER BLOCKED (owner, 24 Nov 2026: "never block admin from appproving rejecting re
+  // approving or rejecdting never ever ever never"). The four refusals stand for everyone else, in their order;
+  // for him each obstacle is cleared in the same transaction and the approval is recorded.
+  assert.match(fn[1], /v_super := public\.phoenix_crm_is_super_admin\(v_actor\);/, "the function asks who is pressing");
+  const others = fn[1].slice(fn[1].indexOf("if not v_super then"), fn[1].indexOf("\n  else\n"));
+  for (const refusal of ["place_not_retired", "restore_customer_dropped", "restore_building_retired", "restore_door_captured_again"]) {
+    assert.ok(others.includes(`raise exception 'phoenix_crm:${refusal}'`), `${refusal} is raised for anybody but the Super Admin`);
+  }
+  const his = fn[1].slice(fn[1].indexOf("\n  else\n"), fn[1].indexOf("-- The corrected name first"));
+  assert.ok(his.length > 0, "the Super Admin's branch is there");
+  assert.doesNotMatch(his, /raise exception/, "🔴 HEADLINE: nothing is refused to the Super Admin");
+  assert.match(his, /perform public\.phoenix_crm_restore_shared_place\(jsonb_build_object\(/, "a retired building is brought back first, through its own take-back");
+  assert.match(his, /if public\.phoenix_crm_customer_merged_away\(v_customer\.id\) then\s+v_merged_away := true;/, "a merged-away twin is never put back on the list");
+  assert.match(his, /set status = 'pending', dropped_reason = null, dropped_note = null/, "a dropped customer is put back on the list");
+  assert.match(his, /v_kept_place_in_use := v_place\.status = 'retired' and v_door_captured_again;/, "a door captured again keeps the place in use");
+  assert.match(
+    fn[1],
+    /if v_place\.status = 'retired' and not v_kept_place_in_use and not v_merged_away then\s+update public\.phoenix_crm_places pl\s+set status = 'active'/,
+    "the old place comes back only when nothing stands at its door — never two active places at one door",
+  );
+  assert.match(fn[1], /'restored_after_rejection', true/, "and the answer says what was cleared");
 
   const grants = migration.slice(fn.index + fn[0].length);
   assert.match(grants, /revoke execute on function public\.phoenix_crm_restore_validation\(jsonb\) from public, anon, authenticated;/, "execute is revoked from PUBLIC, which is what anon and authenticated inherit it through");
@@ -159,9 +182,24 @@ function checkRestoreService(): void {
   assert.ok(restamp > restore.indexOf("callPhoenixCrm"), "and measures the customer's visits again AFTER the place is back");
   assert.match(restore, /scope: "all"/, "every visit of his, so the distances the rejection removed come back");
 
-  // Only the latest rejection is offered, and only while the place is still retired.
+  // 🔴 Every rejection is offered to the Super Admin (owner, 24 Nov 2026: "never block admin"), whatever
+  // happened to its place since; the take-back clears what stands in the way.
   const load = functionBody(service, "loadValidationReviews");
-  assert.match(load, /restorable: status === "rejected" && place\.status === "retired"/, "the row says whether its rejection can still be taken back — the same test the database makes");
+  assert.match(load, /restorable: status === "rejected",/, "every rejection can be approved after all");
+  assert.match(load, /row\.status === "rejected" && placeById\.get\(row\.placeId\)\?\.status === "retired" && decided >= rejectedSince/, "the 90-day undo window still follows a place that is still retired");
+
+  // His Approve on a rejected review IS the take-back, and a short name never refuses him.
+  const decide = functionBody(service, "decideValidationReview");
+  assert.match(decide, /const neverBlocked = canRestoreValidation\(viewer\);/, "the decide path asks whether this is the Super Admin");
+  assert.match(decide, /if \(decision === "approve" && neverBlocked && \(await reviewStatus\(reviewId\)\) === "rejected"\) \{\s+const restored = await restoreValidation\(viewer/, "🔴 his Approve on a rejection runs the take-back, never review_decided");
+  assert.match(decide, /if \(decision === "approve" && !neverBlocked\) await refuseApprovalOfShortName/, "the short-name refusal is never his");
+  // A retired building is brought back through its own door first, so its other customers are followed up.
+  const building = restore.indexOf("await restoreSharedPlace(viewer, { sharedPlaceId: retiredBuilding, note })");
+  assert.ok(building >= 0 && building < restore.indexOf("callPhoenixCrm"), "the building first, then the place");
+  const venue = functionBody(read("src/lib/phoenix-crm/server/shared-places.ts"), "decideSharedPlace");
+  assert.match(venue, /if \(decision === "approve" && canRestoreValidation\(viewer\)\) \{/, "his Approve on a retired building is its take-back");
+  const venueRestore = venue.indexOf("restoreSharedPlace(viewer, { sharedPlaceId, note: body.note })");
+  assert.ok(venueRestore >= 0 && venueRestore < venue.indexOf('"phoenix_crm_decide_shared_place"'), "before shared_place_retired could refuse him");
   assert.match(load, /refusable: status === "approved" && place\.status === "active"/, "and whether its APPROVAL can still be taken back — the mirror of it (owner, 2026-10-15)");
 
   const db = read("src/lib/phoenix-crm/server/db.ts");

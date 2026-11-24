@@ -25,7 +25,7 @@ import { CrmButton, CrmNote } from "@/components/phoenix-crm/ui";
 import { adviseOnPlaceInUse } from "@/lib/phoenix-crm/place-check-advice";
 import { PLACE_CHECK_VERBS } from "@/lib/phoenix-crm/place-check-lanes";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
-import { APPROVAL_NEEDS_FULL_NAME, approvalNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
+import { approvalNeedsFullName, SHORT_NAME_APPROVAL_NOTE } from "@/lib/phoenix-crm/pm-name-rules";
 import { SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT } from "@/lib/phoenix-crm/super-admin-approval-rules";
 import { PLACE_APPROVED_NOT_A_LIST_ADD, refusalTakeBack, VALIDATION_NOTE_LABEL, type ValidationRefusalReason } from "@/lib/phoenix-crm/validation-feedback";
 import type { PlaceNoteIndex, ValidatedPlaceRow } from "@/lib/phoenix-crm/view-types";
@@ -168,11 +168,12 @@ function Approve({ row }: { row: ValidatedPlaceRow }) {
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  // A clinic customer with one or two names is never approved — refused and sent back for all three (owner, 2026-11-07).
+  // A clinic customer with one or two names: said beside Approve, never a refusal — the Super Admin is never
+  // blocked (owner, 24 Nov 2026).
   const shortName = approvalNeedsFullName(row);
 
   async function approve() {
-    if (saving || shortName) return;
+    if (saving) return;
     setSaving(true);
     setProblem(null);
     try {
@@ -195,10 +196,10 @@ function Approve({ row }: { row: ValidatedPlaceRow }) {
   return (
     <div className="space-y-2">
       <DecisionComment disabled={saving} id={noteFieldId} label={VALIDATION_NOTE_LABEL} onChange={setNote} value={note} />
-      <CrmButton disabled={saving || shortName} onClick={() => void approve()} variant="primary">
+      <CrmButton disabled={saving} onClick={() => void approve()} variant="primary">
         {saving ? "Approving…" : PLACE_CHECK_VERBS.approve}
       </CrmButton>
-      {shortName ? <p className="break-words text-xs font-semibold text-slate-700">{APPROVAL_NEEDS_FULL_NAME}</p> : null}
+      {shortName ? <p className="break-words text-xs font-semibold text-slate-700">{SHORT_NAME_APPROVAL_NOTE}</p> : null}
       <p className="break-words text-xs text-slate-500">{PLACE_APPROVED_NOT_A_LIST_ADD}</p>
       {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
     </div>
