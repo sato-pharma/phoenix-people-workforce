@@ -611,6 +611,16 @@ export async function decideDailyDispute(
   await notifyDisputeCase({
     actorHrId: participant.viewerHrId,
     audience: "employee",
+    // Owner, 2026-11-24: a decided deduction dispute goes by email and Telegram, CC the manager and
+    // the national sales manager (notify.ts, DECISION_EMPLOYEE_CHANNELS).
+    copyManagers: {
+      message: (name: string) =>
+        input.outcome === "accept"
+          ? `${name}'s dispute was accepted: the ${categoryName(row.category)} deduction for ${datesSentence(row)} is cancelled.${note ? ` ${note}` : ""}`
+          : `${name}'s dispute was not accepted: the ${categoryName(row.category)} deduction for ${datesSentence(row)} stands.${note ? ` ${note}` : ""}`,
+      title: (name: string) =>
+        input.outcome === "accept" ? `Dispute accepted — daily deduction — ${name}` : `Dispute rejected — daily deduction — ${name}`,
+    },
     employeeHrId: row.employee_hr_id,
     eventKey: `decided:${now}`,
     kind: "daily",
