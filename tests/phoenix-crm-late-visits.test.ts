@@ -125,7 +125,7 @@ function checkTheManagerApproval(): void {
     managerKey: "SEAT-DM",
     pressedDay: "2026-11-16",
     pressedAtDevice: "2026-11-16T11:40:00.000Z",
-    body: { clientRef: VISIT, customerId: CUSTOMER, managerCustomerId: null, products: ["Alpha"], comment: "Visited", address: "Tanta" },
+    body: { clientRef: VISIT, customerId: CUSTOMER, managerCustomerId: null, products: ["Alpha"], comment: "Visited", address: "Tanta", companionHrIds: ["NSM-1", 7, "", "PM-2"] },
   });
   assert.equal(approved.record, "manager-visit");
   assert.equal(approved.manager, "SEAT-DM");
@@ -135,6 +135,21 @@ function checkTheManagerApproval(): void {
   assert.equal(approved.visitDate, "2026-11-16");
   assert.equal(approved.visitTime, "13:40");
   assert.equal(approved.address, "Tanta");
+  // 🔴 Who went with him travels with the approval (24 Nov 2026), so an approved visit never credits him alone.
+  assert.deepEqual(approved.companionHrIds, ["NSM-1", "PM-2"], "🔴 the people his phone ticked reach the door");
+  const alone = managerApprovalBody({ id: VISIT, managerKey: "SEAT-DM", pressedDay: "2026-11-16", pressedAtDevice: null, body: { customerId: CUSTOMER } });
+  assert.deepEqual(alone.companionHrIds, [], "a visit with nobody ticked carries nobody");
+
+  // 🔴 The manager missed-record door keeps them: checked against his own offers, refused when one is unknown, and
+  // saved with the visit as one save, the visit taken back when the list fails.
+  const door = stripComments(readFileSync("src/lib/phoenix-crm/server/manager-missed-records.ts", "utf8"));
+  const enter = door.slice(door.indexOf("export async function enterManagerMissedVisit"), door.indexOf("export async function enterManagerMissedActivity"));
+  assert.ok(enter.includes("missedCompanionsOf(body.companionHrIds, body.companionHrIds == null ? [] : await loadCompanionOffers(viewer, writer))"), "🔴 each person is checked against his own offers");
+  assert.ok(enter.indexOf("missedCompanionsOf(") < enter.indexOf('.from("phoenix_crm_manager_visits")'), "and before the visit is written");
+  assert.ok(enter.includes(".insert(companions.map((companion, position) => ({ manager_visit_id: visitId, hr_id: companion.hrId, side: companion.side, position })))"), "🔴 who went with him is saved");
+  assert.ok(enter.includes("await getSupabaseAdmin().from(\"phoenix_crm_manager_visits\").delete().eq(\"id\", visitId);"), "🔴 a failed list takes the visit back");
+  const check = door.slice(door.indexOf("function missedCompanionsOf"), door.indexOf("export async function enterManagerMissedVisit"));
+  assert.ok(check.includes("if (!offer) throw validationError("), "🔴 an unknown person refuses the entry, never dropped");
 }
 
 function checkTheWords(): void {

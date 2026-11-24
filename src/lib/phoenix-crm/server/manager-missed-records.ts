@@ -41,7 +41,7 @@ import { isVacantTerritory, loadManagerCustomerRow, loadManagerCustomers } from 
 import { managerPlanWriterFor } from "@/lib/phoenix-crm/server/manager-plan-reach";
 import { loadManagerSlotCustomers, loadManagerSlotRows } from "@/lib/phoenix-crm/server/manager-plan-rows";
 import { managerWriterReach } from "@/lib/phoenix-crm/server/manager-plan-writers";
-import { loadManagerVisits, writerProductNames } from "@/lib/phoenix-crm/server/manager-visits";
+import { loadCompanionOffers, loadManagerVisits, MANAGER_VISIT_COMPANIONS_MAX, writerProductNames, type ManagerCompanionOffer } from "@/lib/phoenix-crm/server/manager-visits";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import type { ManagerPlanWriter } from "@/lib/phoenix-crm/manager-plan-rules";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
@@ -229,6 +229,28 @@ export async function loadManagerMissedRecordForm(
 
 export type EnteredManagerMissedVisit = { customerName: string; planned: boolean; duplicate: boolean };
 
+/**
+ * Who went with him, when the entry names them — a late visit's body carries the people his phone ticked.
+ *
+ * 🔴 CHECKED AGAINST HIS OWN OFFERS, AND AN UNKNOWN ONE REFUSES THE ENTRY (owner, 24 Nov 2026: "build the three
+ * follow-ups"). The same people his own visit form offers (`loadCompanionOffers`); somebody no longer among them is
+ * refused with a sentence for the person deciding, never dropped, because a visit stored without one of its people
+ * credits the others alone.
+ */
+function missedCompanionsOf(value: unknown, offers: ReadonlyArray<ManagerCompanionOffer>): ManagerCompanionOffer[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw validationError("Who went with this manager could not be read. Reload the page.");
+  const byKey = new Map(offers.map((offer) => [offer.hrId, offer]));
+  const out: ManagerCompanionOffer[] = [];
+  for (const entry of value) {
+    const offer = byKey.get(personKey(typeof entry === "string" ? entry : null) ?? "");
+    if (!offer) throw validationError("Someone named as going with this manager is no longer among the people this manager can visit with, so this visit cannot be entered as it is.");
+    if (!out.includes(offer)) out.push(offer);
+  }
+  if (out.length > MANAGER_VISIT_COMPANIONS_MAX) throw validationError(`At most ${MANAGER_VISIT_COMPANIONS_MAX} people can go with a manager on one visit.`);
+  return out;
+}
+
 /** POST: one single visit of his own that he missed logging. */
 export async function enterManagerMissedVisit(viewer: PhoenixCrmViewer, raw: unknown): Promise<EnteredManagerMissedVisit> {
   const body = record(raw);
@@ -271,11 +293,13 @@ export async function enterManagerMissedVisit(viewer: PhoenixCrmViewer, raw: unk
   const placeError = vacantVisitPlaceError({ vacant, address: entry.address, captured: false });
   if (placeError) throw validationError(placeError);
 
+  const companions = missedCompanionsOf(body.companionHrIds, body.companionHrIds == null ? [] : await loadCompanionOffers(viewer, writer));
+
   const slot = (await plannedSlotsOn(subject.hrId, entry.visitDate)).get(entry.customerId ? `c:${entry.customerId}` : `m:${entry.managerCustomerId}`) ?? null;
   const at = missedVisitInstant(entry.visitDate, entry.visitMinute, new Date(), cairoOffsetMinutes);
   const wall = new Date(at.getTime() + cairoOffsetMinutes(at) * 60_000);
 
-  const { error } = await getSupabaseAdmin()
+  const { data: saved, error } = await getSupabaseAdmin()
     .from("phoenix_crm_manager_visits")
     .insert({
       manager_hr_id: subject.hrId,
@@ -298,7 +322,9 @@ export async function enterManagerMissedVisit(viewer: PhoenixCrmViewer, raw: unk
       // Somebody other than the manager: that is the "Entered by the Super Admin" mark.
       entered_by_hr_id: viewer.hrId,
       is_test: false,
-    });
+    })
+    .select("id")
+    .single();
   if (error) {
     if ((error as { code?: unknown }).code !== "23505") throw error;
     const again = await fetchAllRowsKeyset<Row>(
@@ -307,6 +333,17 @@ export async function enterManagerMissedVisit(viewer: PhoenixCrmViewer, raw: unk
     );
     if (again.length === 0) throw conflictError("This manager already has a visit to this customer on that day.", "already_visited");
     return { customerName, planned: slot !== null, duplicate: true };
+  }
+  if (companions.length > 0) {
+    // 🔴 THE VISIT AND WHO WENT ON IT ARE ONE SAVE, as `logManagerVisit` keeps them: a failed list takes the visit back.
+    const visitId = String((saved as Row | null)?.id ?? "");
+    const { error: companionError } = await getSupabaseAdmin()
+      .from("phoenix_crm_visit_companions")
+      .insert(companions.map((companion, position) => ({ manager_visit_id: visitId, hr_id: companion.hrId, side: companion.side, position })));
+    if (companionError) {
+      await getSupabaseAdmin().from("phoenix_crm_manager_visits").delete().eq("id", visitId);
+      throw companionError;
+    }
   }
   return { customerName, planned: slot !== null, duplicate: false };
 }

@@ -21,6 +21,20 @@ import { UNPLANNED_REASON_MIN } from "@/lib/phoenix-crm/unplanned-rules";
 
 export const VISIT_FILED_PILL = "Sent for approval";
 export const VISIT_FILED_LINE = "This visit reached Phoenix after its day closed, so it counts once it is approved.";
+/** The same row, for a visit the phone kept at the press: nothing about why, only that it is kept and what happens next. */
+export const VISIT_KEPT_LINE = "This visit is kept, and it counts once it is approved.";
+
+/**
+ * 🔴 A VISIT PRESSED WHILE THE PHONE GAVE NO READING IS FILED, NEVER LOST (owner, 24 Nov 2026: "build the three
+ * follow-ups"; "never any visit to be lost"). Location was allowed and still nothing came, indoors or with GPS lost,
+ * so the press could only be refused, and a rep who walked on lost it. The phone now files it whole for the Super
+ * Admin, who decides with the row marked "No location". A territory visit only: a manager's own single visit reads no
+ * location. Location SWITCHED OFF is still refused at the press, with the server's own sentence to switch it on.
+ */
+export function pressedWithNoLocation(kind: "territory" | "manager_single" | undefined, body: Record<string, unknown>): boolean {
+  if (kind === "manager_single") return false;
+  return !(typeof body.lat === "number" && Number.isFinite(body.lat) && typeof body.lon === "number" && Number.isFinite(body.lon));
+}
 export const VISIT_FILED_DISMISS = "OK";
 
 export type LateVisitKind = "territory" | "manager_single";
@@ -44,6 +58,8 @@ export type LateVisitItem = {
   arrivedAtText: string;
   /** "Planned", "Off plan" or "Own single visit" — what the press said it was. */
   visitLabel: string;
+  /** The phone gave no reading at the press, so the visit was filed there (`pressedWithNoLocation`). */
+  withoutLocation: boolean;
   products: string[];
   comment: string | null;
   status: LateVisitStatus;
@@ -197,5 +213,7 @@ export function managerApprovalBody(input: {
     products: strings(input.body.products),
     comment: typeof input.body.comment === "string" ? input.body.comment : null,
     address: typeof input.body.address === "string" ? input.body.address : null,
+    // Who went with him, as his phone ticked them; the door checks each against his own offers (24 Nov 2026).
+    companionHrIds: strings(input.body.companionHrIds),
   };
 }

@@ -40,6 +40,7 @@ function VisitCell({ item }: { item: LateVisitItem }) {
       </p>
       <div className="flex flex-wrap gap-1">
         <CrmPill tone={item.visitLabel === "Off plan" ? "warn" : "info"}>{item.visitLabel}</CrmPill>
+        {item.withoutLocation ? <CrmPill tone="warn">No location</CrmPill> : null}
       </div>
       {item.products.length > 0 ? (
         <p className="break-words text-xs text-slate-600" dir="auto">

@@ -137,6 +137,21 @@ export function useSilentFix(active: boolean = true): SilentFixReader {
 }
 
 /**
+ * Whether the phone ALLOWS location and still gave no reading — indoors, or GPS lost — as opposed to location being
+ * switched off or never answered. Only an allowed phone's empty press is filed for the Super Admin; anything else keeps
+ * the server's own sentence to switch it on (`NO_FIX_FOR_A_VISIT`). A browser that cannot say answers false.
+ */
+export async function silentFixAllowed(): Promise<boolean> {
+  try {
+    if (typeof navigator === "undefined" || !navigator.permissions?.query) return false;
+    const answer = await navigator.permissions.query({ name: "geolocation" as PermissionName });
+    return answer.state === "granted";
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The reading as the visit save reads it (`parseCapturedFix`, entry-rules.ts).
  *
  * `deviceCapturedAt` is the phone's clock at the TAP, which the server compares with its own clock on

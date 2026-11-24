@@ -9397,9 +9397,15 @@ Asked how to treat a case Phoenix cannot tell apart from a forged wait, he chose
   believes (`checkHeldLocationIntegrity`). Every finding from either pass stands, so a wait cannot hide a replayed
   coordinate or a day with no drift.
 - A trip impossible at the door is `impossible_travel`. Even on the phone's word, nobody made it.
+- 🔴 **Only when the wait it rests on is the REP'S OWN PHONE'S** (24 Nov 2026, "build the three follow-ups"). When
+  only a manager's held save makes the trip fit, she claimed nothing: it is the WEAK
+  `travel_rests_on_managers_wait`, which stays on the board and costs her rank nothing. A third pass that credits
+  her own phone's waits, and a fourth crediting only other phones', decide it (`restsOnAManagersWaitAlone`): weak only
+  when his wait alone fits and hers alone does not. A trip that needs hers AND his stays hers, and strong.
 - A trip impossible only at arrival is `travel_rests_on_held_wait`, which is strong. No software can prove when an offline
   phone was pressed, so an honest drained queue and a forged wait both land here. It costs the rank until he settles the
-  case, an honest rep's included, and his settle clears it. Never demote it to weak.
+  case, an honest rep's included, and his settle clears it. Never demote it to weak — the manager's-wait case above is
+  a different flag, not a demotion of this one.
 - Only a drain of two or more, or a next visit soon after a held one, can trip it, and only at 2 km or more net of accuracy
   and over 150 km/h. A lone held visit cannot, because arriving late only widens its gap.
 - A claim is void, all of it, if one of the rep's own arrivals sits inside the wait and more than five minutes before this
@@ -9432,8 +9438,16 @@ across 02:00, he chose: "SUPER ADMIN APPROVE IT ONLY SUPER ADMIN".
   (`enterMissedVisit`, `enterManagerMissedVisit`), so every rule they keep holds: one visit a customer a day, a
   leaver's day, the line's products, an off-plan visit raising its manager-then-SFE approval. A refusal is that door's
   own sentence, shown on the row, and the row stays waiting. The same id means approving twice is one visit.
-- **What it does not cover.** A visit pressed with no location is still refused by the form, which keeps its fields. A
-  manager's single visit approved this way drops its companions, because the manager missed-record door takes none.
+- **A visit pressed with no reading is filed too** (owner, 24 Nov 2026: "build the three follow-ups"). When the phone
+  ALLOWS location (`silentFixAllowed`, the permission reads `granted`) and still gives no reading, indoors or with
+  GPS lost, the form keeps the press on the phone with no reading in it, and the sending pass files it at once, inside
+  its window or not (`pressedWithNoLocation`): sent, the server could only refuse it. The Super Admin's row reads
+  "No location". The phone reads "Sent for approval" and "This visit is kept, and it counts once it is approved."
+  Location switched off, or a prompt never answered, is still refused at the press with `NO_FIX_FOR_A_VISIT`. A
+  manager's own single visit reads no location, so it is never filed for that.
+- **A manager's single visit keeps who went with him.** `managerApprovalBody` carries the phone's `companionHrIds`,
+  and `enterManagerMissedVisit` checks each against his own offers (`loadCompanionOffers`), refuses the entry with
+  a sentence when one is no longer among them (never drops one), and saves them with the visit as one save.
 
 **Pinned by** `tests/phoenix-crm-late-visits.test.ts` and `tests/phoenix-crm-visit-outbox.test.ts`
 (`checkALateVisitIsFiled`).
