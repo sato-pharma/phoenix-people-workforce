@@ -57,7 +57,17 @@ import {
   type MeasuredConsumption,
   type ProductRunObservation,
 } from "./learning";
-import type { WireRetiredMaterial, WireRun, WireWorkspace } from "./wire";
+import {
+  coerceRunStage,
+  deductionRowDate,
+  executedYield,
+  netFormulaQty,
+  planDeduction,
+  runTeachesTheLearner,
+  spreadFactoryBalance,
+  type DeductionPlan,
+} from "./execution";
+import type { WireExecutionPreview, WireRetiredMaterial, WireRun, WireWorkspace } from "./wire";
 import {
   resolveMaterialRequirement,
   sortRequirements,
@@ -83,6 +93,7 @@ import {
   ProductionPlanningInputError,
   QTY_SCALE,
   fromDisplayQty,
+  isBoughtBySato,
   toDisplayQty,
   UNIT_KINDS,
   type CompositionBasis,
@@ -150,9 +161,9 @@ const FX_COLUMNS =
 const SETTINGS_COLUMNS =
   "id, default_overage_pct::text, reorder_cover_runs::text, alarm_enabled, alarm_dry_run, fx_fetch_enabled, fx_fetch_dry_run, fx_fallback_usd_to_egp::text, alarm_last_evaluated_on, alarm_last_sent_on, expiry_warn_days, expiry_alarm_enabled, expiry_alarm_dry_run, expiry_last_evaluated_on, expiry_last_sent_on, updated_by_hr_id, updated_by_login, updated_at";
 const RUN_COLUMNS =
-  "id, product_id, plan_id, run_label, runs_count, actual_good_units, actual_sample_units, snap_run_volume_ml, snap_dose_ml, snap_good_unit_ml, snap_sample_unit_ml, produced_on, is_excluded_from_learning, exclusion_reason, notes, recorded_by_login, created_at";
+  "id, product_id, plan_id, run_label, runs_count, actual_good_units, actual_sample_units, snap_run_volume_ml, snap_dose_ml, snap_good_unit_ml, snap_sample_unit_ml, produced_on, is_excluded_from_learning, exclusion_reason, notes, recorded_by_login, created_at, stage, saleable_boxes, exact_runs::text, balanced_on, balanced_by_login, cancelled_reason";
 const RUN_MATERIAL_COLUMNS =
-  "id, run_id, material_id, unit_kind, opening_qty::text, delivered_qty::text, closing_qty::text, consumed_qty::text, theoretical_qty::text, note";
+  "id, run_id, material_id, unit_kind, opening_qty::text, delivered_qty::text, closing_qty::text, consumed_qty::text, theoretical_qty::text, note, deducted_qty::text, unrecorded_qty::text, closing_source";
 const PLAN_COLUMNS =
   "id, product_id, title, request_mode, requested_qty, sample_units, status, snap_overage_pct::text, snap_runs, snap_good_units, snap_packaging_sets, snap_fx_usd_to_egp::text, snap_fx_rate_date, notes, created_by_login, committed_at, committed_by_login, created_at";
 
@@ -659,16 +670,22 @@ async function loadRunActuals(): Promise<{
 }> {
   const db = getSupabaseAdmin();
   const [runsRes, runMaterialsRes] = await Promise.all([
-    db.from(T.runs).select("id, product_id, runs_count, is_excluded_from_learning"),
-    db.from(T.runMaterials).select("run_id, material_id, consumed_qty::text, theoretical_qty::text"),
+    db.from(T.runs).select("id, product_id, runs_count, is_excluded_from_learning, stage, exact_runs::text"),
+    db.from(T.runMaterials).select("run_id, material_id, consumed_qty::text, theoretical_qty::text, closing_source"),
   ]);
   if (runsRes.error || runMaterialsRes.error) return { learning: new Map(), measuredConsumption: new Map() };
 
-  const runsById = new Map<string, { productId: string; runsCount: bigint; excluded: boolean }>();
+  const runsById = new Map<string, { productId: string; runsCount: bigint; exactRunsMicro: bigint | null; excluded: boolean }>();
   for (const row of runsRes.data ?? []) {
+    // 🔴 Only a BALANCED run is a measurement (owner, 2026-11-24: "خليه ما يحسبش نسبة هادر … يحسب على
+    // الactual only"). A run still waiting for the factory's balance holds the formula's own answer
+    // as its consumption, and a cancelled one gave its stock back — either would teach the learner
+    // a waste of zero that nobody measured.
+    if (!runTeachesTheLearner(coerceRunStage(row.stage))) continue;
     runsById.set(String(row.id), {
       productId: String(row.product_id),
       runsCount: BigInt(row.runs_count ?? 1),
+      exactRunsMicro: optionalQty(row.exact_runs, "exact_runs"),
       excluded: row.is_excluded_from_learning === true,
     });
   }
@@ -677,6 +694,8 @@ async function loadRunActuals(): Promise<{
   for (const row of runMaterialsRes.data ?? []) {
     const run = runsById.get(String(row.run_id));
     if (!run) continue;
+    // A line the factory's balance never reached keeps the formula's own provisional closing.
+    if (row.closing_source === "provisional") continue;
     observations.push({
       runId: String(row.run_id),
       productId: run.productId,
@@ -684,6 +703,7 @@ async function loadRunActuals(): Promise<{
       consumedQty: parseQty(String(row.consumed_qty ?? "0"), "consumed_qty"),
       theoreticalQty: optionalQty(row.theoretical_qty, "theoretical_qty"),
       runsCount: run.runsCount,
+      exactRunsMicro: run.exactRunsMicro,
       isExcludedFromLearning: run.excluded,
     });
   }
@@ -1269,6 +1289,9 @@ export async function listRuns(access: AccessContext, productId?: string | null)
       consumedQty: String(row.consumed_qty ?? "0"),
       theoreticalQty: asText(row.theoretical_qty),
       note: asText(row.note),
+      deductedQty: asText(row.deducted_qty),
+      unrecordedQty: String(row.unrecorded_qty ?? "0"),
+      closingSource: row.closing_source === "provisional" ? "provisional" : "factory",
     });
     linesByRunId.set(runId, list);
   }
@@ -1286,6 +1309,11 @@ export async function listRuns(access: AccessContext, productId?: string | null)
     exclusionReason: asText(row.exclusion_reason),
     notes: asText(row.notes),
     recordedByLogin: asText(row.recorded_by_login),
+    stage: coerceRunStage(row.stage),
+    saleableBoxes: row.saleable_boxes == null ? null : String(row.saleable_boxes),
+    exactRuns: asText(row.exact_runs),
+    balancedOn: asText(row.balanced_on),
+    cancelledReason: asText(row.cancelled_reason),
     materials: linesByRunId.get(String(row.id)) ?? [],
   }));
 }
@@ -2239,7 +2267,10 @@ export async function recordRun(access: AccessContext, body: Record<string, unkn
         "closingQty",
       );
     }
-    const predicted = theoryByMaterialId.get(materialId)?.needed ?? null;
+    // The NET formula figure, never `needed`: the learner reads (consumed − theoretical) ÷ theoretical
+    // as the measured overage, so a theory that already carried the 3% would understate every
+    // measured waste by those 3 points (found 2026-11-24, with no run yet recorded on production).
+    const predicted = theoryByMaterialId.get(materialId)?.rawNeeded ?? null;
     return {
       run_id: runId,
       material_id: materialId,
@@ -2276,6 +2307,448 @@ export async function recordRun(access: AccessContext, body: Record<string, unkn
   });
 
   return { id: runId, materialLines: rows.length };
+}
+
+// ── The execution: what the factory produced, and its balance days later (owner, 2026-11-24) ──────
+//
+// "تم انتاج ٢٢١٣٠ علبه ساجنكو و٦٩٨٥ عينه عايزه اشوف ادخلهم فين علشان يديني الستوك وخليه ما يحسبش نسبة
+// هادر. بعد كام يوم حاجيب الرصيد من المصنع ونبقى نحسب كمية الهادر ساعتها يحسب على الactual only."
+//
+// Two writes and an undo. `executeProduction` takes the NET formula quantity of every Sato material
+// off recorded stock — the factory's store first, then Sato's own — and leaves the run waiting for
+// the factory's balance. `recordFactoryBalance` puts the factory's own closing figure in, which is
+// what makes consumed − formula a MEASURED waste. `cancelExecution` gives a mistyped production's
+// stock back lot by lot. The arithmetic is all in `execution.ts`, tested on its own.
+
+type ExecutionLine = {
+  readonly material: LoadedMaterial;
+  /** Null for a Sato material with no formula line — its consumption is measured at the balance. */
+  readonly formulaQty: bigint | null;
+  readonly deduction: DeductionPlan;
+};
+
+function parseExecution(data: ProductionPlanningData, body: Record<string, unknown>) {
+  const productId = asText(body.productId) ?? data.products[0]?.id ?? null;
+  const product = data.products.find((candidate) => candidate.id === productId);
+  if (!product) throw new ProductionPlanningInputError(errorsFor(body).productNotFound, "productId");
+  const saleableBoxes = parseWholeCount(asScalar(body.saleableBoxes) ?? 0, "saleableBoxes", { min: BigInt(0) });
+  const sampleUnits = parseWholeCount(asScalar(body.sampleUnits) ?? 0, "sampleUnits", { min: BigInt(0) });
+  if (saleableBoxes === BigInt(0) && sampleUnits === BigInt(0)) {
+    throw new ProductionPlanningInputError(errorsFor(body).nothingProduced, "saleableBoxes");
+  }
+  const producedOn = asText(body.producedOn) ?? todayCairo();
+  if (!isIsoDate(producedOn)) throw new ProductionPlanningInputError(errorsFor(body).expiryDateInvalid, "producedOn");
+  const produced = executedYield(product.geometry, { saleableBoxes, sampleUnits });
+  return { product, saleableBoxes, sampleUnits, producedOn, produced };
+}
+
+/** Every Sato material of the product, with its formula figure and where it comes off stock. */
+function executionLines(
+  data: ProductionPlanningData,
+  product: LoadedProduct,
+  produced: ReturnType<typeof executedYield>,
+): ExecutionLine[] {
+  const compositions = data.compositionsByProductId.get(product.id) ?? [];
+  const lots = stockForProduct(data, product);
+  const factoryLocationId = factoryLocationIdFor(data, product);
+  const lines: ExecutionLine[] = [];
+  for (const material of materialsForProduct(data, product.id)) {
+    const composition = compositions.find((line) => line.materialId === material.id) ?? null;
+    // Only what Sato buys, like every tab: a factory material is the factory's own stock to account for.
+    if (!isBoughtBySato(effectiveSupplier(data, product.id, material.id, composition))) continue;
+    const formulaQty =
+      composition && basisFitsProduct(composition.basis, product.geometry.stripsPerBox)
+        ? netFormulaQty({ basis: composition.basis, qtyPerBasis: composition.qtyPerBasis, unitKind: material.unitKind }, produced)
+        : null;
+    const deduction = planDeduction({
+      lots: lots.filter((lot) => lot.materialId === material.id),
+      factoryLocationId,
+      needQty: formulaQty ?? BigInt(0),
+    });
+    lines.push({ material, formulaQty, deduction });
+  }
+  return lines;
+}
+
+function exactRunsText(produced: ReturnType<typeof executedYield>): string {
+  return formatQty(produced.exactRunsMicro);
+}
+
+function wireExecutionPreview(parsed: ReturnType<typeof parseExecution>, lines: readonly ExecutionLine[]): WireExecutionPreview {
+  const { produced } = parsed;
+  return {
+    productId: parsed.product.id,
+    saleableBoxes: parsed.saleableBoxes.toString(),
+    sampleUnits: parsed.sampleUnits.toString(),
+    producedOn: parsed.producedOn,
+    goodUnits: produced.goodUnits.toString(),
+    exactRuns: exactRunsText(produced),
+    totalDoses: produced.totalDoses.toString(),
+    stripCount: produced.stripCount.toString(),
+    lines: lines.map(({ material, formulaQty, deduction }) => ({
+      materialId: material.id,
+      formulaQty: formulaQty === null ? null : formatQty(formulaQty),
+      fromFactoryQty: formatQty(deduction.fromFactory),
+      fromSatoQty: formatQty(deduction.fromSatoStores),
+      unrecordedQty: formatQty(deduction.unrecorded),
+      heldAtFactoryBefore: formatQty(deduction.heldAtFactoryBefore),
+      heldElsewhereBefore: formatQty(deduction.heldElsewhereBefore),
+    })),
+  };
+}
+
+/** What a production would take off stock, written nowhere. The screen shows it before the confirm. */
+export async function previewExecution(access: AccessContext, body: Record<string, unknown>): Promise<WireExecutionPreview> {
+  await assertWrite(access);
+  const data = await loadProductionPlanningData(access);
+  const parsed = parseExecution(data, body);
+  return wireExecutionPreview(parsed, executionLines(data, parsed.product, parsed.produced));
+}
+
+/**
+ * Record a production and take its NET formula quantity off stock.
+ *
+ * Recomputed here from the live stock rather than taken from the preview, so a lot that moved
+ * between the preview and the confirm is deducted as it now stands. The run is left
+ * `awaiting_balance`: its closing figures are the formula's own answer (`provisional`) until the
+ * factory's balance replaces them, and until then it teaches the learner nothing.
+ */
+export async function executeProduction(access: AccessContext, body: Record<string, unknown>) {
+  await assertWrite(access);
+  const who = actor(access);
+  const data = await loadProductionPlanningData(access);
+  const parsed = parseExecution(data, body);
+  const { product, produced, producedOn } = parsed;
+  const lines = executionLines(data, product, produced);
+  const runLabel = asText(body.runLabel) ?? `${product.code} ${producedOn}`;
+
+  const db = getSupabaseAdmin();
+  const { data: inserted, error } = await db
+    .from(T.runs)
+    .insert({
+      product_id: product.id,
+      run_label: runLabel,
+      runs_count: Number(produced.runs),
+      actual_good_units: produced.goodUnits.toString(),
+      actual_sample_units: produced.sampleUnits.toString(),
+      saleable_boxes: parsed.saleableBoxes.toString(),
+      exact_runs: exactRunsText(produced),
+      stage: "awaiting_balance",
+      snap_run_volume_ml: product.geometry.runVolumeMl.toString(),
+      snap_dose_ml: Number(product.geometry.doseMl),
+      snap_good_unit_ml: Number(product.geometry.goodUnitMl),
+      snap_sample_unit_ml: Number(product.geometry.sampleUnitMl),
+      produced_on: producedOn,
+      is_excluded_from_learning: false,
+      notes: asText(body.notes),
+      recorded_by_hr_id: who.hrId,
+      recorded_by_login: who.login,
+    })
+    .select("id")
+    .maybeSingle();
+  if (error) failure(error, "record the production");
+  const runId = inserted?.id ? String(inserted.id) : null;
+  if (!runId) failure(null, "record the production");
+
+  const materialRows = lines.map(({ material, formulaQty, deduction }) => {
+    const deducted = deduction.fromFactory + deduction.fromSatoStores;
+    // opening = what the factory held; delivered = what came over from Sato's stores for this run;
+    // closing = what is left at the factory. So the generated consumed column reads `deducted`.
+    const opening = deduction.heldAtFactoryBefore;
+    const delivered = deduction.fromSatoStores;
+    return {
+      run_id: runId,
+      material_id: material.id,
+      unit_kind: material.unitKind,
+      opening_qty: formatQty(opening),
+      delivered_qty: formatQty(delivered),
+      closing_qty: formatQty(opening + delivered - deducted),
+      theoretical_qty: formulaQty === null ? null : formatQty(formulaQty),
+      deducted_qty: formatQty(deducted),
+      unrecorded_qty: formatQty(deduction.unrecorded),
+      closing_source: "provisional",
+    };
+  });
+  if (materialRows.length > 0) {
+    const { error: linesError } = await db.from(T.runMaterials).insert(materialRows);
+    if (linesError) failure(linesError, "record the production's materials");
+  }
+
+  const note = `Production: ${runLabel}`;
+  const stockRows = lines.flatMap(({ material, deduction }) =>
+    deduction.takes.map((take) => ({
+      material_id: material.id,
+      unit_kind: material.unitKind,
+      location_id: take.lot.locationId,
+      expiry_date: take.lot.expiryDate,
+      qty: formatQty(take.remaining),
+      as_of_date: deductionRowDate(producedOn, take.lot),
+      source: "production",
+      run_id: runId,
+      moved_qty: formatQty(take.take),
+      note,
+      recorded_by_hr_id: who.hrId,
+      recorded_by_login: who.login,
+    })),
+  );
+  if (stockRows.length > 0) {
+    const { error: stockError } = await db.from(T.stock).insert(stockRows);
+    if (stockError) failure(stockError, "take the production off stock");
+  }
+
+  const unrecordedLines = lines.filter((line) => line.deduction.unrecorded > BigInt(0)).length;
+  await writeRequiredAuditLog({
+    actorLoginId: who.login,
+    entityType: "production_run",
+    entityId: runId,
+    newValues: {
+      productCode: product.code,
+      runLabel,
+      stage: "awaiting_balance",
+      saleableBoxes: parsed.saleableBoxes.toString(),
+      sampleUnits: parsed.sampleUnits.toString(),
+      exactRuns: exactRunsText(produced),
+      producedOn,
+      materials: materialRows.length,
+      stockRows: stockRows.length,
+      unrecordedLines,
+    },
+    summary: `Production planner: recorded production "${runLabel}" of ${product.code} — ${parsed.saleableBoxes} boxes, ${parsed.sampleUnits} samples; ${stockRows.length} lot(s) taken off at the formula, ${unrecordedLines} material(s) short of the records; waiting for the factory's balance`,
+  });
+
+  return { id: runId, preview: wireExecutionPreview(parsed, lines) };
+}
+
+async function loadRunForExecution(body: Record<string, unknown>) {
+  const runId = asText(body.runId);
+  if (!runId) throw new ProductionPlanningInputError(errorsFor(body).runNotFound, "runId");
+  const db = getSupabaseAdmin();
+  const [runRes, linesRes] = await Promise.all([
+    db.from(T.runs).select("id, product_id, run_label, stage").eq("id", runId).maybeSingle(),
+    db
+      .from(T.runMaterials)
+      .select("id, material_id, unit_kind, opening_qty::text, delivered_qty::text, closing_qty::text, theoretical_qty::text")
+      .eq("run_id", runId),
+  ]);
+  if (runRes.error) failure(runRes.error, "read the run");
+  if (linesRes.error) failure(linesRes.error, "read the run's materials");
+  if (!runRes.data) throw new ProductionPlanningInputError(errorsFor(body).runNotFound, "runId");
+  return {
+    runId,
+    productId: String(runRes.data.product_id),
+    runLabel: String(runRes.data.run_label),
+    stage: coerceRunStage(runRes.data.stage),
+    lines: linesRes.data ?? [],
+  };
+}
+
+/**
+ * The factory's own balance, days after the production — the figure the waste is measured from.
+ *
+ * Per material: the opening and the delivered amount (filled in from the records at production, and
+ * editable, because a lot nobody recorded is exactly why a line came up short), and the factory's
+ * closing. Consumed = opening + delivered − closing, the database's generated column; the waste is
+ * consumed − formula. The closing also becomes the factory's stock, spread over its lots by
+ * `spreadFactoryBalance`. A line not given stays provisional and is left out of the learning.
+ */
+export async function recordFactoryBalance(access: AccessContext, body: Record<string, unknown>) {
+  await assertWrite(access);
+  const who = actor(access);
+  const run = await loadRunForExecution(body);
+  if (run.stage === "cancelled") throw new ProductionPlanningInputError(errorsFor(body).runCancelled, "runId");
+  const balanceDate = asText(body.balanceDate) ?? todayCairo();
+  if (!isIsoDate(balanceDate)) throw new ProductionPlanningInputError(errorsFor(body).expiryDateInvalid, "balanceDate");
+
+  const data = await loadProductionPlanningData(access);
+  const product = data.products.find((candidate) => candidate.id === run.productId);
+  if (!product) throw new ProductionPlanningInputError(errorsFor(body).productNotFound, "productId");
+  const materialsById = new Map(data.materials.map((material) => [material.id, material]));
+  const factoryLocationId = factoryLocationIdFor(data, product);
+  const lineByMaterialId = new Map(run.lines.map((line) => [String(line.material_id), line]));
+
+  const given = Array.isArray(body.materials) ? (body.materials as Record<string, unknown>[]) : [];
+  const updates: { id: string; material: LoadedMaterial; opening: bigint; delivered: bigint; closing: bigint }[] = [];
+  for (const entry of given) {
+    const materialId = asText(entry.materialId);
+    if (!materialId) throw new ProductionPlanningInputError(errorsFor(body).rowMaterialMissingId, "materials");
+    const line = lineByMaterialId.get(materialId);
+    const material = materialsById.get(materialId);
+    if (!line || !material) throw new ProductionPlanningInputError(errorsFor(body).rowMaterialNotFound, "materials");
+    const typedClosing = asScalar(entry.closingQty);
+    if (typedClosing === null || String(typedClosing).trim() === "") continue;
+    const opening = parseNonNegativeQty(asScalar(entry.openingQty) ?? String(line.opening_qty ?? "0"), "openingQty");
+    const delivered = parseNonNegativeQty(asScalar(entry.deliveredQty) ?? String(line.delivered_qty ?? "0"), "deliveredQty");
+    const closing = parseNonNegativeQty(typedClosing, "closingQty");
+    if (closing > opening + delivered) {
+      throw new ProductionPlanningInputError(
+        stringsFor(body).refusals.closingOverOpening(materialNameFor(body, material)),
+        "closingQty",
+      );
+    }
+    updates.push({ id: String(line.id), material, opening, delivered, closing });
+  }
+
+  const db = getSupabaseAdmin();
+  for (const update of updates) {
+    const { error } = await db
+      .from(T.runMaterials)
+      .update({
+        opening_qty: formatQty(update.opening),
+        delivered_qty: formatQty(update.delivered),
+        closing_qty: formatQty(update.closing),
+        closing_source: "factory",
+      })
+      .eq("id", update.id);
+    if (error) failure(error, "record the factory's balance");
+  }
+
+  // The factory's figure is its stock now: one figure per material, spread over its lots there.
+  const note = `Factory balance after ${run.runLabel}`;
+  const productLots = stockForProduct(data, product);
+  const stockRows = factoryLocationId
+    ? updates.flatMap((update) => {
+        const lots = productLots.filter(
+          (lot) => lot.materialId === update.material.id && lot.locationId === factoryLocationId,
+        );
+        const fallbackExpiryDate =
+          productLots.find((lot) => lot.materialId === update.material.id && lot.expiryDate !== null)?.expiryDate ?? null;
+        return spreadFactoryBalance({ lots, reportedQty: update.closing, fallbackExpiryDate }).map((piece) => {
+          const standing = lots.find((lot) => lot.expiryDate === piece.expiryDate);
+          return {
+            material_id: update.material.id,
+            unit_kind: update.material.unitKind,
+            location_id: factoryLocationId,
+            expiry_date: piece.expiryDate,
+            qty: formatQty(piece.qty),
+            as_of_date: standing && standing.asOfDate > balanceDate ? standing.asOfDate : balanceDate,
+            source: "factory_report",
+            run_id: run.runId,
+            note,
+            recorded_by_hr_id: who.hrId,
+            recorded_by_login: who.login,
+          };
+        });
+      })
+    : [];
+  if (stockRows.length > 0) {
+    const { error } = await db.from(T.stock).insert(stockRows);
+    if (error) failure(error, "record the factory's balance as its stock");
+  }
+
+  const { error: stageError } = await db
+    .from(T.runs)
+    .update({ stage: "balanced", balanced_on: balanceDate, balanced_by_login: who.login })
+    .eq("id", run.runId);
+  if (stageError) failure(stageError, "close the run");
+
+  await writeRequiredAuditLog({
+    actorLoginId: who.login,
+    entityType: "production_run",
+    entityId: run.runId,
+    newValues: {
+      previousStage: run.stage,
+      stage: "balanced",
+      balanceDate,
+      materials: updates.map((update) => ({
+        materialId: update.material.id,
+        opening: formatQty(update.opening),
+        delivered: formatQty(update.delivered),
+        closing: formatQty(update.closing),
+      })),
+      stockRows: stockRows.length,
+    },
+    summary: `Production planner: factory balance for "${run.runLabel}" as of ${balanceDate} — ${updates.length} material(s) measured, ${stockRows.length} factory stock row(s)`,
+  });
+
+  return { id: run.runId, measured: updates.length };
+}
+
+/**
+ * Undo a production that was typed wrong, while it still waits for the factory's balance.
+ *
+ * Each lot gets back exactly what this run took from it (`moved_qty`), on top of what it holds NOW,
+ * so a delivery recorded since is not lost. The run stays, marked cancelled with its reason, like an
+ * exclusion: the record of what was typed survives its own correction.
+ */
+export async function cancelExecution(access: AccessContext, body: Record<string, unknown>) {
+  await assertWrite(access);
+  const who = actor(access);
+  const run = await loadRunForExecution(body);
+  if (run.stage !== "awaiting_balance") {
+    throw new ProductionPlanningInputError(errorsFor(body).runNotAwaitingBalance, "runId");
+  }
+  const reason = asText(body.reason);
+  if (!reason) throw new ProductionPlanningInputError(errorsFor(body).cancelReasonRequired, "reason");
+
+  const db = getSupabaseAdmin();
+  const takenRes = await db
+    .from(T.stock)
+    .select("material_id, unit_kind, location_id, expiry_date, moved_qty::text")
+    .eq("run_id", run.runId)
+    .eq("source", "production");
+  if (takenRes.error) failure(takenRes.error, "read what the production took off stock");
+
+  const today = todayCairo();
+  const giveBack: Record<string, unknown>[] = [];
+  for (const row of takenRes.data ?? []) {
+    const moved = parseNonNegativeQty(String(row.moved_qty ?? "0"), "moved_qty");
+    if (moved <= BigInt(0)) continue;
+    const expiryDate = asText(row.expiry_date);
+    const standingQuery = db
+      .from(T.stock)
+      .select("qty::text, as_of_date")
+      .eq("material_id", String(row.material_id))
+      .eq("location_id", String(row.location_id));
+    const standing = await (expiryDate === null ? standingQuery.is("expiry_date", null) : standingQuery.eq("expiry_date", expiryDate))
+      .order("as_of_date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (standing.error) failure(standing.error, "read the lot to give back to");
+    const heldNow = standing.data?.qty ? parseNonNegativeQty(String(standing.data.qty), "qty") : BigInt(0);
+    const standingDate = standing.data?.as_of_date ? String(standing.data.as_of_date) : today;
+    giveBack.push({
+      material_id: String(row.material_id),
+      unit_kind: String(row.unit_kind),
+      location_id: String(row.location_id),
+      expiry_date: expiryDate,
+      qty: formatQty(heldNow + moved),
+      as_of_date: standingDate > today ? standingDate : today,
+      source: "adjustment",
+      run_id: run.runId,
+      moved_qty: formatQty(moved),
+      note: `Cancelled production ${run.runLabel}: ${reason}`,
+      recorded_by_hr_id: who.hrId,
+      recorded_by_login: who.login,
+    });
+  }
+
+  // The stage first, guarded on what it was: a second cancel racing this one finds nothing to change
+  // and gives nothing back twice.
+  const { data: changed, error: stageError } = await db
+    .from(T.runs)
+    .update({ stage: "cancelled", cancelled_reason: reason })
+    .eq("id", run.runId)
+    .eq("stage", "awaiting_balance")
+    .select("id");
+  if (stageError) failure(stageError, "cancel the production");
+  if (!changed || changed.length === 0) {
+    throw new ProductionPlanningInputError(errorsFor(body).runNotAwaitingBalance, "runId");
+  }
+  if (giveBack.length > 0) {
+    const { error } = await db.from(T.stock).insert(giveBack);
+    if (error) failure(error, "give the production's stock back");
+  }
+
+  await writeRequiredAuditLog({
+    actorLoginId: who.login,
+    entityType: "production_run",
+    entityId: run.runId,
+    newValues: { previousStage: "awaiting_balance", stage: "cancelled", reason, lotsGivenBack: giveBack.length },
+    summary: `Production planner: cancelled production "${run.runLabel}" — ${giveBack.length} lot(s) given back (${reason})`,
+  });
+
+  return { id: run.runId, lotsGivenBack: giveBack.length };
 }
 
 /** The settings singleton, including the four arming flags. */

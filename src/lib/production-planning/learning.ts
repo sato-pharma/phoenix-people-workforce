@@ -16,7 +16,7 @@
  *     less than the formula says is interesting; ordering less than the formula says on the strength
  *     of it is how a run stops halfway.
  */
-import { FRACTION_SCALE, PCT_SCALE, roundDiv } from "./rules";
+import { ceilDiv, FRACTION_SCALE, PCT_SCALE, QTY_SCALE, roundDiv } from "./rules";
 
 /**
  * Runs needed before a measured overage is offered as a recommendation. Two is not statistics; it
@@ -34,6 +34,12 @@ export type RunObservation = {
   readonly theoreticalQty: bigint | null;
   /** Runs inside this record — EGPI reports nine batches in one message. */
   readonly runsCount: bigint;
+  /**
+   * The batches an EXECUTION came to, unrounded, in micro runs (23.294167 → 23,294,167). Absent on a
+   * run recorded the old way, which is always a whole count. Only the per-batch consumption reads it:
+   * dividing 23.29 batches' powder by the rounded 24 would understate every batch by 3%.
+   */
+  readonly exactRunsMicro?: bigint | null;
   readonly isExcludedFromLearning: boolean;
 };
 
@@ -182,21 +188,27 @@ export function measuredConsumptionKey(productId: string, materialId: string): s
 export function measuredConsumptionByProduct(
   observations: readonly ProductRunObservation[],
 ): Map<string, MeasuredConsumption> {
-  const buckets = new Map<string, { runs: bigint; consumed: bigint }>();
+  // Batches are summed in MICRO runs, so an execution's 23.294167 counts as itself; a whole count
+  // of 9 is 9,000,000 and divides exactly as it always did.
+  const buckets = new Map<string, { runsMicro: bigint; consumed: bigint }>();
   for (const observation of observations) {
     if (observation.isExcludedFromLearning) continue;
     const key = measuredConsumptionKey(observation.productId, observation.materialId);
-    const bucket = buckets.get(key) ?? { runs: BigInt(0), consumed: BigInt(0) };
-    bucket.runs += observation.runsCount > BigInt(0) ? observation.runsCount : BigInt(1);
+    const bucket = buckets.get(key) ?? { runsMicro: BigInt(0), consumed: BigInt(0) };
+    const exact = observation.exactRunsMicro ?? null;
+    bucket.runsMicro +=
+      exact !== null && exact > BigInt(0)
+        ? exact
+        : (observation.runsCount > BigInt(0) ? observation.runsCount : BigInt(1)) * QTY_SCALE;
     bucket.consumed += observation.consumedQty;
     buckets.set(key, bucket);
   }
 
   const result = new Map<string, MeasuredConsumption>();
   for (const [key, bucket] of buckets) {
-    if (bucket.consumed <= BigInt(0) || bucket.runs <= BigInt(0)) continue;
-    const perRunQty = (bucket.consumed + bucket.runs - BigInt(1)) / bucket.runs;
-    result.set(key, { perRunQty, runsCounted: bucket.runs });
+    if (bucket.consumed <= BigInt(0) || bucket.runsMicro <= BigInt(0)) continue;
+    const perRunQty = ceilDiv(bucket.consumed * QTY_SCALE, bucket.runsMicro);
+    result.set(key, { perRunQty, runsCounted: ceilDiv(bucket.runsMicro, QTY_SCALE) });
   }
   return result;
 }
