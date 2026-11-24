@@ -58,13 +58,16 @@ import {
   type ProductRunObservation,
 } from "./learning";
 import {
+  coerceCountTiming,
   coerceRunStage,
+  countAgainstProduction,
   deductionRowDate,
   executedYield,
   netFormulaQty,
   planDeduction,
   runTeachesTheLearner,
   spreadFactoryBalance,
+  type CountTiming,
   type DeductionPlan,
 } from "./execution";
 import type { WireExecutionPreview, WireRetiredMaterial, WireRun, WireWorkspace } from "./wire";
@@ -1743,7 +1746,58 @@ export async function addStockEntry(access: AccessContext, body: Record<string, 
     previousQty = standing.data?.qty ? parseNonNegativeQty(standing.data.qty, "qty") : BigInt(0);
   }
 
+  // 🔴 A COUNT ON STOCK A PRODUCTION HAS ALREADY DRAWN ON (owner, 2026-11-24). A replacing count
+  // whose lot stands on a production row still waiting for the factory's balance must say whether it
+  // is from before the production or after it — otherwise a pre-production count typed after the
+  // run silently gives the run's take back (76,600 Saginkgo boxes wiped out a 22,130-box deduction).
+  // The arithmetic is `countAgainstProduction`; only a lot the run actually drew on is asked.
+  let countTiming: CountTiming | null = null;
+  let againstRun: { runId: string; productId: string; movedQty: bigint; standingQty: bigint } | null = null;
+  if (!isStockMovement(source)) {
+    const lotQuery = db
+      .from(T.stock)
+      .select("qty::text, source, run_id, moved_qty::text")
+      .eq("material_id", materialId)
+      .eq("location_id", locationId)
+      .lte("as_of_date", asOfDate);
+    const lot = await (expiryDate === null ? lotQuery.is("expiry_date", null) : lotQuery.eq("expiry_date", expiryDate))
+      .order("as_of_date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (lot.error) failure(lot.error, "read the balance this count replaces");
+    if (lot.data?.source === "production" && lot.data.run_id) {
+      const run = await db.from(T.runs).select("id, product_id, stage").eq("id", String(lot.data.run_id)).maybeSingle();
+      if (run.error) failure(run.error, "read the production this stock came off");
+      if (run.data && coerceRunStage(run.data.stage) === "awaiting_balance") {
+        countTiming = coerceCountTiming(body.countTiming);
+        if (!countTiming) throw new ProductionPlanningInputError(errorsFor(body).countTimingRequired, "countTiming");
+        againstRun = {
+          runId: String(run.data.id),
+          productId: String(run.data.product_id),
+          movedQty: parseNonNegativeQty(String(lot.data.moved_qty ?? "0"), "moved_qty"),
+          standingQty: parseNonNegativeQty(String(lot.data.qty ?? "0"), "qty"),
+        };
+      }
+    }
+  }
+
   const storedQty = storedStockQty({ previousQty, source, typedQty: qty });
+  let savedQty = storedQty;
+  let openingDelta = BigInt(0);
+  if (againstRun && countTiming) {
+    if (countTiming === "before_production" && qty < againstRun.movedQty) {
+      throw new ProductionPlanningInputError(errorsFor(body).countBeforeBelowTaken, "countTiming");
+    }
+    const counted = countAgainstProduction({
+      typedQty: qty,
+      timing: countTiming,
+      movedQty: againstRun.movedQty,
+      standingQty: againstRun.standingQty,
+    });
+    savedQty = counted.storedQty;
+    openingDelta = counted.openingDelta;
+  }
 
   const { data, error } = await db
     .from(T.stock)
@@ -1752,7 +1806,7 @@ export async function addStockEntry(access: AccessContext, body: Record<string, 
       unit_kind: unitKind,
       location_id: locationId,
       expiry_date: expiryDate,
-      qty: formatQty(storedQty),
+      qty: formatQty(savedQty),
       as_of_date: asOfDate,
       source,
       note: asText(body.note),
@@ -1763,6 +1817,32 @@ export async function addStockEntry(access: AccessContext, body: Record<string, 
     .maybeSingle();
   if (error) failure(error, "record the stock report");
 
+  // A corrected pre-production count at the run's OWN factory moves the run's opening figure — and
+  // its provisional closing with it — by the same difference, so the factory-balance form starts
+  // from the corrected count. A Sato store is the run's "delivered", which the count does not change.
+  if (againstRun && openingDelta !== BigInt(0)) {
+    const product = await db.from(T.products).select("factory_location_id").eq("id", againstRun.productId).maybeSingle();
+    if (product.error) failure(product.error, "read the product's factory");
+    if (product.data?.factory_location_id && String(product.data.factory_location_id) === locationId) {
+      const line = await db
+        .from(T.runMaterials)
+        .select("id, opening_qty::text, closing_qty::text")
+        .eq("run_id", againstRun.runId)
+        .eq("material_id", materialId)
+        .maybeSingle();
+      if (line.error) failure(line.error, "read the production's line for this material");
+      if (line.data) {
+        const opening = parseNonNegativeQty(String(line.data.opening_qty ?? "0"), "opening_qty") + openingDelta;
+        const closing = parseNonNegativeQty(String(line.data.closing_qty ?? "0"), "closing_qty") + openingDelta;
+        const updated = await db
+          .from(T.runMaterials)
+          .update({ opening_qty: formatQty(opening), closing_qty: formatQty(closing) })
+          .eq("id", String(line.data.id));
+        if (updated.error) failure(updated.error, "move the production's opening figure");
+      }
+    }
+  }
+
   await writeAuditLog({
     actorLoginId: who.login,
     entityType: "production_stock_entry",
@@ -1771,21 +1851,25 @@ export async function addStockEntry(access: AccessContext, body: Record<string, 
       materialId,
       locationId,
       expiryDate,
-      qty: formatQty(storedQty),
+      qty: formatQty(savedQty),
       typedQty: formatQty(qty),
       previousQty: formatQty(previousQty),
       asOfDate,
       source,
+      countTiming,
+      againstRunId: againstRun?.runId ?? null,
+      productionTook: againstRun ? formatQty(againstRun.movedQty) : null,
+      runOpeningMovedBy: formatQty(openingDelta),
     },
     summary: isStockMovement(source)
-      ? `Production planner: delivery of ${formatQty(qty)} for material ${materialId} at ${locationId}${expiryDate ? ` (lot expiring ${expiryDate})` : ""} — balance ${formatQty(previousQty)} → ${formatQty(storedQty)} as of ${asOfDate}`
-      : `Production planner: stock report for material ${materialId} at ${locationId}${expiryDate ? ` (lot expiring ${expiryDate})` : ""} — ${formatQty(storedQty)} as of ${asOfDate}`,
+      ? `Production planner: delivery of ${formatQty(qty)} for material ${materialId} at ${locationId}${expiryDate ? ` (lot expiring ${expiryDate})` : ""} — balance ${formatQty(previousQty)} → ${formatQty(savedQty)} as of ${asOfDate}`
+      : `Production planner: stock report for material ${materialId} at ${locationId}${expiryDate ? ` (lot expiring ${expiryDate})` : ""} — ${formatQty(savedQty)} as of ${asOfDate}`,
   });
 
   return {
     id: data?.id ? String(data.id) : null,
     previousQty: formatQty(previousQty),
-    storedQty: formatQty(storedQty),
+    storedQty: formatQty(savedQty),
     typedQty: formatQty(qty),
   };
 }

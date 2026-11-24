@@ -244,3 +244,49 @@ export function measuredWaste(args: {
   const wasteQty = consumedQty - args.formulaQty;
   return { consumedQty, wasteQty, wastePctScaled: roundDiv(wasteQty * FRACTION_SCALE, args.formulaQty) };
 }
+
+/** When a stock count was taken, against a production that already drew on the same lot. */
+export const COUNT_TIMINGS = ["before_production", "after_production"] as const;
+export type CountTiming = (typeof COUNT_TIMINGS)[number];
+
+export function coerceCountTiming(value: unknown): CountTiming | null {
+  return (COUNT_TIMINGS as readonly unknown[]).includes(value) ? (value as CountTiming) : null;
+}
+
+/**
+ * A replacing stock count (factory report, own count, adjustment) on a lot whose standing row is a
+ * production deduction still waiting for the factory's balance.
+ *
+ * The owner, 2026-11-24: 76,600 Saginkgo boxes were typed three minutes AFTER the production was
+ * recorded, as the count from BEFORE it. A count replaces the balance, so the 22,130 boxes the run
+ * took silently came back and the stock read as if nothing had been made. So the count must say
+ * which it is:
+ *
+ *   before_production — what the lot held before the run: the run's take comes off it again, and
+ *                       the run's opening figure moves by the same difference;
+ *   after_production  — what the lot holds now: stored as typed.
+ *
+ * A before-production count smaller than what the run took is refused: the run could not have taken
+ * what was not there, so either the count or the production is wrong.
+ */
+export function countAgainstProduction(args: {
+  readonly typedQty: bigint;
+  readonly timing: CountTiming;
+  /** What the production took off this lot (`moved_qty`). */
+  readonly movedQty: bigint;
+  /** What the lot holds now — the production row's own balance. */
+  readonly standingQty: bigint;
+}): { readonly storedQty: bigint; readonly openingDelta: bigint } {
+  if (args.timing === "after_production") return { storedQty: args.typedQty, openingDelta: BigInt(0) };
+  if (args.typedQty < args.movedQty) {
+    throw new ProductionPlanningInputError(
+      "A count from before the production cannot be smaller than what the production took.",
+      "countTiming",
+    );
+  }
+  return {
+    storedQty: args.typedQty - args.movedQty,
+    // What the lot held before the run, as the run recorded it, was standing + moved.
+    openingDelta: args.typedQty - (args.standingQty + args.movedQty),
+  };
+}

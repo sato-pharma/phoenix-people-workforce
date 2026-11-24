@@ -85,9 +85,13 @@ export function runProductionPlanningStockDeliveryTests() {
     /const storedQty = storedStockQty\(\{ previousQty, source, typedQty: qty \}\)/,
     "addStockEntry must resolve what to store through storedStockQty, never inline",
   );
+  // Since 2026-11-24 the resolved balance can take one more step — a count typed after a production
+  // says whether it is from before it (`countAgainstProduction`) — so the insert reads `savedQty`,
+  // which starts AS `storedQty` and is only ever replaced by that step.
+  assert.match(writer, /let savedQty = storedQty;/, "savedQty must start as the storedStockQty balance");
   assert.match(
     writer,
-    /qty: formatQty\(storedQty\)/,
+    /qty: formatQty\(savedQty\)/,
     "the inserted qty must be the RESOLVED balance, not the figure typed on the form",
   );
   assert.doesNotMatch(

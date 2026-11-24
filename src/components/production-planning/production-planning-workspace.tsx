@@ -1518,6 +1518,7 @@ export function StockTab({
   const [expiryDate, setExpiryDate] = useState("");
   const [source, setSource] = useState("factory_report");
   const [note, setNote] = useState("");
+  const [countTiming, setCountTiming] = useState("");
 
   if (!data) return <p className={`${PANEL} text-[13px] text-slate-500`}>{t.notLoaded}</p>;
   const locationName = (id: string) => {
@@ -1546,6 +1547,18 @@ export function StockTab({
     [...(formMaterial?.stock ?? []), ...(formMaterial?.expiredStock ?? [])].find(
       (row) => row.locationId === locationId && row.expiryDate === typedExpiry,
     ) ?? null;
+  // 🔴 A count on a material a production has drawn on, while that production still waits for the
+  // factory's balance, must say whether it is from before the production or after it (owner,
+  // 2026-11-24: a pre-production box count typed after the run wiped its 22,130-box deduction). The
+  // service decides exactly, lot by lot; the screen only asks the question up front.
+  const drawnByAwaitingRun =
+    !isDelivery &&
+    materialId !== "" &&
+    data.runs.some(
+      (run) =>
+        run.stage === "awaiting_balance" &&
+        run.materials.some((line) => line.materialId === materialId && Number(line.deductedQty ?? "0") > 0),
+    );
   const qtyHint = isDelivery
     ? standingHere
       ? `${t.stockDeliveryAdds}: ${standingHere.qtyDisplay} ${formMaterial?.displayUnit ?? ""}`.trim()
@@ -1631,11 +1644,24 @@ export function StockTab({
             <Field label={t.stockNote}>
               <input className={INPUT} onChange={(event) => setNote(event.target.value)} value={note} />
             </Field>
+            {drawnByAwaitingRun ? (
+              <Field hint={t.stockCountTimingHint} label={t.stockCountTiming}>
+                <select
+                  className={INPUT}
+                  onChange={(event) => setCountTiming(event.target.value)}
+                  value={countTiming}
+                >
+                  <option value="">{t.stockCountTimingChoose}</option>
+                  <option value="before_production">{t.stockCountBefore}</option>
+                  <option value="after_production">{t.stockCountAfter}</option>
+                </select>
+              </Field>
+            ) : null}
           </div>
           <div className="mt-3">
             <button
               className={BUTTON}
-              disabled={busy || !materialId || !locationId || qty.trim() === ""}
+              disabled={busy || !materialId || !locationId || qty.trim() === "" || (drawnByAwaitingRun && countTiming === "")}
               onClick={() => {
                 const material = data.materials.find((candidate) => candidate.id === materialId);
                 void onSave("/stock", {
@@ -1649,6 +1675,7 @@ export function StockTab({
                   expiryDate: typedExpiry,
                   source,
                   note: note.trim() === "" ? null : note.trim(),
+                  countTiming: drawnByAwaitingRun && countTiming !== "" ? countTiming : undefined,
                 });
               }}
               type="button"

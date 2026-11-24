@@ -356,6 +356,11 @@ export const PP = {
   execBoxesProduced: "عدد العلب المنتجة",
   execSamplesProduced: "عدد العينات المنتجة",
   execBoxesWord: "علبة",
+  stockCountTiming: "هذا الجرد",
+  stockCountTimingChoose: "— الاختيار —",
+  stockCountBefore: "قبل الإنتاج — يُخصم الإنتاج منه",
+  stockCountAfter: "بعد الإنتاج — يُحفظ كما هو",
+  stockCountTimingHint: "تم تسجيل إنتاج من هذه الخامة وما زال في انتظار رصيد المصنع",
 
   // ── The settings tab ──────────────────────────────────────────────────────────────────────────
   settingsTitle: "الإعدادات",
@@ -773,6 +778,11 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   execBoxesProduced: "Boxes produced",
   execSamplesProduced: "Samples produced",
   execBoxesWord: "boxes",
+  stockCountTiming: "This count is",
+  stockCountTimingChoose: "— choose —",
+  stockCountBefore: "Before the production — the production comes off it",
+  stockCountAfter: "After the production — kept as typed",
+  stockCountTimingHint: "A production waiting for the factory's balance has drawn on this material",
 
   // ── The settings tab ──────────────────────────────────────────────────────────────────────────
   settingsTitle: "Settings",
@@ -1804,7 +1814,9 @@ export type ProductionPlanningErrorKey =
   | "runNotAwaitingBalance"
   | "runCancelled"
   | "cancelReasonRequired"
-  | "unknownExecutionAction";
+  | "unknownExecutionAction"
+  | "countTimingRequired"
+  | "countBeforeBelowTaken";
 
 export const PRODUCTION_PLANNING_ERRORS: Record<ProductionPlanningErrorKey, string> = {
   unknownBasis: "أساس الحساب غير معروف.",
@@ -1844,6 +1856,9 @@ export const PRODUCTION_PLANNING_ERRORS: Record<ProductionPlanningErrorKey, stri
   runCancelled: "هذه التشغيلة ملغاة.",
   cancelReasonRequired: "سبب الإلغاء مطلوب.",
   unknownExecutionAction: "الإجراء المطلوب غير معروف.",
+  countTimingRequired:
+    "تم تسجيل إنتاج من هذا المخزون وما زال في انتظار رصيد المصنع. يلزم تحديد هل هذا الجرد قبل الإنتاج أم بعده، حتى لا يضيع خصم الإنتاج.",
+  countBeforeBelowTaken: "الجرد قبل الإنتاج أقل مما أخذه الإنتاج من هذا المخزون — يلزم التحقق من الجرد، أو إلغاء الإنتاج وتسجيله من جديد.",
 };
 
 export const PRODUCTION_PLANNING_ERRORS_EN: Record<ProductionPlanningErrorKey, string> = {
@@ -1884,6 +1899,10 @@ export const PRODUCTION_PLANNING_ERRORS_EN: Record<ProductionPlanningErrorKey, s
   runCancelled: "This run is cancelled.",
   cancelReasonRequired: "A reason for cancelling is required.",
   unknownExecutionAction: "Unknown action.",
+  countTimingRequired:
+    "A production waiting for the factory's balance has already drawn on this stock. Say whether this count is from before the production or after it, so the production's deduction is not lost.",
+  countBeforeBelowTaken:
+    "The count from before the production is smaller than what the production took from this stock — check the count, or cancel the production and record it again.",
 };
 
 /**
