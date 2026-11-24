@@ -12,6 +12,7 @@ import { isBrowserNoiseMessage } from "@/lib/error-monitor/browser-noise";
 import { isRedactedServerRenderError } from "@/lib/error-monitor/redacted-server-render";
 import { classifySupabaseUnreachable } from "@/lib/error-monitor/supabase-unreachable";
 import { scrubPath, scrubText } from "@/lib/observability/scrub";
+import { isStaleDeployChunkError } from "@/lib/utils/stale-deploy-recovery";
 
 export type NewErrorReport = {
   message: string;
@@ -78,12 +79,18 @@ export function newErrorSignature(report: Pick<NewErrorReport, "message" | "sign
  * mode: staging and the previews build as NODE_ENV=production too, so `APP_ENV` must be literally `production`.
  * A browser's own words for a cut-off request say nothing about Phoenix (browser-noise.ts) and never send; nor
  * does the browser's redacted copy of a server render error (redacted-server-render.ts), whose server row sent it.
+ *
+ * Nor does a tab asking for a chunk the last deploy replaced ("Failed to load chunk <url> from module <id>"): the
+ * page reloads itself once (recoverFromStaleDeployOnce) and the System Audit already files it as stale_deploy_chunk
+ * noise. Each deploy names its chunks afresh, so the url never repeats and every deploy read as a NEW error — a
+ * National Sales Manager's iPhone on /employee-portals, 24 Nov 2026 16:43 Cairo, mid-swap from #757 to #758.
  */
 export function newErrorAlertRefusal(input: { appEnv: string | undefined; message: string | null | undefined }): string | null {
   if (String(input.appEnv ?? "").trim().toLowerCase() !== "production") return "APP_ENV is not 'production'";
   if (!String(input.message ?? "").trim()) return "no message";
   if (isBrowserNoiseMessage(input.message)) return "browser noise";
   if (isRedactedServerRenderError(String(input.message))) return "the server already reported it";
+  if (isStaleDeployChunkError(new Error(String(input.message)))) return "a deploy replaced the chunk; the page reloads itself";
   return null;
 }
 
