@@ -1,52 +1,45 @@
 ---
 name: run-phoenix-workforce
-description: Run, start, launch, drive or screenshot the Phoenix Workforce web app — drive the spare laptop's dev server (localhost:3000), start a local one only when that is down, sign in as any role through dev-auth (Super Admin, HR Operations, Medical Rep, District Manager, CEO...), open a page, click by text, take desktop and 375px mobile screenshots, measure horizontal scroll, or call a src/lib domain function directly. Use to see a change working in the real app, not just in tests.
+description: Run, open, drive or screenshot the Phoenix Workforce web app WHERE THE OWNER CAN WATCH IT — only in the Claude app's browser pane or his own Chrome (Claude in Chrome), never a headless or backgrounded browser, with every screenshot sent to him as it is taken. Covers the spare laptop's dev server (localhost:3000), a PR preview on localhost:3001 on his word, starting a local server only when that is down, signing in as any role through dev-auth (Super Admin, HR Operations, Medical Rep, District Manager, CEO...), desktop and 375px phone looks, measuring horizontal scroll, and calling a src/lib domain function directly. Use to see a change working in the real app, not just in tests.
 ---
 
 # Run Phoenix Workforce
 
-Next.js 16 web app (admin shell, HR shell, employee portal). An agent drives it with
-`driver.mjs` in this folder: headless Chromium (the Playwright install the e2e suite already
-has) signs in through `GET /api/dev-auth?role=…`, then runs steps — `go`, `click`, `shot`,
-`overflow`, `text`, `waitfor`, `eval`. Paths below are relative to the repo root (or your
-`_wt-<task>` worktree). First verified on the owner's Windows laptop, Git Bash, Node 24.15,
-2026-10-20; the spare-laptop path below was added and run 2026-11-07.
+Next.js 16 web app (admin shell, HR shell, employee portal). Paths below are relative to the repo
+root (or your `_wt-<task>` worktree).
 
-🔴 **`.env.local` is PRODUCTION Supabase, so opening a page is not automatically read-only.** Every
-page reads live payroll and sales data. Signed in as a real person (`--hrId`), a page writes under
-that person's name with no click at all: its mount effects, its autosaves and the beacons of a
-closing page. Opening a Phoenix CRM module clears their "new" badge, and opening an empty planner
-day saves a draft plan.
+## 🥇 The golden rule — he must be able to watch it (owner, 24 Nov 2026)
 
-**So the driver's browser sends GET and nothing else, on every step, and no flag turns that off.**
-It aborts every non-GET request (a form post gets an empty 204 so the page stays where it is) and
-replaces `navigator.sendBeacon` and non-GET `fetch` inside the page, because a beacon or keepalive
-call from a closing page got past request routing alone. Every write it stopped is listed at the end
-of the run, as `writes stopped (N)`.
+> "run dev server only run dev server in two sources, either in Chrome, either in panel. I must be
+> able to see what are you doing. Never run in background and send me screenshots."
 
-- **A stopped fetch or beacon is answered as a success (204), so the screen can lie.** "Saved" on a
-  driven page means nothing was saved. To prove a save works, use a test, or staging.
-- **Use `click` for navigation (sidebar links, tabs).** A save, send or approve click is stopped too,
-  so it proves nothing about that action.
-- 🔴 **What it cannot stop: a write made by the SERVER while answering a GET.** The browser only asks
-  for the page; the server does the writing. Reading a customer list mints that territory's
-  carried-over customers (`phoenix_crm_ensure_reference_customers`), and some GET routes leave a row
+- **A page of the app is opened ONLY in one of two places:** the Claude app's **browser pane**
+  (`mcp__Claude_Browser__*`) or **his own Chrome** through Claude in Chrome
+  (`mcp__claude-in-chrome__*`), in the browser he picks.
+- **Never a browser he cannot see.** `driver.mjs` and `on-spare.ps1` in this folder, a Playwright
+  or Puppeteer script, `npx playwright`, Chrome or Edge with `--headless` pointed at the app, and
+  any of those with `run_in_background` are all RETIRED for looking at the app. The two files stay
+  only because `scripts/phoenix-inspect/` still imports the driver's layers; do not run them.
+- **Send him the screenshots as you take them** (`SendUserFile`, status `normal`), not one batch at
+  the end, and say in a line what each one shows.
+- Printing a LOCAL file you built (a PDF guide, an export) with headless Chrome is not driving the
+  app and is not covered by this rule.
+
+## 🔴 Opening a page is not read-only — `.env.local` is PRODUCTION
+
+Every page reads live payroll and sales data, and a visible browser stops NOTHING: a click on save,
+send, approve, reverse or confirm is real, and so is a page's own write with no click at all.
+
+- Signed in as a real person, a page writes under that person's name on its own: mount effects,
+  autosaves, the beacons of a closing page. Opening a Phoenix CRM module clears their "new" badge;
+  opening an empty planner day saves a draft plan.
+- The SERVER also writes while answering some reads: a customer list mints that territory's
+  carried-over customers (`phoenix_crm_ensure_reference_customers`), and some routes leave a row
   behind, such as a CV opened or a pack printed (`SEAT_VIEW_REFUSED_READS` in
-  `src/lib/auth/seat-view.ts`, which names them). `writes stopped (0)` therefore does not prove that
-  nothing was written. Prefer a role-only sign-in when you do not need a real person.
-- A driver run from a checkout older than this rule has none of this. Check that the end of the
-  run prints the `writes stopped` line.
-
-## Prerequisites
-
-Nothing to install: `node_modules` (junctioned into every `_wt-*` worktree) already holds
-`playwright`. Each Playwright version pins its own browser build, and the weekly dependency
-refresh moves the version (1.64.1 wants `chromium_headless_shell-1248`; the laptop held `1243`),
-so when that build is missing the driver starts the installed **Microsoft Edge**, then Chrome,
-and prints `browser: Playwright's own Chromium is missing, using installed msedge`. Nothing to
-download.
-Work in your own worktree — `node scripts/new-session.mjs <task>` — and never run `pnpm` inside
-one (it purges the `node_modules` junction).
+  `src/lib/auth/seat-view.ts` names them).
+- So: **sign in role-only unless you need a real person**, click navigation (sidebar links, tabs,
+  "Go to…") freely, and open a form to photograph it, then press **Close** — never its save or
+  confirm button unless that action IS the task and he asked for it.
 
 ## Where the app runs — the spare laptop, not this one
 
@@ -62,33 +55,15 @@ database**, every 10 minutes. So:
   the verdict.
 - **The one exception is a PR PREVIEW, and only on the owner's own word** ("preview 649"; owner,
   2026-11-20: "Set up PR preview"). `& ~/.claude/scripts/spare-preview.ps1 <PR>` shows that open
-  pull request on `localhost:3001` for 2 hours (`-Hours` to change), BESIDE the live version, which stays on
-  `localhost:3000` the whole time (side by side since 2026-11-23); `spare-preview.ps1 status` says what is
-  showing, `spare-preview.ps1 stop` ends it now. Two dev servers leave the spare under 400 MB of memory, so the
-  live pages answer slower while a preview runs. Never open one on your own reading. It runs as the user
-  `phxpreview` (no sudo) on the production database, so everything done in it is real. The script's
-  header has the rest.
+  pull request on `localhost:3001` for 2 hours (`-Hours` to change), BESIDE the live version, which
+  stays on `localhost:3000` (side by side since 2026-11-23); `status` says what is showing, `stop`
+  ends it now. Never open one on your own reading. It runs on the production database, so
+  everything done in it is real. Open it in the pane or his Chrome like any other page.
 - Read it first (it can take 8 s when cold, and times out while the spare is compiling):
 
 ```bash
-curl -s -m 60 -o /dev/null -w '%{http_code} %{time_total}
-' http://localhost:3000/api/healthz
+curl -s -m 60 -o /dev/null -w '%{http_code} %{time_total}\n' http://localhost:3000/api/healthz
 ```
-
-### Drive it ON the spare — `on-spare.ps1` (the default)
-
-This laptop starts no browser: the wrapper copies THIS checkout's `driver.mjs` into the spare's
-gitignored `output/run-skill-remote/<stamp>/`, runs it there against the spare's own server with
-`--timeout 900`, and copies the PNGs back to `output/run-skill/`. It reads healthz first and
-sends nothing when the server does not answer in 60 s. Every argument goes to the driver unchanged.
-`/admin` takes over 11 minutes on the spare (Gotchas), so the smoke test is the login page
-(25 s end to end on 2026-11-07, `overflow @1440px ok`, `copied back: outputun-skilllogin-desktop.png`):
-
-```bash
-powershell -NoProfile -File .claude/skills/run-phoenix-workforce/on-spare.ps1 go /login shot login-desktop overflow
-```
-
-Run it with `run_in_background: true`: a signed-in admin page can take many minutes there.
 
 ### A local dev server — only when localhost:3000 does NOT answer
 
@@ -98,58 +73,51 @@ Read live free RAM first; do not start the server under ~3 GB free:
 powershell -NoProfile -c "[math]::Round((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory/1024)"
 ```
 
-Run it with `run_in_background: true` (the launcher picks `--webpack`, caps the heap at
-4,096 MB and refuses a second server). `preview_start` cannot spawn it here (space in the path).
-Verified 2026-10-20, before the spare took the dev server.
+The server process itself runs with `run_in_background: true` (the launcher picks `--webpack`,
+caps the heap at 4,096 MB and refuses a second server); it is the PAGES that he must watch.
+`preview_start {name}` cannot spawn it here (space in the path).
 
 ```bash
 node scripts/dev-server.mjs --port 3000
 ```
 
-Ready in ~2 s; the first request compiles (healthz took 8 s, a page 12-60 s):
+## Driving it — the browser pane (default) or his Chrome
 
-```bash
-curl -s -m 150 -w "
-%{http_code}
-" http://localhost:3000/api/healthz
-```
+1. **Open the pane at the sign-in link** — it signs in and lands on the role's home page:
 
-## The driver — steps and output
+   ```
+   preview_start { url: "http://localhost:3000/api/dev-auth?role=Super%20Admin" }
+   ```
 
-The same steps work on the spare (above) or locally against `localhost:3000`; a local run starts
-Edge on THIS laptop (~300 MB), so prefer `on-spare.ps1` when free RAM is under ~3 GB.
+   `role=HR%20Operations`, `role=Medical%20Rep`, … for other roles; add `&hrId=<id>` only when a
+   block scoped to one person's team must show (a role-only sign-in reads those empty, and a real
+   person's sign-in writes as them — see above). Landing pages: Super Admin `/admin`, HR Operations /
+   HR Resourcing `/hr/admin/hr-command-center`, portal roles `/employee-portals`, SFE Manager
+   `/admin/sfe-command-center` (`src/lib/auth/landing.ts`).
+2. **Go to the page** with `navigate`; read it with `get_page_text` / `read_page`; click with
+   `find` + `computer {left_click, ref}`. Batch predictable steps in `browser_batch`.
+3. **Photograph it** with `computer {action: "screenshot"}` and send it to him straight away. The
+   pane keeps every screenshot as a JPG under this session's `tool-results/` folder; crop it with
+   `sharp` if a document needs one region.
+4. **Phone look:** `resize_window {preset: "mobile"}` (375 × 812, with touch), reload, screenshot.
+   **Reset with `{preset: "desktop"}` the moment you finish** — a size you set stays on the tab.
+5. **Horizontal scroll (the fits-the-screen rule):** measure it in the page, never by eye:
 
-```bash
-export MSYS_NO_PATHCONV=1
-node .claude/skills/run-phoenix-workforce/driver.mjs --role "Super Admin" go /admin shot admin-desktop overflow text
-node .claude/skills/run-phoenix-workforce/driver.mjs --role "Super Admin" go /admin click "Needs You" shot needs-you
-node .claude/skills/run-phoenix-workforce/driver.mjs --role "Medical Rep" --width 375 go /employee-portals shot portal-mobile overflow
-node .claude/skills/run-phoenix-workforce/driver.mjs --role "HR Operations" go /hr/admin/hr-command-center shot hr-ops overflow
-```
+   ```js
+   [...document.querySelectorAll("main, body, main *")]
+     .filter(e => e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflowX !== "hidden")
+     .slice(0, 10).map(e => ({ tag: e.tagName, cls: e.className.toString().slice(0, 60), sw: e.scrollWidth, cw: e.clientWidth }))
+   ```
 
-Output, one line per step, e.g.
+   with `javascript_tool`; an empty list at both widths is the pass. (`main` is 20 px wider than the
+   viewport on desktop admin pages while `body` does not scroll — judge each element against its own
+   width.)
+6. **His Chrome instead** when he asks for it: load the Claude in Chrome tools in ONE ToolSearch,
+   open a new tab (never take over one of his), same steps.
 
-```
-signed in: Super Admin
-go /admin -> 200 "Command Center · Phoenix Workforce" at /admin
-click "Needs You" -> /admin/needs-you
-shot output\run-skill\needs-you.png
-overflow @375px ok [{"sel":"main","scrollWidth":351,"clientWidth":351},{"sel":"body","scrollWidth":375,"clientWidth":375}]
-```
+If the pane is hidden (`tabs_context` says so), ask him to show it before you go on.
 
-- Screenshots land in `output/run-skill/<name>.png` (gitignored); a failed step also writes
-  `failure.png`. **Open the PNG and look at it.**
-- Options: `--role`, `--hrId` (sign in as that person), `--width` (375 = phone, with touch),
-  `--base`, `--out`, `--timeout <s>` (one navigation's limit, default 180). Steps: `go <path>`, `click <exact text>`, `fill <label> <value>`,
-  `waitfor <text>`, `shot <name>`, `text`, `overflow`, `eval <js>`, `wait <ms>`.
-- Exit 1 on a failed step or on horizontal scroll (`overflow`). Console errors, 5xx responses and
-  `writes stopped (N)` print at the end. A stopped write does not fail the run. A page that reads
-  its data through a POST shows that data as empty, and its POST is in that list.
-- Landing pages: Super Admin `/admin`, HR Operations / HR Resourcing
-  `/hr/admin/hr-command-center`, portal roles (Medical Rep, District Manager, …)
-  `/employee-portals`, SFE Manager `/admin/sfe-command-center` — see `src/lib/auth/landing.ts`.
-
-## Direct invocation (no server)
+## Direct invocation (no server, no browser)
 
 Most PRs change `src/lib/<domain>/`. Import and call it with the test suite's loader:
 
@@ -165,12 +133,11 @@ reads the database — that is production.
 
 Not run locally on this 16 GB laptop: the PR's `validate` + `checks` jobs are the verdict
 (AGENTS.md §7), and a local typecheck is refused by `bash-guard.mjs` C8. Tests that must run
-before the push go to the spare: `& ~/.claude/scripts/spare-test.ps1` (the whole suite, this
-checkout's state sent as one patch; never the dev server's folder).
+before the push go to the spare: `& ~/.claude/scripts/spare-test.ps1`.
 
 ## Stop
 
-Never stop or restart the spare's dev server — the scheduled task owns it. Stop only a LOCAL
+Never stop or restart the spare's dev server — its systemd service owns it. Stop only a LOCAL
 server YOU started, by port (never one the owner or another session started):
 
 ```powershell
@@ -180,69 +147,29 @@ $c = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyCon
 It stops the listener AND the launcher (which would otherwise respawn), and prints
 `listening: False` when the port is free.
 
-## Run (human path)
-
-`pnpm run dev` in the primary (his PowerShell profile routes it to `scripts/dev-server.mjs`),
-then open http://localhost:3000/api/dev-auth?role=Super%20Admin in a browser.
-
 ## Gotchas
 
-- 🔴 **On the spare, `/admin` takes over 11 minutes — the page's own server work, not the compile.**
-  On 2026-11-07 (free RAM 500-1,000 MB, a suite from another session running beside it) the spare's
-  log read `GET /admin 200 in 11.6min (next.js: 8.2s, … application-code: 11.5min)`: the compile
-  took 8 s, and the Command Center's reads of the production database over the home Wi-Fi took the
-  rest. The driver's `page.goto` timed out at 180 s, then at 900 s too (it waits for the page's
-  `load` event, and the dev server restarted on its heap cap right after). For several minutes
-  `/api/healthz` stopped answering through the tunnel. So on the spare, drive a light page
-  (`go /login`) or the page you actually changed, never `/admin` as a smoke test. Read the
-  spare's own log for progress rather than re-sending the request:
-  `& ~/.claude/scripts/spare.ps1 'Get-Content D:Phoenixdev-server.log -Tail 5'`.
-- **A killed run leaves its Edge on the spare.** Stop only the headless ones you started:
-  `Get-CimInstance Win32_Process -Filter "Name='msedge.exe'"` filtered on `--headless`, via
-  `spare.ps1`.
-- **The spare has no Playwright browser either**, so the driver there also falls back to Edge
-  (`browser: Playwright's own Chromium is missing, using installed msedge`) — expected.
-- **Git Bash rewrites `/admin` into `C:/Program Files/Git/admin`** before node sees it — the first
-  run failed `net::ERR_FILE_NOT_FOUND at c:/Program%20Files/Git/admin`. `export
-  MSYS_NO_PATHCONV=1`; the driver also undoes the rewrite on `go`.
-- **The dev server restarts itself mid-session, once nothing is in flight**: after three or four
-  page compiles under the 4 GB cap the log says `[dev-server] heap … — restarting once the N
-  request(s) in flight finish`, then `restarting now`. Since 2026-10-31 the restart waits for open
-  requests (`scripts/dev-server-graceful-restart.mjs`), so a streaming page is no longer cut into
-  React error 419. It still restarts at once past 92% of the cap or after 90 s of waiting, and
-  `PHOENIX_DEV_GRACEFUL_RESTART=0` brings back Next's own mid-request exit. The next request can
-  meet `ERR_CONNECTION_REFUSED` while the server respawns; the driver waits for `/api/healthz` and
-  retries (4 attempts). Console errors printed in that window are the restart, not the page.
-- **A lower heap cap makes it worse, not lighter**: `PHOENIX_DEV_HEAP_MB=3072` restarted ten times
-  in twenty minutes, served `ChunkLoadError` pages between restarts, then died with exit 134 (V8
-  out of memory). Keep the default 4,096 MB; when free RAM is too low for that, prove a single
-  component outside Next instead (bundle it with React and drive it in Playwright).
-- **The restart moves the PID**: the listener on 3000 is a new child, not the one you launched.
-- **Heavy pages stream after the network is quiet** — the first Needs You shot was a "Loading
-  Needs You" skeleton. The driver now waits up to 120 s for any `Loading …` heading to go; use
-  `waitfor <text>` for anything else.
-- **A sidebar click is a client navigation**: `click` returned at `/admin` while
-  `/admin/needs-you` was still compiling. The driver now waits for the link's own `href`.
-- **RAM collapses fast**: free RAM went 3.4 GB → 1.0 GB after six driven pages (server ~4 GB +
-  Chromium). Stop the server as soon as the look is done; under ~1.8 GB this laptop freezes.
-- **`--hrId` is checked against the real person**: `--role "Medical Rep" --hrId B-10` exits 1 with
-  `dev-auth refused (409) … signs in as Super Admin, not Medical Rep`. A role-only sign-in has no
-  hr id (`dev.preview`), so blocks scoped to one person's team read empty — pass `--hrId`.
-- **Needs You logs `needs_you_source_timeout` in dev** for slow sources (action-inbox,
-  closing-publication-drift); the page still renders the rest.
-- **`main` is 20 px wider than the viewport on desktop admin pages** (`scrollWidth 1460` at
-  1440) but `body` does not scroll; `overflow` judges each element against its own clientWidth.
+- 🔴 **On the spare, `/admin` can take many minutes — the page's own server work, not the compile.**
+  On 2026-11-07 the spare's log read `GET /admin 200 in 11.6min (next.js: 8.2s, …
+  application-code: 11.5min)`: the Command Center's reads of the production database over the home
+  Wi-Fi. Open the page you actually changed, not `/admin` as a smoke test.
+- **The dev server restarts itself once nothing is in flight** after a few compiles under its 4 GB
+  cap (`[dev-server] heap … — restarting once the N request(s) in flight finish`). A page that
+  fails to load in that window is the restart, not the page — wait for healthz and reload.
+- **Heavy pages stream after the network is quiet** — a "Loading …" skeleton in the first
+  screenshot means wait and take it again.
+- **A sidebar click is a client navigation** — the address changes before the page has compiled;
+  read the page text before you photograph it.
+- **A page's own language switch beats the profile's.** Before photographing for an English
+  document, press the page's own "English" button and check the headings in `get_page_text`.
+- **Needs You logs `needs_you_source_timeout` in dev** for slow sources; the page still renders the
+  rest.
 
 ## Troubleshooting
 
 | Symptom | Fix |
 | --- | --- |
-| `net::ERR_FILE_NOT_FOUND at c:/Program%20Files/Git/…` | `export MSYS_NO_PATHCONV=1` |
-| `no browser could start` (Playwright's build, Edge and Chrome all failed) | `npx playwright install chromium` from the primary, never from a worktree |
-| `ERR_CONNECTION_RESET` / `REFUSED` on every step | the server died or is restarting; `curl` healthz, restart it in the background |
-| screenshot is a grey skeleton | add `waitfor "<text on the loaded page>"` before `shot` |
-| a block reads empty, a console error says an unexpected response came from the server, or `ERR_BLOCKED_BY_CLIENT` | its POST was stopped: look for it under `writes stopped`, and do not read it as a defect |
-| `dev-auth refused (409) role_mismatch` | use the role the message names, or drop `--hrId` |
-| `on-spare.ps1`: `the spare's dev server does not answer /api/healthz in 60 s` | it is busy or out of memory — read its log through `spare.ps1` and wait. If the log ends on `restarting once the N request(s) in flight finish` and healthz stays dead, it is wedged: restarting it is the owner's word, then stop the "Phoenix Dev Server" task, its `dev-server`/`next` node processes, and start the task (as `spare-follow-production.ps1` does); healthz answered ~30 s later on 2026-11-07 |
-| `FAILED: page.goto: Timeout 180000ms exceeded` (or `900000ms` on the spare) | a slow server render: read the spare's log for `application-code: …min`; drive a lighter page, or pass a longer `--timeout` |
-| background launcher task "failed, exit 127" after you stopped it | expected — that is the kill, not a crash |
+| every page fails, `ERR_CONNECTION_REFUSED` | the server is restarting or down; `curl` healthz, then reload |
+| screenshot is a grey skeleton | wait, read the page text until the content is there, photograph again |
+| `dev-auth refused (409) role_mismatch` | use the role the message names, or drop `hrId` |
+| the pane answers that it is hidden | ask him to show it (Ctrl+Shift+B, or the globe icon) |
