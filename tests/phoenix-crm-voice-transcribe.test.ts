@@ -261,10 +261,11 @@ export function runPhoenixCrmVoiceTranscribeTests() {
   assert.doesNotMatch(speakSource, /handoverReported\s*=\s*true/, "speak.tsx keeps no permanent latch — restoring one is the regression this pins");
   // The two stop paths build the Recording through ONE settle(), so a recorder already inactive returns the
   // same typed blob and one-second floor as the recorder's own onstop.
-  assert.match(recorderSource, /const settle = \(\): Recording =>/, "voice-recorder.ts builds the Recording in one place");
+  // Async since 24 Nov 2026: settle() also repairs the WebM timeline (withContinuousTimeline) before it resolves.
+  assert.match(recorderSource, /const settle = async \(\): Promise<Recording> =>/, "voice-recorder.ts builds the Recording in one place");
   assert.match(recorderSource, /new Blob\(chunks, \{ type \}\)/, "voice-recorder.ts gives the blob its codec type so the <audio> preview can play it");
   assert.match(recorderSource, /Math\.max\(1, elapsed\(\)\)/, "voice-recorder.ts floors the length to a second so a recording never reports 0:00");
-  assert.match(recorderSource, /resolve\(settle\(\)\)/, "voice-recorder.ts's inactive-stop fallback returns the shared settle(), not a hand-copied second build");
+  assert.match(recorderSource, /settle\(\)\.then\(resolve\)/, "voice-recorder.ts's inactive-stop fallback returns the shared settle(), not a hand-copied second build");
 
   // The same corrector the live engine's words go through. A general Arabic model has never heard
   // "تيبوفورتين" either, so the failure it fixes is identical and the fix must not be duplicated.

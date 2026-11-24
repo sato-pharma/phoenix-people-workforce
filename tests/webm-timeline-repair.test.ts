@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 
 import { transcribeWithGroq } from "../src/lib/ai/groq-transcription.ts";
+import fs from "node:fs";
+
 import { closeWebmTimelineGaps, isWebmRecording } from "../src/lib/ai/webm-timeline.ts";
+import { withContinuousTimeline } from "../src/lib/phoenix-crm/voice-recorder.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // A voice note's timeline is repaired before the speech service measures it (24 Nov 2026).
@@ -21,6 +24,9 @@ import { closeWebmTimelineGaps, isWebmRecording } from "../src/lib/ai/webm-timel
 //   4. A continuous recording, a non-WebM file and a truncated or garbage file come back as the SAME
 //      array — the repair never guesses and never throws.
 //   5. `transcribeWithGroq` sends the REPAIRED bytes, and sends a non-WebM recording byte for byte.
+//   6. The RECORDER saves it clean: `withContinuousTimeline` repairs a WebM note before it is uploaded,
+//      hands a non-WebM or continuous note back as the same blob, and the recorder's one `settle` step
+//      calls it — so new notes stop arriving broken for playback, not only for transcription.
 //
 // The recordings are built here, byte by byte, rather than kept as fixtures: a real note is a rep's voice.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -195,5 +201,27 @@ export async function runWebmTimelineRepairTests() {
       if (realKey === undefined) delete process.env.GROQ_API_KEY;
       else process.env.GROQ_API_KEY = realKey;
     }
+  }
+
+  // ── 6. The recorder saves the note clean, before it is uploaded ──────────────────
+  {
+    const gapped = knownSizeRecording();
+    const cleaned = await withContinuousTimeline(new Blob([gapped as unknown as BlobPart], { type: "audio/webm;codecs=opus" }), "audio/webm;codecs=opus");
+    assert.deepEqual(
+      parse(new Uint8Array(await cleaned.arrayBuffer())).clusters.map((c) => c.time),
+      [0, 60],
+      "a new note is stored as the 240 ms it is, so playback and seeking see its real length",
+    );
+    assert.equal(cleaned.type, "audio/webm;codecs=opus", "the repaired note keeps the recorder's own type");
+    assert.equal(cleaned.size, gapped.length, "the repair never changes the note's size");
+
+    const m4a = new Blob([new Uint8Array([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70, 0x4d, 0x34, 0x41, 0x20])], { type: "audio/mp4" });
+    assert.equal(await withContinuousTimeline(m4a, "audio/mp4"), m4a, "Safari's mp4 note is handed back as the same blob");
+    const garbage = new Blob([new Uint8Array([0x1a, 0x45, 0xdf, 0xa3, 0xff])], { type: "audio/webm" });
+    assert.equal(await withContinuousTimeline(garbage, "audio/webm"), garbage, "a note it cannot read is kept exactly as recorded");
+
+    const recorder = fs.readFileSync("src/lib/phoenix-crm/voice-recorder.ts", "utf8");
+    const settle = recorder.slice(recorder.indexOf("const settle = "), recorder.indexOf("let stopResolver"));
+    assert.match(settle, /withContinuousTimeline\(/, "the recorder's one settle step repairs every note — both stop paths pass through it");
   }
 }
