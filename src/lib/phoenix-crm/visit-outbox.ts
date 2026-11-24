@@ -11,6 +11,7 @@
  */
 
 import { isOwnedByViewer, ownerScopedStorageKey, VISIT_OUTBOX_KEY_BASE } from "@/lib/browser-storage/owner-scoped";
+import { pressedWithNoLocation } from "@/lib/phoenix-crm/late-visit-rules";
 import {
   answerToRefusal,
   isManagerSingleVisit,
@@ -191,7 +192,12 @@ export async function drainVisitOutbox(deps: OutboxDeps): Promise<number> {
     // Off: never sent by itself, and the rep logs it again as a fresh visit. Past two hours or across 02:00 it is never
     // SENT either, because it would be dated on arrival (owner, 24 Nov 2026: "never any visit to be lost") — it is
     // FILED whole for the Super Admin, who alone may approve it onto the day it was pressed.
-    if (!status.enabled || isTooLateToSend(entry, nowMs, nowMs + serverAheadOfPhoneMs, VISIT_RESEND_GAP_MS + VISIT_SAVE_TIMEOUT_MS)) {
+    // 🔴 A press with no reading could only be refused as a visit, so it is FILED at once, whatever the hour (24 Nov 2026).
+    if (
+      !status.enabled ||
+      pressedWithNoLocation(entry.kind, entry.body) ||
+      isTooLateToSend(entry, nowMs, nowMs + serverAheadOfPhoneMs, VISIT_RESEND_GAP_MS + VISIT_SAVE_TIMEOUT_MS)
+    ) {
       const ended = status.enabled && deps.fileLate ? await fileLateEntry(deps, entry) : "too_late";
       if (ended === "stopped") break;
       keepQueuedVisit(storage, ownerHrId, { ...entry, status: ended, sendingUntilMs: 0 });

@@ -10,7 +10,7 @@
 
 import { CrmBlock, CrmButton, CrmNote, CrmPill } from "@/components/phoenix-crm/ui";
 import { forgetHeldVisit, reportVisitResend } from "@/components/phoenix-crm/visit-outbox-client";
-import { VISIT_FILED_DISMISS, VISIT_FILED_LINE, VISIT_FILED_PILL } from "@/lib/phoenix-crm/late-visit-rules";
+import { pressedWithNoLocation, VISIT_FILED_DISMISS, VISIT_FILED_LINE, VISIT_FILED_PILL, VISIT_KEPT_LINE } from "@/lib/phoenix-crm/late-visit-rules";
 import {
   heldRefusalSentence,
   VISIT_LOG_AGAIN,
@@ -68,7 +68,9 @@ export function VisitOutboxNote({
                 </li>
               ))}
             </ul>
-            <p className="text-xs font-semibold text-slate-600">{VISIT_FILED_LINE}</p>
+            <p className="text-xs font-semibold text-slate-600">
+              {filed.some((entry) => pressedWithNoLocation(entry.kind, entry.body)) ? VISIT_KEPT_LINE : VISIT_FILED_LINE}
+            </p>
           </div>
         ) : null}
         {stuck.map((entry) => (

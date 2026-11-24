@@ -192,7 +192,15 @@ export type PhoenixCrmIntegrityFlag =
   // score through `countedIntegrityFlags`, an honest rep's included, and the settle click is what clears it.
   // It is NOT a precision flag, so an approximate fix does not excuse it.
   /** The two readings fit only if the phone truly held one of them for want of signal. */
-  | "travel_rests_on_held_wait";
+  | "travel_rests_on_held_wait"
+  // ── The same, when the wait it rests on is a MANAGER'S phone's, not the rep's (24 Nov 2026) ────
+  //
+  // WEAK. Asked to build it (owner, 24 Nov 2026: "build the three follow-ups"): a manager's held save lands
+  // on the rep's travel history, and when only his phone's wait makes the trip fit, she claimed nothing, so
+  // her rank must not carry it. The reading still shows on the board, because a wait may never make a
+  // reading disappear (owner, 3 Nov 2026). It is not in the strong list, so `countedIntegrityFlags` skips it.
+  /** The two readings fit only if a MANAGER'S phone truly held its save for want of signal. */
+  | "travel_rests_on_managers_wait";
 
 export const PHOENIX_CRM_STRONG_INTEGRITY_FLAGS: readonly PhoenixCrmIntegrityFlag[] = [
   "mock_provider",
@@ -224,6 +232,7 @@ export const PHOENIX_CRM_INTEGRITY_LABELS: Record<PhoenixCrmIntegrityFlag, strin
   coordinate_replay: "This exact coordinate was used before",
   impossible_travel: "Could not have travelled that far in the time",
   travel_rests_on_held_wait: "This trip is possible only if the phone really held a visit without signal",
+  travel_rests_on_managers_wait: "This trip is possible only if the manager's phone really held a visit without signal",
   zero_jitter: "The position never moved all day",
   constant_accuracy: "Every reading had identical accuracy",
   typed_coordinate: "The coordinate looks typed, not measured",
@@ -727,7 +736,30 @@ export function checkHeldLocationIntegrity(input: PhoenixCrmHeldIntegrityInput):
   });
 
   const flags = new Set<PhoenixCrmIntegrityFlag>([...door.flags, ...arrival.flags.filter((flag) => flag !== "impossible_travel")]);
-  if (arrival.flags.includes("impossible_travel") && !door.flags.includes("impossible_travel")) flags.add("travel_rests_on_held_wait");
+  if (arrival.flags.includes("impossible_travel") && !door.flags.includes("impossible_travel")) {
+    flags.add(restsOnAManagersWaitAlone() ? "travel_rests_on_managers_wait" : "travel_rests_on_held_wait");
+  }
+
+  // 🔴 THE STRONG FLAG IS THE REP'S ONLY WHEN THE WAIT IT RESTS ON IS HER OWN PHONE'S (owner, 24 Nov 2026: "build the
+  // three follow-ups"). A manager's held save lands on her travel history, and his phone's wait is credited against his
+  // own arrivals. When his credit ALONE makes the trip possible and hers alone does not, she claimed nothing it needs:
+  // the reading stays on the board as the weak `travel_rests_on_managers_wait`, and her rank does not carry it. When
+  // her own wait does it, or the trip needs hers AND his, it is hers and strong. Asked only once arrival and door
+  // disagree, by two more passes: one crediting only her own phone's waits, one only other phones'.
+  function restsOnAManagersWaitAlone(): boolean {
+    const fitsCrediting = (ownPhone: boolean): boolean => {
+      const credit = (sender: string | null | undefined, seconds: number): number => ((heldSenderOf(sender, capture.repHrId) === null) === ownPhone ? seconds : 0);
+      const pass = checkLocationIntegrity({
+        ...capture,
+        fix: atTheDoor(capture.fix, credit(sentByHrId, creditedSeconds)),
+        history: history.map((prior) =>
+          atTheDoor(prior, credit(prior.sentByHrId, creditedHeldSeconds(prior.queuedSeconds, prior.capturedAt, arrivalsOf(prior.sentByHrId)))),
+        ),
+      });
+      return !pass.flags.includes("impossible_travel");
+    };
+    return !fitsCrediting(true) && fitsCrediting(false);
+  }
 
   const previous = history
     .filter((prior) => prior.repHrId === capture.repHrId && prior.capturedAt.getTime() < capture.fix.capturedAt.getTime())

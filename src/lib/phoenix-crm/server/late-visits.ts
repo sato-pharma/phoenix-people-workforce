@@ -17,6 +17,7 @@ import { conflictError, forbiddenError, notFoundError, validationError } from "@
 import {
   managerApprovalBody,
   parseLateVisitFiling,
+  pressedWithNoLocation,
   territoryApprovalBody,
   type LateVisitItem,
   type LateVisitKind,
@@ -137,6 +138,7 @@ export async function loadLateVisits(viewer: PhoenixCrmViewer): Promise<LateVisi
       pressedAtText: cairoText(row.pressed_at_device),
       arrivedAtText: cairoText(row.arrived_at) ?? "",
       visitLabel: visitLabelOf(kind, body),
+      withoutLocation: pressedWithNoLocation(kind, body),
       products: Array.isArray(body.products) ? body.products.filter((entry): entry is string => typeof entry === "string") : [],
       comment: typeof body.comment === "string" && body.comment.trim() ? body.comment.trim() : null,
       status: row.status === "approved" ? "approved" : row.status === "rejected" ? "rejected" : "pending",

@@ -509,7 +509,8 @@ function flagFact(flag: string, input: CaseStoryInput): string | null {
       if (metres === null || minutes === null) return "The distance from the previous reading is further than the time between them allows.";
       return `The reading is ${formatDistance(metres)} from the previous one, ${spokenGap(minutes * 60)} earlier — about ${kmh ?? "?"} km/h.`;
     }
-    case "travel_rests_on_held_wait": {
+    case "travel_rests_on_held_wait":
+    case "travel_rests_on_managers_wait": {
       const metres = asNumber(travel.meters);
       const minutes = asNumber(travel.minutes);
       const kmh = asNumber(travel.kmh);
@@ -520,7 +521,8 @@ function flagFact(flag: string, input: CaseStoryInput): string | null {
           ? "The two readings reached Phoenix closer together than the distance between them allows."
           : `The two readings reached Phoenix ${gap} apart and ${formatDistance(metres)} apart, about ${kmh ?? "?"} km/h.`;
       const wait = claimed > 0 ? `, for up to ${spokenGap(claimed)}` : "";
-      return `${trip} That fits only if the phone really held the visit without signal${wait}, and Phoenix cannot confirm when an offline phone was pressed.`;
+      const whosePhone = flag === "travel_rests_on_managers_wait" ? "the manager's phone" : "the phone";
+      return `${trip} That fits only if ${whosePhone} really held the visit without signal${wait}, and Phoenix cannot confirm when an offline phone was pressed.`;
     }
     case "zero_jitter": {
       const fixes = asNumber(day.fixes);
@@ -667,6 +669,8 @@ function flagOrdinaryCause(flag: string): string | null {
       return "A phone that cannot get a fresh reading indoors commonly hands back the last one it held.";
     case "impossible_travel":
       return "A reading taken in a moving car, or one of the two being the phone's cached position, produces this.";
+    case "travel_rests_on_managers_wait":
+      return "A manager's phone with no signal holds the visits it adds and sends them when signal returns, so a visit made hours earlier can reach Phoenix just beside the rep's own.";
     case "travel_rests_on_held_wait":
       return "A phone with no signal holds visits and sends them together when signal returns, so visits made hours apart can reach Phoenix seconds apart.";
     case "zero_jitter":

@@ -57,6 +57,7 @@ function judge(fix: ReturnType<typeof fixAt>, history: PhoenixCrmPriorFix[]) {
 }
 
 const HELD_FLAG = "travel_rests_on_held_wait" as const;
+const MANAGERS_FLAG = "travel_rests_on_managers_wait" as const;
 
 /** Judged the way the server judges it: at arrival, and again at the door. */
 function held(fix: ReturnType<typeof fixAt>, history: PhoenixCrmHeldPriorFix[], queuedSeconds: number | null, ownArrivals: Date[] = []) {
@@ -252,7 +253,13 @@ function checkAManagersWaitIsTestedOnHisOwnPhone(): void {
 
   const believed = byManager(new Map([["PD-0031", [claimed.capturedAt]]]));
   assert.equal(believed.flags.includes("impossible_travel"), false, "🔴 the rep's phone being online does not contradict the manager's wait");
-  assert.ok(believed.flags.includes(HELD_FLAG), "it still rests on the wait, and still costs the rank until settled");
+  // 🔴 Only the MANAGER'S wait makes this trip fit, so the rep claimed nothing (owner, 24 Nov 2026: "build the three
+  // follow-ups"). The reading stays on the board, weak, and never costs her rank.
+  assert.equal(believed.flags.includes(HELD_FLAG), false, "🔴 a manager's wait alone never raises the strong flag on the rep");
+  assert.ok(believed.flags.includes(MANAGERS_FLAG), "🔴 and the reading still shows, as the manager's wait, so it never disappears");
+  assert.equal(believed.strong, false, "it does not cost the rep's rank");
+  assert.equal(PHOENIX_CRM_STRONG_INTEGRITY_FLAGS.includes(MANAGERS_FLAG), false, "the manager's-wait flag is weak");
+  assert.deepEqual(countedIntegrityFlags(believed.flags, 10), [], "and the rank counts nothing from it");
   assert.deepEqual(believed.signals.heldWait, { claimedSeconds: 7_200, creditedSeconds: 7_200, priorClaimedSeconds: 0 }, "the manager's claim is credited");
 
   const contradicted = byManager(new Map([["PD-0031", [new Date("2026-11-03T11:00:00.000Z"), claimed.capturedAt]]]));
@@ -276,6 +283,43 @@ function checkAManagersWaitIsTestedOnHisOwnPhone(): void {
     });
   assert.equal(after([heldBefore.capturedAt]).flags.includes("impossible_travel"), false, "🔴 a manager's held save on record is tested on his phone, not the rep's");
   assert.ok(after([new Date("2026-11-03T12:00:00.000Z"), heldBefore.capturedAt]).flags.includes("impossible_travel"), "and his own contact voids it");
+
+  // When the trip fits on the rep's OWN phone's wait, the strong flag is hers, whatever a manager's phone also claims.
+  const ownHeldBefore = { ...prior(fixAt("2026-11-03T12:29:00.000Z", 20), "own-held"), queuedSeconds: 3_540 };
+  const onHerOwnWait = checkHeldLocationIntegrity({
+    fix: fixAt("2026-11-03T12:30:00.000Z", 30),
+    queuedSeconds: null,
+    ownArrivals: [ownHeldBefore.capturedAt],
+    arrivalsBySender: new Map(),
+    repHrId: "MR-0412",
+    customerId: "next",
+    deviceMocked: null,
+    readerReplaced: null,
+    readerFindings: [],
+    history: [ownHeldBefore],
+  });
+  assert.ok(onHerOwnWait.flags.includes(HELD_FLAG), "🔴 her own phone's wait still raises the strong flag");
+  assert.equal(onHerOwnWait.flags.includes(MANAGERS_FLAG), false, "and never the manager's");
+  assert.equal(onHerOwnWait.strong, true, "and it costs the rank until settled");
+  // Her own wait fits the trip while a manager's phone also claims one on this very save: it is still hers, and strong.
+  const bothClaimed = checkHeldLocationIntegrity({
+    fix: fixAt("2026-11-03T12:30:00.000Z", 30),
+    queuedSeconds: 60,
+    sentByHrId: "PD-0031",
+    ownArrivals: [ownHeldBefore.capturedAt],
+    arrivalsBySender: new Map([["PD-0031", [new Date("2026-11-03T12:30:00.000Z")]]]),
+    repHrId: "MR-0412",
+    customerId: "next",
+    deviceMocked: null,
+    readerReplaced: null,
+    readerFindings: [],
+    history: [ownHeldBefore],
+  });
+  assert.ok(bothClaimed.flags.includes(HELD_FLAG), "🔴 a trip her own wait fits is hers, whatever a manager's phone also claims");
+  assert.equal(bothClaimed.flags.includes(MANAGERS_FLAG), false);
+  const managersOnRecord = after([heldBefore.capturedAt]);
+  assert.ok(managersOnRecord.flags.includes(MANAGERS_FLAG), "🔴 a manager's held save on record that alone makes the trip fit reads as his phone's");
+  assert.equal(managersOnRecord.flags.includes(HELD_FLAG), false, "and never as hers");
 }
 
 function checkAWaitCannotHideAnotherReading(): void {
