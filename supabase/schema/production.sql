@@ -24399,6 +24399,76 @@ $_$;
 ALTER FUNCTION public.phx_attendance_sync_digest_days(p_employee_hr_id text, p_cycle_key text, p_week_index integer, p_week_start date, p_week_end date, p_dry_run boolean, p_days jsonb, p_cleared_dates date[]) OWNER TO postgres;
 
 --
+-- Name: phx_attendance_take_out_month_end_decided_days(text, date[]); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phx_attendance_take_out_month_end_decided_days(p_employee_hr_id text, p_work_dates date[]) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_hr text := btrim(coalesce(p_employee_hr_id, ''));
+  v_digest public.attendance_weekly_digests;
+  v_moved integer;
+  v_total integer := 0;
+  v_total_days numeric;
+  v_total_value numeric;
+  v_unpriced boolean;
+begin
+  if v_hr = '' or p_work_dates is null or coalesce(array_length(p_work_dates, 1), 0) = 0 then
+    return 0;
+  end if;
+
+  -- Each waiting week is locked the way a tick, a release and the daily builder lock it, so a
+  -- release running at the same moment either finishes first (the day is then no longer waiting and
+  -- is left alone) or waits for this.
+  for v_digest in
+    select g.*
+    from public.attendance_weekly_digests g
+    where upper(g.employee_hr_id) = upper(v_hr)
+      and g.status = 'awaiting_release'
+      and g.dry_run = false
+      and exists (
+        select 1 from public.attendance_digest_lines l
+        where l.digest_id = g.id and l.action = 'pending' and l.work_date = any(p_work_dates)
+      )
+    order by g.id
+    for update
+  loop
+    update public.attendance_digest_lines set
+      action = 'month_end_decided',
+      acted_at = now(),
+      updated_at = now()
+    where digest_id = v_digest.id
+      and action = 'pending'
+      and work_date = any(p_work_dates);
+    get diagnostics v_moved = row_count;
+    v_total := v_total + v_moved;
+
+    -- The same totals the daily builder keeps on a waiting week.
+    select
+      coalesce(sum(deduction_days) filter (where action <> 'removed' and (deduct or action <> 'pending')), 0),
+      coalesce(sum(deduction_value) filter (where action <> 'removed' and (deduct or action <> 'pending')), 0),
+      coalesce(bool_or(deduction_value is null) filter (where action <> 'removed' and (deduct or action <> 'pending')), false)
+    into v_total_days, v_total_value, v_unpriced
+    from public.attendance_digest_lines
+    where digest_id = v_digest.id;
+
+    update public.attendance_weekly_digests set
+      total_deduction_days = round(v_total_days, 3),
+      total_deduction_value = case when v_unpriced then null else round(v_total_value, 2) end,
+      has_unpriced_day = v_unpriced,
+      updated_at = now()
+    where id = v_digest.id;
+  end loop;
+
+  return v_total;
+end;
+$$;
+
+ALTER FUNCTION public.phx_attendance_take_out_month_end_decided_days(p_employee_hr_id text, p_work_dates date[]) OWNER TO postgres;
+
+--
 -- Name: phx_audit_position_vacancy_change(); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -39709,8 +39779,6 @@ begin
       using errcode = 'P0001';
   end if;
 
-  -- `where true` is load-bearing: PostgREST's `authenticator` role preloads `safeupdate`, which
-  -- refuses an unqualified DELETE. Removing it makes this function work by hand and fail hourly.
   delete from public.expense_claim_events where true;
   delete from public.expense_payroll_links where true;
   delete from public.expense_claims where true;
@@ -39730,6 +39798,7 @@ begin
     source, status, transportation_type, expense_type, trip_start_date, trip_end_date,
     destination_label, distance_km, fuel_amount, allowance_amount, ticket_go_amount,
     ticket_return_amount, meeting_amount, other_amount, claimed_total, approved_total,
+    approved_above_claim,
     decided_by_hr_id, decided_at, decision_reason, incurred_year, incurred_month,
     payout_year, payout_month, evidence_gate_status, workload_gate_status,
     legacy_request_id, legacy_expense_id, created_at)
@@ -39743,22 +39812,18 @@ begin
     r.fuel_amount, r.allowance_amount, r.go_ticket_amount, r.return_ticket_amount,
     r.meeting_amount, r.other_amount,
     case when r.claimed_total_amount > 0 then r.claimed_total_amount else r.expected_total_amount end,
-    -- Over-claim guard. Cast to the mirror's column type so this predicate sees exactly what
-    -- `expense_claims_approved_total_range` will see. NULL here means "not representable", and the
-    -- hold update further down records why.
     case when (r.status like 'accepted%' or r.status = 'approved')
-          and coalesce(e.approved_amount, e.total)::numeric(12,2)
-              <= (case when r.claimed_total_amount > 0 then r.claimed_total_amount
-                       else r.expected_total_amount end)::numeric(12,2)
+          and (r.hr_amounts is not null
+               or coalesce(e.approved_amount, e.total)::numeric(12,2)
+                  <= (case when r.claimed_total_amount > 0 then r.claimed_total_amount
+                           else r.expected_total_amount end)::numeric(12,2))
          then coalesce(e.approved_amount, e.total) end,
+    coalesce(r.hr_amounts is not null
+             and (r.status like 'accepted%' or r.status = 'approved')
+             and coalesce(e.approved_amount, e.total)::numeric(12,2)
+                 > (case when r.claimed_total_amount > 0 then r.claimed_total_amount
+                         else r.expected_total_amount end)::numeric(12,2), false),
     case when (r.status like 'accepted%' or r.status = 'approved') then e.approved_by end,
-    -- DECIDED-AT FALLBACK. `status` one line up is read from the REQUEST; this timestamp is read
-    -- from the EXPENSE row, and the join to it below is a LEFT JOIN. An accepted request that never
-    -- got an outstation_expenses row therefore produced status 'approved' with decided_at NULL,
-    -- which `expense_claims_approved_needs_decision` rejects -- aborting the ENTIRE rebuild over one
-    -- row, so the mirror went stale for everybody. Fall back to the request's own last-save time:
-    -- the acceptance is real and must keep its status, but r.updated_at is when the request row was
-    -- last written and is NOT a recorded decision. The hold block further down says so in words.
     case when (r.status like 'accepted%' or r.status = 'approved')
          then coalesce(e.approved_at, r.updated_at) end,
     nullif(btrim(coalesce(r.approval_reason, '')), ''),
@@ -39789,14 +39854,10 @@ begin
     coalesce(e.to_date, e.expense_date)::timestamptz,
     coalesce(nullif(btrim(coalesce(e.to_location, '')), ''), e.location), e.km,
     e.travel_cost, e.allowance, e.meeting_amount, e.other_amount, e.total,
-    -- The same over-claim guard as the request-derived insert above.
     case when e.hr_approved
           and coalesce(e.approved_amount, e.total)::numeric(12,2) <= e.total::numeric(12,2)
          then coalesce(e.approved_amount, e.total) end,
     case when e.hr_approved then e.approved_by end,
-    -- The same decided-at fallback as the insert above, for the same constraint. No legacy row is
-    -- in this state on production today (measured 2026-09-21: zero); this closes the hole before
-    -- one is, rather than after a night of the mirror being down.
     case when e.hr_approved then coalesce(e.approved_at, e.created_at) end,
     nullif(btrim(coalesce(e.hr_comment, '')), ''),
     extract(year from e.expense_date)::int, extract(month from e.expense_date)::int,
@@ -39825,9 +39886,6 @@ begin
     and coalesce(e.status, '') = 'Rejected'
     and (e.approved_at is not null or e.approved_by is not null);
 
-  -- The over-claim hold. Names both amounts AND where each came from, because they live in
-  -- different tables and a stale request header -- not an over-approval -- is what produced both
-  -- known cases. A reason that misnames the cause sends the next reader after the wrong row.
   update public.expense_claims c
   set data_quality_hold = true,
       data_quality_reason = coalesce(c.data_quality_reason || ' | ', '')
@@ -39846,17 +39904,6 @@ begin
     and c.approved_total is null
     and coalesce(e.approved_amount, e.total)::numeric(12,2) > c.claimed_total;
 
-  -- The substituted-decision hold, request side. Same shape as the over-claim hold above and for
-  -- the same reason: the status came from one table and the timestamp from another, and when the
-  -- second had nothing to give we substituted rather than failing the whole rebuild. Say plainly
-  -- which date is on the row, so nobody reads it as an approval time or as evidence of a decision.
-  --
-  -- WHICH CASE IT IS decides what the reader should DO, so the two are not worded alike. A trip
-  -- whose evidence or workload gate is still pending has no outstation_expenses row BY DESIGN --
-  -- the acceptance and the payroll hold are one action (`service.ts`: "the evidence gate is holding
-  -- the trip out of payroll, so there is no row to carry either"), and outstation_expenses is what
-  -- payroll pays from, so creating one by hand pays a trip the gate is deliberately holding. Only
-  -- when the gates are CLEAR is a missing row a gap worth repairing; that is the 2026-09-07 shape.
   update public.expense_claims c
   set data_quality_hold = true,
       data_quality_reason = coalesce(c.data_quality_reason || ' | ', '')
@@ -39884,7 +39931,6 @@ begin
     and c.legacy_request_id is not null
     and c.legacy_expense_id is null;
 
-  -- The substituted-decision hold, legacy-expense side.
   update public.expense_claims c
   set data_quality_hold = true,
       data_quality_reason = coalesce(c.data_quality_reason || ' | ', '')
@@ -54450,7 +54496,7 @@ CREATE TABLE public.attendance_digest_lines (
     hr_ops_line_id uuid,
     hr_ops_decided_by_hr_id text,
     hr_ops_decided_at timestamp with time zone,
-    CONSTRAINT attendance_digest_lines_action_check CHECK ((action = ANY (ARRAY['pending'::text, 'removed'::text, 'salary'::text, 'annual_balance'::text, 'auto_salary'::text, 'disputed'::text, 'dispute_upheld'::text, 'dispute_rejected'::text, 'confirmed'::text]))),
+    CONSTRAINT attendance_digest_lines_action_check CHECK ((action = ANY (ARRAY['pending'::text, 'removed'::text, 'salary'::text, 'annual_balance'::text, 'auto_salary'::text, 'disputed'::text, 'dispute_upheld'::text, 'dispute_rejected'::text, 'confirmed'::text, 'month_end_decided'::text]))),
     CONSTRAINT attendance_digest_lines_chosen_method_check CHECK (((chosen_method IS NULL) OR (chosen_method = ANY (ARRAY['salary'::text, 'annual_balance'::text])))),
     CONSTRAINT attendance_digest_lines_disputed_method_check CHECK (((action <> 'disputed'::text) OR (chosen_method IS NOT NULL))),
     CONSTRAINT attendance_digest_lines_status_check CHECK ((status = ANY (ARRAY['late'::text, 'short_hours'::text, 'early_leave'::text, 'missing_punch'::text, 'field_review'::text])))
@@ -61330,9 +61376,10 @@ CREATE TABLE public.expense_claims (
     legacy_expense_id uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    approved_above_claim boolean DEFAULT false NOT NULL,
     CONSTRAINT expense_claims_amounts_non_negative CHECK (((fuel_amount >= (0)::numeric) AND (allowance_amount >= (0)::numeric) AND (ticket_go_amount >= (0)::numeric) AND (ticket_return_amount >= (0)::numeric) AND (meeting_amount >= (0)::numeric) AND (other_amount >= (0)::numeric) AND (claimed_total >= (0)::numeric))),
     CONSTRAINT expense_claims_approved_needs_decision CHECK (((status <> 'approved'::text) OR (decided_at IS NOT NULL))),
-    CONSTRAINT expense_claims_approved_total_range CHECK (((approved_total IS NULL) OR ((approved_total >= (0)::numeric) AND (approved_total <= claimed_total)))),
+    CONSTRAINT expense_claims_approved_total_range CHECK (((approved_total IS NULL) OR ((approved_total >= (0)::numeric) AND ((approved_total <= claimed_total) OR approved_above_claim)))),
     CONSTRAINT expense_claims_claim_ref_not_blank CHECK ((btrim(claim_ref) <> ''::text)),
     CONSTRAINT expense_claims_import_id_only_for_import CHECK (((import_id IS NULL) OR (source = 'import'::text))),
     CONSTRAINT expense_claims_incurred_month_valid CHECK (((incurred_month IS NULL) OR ((incurred_month >= 1) AND (incurred_month <= 12)))),
@@ -61348,6 +61395,12 @@ ALTER TABLE public.expense_claims OWNER TO postgres;
 --
 
 COMMENT ON TABLE public.expense_claims IS 'ONE row per outstation expense claim, whether captured in the wizard, entered by an admin, or imported from a spreadsheet. Replaces outstation_expense_requests + outstation_expenses, which were joined only by the STRING OUTSTATION- || id with no foreign key.';
+
+--
+-- Name: COLUMN expense_claims.approved_above_claim; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.expense_claims.approved_above_claim IS 'True when the Super Admin set this trip''s figures and they pay more than the claim. Only then may approved_total exceed claimed_total.';
 
 --
 -- Name: expense_imports; Type: TABLE; Schema: public; Owner: postgres
@@ -66212,6 +66265,7 @@ CREATE TABLE public.outstation_expense_requests (
     system_lane_at_decision text,
     system_verdict_at_decision jsonb,
     distance_basis jsonb,
+    hr_amounts jsonb,
     CONSTRAINT outstation_evidence_gate_status_check CHECK ((evidence_gate_status = ANY (ARRAY['pending_arrival_photo'::text, 'pending_departure_photo'::text, 'complete'::text, 'grandfathered'::text]))),
     CONSTRAINT outstation_expense_requests_expense_type_check CHECK (((expense_type IS NULL) OR (expense_type = ANY (ARRAY['traveling'::text, 'meeting'::text, 'other'::text])))),
     CONSTRAINT outstation_expense_requests_journey_stops_is_array CHECK ((jsonb_typeof(journey_stops) = 'array'::text)),
@@ -66349,6 +66403,12 @@ COMMENT ON COLUMN public.outstation_expense_requests.system_verdict_at_decision 
 --
 
 COMMENT ON COLUMN public.outstation_expense_requests.distance_basis IS 'District Manager trips only: what the travel is priced on (first_double_visit | no_double_visit | unmeasured), the road km from home to the capture point and to the first double visit, and the figures the system left on the claim. Written by src/lib/outstation/dm-double-visit-distance-server.ts. Null for everyone else.';
+
+--
+-- Name: COLUMN outstation_expense_requests.hr_amounts; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.outstation_expense_requests.hr_amounts IS 'The Super Admin''s own figures for this trip: {travel, allowance, meeting, other, reason, by, setAt, before}. NULL = never edited. When present, payroll pays these parts (src/lib/outstation/hr-amounts.ts); the claimed columns keep what the employee sent.';
 
 --
 -- Name: CONSTRAINT outstation_expense_requests_expense_type_check ON outstation_expense_requests; Type: COMMENT; Schema: public; Owner: postgres
@@ -73724,11 +73784,11 @@ CREATE VIEW public.v_expense_claims_parity AS
                 END)::numeric(12,2) AS claimed_total,
             (
                 CASE
-                    WHEN (((r.status ~~ 'accepted%'::text) OR (r.status = 'approved'::text)) AND ((COALESCE(e.approved_amount, e.total))::numeric(12,2) <= (
+                    WHEN (((r.status ~~ 'accepted%'::text) OR (r.status = 'approved'::text)) AND ((r.hr_amounts IS NOT NULL) OR ((COALESCE(e.approved_amount, e.total))::numeric(12,2) <= (
                     CASE
                         WHEN (r.claimed_total_amount > (0)::double precision) THEN r.claimed_total_amount
                         ELSE r.expected_total_amount
-                    END)::numeric(12,2))) THEN COALESCE(e.approved_amount, e.total)
+                    END)::numeric(12,2)))) THEN COALESCE(e.approved_amount, e.total)
                     ELSE NULL::numeric
                 END)::numeric(12,2) AS approved_total,
             lower(r.employee_hr_id) AS employee_key
@@ -102824,6 +102884,13 @@ GRANT ALL ON FUNCTION public.phx_attendance_settlement_immutable() TO authentica
 
 REVOKE ALL ON FUNCTION public.phx_attendance_sync_digest_days(p_employee_hr_id text, p_cycle_key text, p_week_index integer, p_week_start date, p_week_end date, p_dry_run boolean, p_days jsonb, p_cleared_dates date[]) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.phx_attendance_sync_digest_days(p_employee_hr_id text, p_cycle_key text, p_week_index integer, p_week_start date, p_week_end date, p_dry_run boolean, p_days jsonb, p_cleared_dates date[]) TO service_role;
+
+--
+-- Name: FUNCTION phx_attendance_take_out_month_end_decided_days(p_employee_hr_id text, p_work_dates date[]); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phx_attendance_take_out_month_end_decided_days(p_employee_hr_id text, p_work_dates date[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phx_attendance_take_out_month_end_decided_days(p_employee_hr_id text, p_work_dates date[]) TO service_role;
 
 --
 -- Name: FUNCTION phx_audit_position_vacancy_change(); Type: ACL; Schema: public; Owner: postgres
