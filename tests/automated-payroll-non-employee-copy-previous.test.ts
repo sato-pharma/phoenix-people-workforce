@@ -172,10 +172,11 @@ export function runAutomatedPayrollNonEmployeeCopyPreviousTests() {
     bankAccount: "100023050538",
     standingTransferId: "transfer-part1",
   });
+  const decemberTransfer: NonEmployeePayrollRow = { ...anwarTransfer, id: "dec-transfer", runId: "run-december" };
   const december = planPreviousRunCopy({
     previous: [anwarOwn, anwarTransfer],
     roster: [],
-    current: [{ ...anwarTransfer, id: "dec-transfer", runId: "run-december" }],
+    current: [decemberTransfer],
     phase: "part1",
   });
   assert.deepEqual(
