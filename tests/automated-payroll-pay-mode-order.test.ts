@@ -50,7 +50,7 @@ function assembled(
 
 const nonEmployee: NonEmployeePayrollRow = {
   bankAccount: null, bankName: null, createdAt: "", createdBy: null, fullNameAr: "", fullNameEn: "Outside Person",
-  id: "ne-1", part: "first", recurringId: null, runId: "run-1", totalSalary: 1000, updatedAt: "",
+  id: "ne-1", part: "first", recurringId: null, standingTransferId: null, runId: "run-1", totalSalary: 1000, updatedAt: "",
 };
 
 async function load(buffer: ArrayBuffer | Buffer): Promise<ExcelJS.Workbook> {

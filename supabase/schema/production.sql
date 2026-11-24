@@ -55725,6 +55725,7 @@ CREATE TABLE public.automated_payroll_non_employees (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     part text DEFAULT 'first'::text NOT NULL,
     recurring_id uuid,
+    standing_transfer_id uuid,
     CONSTRAINT automated_payroll_non_employees_part_check CHECK ((part = ANY (ARRAY['first'::text, 'second'::text]))),
     CONSTRAINT automated_payroll_non_employees_total_salary_check CHECK ((total_salary >= (0)::numeric))
 );
@@ -55742,6 +55743,12 @@ COMMENT ON COLUMN public.automated_payroll_non_employees.part IS 'Which installm
 --
 
 COMMENT ON COLUMN public.automated_payroll_non_employees.recurring_id IS 'The standing-roster entry this row was copied from, or null when HR added it by hand for this month only. Provenance only — the amount paid is always this row''s own total_salary.';
+
+--
+-- Name: COLUMN automated_payroll_non_employees.standing_transfer_id; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.automated_payroll_non_employees.standing_transfer_id IS 'The standing transfer this line was seeded from, or null. One line per run per transfer.';
 
 --
 -- Name: automated_payroll_resync_outbox; Type: TABLE; Schema: public; Owner: postgres
@@ -55835,6 +55842,49 @@ COMMENT ON COLUMN public.automated_payroll_standing_additions.every_months IS 'n
 --
 
 COMMENT ON COLUMN public.automated_payroll_standing_additions.active IS 'Deactivate rather than delete — a deleted entry cannot explain a past month''s addition.';
+
+--
+-- Name: automated_payroll_standing_transfers; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.automated_payroll_standing_transfers (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    employee_hr_id text NOT NULL,
+    employee_hr_id_compact text NOT NULL,
+    part text NOT NULL,
+    amount numeric(14,2) NOT NULL,
+    first_month_key text NOT NULL,
+    last_month_key text NOT NULL,
+    payee_full_name_en text NOT NULL,
+    payee_full_name_ar text NOT NULL,
+    payee_bank_name text NOT NULL,
+    payee_bank_account text NOT NULL,
+    reason text NOT NULL,
+    active boolean DEFAULT true NOT NULL,
+    created_by text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT automated_payroll_standing_transfers_amount_check CHECK ((amount > (0)::numeric)),
+    CONSTRAINT automated_payroll_standing_transfers_first_month_check CHECK ((first_month_key ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'::text)),
+    CONSTRAINT automated_payroll_standing_transfers_last_month_check CHECK (((last_month_key ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'::text) AND (last_month_key >= first_month_key))),
+    CONSTRAINT automated_payroll_standing_transfers_part_check CHECK ((part = ANY (ARRAY['first'::text, 'second'::text]))),
+    CONSTRAINT automated_payroll_standing_transfers_payee_check CHECK (((btrim(payee_full_name_en) <> ''::text) AND (btrim(payee_full_name_ar) <> ''::text) AND (btrim(payee_bank_name) <> ''::text) AND (btrim(payee_bank_account) <> ''::text))),
+    CONSTRAINT automated_payroll_standing_transfers_reason_check CHECK ((btrim(reason) <> ''::text))
+);
+
+ALTER TABLE public.automated_payroll_standing_transfers OWNER TO postgres;
+
+--
+-- Name: TABLE automated_payroll_standing_transfers; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.automated_payroll_standing_transfers IS 'Part of an employee''s salary paid to a non-employee each month in a window. Pre-fills the employee''s deduction for that part (HR confirms) and seeds the payee''s line on that part''s Non-Employees list.';
+
+--
+-- Name: COLUMN automated_payroll_standing_transfers.active; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.automated_payroll_standing_transfers.active IS 'Deactivate rather than delete — a deleted entry cannot explain a past month''s deduction or line.';
 
 --
 -- Name: automated_payroll_step_state; Type: TABLE; Schema: public; Owner: postgres
@@ -75899,6 +75949,13 @@ ALTER TABLE ONLY public.automated_payroll_standing_additions
     ADD CONSTRAINT automated_payroll_standing_additions_pkey PRIMARY KEY (id);
 
 --
+-- Name: automated_payroll_standing_transfers automated_payroll_standing_transfers_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.automated_payroll_standing_transfers
+    ADD CONSTRAINT automated_payroll_standing_transfers_pkey PRIMARY KEY (id);
+
+--
 -- Name: automated_payroll_step_state automated_payroll_step_state_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -81818,6 +81875,18 @@ CREATE INDEX automated_payroll_non_employees_run_part_idx ON public.automated_pa
 CREATE UNIQUE INDEX automated_payroll_non_employees_run_recurring_idx ON public.automated_payroll_non_employees USING btree (run_id, recurring_id) WHERE (recurring_id IS NOT NULL);
 
 --
+-- Name: automated_payroll_non_employees_run_transfer_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE UNIQUE INDEX automated_payroll_non_employees_run_transfer_idx ON public.automated_payroll_non_employees USING btree (run_id, standing_transfer_id) WHERE (standing_transfer_id IS NOT NULL);
+
+--
+-- Name: automated_payroll_non_employees_standing_transfer_id_fk_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX automated_payroll_non_employees_standing_transfer_id_fk_idx ON public.automated_payroll_non_employees USING btree (standing_transfer_id);
+
+--
 -- Name: automated_payroll_resync_outbox_due_idx; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -81858,6 +81927,18 @@ CREATE INDEX automated_payroll_standing_additions_employee_hr_id_fk_idx ON publi
 --
 
 CREATE UNIQUE INDEX automated_payroll_standing_additions_entry_idx ON public.automated_payroll_standing_additions USING btree (employee_hr_id_compact, field, first_month_key);
+
+--
+-- Name: automated_payroll_standing_transfers_employee_hr_id_fk_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX automated_payroll_standing_transfers_employee_hr_id_fk_idx ON public.automated_payroll_standing_transfers USING btree (employee_hr_id);
+
+--
+-- Name: automated_payroll_standing_transfers_entry_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE UNIQUE INDEX automated_payroll_standing_transfers_entry_idx ON public.automated_payroll_standing_transfers USING btree (employee_hr_id_compact, part, payee_bank_account, first_month_key);
 
 --
 -- Name: brick_reference_imports_line_created_idx; Type: INDEX; Schema: public; Owner: postgres
@@ -90563,6 +90644,13 @@ ALTER TABLE ONLY public.automated_payroll_non_employees
     ADD CONSTRAINT automated_payroll_non_employees_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.automated_payroll_runs(id) ON DELETE CASCADE;
 
 --
+-- Name: automated_payroll_non_employees automated_payroll_non_employees_standing_transfer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.automated_payroll_non_employees
+    ADD CONSTRAINT automated_payroll_non_employees_standing_transfer_id_fkey FOREIGN KEY (standing_transfer_id) REFERENCES public.automated_payroll_standing_transfers(id) ON DELETE RESTRICT;
+
+--
 -- Name: automated_payroll_runs automated_payroll_runs_published_batch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -90575,6 +90663,13 @@ ALTER TABLE ONLY public.automated_payroll_runs
 
 ALTER TABLE ONLY public.automated_payroll_standing_additions
     ADD CONSTRAINT automated_payroll_standing_additions_phx_employee_fkey FOREIGN KEY (employee_hr_id) REFERENCES public.employees(hr_id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+--
+-- Name: automated_payroll_standing_transfers automated_payroll_standing_transfers_phx_employee_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.automated_payroll_standing_transfers
+    ADD CONSTRAINT automated_payroll_standing_transfers_phx_employee_fkey FOREIGN KEY (employee_hr_id) REFERENCES public.employees(hr_id) ON UPDATE CASCADE ON DELETE RESTRICT;
 
 --
 -- Name: automated_payroll_step_state automated_payroll_step_state_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
@@ -94834,6 +94929,12 @@ CREATE POLICY automated_payroll_standing_additions_admin_select ON public.automa
 --
 
 CREATE POLICY automated_payroll_standing_additions_admin_update ON public.automated_payroll_standing_additions FOR UPDATE TO authenticated USING (public.current_access_can_manage_employees()) WITH CHECK (public.current_access_can_manage_employees());
+
+--
+-- Name: automated_payroll_standing_transfers; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.automated_payroll_standing_transfers ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: automated_payroll_step_state; Type: ROW SECURITY; Schema: public; Owner: postgres
@@ -106471,6 +106572,12 @@ GRANT ALL ON TABLE public.automated_payroll_settings TO service_role;
 
 GRANT ALL ON TABLE public.automated_payroll_standing_additions TO service_role;
 GRANT SELECT ON TABLE public.automated_payroll_standing_additions TO authenticated;
+
+--
+-- Name: TABLE automated_payroll_standing_transfers; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.automated_payroll_standing_transfers TO service_role;
 
 --
 -- Name: TABLE automated_payroll_step_state; Type: ACL; Schema: public; Owner: postgres

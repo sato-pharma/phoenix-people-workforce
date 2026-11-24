@@ -33,7 +33,7 @@ import {
 // the owner's decision (20261113191017), and their two keys went with them. No other table lost one.
 // 111 since 13 Nov 2026: public.hire_handoff_steps.employee_hr_id (20261113201756, REC-027).
 // 112 since 14 Nov 2026: public.incentive_shown_figures.hr_id (20261114055944, REC-066).
-const MIN_EMPLOYEE_KEYS = 112;
+const MIN_EMPLOYEE_KEYS = 113;
 
 // The money, leave and attendance keys REC-037 is about (its three migrations), as schema.table.column.
 const REQUIRED = [

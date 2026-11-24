@@ -433,6 +433,8 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
         ],
       },
     ],
+    // Only a standing transfer (standing-transfers.ts) adds a breakdown line here; every other row has none.
+    detailColumns: DEDUCTION_DETAIL_COLUMNS,
     hasReason: false,
     isHoldStep: false,
   },

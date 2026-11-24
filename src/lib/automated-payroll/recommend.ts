@@ -73,6 +73,7 @@ import { resolveHoldReason } from "./hold-reason.ts";
 import { monthNameAndYear } from "./step-definitions.ts";
 import { loadDisputeRefunds, type DisputeRefundsForEmployee } from "./dispute-refunds.ts";
 import { loadStandingAdditions, type StandingAdditionsForEmployee } from "./standing-additions.ts";
+import { loadStandingTransfers, type StandingTransfersForEmployee } from "./standing-transfers.ts";
 import { notYetDue, type HeldBalance } from "./held-settlements.ts";
 import {
   getCarryLateExpensesSetting,
@@ -918,6 +919,11 @@ function deductionLineReason(line: DeductionLine): string {
   return base === "—" ? suffix : `${base} · ${suffix}`;
 }
 
+/** The breakdown line that says a pre-filled figure is a standing transfer, and to whom. */
+function standingTransferDetailLine(amount: number, reason: string): StepRowDetail {
+  return { Category: "Standing transfer", Dates: "—", Days: 0, Amount: roundCurrency(amount), Status: "Standing", Reason: reason || "—" };
+}
+
 function deductionDetailLines(lines: DeductionLine[]): StepRowDetail[] {
   return lines.map((line) => ({
     Category: deductionsCategoryLabel(line.category),
@@ -1730,11 +1736,12 @@ function recommendPayDeferral(
  * populations here, so a given employee's loan/other is offered in exactly one
  * place and can never be charged twice.
  */
-function recommendManualDeductions(
+export function recommendManualDeductions(
   members: PopulationMember[],
   sources: Map<string, PayrollSalarySource>,
   deductions: Map<string, EmployeeDeductions>,
   drafts: Map<string, DraftRow>,
+  transfers: Map<string, StandingTransfersForEmployee> = new Map(),
 ): StepRow[] {
   return members.map((member) => {
     const draft = drafts.get(member.compact);
@@ -1746,12 +1753,18 @@ function recommendManualDeductions(
       ? []
       : [...linesFor(deductions, member.compact, "loan"), ...linesFor(deductions, member.compact, "other")];
     const days = roundCurrency(lines.reduce((sum, line) => sum + line.days, 0));
-    const confirmed = settledInPart1
+    const approved = settledInPart1
       ? 0
       : roundCurrency(
           (deductions.get(member.compact)?.buckets.loan ?? 0) +
             (deductions.get(member.compact)?.buckets.other ?? 0),
         );
+    // A Part 2 standing transfer (standing-transfers.ts) is pre-filled on top of the approved loan /
+    // other: the money goes to the payee's Part 2 Non-Employees line. An employee settled in Part 1
+    // has no Part 2 to take it from, so it is offered only where Part 2 exists.
+    const transfer = settledInPart1 ? undefined : transfers.get(member.compact);
+    const transferAmount = transfer?.second ?? 0;
+    const confirmed = roundCurrency(approved + transferAmount);
     row.context = {
       "Hire Date": member.employee.hireDate ?? "",
       "Base Salary": roundCurrency(source?.baseSalary ?? 0),
@@ -1761,13 +1774,16 @@ function recommendManualDeductions(
       p2ManualDeductionDays: days,
       manualOtherDeductions: pick(draft?.manualOtherDeductions, confirmed),
     };
-    row.reason = draft?.manualReason ?? null;
+    row.reason =
+      draft?.manualReason ??
+      (transferAmount > 0 && draft?.manualOtherDeductions == null ? transfer?.secondReason || null : null);
     // Undecided lines are listed for the same population the charged ones are —
     // an employee settled in Part 1 takes loan/other on the Part 1 tab, so
     // surfacing his withheld lines HERE would show the same decision on two
     // screens and invite it being made twice.
     row.details = [
       ...deductionDetailLines(lines),
+      ...(transferAmount > 0 ? [standingTransferDetailLine(transferAmount, transfer?.secondReason ?? "")] : []),
       ...pendingDeductionDetailLines(
         settledInPart1
           ? []
@@ -2210,29 +2226,40 @@ function recommendP1OtherDeductions(
  * assemble.ts's specialRoutedToFirst). Defaults to "second" — the safer default,
  * since it never touches the frozen First Part unless HR explicitly opts in.
  */
-function recommendSpecialSituations(
+export function recommendSpecialSituations(
   members: PopulationMember[],
   sources: Map<string, PayrollSalarySource>,
   drafts: Map<string, DraftRow>,
+  transfers: Map<string, StandingTransfersForEmployee> = new Map(),
 ): StepRow[] {
   const rows: StepRow[] = [];
   for (const member of members) {
     const source = lookupSource(sources, member.employee.hrId);
     const draft = drafts.get(member.compact);
     const row = part1ManualDeductionBaseRow(member, source);
+    // A Part 1 standing transfer (standing-transfers.ts) is pre-filled as a FIRST-PART deduction —
+    // the one Part 1 step a two-part employee has; the money goes to the payee's Part 1
+    // Non-Employees line. HR still confirms, and a figure or part HR saved always wins.
+    const transfer = transfers.get(member.compact);
+    const transferAmount = transfer?.first ?? 0;
     row.recommended = {
       specialDeductionDays: 0,
-      specialDeductionValue: 0,
+      specialDeductionValue: transferAmount,
       specialAdditionDays: 0,
       specialAdditionValue: 0,
     };
     row.values = {
       specialDeductionDays: pick(draft?.specialDeductionDays, 0),
-      specialDeductionValue: pick(draft?.specialDeductionValue, 0),
+      specialDeductionValue: pick(draft?.specialDeductionValue, transferAmount),
       specialAdditionDays: pick(draft?.specialAdditionDays, 0),
       specialAdditionValue: pick(draft?.specialAdditionValue, 0),
     };
-    row.selects = { specialSituationPart: draft?.specialSituationPart ?? "second" };
+    row.selects = {
+      specialSituationPart: draft?.specialSituationPart ?? (transferAmount > 0 ? "first" : "second"),
+    };
+    if (transferAmount > 0) {
+      row.details = [standingTransferDetailLine(transferAmount, transfer?.firstReason ?? "")];
+    }
     rows.push(row);
   }
   return rows;
@@ -2426,7 +2453,7 @@ async function recommendStepRows(
         drafts,
       );
     case "p1_special_situations":
-      return recommendSpecialSituations(input.members, input.sources, drafts);
+      return recommendSpecialSituations(input.members, input.sources, drafts, await loadStandingTransfers(input.period));
     case "p2_expenses":
       return recommendExpenses(input.members, input.period, drafts, input.expenseTrips);
     case "p2_vacation":
@@ -2451,6 +2478,7 @@ async function recommendStepRows(
         input.sources,
         await loadConfirmedDeductions(input.period),
         drafts,
+        await loadStandingTransfers(input.period),
       );
     case "p1_held_release":
     case "p2_held_release":

@@ -56,6 +56,7 @@ function paid(overrides: Partial<NonEmployeePayrollRow> = {}): NonEmployeePayrol
     bankName: "CIB",
     bankAccount: `100${seq}`,
     recurringId: null,
+    standingTransferId: null,
     createdBy: "B-10",
     createdAt: "2026-10-06T23:26:24Z",
     updatedAt: "2026-10-06T23:26:24Z",
@@ -158,6 +159,36 @@ export function runAutomatedPayrollNonEmployeeCopyPreviousTests() {
   });
   assert.equal(reused[0].standingEntryId, "walaa-p1", "matched by name on the same part");
   assert.equal(reused[1].standingEntryId, null, "a Part 1 entry is not the Part 2 entry");
+
+  // ---- A standing-transfer line is part of an employee's salary, never the payee's own entry ----
+  // December 2026: November paid Anwar Gaweesh his own salary AND the 1,500 transfer line from Omar
+  // Gawish's First Part, both to one account. The transfer seeds December's line by itself, so copying
+  // it would pay 1,500 twice and make it a permanent standing entry; and the transfer line already on
+  // December's run must not make his own salary read as "already on this run".
+  const anwarOwn = paid({ fullNameEn: "Anwar Ibrahim Ahmed Ibrahim Gaweesh", totalSalary: 158487, bankAccount: "100023050538" });
+  const anwarTransfer = paid({
+    fullNameEn: "Anwar Ibrahim Ahmed Ibrahim Gaweesh",
+    totalSalary: 1500,
+    bankAccount: "100023050538",
+    standingTransferId: "transfer-part1",
+  });
+  const decemberTransfer: NonEmployeePayrollRow = { ...anwarTransfer, id: "dec-transfer", runId: "run-december" };
+  const december = planPreviousRunCopy({
+    previous: [anwarOwn, anwarTransfer],
+    roster: [],
+    current: [decemberTransfer],
+    phase: "part1",
+  });
+  assert.deepEqual(
+    december.map((row) => row.id),
+    [anwarOwn.id],
+    "the transfer line is never offered for copying — the transfer seeds it every month it is due",
+  );
+  assert.equal(
+    december[0].alreadyOnThisRun,
+    false,
+    "the transfer line on this run is not the payee being on this run — his own salary can still be copied",
+  );
 
   // ---- The write: under the run's hold, re-planned inside it ---------------------------------
   assert.equal(isRunHoldAction(RUN_HOLD_ACTIONS.nonEmployeeCopy), true, "Confirm waits for a copy under way");

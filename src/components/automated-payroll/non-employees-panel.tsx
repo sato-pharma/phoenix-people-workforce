@@ -259,6 +259,7 @@ export function NonEmployeesPanel({ runId, part, locked, onChange, onDirtyChange
       if (!res.ok) throw new Error(data.error ?? "Failed to sync the standing list.");
       const inserted = Number(data.inserted ?? 0);
       const skipped = Number(data.skipped ?? 0);
+      const transfersAdded: string[] = Array.isArray(data.standingTransfersAdded) ? data.standingTransfersAdded : [];
       // Named, never counted: each is a person who is not paid this month unless somebody acts.
       const leftOut: string[] = [
         ...(Array.isArray(data.heldBackNoBank) && data.heldBackNoBank.length > 0
@@ -273,11 +274,14 @@ export function NonEmployeesPanel({ runId, part, locked, onChange, onDirtyChange
       ];
       setSyncNote(
         [
-          inserted === 0
+          inserted === 0 && transfersAdded.length > 0
+            ? "Nobody new from the standing list."
+            : inserted === 0
             ? leftOut.length > 0
               ? "Nobody was added from the standing list."
               : `Already up to date — all ${skipped} standing entries are on this run.`
             : `Added ${inserted} ${inserted === 1 ? "person" : "people"} from the standing list${skipped > 0 ? `, ${skipped} already here` : ""}.`,
+          ...(transfersAdded.length > 0 ? [`Added standing transfer: ${transfersAdded.join(", ")}.`] : []),
           ...leftOut,
         ].join(" "),
       );
@@ -448,6 +452,15 @@ export function NonEmployeesPanel({ runId, part, locked, onChange, onDirtyChange
                           Monthly
                         </span>
                       ) : null}
+                      {row.standingTransferId ? (
+                        <span
+                          title="A standing transfer: part of an employee's salary, deducted from that employee and paid here"
+                          className="flex items-center gap-1 border border-slate-300 bg-white px-1.5 py-0.5 text-phx-xs font-semibold text-slate-600"
+                        >
+                          <Repeat className="size-3" />
+                          Standing transfer
+                        </span>
+                      ) : null}
                       {!locked ? (
                         <>
                           <Button
@@ -569,6 +582,12 @@ export function NonEmployeesPanel({ runId, part, locked, onChange, onDirtyChange
                     <span className="flex items-center gap-1 whitespace-nowrap border border-white/30 bg-white/10 px-1.5 py-0.5 text-[11px] font-semibold text-white">
                       <Repeat className="size-3" />
                       Monthly
+                    </span>
+                  ) : null}
+                  {row.standingTransferId ? (
+                    <span className="flex items-center gap-1 whitespace-nowrap border border-white/30 bg-white/10 px-1.5 py-0.5 text-[11px] font-semibold text-white">
+                      <Repeat className="size-3" />
+                      Standing transfer
                     </span>
                   ) : null}
                 </span>

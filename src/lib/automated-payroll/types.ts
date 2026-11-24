@@ -809,6 +809,8 @@ export type NonEmployeePayrollRow = {
   bankAccount: string | null;
   /** The standing-roster entry this row was copied from, or null when HR typed it in for this month only. */
   recurringId: string | null;
+  /** The standing transfer (part of an employee's salary) this row was seeded from, or null. */
+  standingTransferId: string | null;
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;
@@ -888,6 +890,11 @@ export type RecurringSeedResult = {
    * finding 11): copied in, the sheet would count them as paid while no bank file carried them.
    */
   heldBackNoBank: string[];
+  /**
+   * Standing-transfer lines this call added (standing-transfers.ts), as "<payee> (<part>)" — part of
+   * an employee's salary paid to the payee. Absent from a run-creation seed's result.
+   */
+  standingTransfersAdded?: string[];
 };
 
 /**

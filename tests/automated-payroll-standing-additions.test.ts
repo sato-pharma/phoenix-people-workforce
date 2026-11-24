@@ -60,7 +60,7 @@ function member(hrId: string, compact: string): PopulationMember {
 
 export async function runAutomatedPayrollStandingAdditionsTests() {
   const entries = [QUARTERLY, AUGUST_EXCEPTION];
-  const dueIn = (year: number, month: number) => standingAdditionsByCompact(entries, p(year, month)).get("A12");
+  const dueIn = (year: number, month: number) => standingAdditionsByCompact(entries, p(year, month)).get("a12");
 
   // ---- HEADLINE: the owner's calendar, month by month ----------------------------------------------
   assert.equal(dueIn(2026, 9)?.incentive, 60_000, "September carries August's missed instalment — the one exception");
@@ -78,6 +78,15 @@ export async function runAutomatedPayrollStandingAdditionsTests() {
   assert.equal(dueIn(2026, 9)?.incentive, 60_000);
   assert.match(dueIn(2026, 9)?.reason ?? "", /August 2026/, "and it says which instalment it is");
 
+  // ---- THE REGISTER'S KEY IS MATCHED THE WAY THE RUN KEYS ITS EMPLOYEES (2026-11-24) ------------------
+  // Production stores "A12"; the run keys every member by compactHrKey, "a12". Matched as stored, the
+  // November 2026 instalment reached nobody — the members above use the run's real lower-case keys.
+  assert.equal(
+    standingAdditionsByCompact(entries, p(2026, 11)).get("A12"),
+    undefined,
+    "the register's own casing is not the key — the run would never look it up",
+  );
+
   // ---- The rule's edges ----------------------------------------------------------------------------
   assert.equal(isStandingAdditionDue({ ...QUARTERLY, active: false }, p(2026, 11)), false, "an inactive entry is never due");
   assert.equal(isStandingAdditionDue({ ...QUARTERLY, lastMonthKey: "2027-02" }, p(2027, 5)), false, "nothing after its last month");
@@ -85,13 +94,13 @@ export async function runAutomatedPayrollStandingAdditionsTests() {
   const twoEntries = standingAdditionsByCompact(
     [AUGUST_EXCEPTION, { ...AUGUST_EXCEPTION, field: "bonus", amount: 1_000, reason: "Other" }],
     p(2026, 9),
-  ).get("A12");
+  ).get("a12");
   assert.deepEqual(twoEntries, { incentive: 60_000, bonus: 1_000, reason: `${AUGUST_EXCEPTION.reason}; Other` });
 
   // ---- The Additions step pre-fills it, with its reason ---------------------------------------------
   const standing = standingAdditionsByCompact(entries, p(2026, 9));
   const [prefilled, untouched] = recommendAdditions(
-    [member("A-12", "A12"), member("B-1", "B1")],
+    [member("A-12", "a12"), member("B-1", "b1")],
     new Map(),
     standing,
   );
@@ -103,9 +112,9 @@ export async function runAutomatedPayrollStandingAdditionsTests() {
 
   // ---- HR's saved value wins ------------------------------------------------------------------------
   const saved = new Map<string, DraftRow>([
-    ["A12", { employeeHrIdCompact: "A12", incentive: 0, bonus: 0, overtime: 0, additionsReason: null } as DraftRow],
+    ["a12", { employeeHrIdCompact: "a12", incentive: 0, bonus: 0, overtime: 0, additionsReason: null } as DraftRow],
   ]);
-  const [overridden] = recommendAdditions([member("A-12", "A12")], saved, standing);
+  const [overridden] = recommendAdditions([member("A-12", "a12")], saved, standing);
   assert.equal(overridden?.values.incentive, 0, "a figure HR saved is never overwritten by the register");
   assert.equal(overridden?.recommended.incentive, 60_000, "but the recommendation still shows what was due");
   assert.equal(overridden?.reason, null, "and a reason written for 60,000 is not attached to HR's different figure");

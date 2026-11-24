@@ -77,11 +77,16 @@ export function standingAdditionsByCompact(
   const byCompact = new Map<string, StandingAdditionsForEmployee>();
   for (const entry of entries) {
     if (!isStandingAdditionDue(entry, period)) continue;
-    const current = byCompact.get(entry.employeeHrIdCompact) ?? { incentive: 0, bonus: 0, reason: "" };
+    // Keyed the way the run keys its employees (compactHrKey, lower case). The register row for the
+    // quarterly incentive was stored "A12" while the run looks up "a12", so the 60,000 due in November
+    // 2026 never pre-filled — September's was typed by hand, which is why nobody saw it (2026-11-24).
+    const key = compactHrKey(entry.employeeHrIdCompact);
+    if (!key) continue;
+    const current = byCompact.get(key) ?? { incentive: 0, bonus: 0, reason: "" };
     current[entry.field] = roundCurrency(current[entry.field] + entry.amount);
     const reason = entry.reason.trim();
     current.reason = current.reason ? `${current.reason}; ${reason}` : reason;
-    byCompact.set(entry.employeeHrIdCompact, current);
+    byCompact.set(key, current);
   }
   return byCompact;
 }
