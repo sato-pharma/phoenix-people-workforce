@@ -2,6 +2,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  GEMINI_TRANSCRIPTION_MODEL,
+  geminiCodeForStatus,
+  GeminiTranscriptionError,
+  geminiTranscriptionInstruction,
+  geminiVerbatimFrom,
+} from "../src/lib/ai/gemini-transcription.ts";
+import {
   GROQ_TRANSCRIPTION_LANGUAGE,
   GROQ_TRANSCRIPTION_MODEL,
   groqTranscriptionMessage,
@@ -12,7 +19,7 @@ import {
 import { DICTATION_LANG } from "../src/lib/phoenix-crm/dictation.ts";
 import { foldArabicLetters, normalizeArabic } from "../src/lib/phoenix-crm/dictation-correct.ts";
 import { PRODUCT_VOCABULARY } from "../src/lib/phoenix-crm/dictation-vocabulary.ts";
-import { TRANSCRIPTION_PROMPT } from "../src/lib/phoenix-crm/server/voice-transcribe.ts";
+import { TRANSCRIPTION_PROMPT, writeOutRecording } from "../src/lib/phoenix-crm/server/voice-transcribe.ts";
 import { KEY_SHAPES, checkSecretShape } from "../scripts/secret-shape-rules.mjs";
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -342,4 +349,174 @@ export function runPhoenixCrmVoiceTranscribeTests() {
     "and so is a trailing newline, which is what `railway variables --stdin` adds to a value",
   );
   assert.deepEqual(checkSecretShape("GROQ_API_KEY", undefined), [], "unset is a supported state, not a failure — the control stops promising words instead");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GEMINI WRITES THE NOTE FIRST, WHISPER ONLY WHEN GEMINI CANNOT (owner, 24 Nov 2026: "Switch to Gemini").
+//
+// He judged a listening test of 20 real visit notes from 13 reps. Whisper wrote a subtitle credit on three
+// notes with nobody speaking, handed back its own sample sentence on a fourth, and misheard names and
+// numbers; Gemini 3.5 Flash wrote them right, with English words in English letters. What is pinned:
+//
+//   6. THE ORDER. Gemini first; Whisper only on a failure Gemini cannot answer through, and NEVER when Gemini
+//      heard nobody — that is exactly where Whisper invents a sentence.
+//   7. THE MODEL AND THE INSTRUCTION the test measured, and the answer's shape read defensively.
+//   8. A FAILURE WHISPER RESCUES IS `failed_over`, not an AI failure — while a refused key or a used-up
+//      account still pages him, because the stand-in would hide it.
+//   9. THE KEY'S SHAPE, without anchoring on Google's old AIza prefix: the key this was built with is the
+//      newer 53-character form with a dot in it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const GEMINI_CLIENT = "src/lib/ai/gemini-transcription.ts";
+
+type Calls = { gemini: { fallback?: string }[]; groq: number };
+
+function fakeEngines(input: { geminiKey: boolean; groqKey: boolean; gemini: () => Promise<string>; groq?: () => Promise<string> }) {
+  const calls: Calls = { gemini: [], groq: 0 };
+  return {
+    calls,
+    engines: {
+      gemini: {
+        configured: () => input.geminiKey,
+        transcribe: (request: { fallback?: "groq" }) => {
+          calls.gemini.push({ fallback: request.fallback });
+          return input.gemini();
+        },
+      },
+      groq: {
+        configured: () => input.groqKey,
+        transcribe: () => {
+          calls.groq++;
+          return (input.groq ?? (async () => "من Whisper"))();
+        },
+      },
+    },
+  };
+}
+
+const RECORDING = { audio: new Uint8Array([1, 2, 3]), contentType: "audio/webm", filename: "note.webm" };
+
+async function refusalOf(work: Promise<unknown>): Promise<unknown> {
+  try {
+    await work;
+  } catch (error) {
+    return error;
+  }
+  assert.fail("expected a refusal");
+}
+
+export async function runPhoenixCrmVoiceGeminiTests() {
+  // ── 6. The order ───────────────────────────────────────────────────────────────
+  {
+    const { calls, engines } = fakeEngines({ geminiKey: true, groqKey: true, gemini: async () => "قال الدكتور هيكتب Royafloxacin" });
+    assert.equal(await writeOutRecording(RECORDING, engines), "قال الدكتور هيكتب Royafloxacin", "Gemini's words are the comment");
+    assert.equal(calls.groq, 0, "Whisper is not asked when Gemini answered");
+    assert.equal(calls.gemini[0]?.fallback, "groq", "Gemini is told Whisper stands behind it, so its failure reads as failed over");
+  }
+  for (const code of ["auth_failed", "quota_exceeded", "rate_limited", "timeout", "failed", "too_large"] as const) {
+    const { calls, engines } = fakeEngines({
+      geminiKey: true,
+      groqKey: true,
+      gemini: async () => {
+        throw new GeminiTranscriptionError(code, "x");
+      },
+    });
+    assert.equal(await writeOutRecording(RECORDING, engines), "من Whisper", `a Gemini ${code} is answered by Whisper`);
+    assert.equal(calls.groq, 1, `Whisper is asked once after a Gemini ${code}`);
+  }
+  {
+    const { calls, engines } = fakeEngines({
+      geminiKey: true,
+      groqKey: true,
+      gemini: async () => {
+        throw new GeminiTranscriptionError("empty", "x");
+      },
+    });
+    const refused = await refusalOf(writeOutRecording(RECORDING, engines));
+    assert.ok(refused instanceof GroqTranscriptionError && refused.code === "empty", "Gemini hearing nobody is the answer");
+    assert.equal(calls.groq, 0, "🔴 Whisper is NEVER asked about a note Gemini heard nobody on — that is where it writes a subtitle credit");
+  }
+  {
+    const { calls, engines } = fakeEngines({ geminiKey: false, groqKey: true, gemini: async () => assert.fail("no key, no call") });
+    assert.equal(await writeOutRecording(RECORDING, engines), "من Whisper", "with no Gemini key every note goes to Whisper, exactly as before the switch");
+    assert.equal(calls.gemini.length, 0, "Gemini is not asked without a key");
+  }
+  {
+    const { calls, engines } = fakeEngines({
+      geminiKey: true,
+      groqKey: false,
+      gemini: async () => {
+        throw new GeminiTranscriptionError("quota_exceeded", "x");
+      },
+    });
+    const refused = await refusalOf(writeOutRecording(RECORDING, engines));
+    assert.ok(refused instanceof GeminiTranscriptionError && refused.code === "quota_exceeded", "with no Whisper key Gemini's own refusal reaches the rep's message");
+    assert.equal(calls.gemini[0]?.fallback, undefined, "and Gemini is not told a stand-in exists, so its failure is a real failure");
+    assert.equal(calls.groq, 0, "an engine with no key is never asked");
+  }
+  assert.match(
+    groqTranscriptionMessage(new GeminiTranscriptionError("quota_exceeded", "internal detail")),
+    /[Tt]ype the comment/,
+    "a Gemini refusal reads to the rep exactly like a Whisper one — no vendor, no model, the way out",
+  );
+
+  const service = stripComments(readFileSync(SERVICE, "utf8"));
+  assert.match(service, /return hasGeminiApiKey\(\) \|\| hasGroqApiKey\(\);/, `${SERVICE} offers the server path when either engine has a key`);
+  assert.match(service, /spoken = await writeOutRecording\(\{/, `${SERVICE} writes the recording out through the Gemini-first chain`);
+  assert.doesNotMatch(
+    service.slice(service.indexOf("export async function transcribeVoiceNote")),
+    /transcribeWithGroq\(/,
+    `${SERVICE} never calls Whisper directly from the visit path — only through the chain`,
+  );
+
+  // ── 7. The model, the instruction, the answer's shape ─────────────────────────
+  assert.equal(GEMINI_TRANSCRIPTION_MODEL, "gemini-3.5-flash", "the model the listening test chose");
+  assert.doesNotMatch(GEMINI_TRANSCRIPTION_MODEL, /transcribe/, "not Gemini 3.5 Transcribe, which dropped product names and returned nothing on four notes");
+  const instruction = geminiTranscriptionInstruction(PRODUCT_VOCABULARY.map((entry) => entry.latin));
+  assert.match(instruction, /word for word, in Egyptian Arabic/, "it asks for the rep's own words in Egyptian Arabic");
+  assert.match(instruction, /never Modern Standard Arabic and never another dialect/, "and refuses the Gulf and formal Arabic the owner heard back from Whisper");
+  assert.match(instruction, /English words?[^.]*in English letters/, "English words stay in English letters, where he said them");
+  assert.match(instruction, /If there is no speech, return an empty string/, "an empty note is asked for in words, not guessed after");
+  for (const entry of PRODUCT_VOCABULARY) assert.ok(instruction.includes(entry.latin), `${entry.latin} is spelled for it`);
+
+  assert.equal(geminiVerbatimFrom({ candidates: [{ content: { parts: [{ text: '{"verbatim":" قال  هيكتب ","tidy":"x"}' }] } }] }), "قال هيكتب");
+  assert.equal(
+    geminiVerbatimFrom({ candidates: [{ content: { parts: [{ text: "thinking", thought: true }, { text: '{"verbatim":"تمام","tidy":""}' }] } }] }),
+    "تمام",
+    "a thought part is never read as the answer",
+  );
+  assert.equal(geminiVerbatimFrom({ candidates: [{ content: { parts: [{ text: '{"verbatim":"","tidy":""}' }] } }] }), "", "nobody spoke: an empty answer, not a failure");
+  assert.equal(geminiVerbatimFrom({ candidates: [{ finishReason: "SAFETY" }] }), null, "a blocked answer is a failure, so Whisper is asked");
+  assert.equal(geminiVerbatimFrom({ candidates: [{ content: { parts: [{ text: "not json" }] } }] }), null, "an unreadable answer is a failure");
+  assert.equal(geminiVerbatimFrom(null), null);
+
+  assert.equal(
+    geminiCodeForStatus(400, '{"error":{"status":"INVALID_ARGUMENT","details":[{"reason":"API_KEY_INVALID"}]}}'),
+    "auth_failed",
+    "Google's bad key is a 400 — it must still page as a refused key",
+  );
+  assert.equal(geminiCodeForStatus(403, ""), "auth_failed");
+  assert.equal(geminiCodeForStatus(429, '"quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier"'), "quota_exceeded", "a used-up day is out of credit, which pages him");
+  assert.equal(geminiCodeForStatus(429, '"quotaId": "GenerateRequestsPerMinutePerProjectPerModel"'), "rate_limited", "a per-minute limit is only busy");
+  assert.equal(geminiCodeForStatus(400, '{"error":{"status":"INVALID_ARGUMENT","message":"Unsupported MIME type"}}'), "failed", "an audio format Gemini refuses goes to Whisper");
+
+  // ── 8. A rescued failure is failed_over, and the client stays in its lane ──────
+  const gemini = stripComments(readFileSync(GEMINI_CLIENT, "utf8"));
+  assert.match(gemini, /const rescued = Boolean\(request\.fallback\) && code !== "empty";/, `${GEMINI_CLIENT} calls a failure Whisper will answer failed over — and never an empty note`);
+  assert.match(gemini, /status: rescued \? "failed_over" : "error"/, `${GEMINI_CLIENT} records the rescued leg as failed over`);
+  assert.match(gemini, /component: "gemini_transcription"/, `${GEMINI_CLIENT} reports under its own feature`);
+  assert.match(gemini, /provider: "google"/, `${GEMINI_CLIENT} names the account it was billed to`);
+  assert.match(gemini, /closeWebmTimelineGaps\(request\.audio\)/, `${GEMINI_CLIENT} sends the repaired timeline too`);
+  assert.match(gemini, /temperature: 0/, `${GEMINI_CLIENT} does not sample`);
+  assert.doesNotMatch(gemini, /openai|api\.groq\.com/i, `${GEMINI_CLIENT} reaches Google and nothing else`);
+  assert.doesNotMatch(gemini, /logError\([^)]*\b(text|body)\b/, `${GEMINI_CLIENT} never logs the response body — a refused key's answer can quote the key`);
+
+  // ── 9. The key's shape ─────────────────────────────────────────────────────────
+  const syntheticNew = `AQ.${"Ab8RN6".repeat(8)}x`;
+  const syntheticClassic = `AIza${"SyBcdefgh".repeat(4)}`.slice(0, 39);
+  assert.ok(KEY_SHAPES.some((entry) => entry.name === "GEMINI_API_KEY"), "GEMINI_API_KEY has a shape rule — it is pasted into Railway by hand");
+  assert.deepEqual(checkSecretShape("GEMINI_API_KEY", syntheticNew), [], "the newer AI Studio key form, with its dot, passes");
+  assert.deepEqual(checkSecretShape("GEMINI_API_KEY", syntheticClassic), [], "the classic AIza key passes");
+  assert.ok(checkSecretShape("GEMINI_API_KEY", `${syntheticNew.slice(0, 8)}...`).length > 0, "a masked paste is refused");
+  assert.ok(checkSecretShape("GEMINI_API_KEY", `${syntheticNew}\n`).length > 0, "a trailing newline is refused");
 }

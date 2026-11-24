@@ -4,4 +4,4 @@
  * (src/lib/auth/test-dry-run.ts) reads it to let an AI question through, because asking an AI saves
  * nothing. Pure, no imports — the fence is installed at boot, before anything heavier loads.
  */
-export const AI_PROVIDER_HOSTS = ["api.openai.com", "api.anthropic.com", "api.groq.com"] as const;
+export const AI_PROVIDER_HOSTS = ["api.openai.com", "api.anthropic.com", "api.groq.com", "generativelanguage.googleapis.com"] as const;

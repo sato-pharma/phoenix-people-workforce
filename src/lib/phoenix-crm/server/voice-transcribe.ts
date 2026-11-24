@@ -32,6 +32,7 @@
  * recording can be made in a car an hour later and says nothing about when a visit happened.
  */
 
+import { hasGeminiApiKey, transcribeWithGemini } from "@/lib/ai/gemini-transcription";
 import {
   groqTranscriptionMessage,
   GroqTranscriptionError,
@@ -94,9 +95,55 @@ export type VoiceTranscription = { text: string };
 /**
  * Whether this browser's rep can be offered the server path at all. A route that answers "not set up"
  * costs a round trip and a sentence the rep cannot act on, so the screen is told once, up front.
+ * Either engine is enough: each one answers alone when the other has no key.
  */
 export function isVoiceTranscriptionConfigured(): boolean {
-  return hasGroqApiKey();
+  return hasGeminiApiKey() || hasGroqApiKey();
+}
+
+export type RecordingToWrite = { audio: Uint8Array; contentType: string; filename: string };
+
+type SpeechEngines = {
+  gemini: { configured: () => boolean; transcribe: (request: RecordingToWrite & { fallback?: "groq" }) => Promise<string> };
+  groq: { configured: () => boolean; transcribe: (request: RecordingToWrite) => Promise<string> };
+};
+
+const LIVE_ENGINES: SpeechEngines = {
+  gemini: {
+    configured: hasGeminiApiKey,
+    transcribe: (request) =>
+      transcribeWithGemini({
+        ...request,
+        productNames: PRODUCT_VOCABULARY.map((entry) => entry.latin),
+        purpose: "crm_visit_comment",
+      }),
+  },
+  groq: {
+    configured: hasGroqApiKey,
+    transcribe: (request) => transcribeWithGroq({ ...request, prompt: TRANSCRIPTION_PROMPT, purpose: "crm_visit_comment" }),
+  },
+};
+
+/**
+ * 🔴 GEMINI 3.5 FLASH WRITES THE NOTE FIRST, WHISPER ONLY WHEN GEMINI CANNOT (owner, 24 Nov 2026: "Switch to
+ * Gemini", after a listening test of 20 real notes — `@/lib/ai/gemini-transcription` has the account).
+ *
+ * Whisper is asked when Gemini has no key, refuses its key, is out of credit or busy, times out, or answers
+ * in a shape that cannot be read — the recording is already stored, so a second engine costs one call and
+ * saves the rep typing. 🔴 It is NEVER asked when Gemini answered "nobody spoke": on exactly those notes
+ * Whisper writes a subtitle credit or its own sample sentence, which is the fault the switch removed.
+ */
+export async function writeOutRecording(request: RecordingToWrite, engines: SpeechEngines = LIVE_ENGINES): Promise<string> {
+  const groqReady = engines.groq.configured();
+  if (engines.gemini.configured()) {
+    try {
+      return await engines.gemini.transcribe(groqReady ? { ...request, fallback: "groq" } : request);
+    } catch (cause) {
+      const nobodySpoke = cause instanceof GroqTranscriptionError && cause.code === "empty";
+      if (nobodySpoke || !groqReady) throw cause;
+    }
+  }
+  return engines.groq.transcribe(request);
 }
 
 export async function transcribeVoiceNote(viewer: PhoenixCrmViewer, raw: unknown): Promise<VoiceTranscription> {
@@ -170,15 +217,13 @@ export async function transcribeVoiceNote(viewer: PhoenixCrmViewer, raw: unknown
 
     let spoken: string;
     try {
-      spoken = await transcribeWithGroq({
+      spoken = await writeOutRecording({
         audio,
         contentType,
         // The speech service reads the container from the part's filename, and the stored path's own name is
         // a UUID with the right extension — so no name is invented, and nothing about the rep, his
         // territory or the visit travels in it.
         filename: path.slice(path.lastIndexOf("/") + 1),
-        prompt: TRANSCRIPTION_PROMPT,
-        purpose: "crm_visit_comment",
       });
     } catch (cause) {
       // Never a 500 and never the vendor's wording: every one of these is a sentence the rep can act on,
