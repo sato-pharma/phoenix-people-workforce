@@ -32,6 +32,7 @@ import { distanceVisitWords, isDistrictManagerRole, isTripExpense, readDistanceB
 import { readNoTicketFare } from "@/lib/outstation/train-fare";
 import type { OutstationEvidenceGateStatus, OutstationWorkloadGateStatus } from "@/lib/outstation/types";
 import { addDaysIso } from "@/lib/crm/dates";
+import { readHrAmounts } from "@/lib/outstation/hr-amounts";
 
 export type ClaimRow = Record<string, unknown>;
 
@@ -64,7 +65,7 @@ export const DESK_CLAIM_COLUMNS = [
   "expense_type", "transportation_type", "notes", "approval_reason", "eligibility_status", "eligibility_reason",
   "car_evidence_image_path", "car_evidence_metadata", "departure_evidence_image_path", "departure_evidence_metadata",
   "evidence_gate_status", "workload_gate_status", "system_lane_at_decision", "system_verdict_at_decision",
-  "distance_basis",
+  "distance_basis", "hr_amounts",
 ].join(", ");
 
 /**
@@ -341,6 +342,7 @@ export function buildDeskClaim(input: {
     hrId: approval.hrId,
     kind: claimKindOf(row.expense_type),
     locked: reading.standing === "in_payroll",
+    parts: claimPartsOfRow(row),
     payable: reading.standing === "rejected" ? 0 : payableExpenseAmount(approvedAmount, total),
     payoutMonth,
     payoutYear,
@@ -359,6 +361,19 @@ export function buildDeskClaim(input: {
     tripStart: tripDates[0] ?? approval.date,
     tripType: approval.tripType,
     verdict,
+  };
+}
+
+/**
+ * The trip's four parts as the employee claimed them — the same mapper with the edit left out — and
+ * the edit itself. What the amounts box prints; the money the claim pays already follows the edit.
+ */
+export function claimPartsOfRow(row: ClaimRow): NonNullable<DeskClaim["parts"]> {
+  const claimed = mapOutstationRequestRowToPayrollApproval({ ...row, hr_amounts: null });
+  return {
+    claimed: { allowance: claimed.allowance, meeting: claimed.meetingAmount, other: claimed.other, travel: claimed.travelCost },
+    claimedTotal: claimed.total,
+    edited: readHrAmounts(row.hr_amounts),
   };
 }
 

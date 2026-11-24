@@ -63,7 +63,7 @@ type Planned = { claim: DeskClaim | null; decision: DeskDecisionRequest; plan: P
  * The payout month's own payroll run: is its second part confirmed, is it published. A failed read
  * answers null, and the change is refused — money is not moved on a guess. Read once per month.
  */
-async function readPayoutRun(month: number, year: number): Promise<PayoutRunReading> {
+export async function readPayoutRun(month: number, year: number): Promise<PayoutRunReading> {
   try {
     const [active, published] = await Promise.all([findActiveRun(month, year), findPublishedRun(month, year)]);
     return { part2Confirmed: Boolean(active?.part2ConfirmedAt), published: published !== null };

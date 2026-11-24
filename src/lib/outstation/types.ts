@@ -1,3 +1,4 @@
+import type { HrAmounts } from "@/lib/outstation/hr-amounts";
 import type { DoubleVisitExpenseWorkloadEvidence } from "@/lib/double-visit-analytics/types";
 import type { DepartureLocationRefusal } from "@/lib/outstation/departure-location-refusals";
 import type { ChainedJourneyPricing, OutstationJourneyStop } from "@/lib/outstation/chained-journey";
@@ -427,6 +428,12 @@ export type OutstationExpenseRequest = {
   reportPmWorkload: number;
   reportTravelCost: number | null;
   reportTripType: string | null;
+  /**
+   * The Super Admin's own figures for this trip, part by part (hr-amounts.ts); null or absent when he
+   * never edited them. When present the payroll mapping pays THESE, and the claimed figures above stay
+   * as the employee sent them.
+   */
+  hrAmounts?: HrAmounts | null;
   residenceAddress: string | null;
   residenceArea: string | null;
   residenceCity: string | null;

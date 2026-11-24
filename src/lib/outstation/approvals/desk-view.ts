@@ -600,6 +600,33 @@ export function applyDeskOutcomes(
 }
 
 /**
+ * One claim's amounts were edited on the opened trip ("Save amounts"): the claim is put back as the
+ * server now reads it, and its tile carries the new figure. It is not a decision, so it moves nothing
+ * between lanes it did not move and never touches the agreement meter.
+ */
+export function applyEditedClaim(queue: DeskQueue, before: Pick<DeskClaim, "payable" | "requestId" | "standing"> | null, after: DeskClaim): DeskQueue {
+  const tiles = Object.fromEntries(TRIP_STANDINGS.map((key) => [key, { ...queue.tiles[key] }])) as DeskQueue["tiles"];
+  if (before) {
+    tiles[before.standing].count = Math.max(0, tiles[before.standing].count - 1);
+    if (before.standing !== "rejected") tiles[before.standing].value = Math.max(0, money(tiles[before.standing].value - before.payable));
+  }
+  tiles[after.standing].count += 1;
+  if (after.standing !== "rejected") tiles[after.standing].value = money(tiles[after.standing].value + after.payable);
+
+  const waiting = after.standing === "waiting";
+  const listed = queue.claims.some((claim) => claim.requestId === after.requestId);
+  const claims = waiting
+    ? listed
+      ? queue.claims.map((claim) => (claim.requestId === after.requestId ? after : claim))
+      : [...queue.claims, after]
+    : queue.claims.filter((claim) => claim.requestId !== after.requestId);
+  const decided = waiting
+    ? queue.decided.filter((trip) => trip.requestId !== after.requestId)
+    : [...queue.decided.filter((trip) => trip.requestId !== after.requestId), tallyOf(after)];
+  return { ...queue, claims, decided, overSevenDays: claims.filter((claim) => claim.daysWaiting > 7).length, tiles };
+}
+
+/**
  * The top line: how many decisions wait, what they are worth, how many are old. One unit, one function.
  *
  * Under a filter it counts what the filtered Waiting card counts, and "over 7 days" counts the old
