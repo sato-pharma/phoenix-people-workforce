@@ -3,6 +3,7 @@ import ExcelJS from "exceljs";
 import type { AssembledRow } from "../assemble.ts";
 import type { NonEmployeePayrollRow } from "../types.ts";
 import { heldForScope, resolveBankRoute } from "./bank-coverage.ts";
+import { mergeStandingTransferLinesForExport } from "./merge-standing-transfers.ts";
 
 /**
  * CIB (Commercial International Bank) bulk-credit template. Schema AND
@@ -79,7 +80,8 @@ export function cibRowsForNonEmployees(
   scope: "part1" | "part2",
 ): CibSheetRow[] {
   const part = scope === "part1" ? "first" : "second";
-  return nonEmployees
+  // One transfer per payee per part: a standing transfer rides on the payee's own line.
+  return mergeStandingTransferLinesForExport(nonEmployees)
     .filter((entry) => entry.part === part)
     .filter((entry) => resolveBankRoute({ bankName: entry.bankName, bankAccount: entry.bankAccount }).route === "CIB")
     .map((entry) => ({

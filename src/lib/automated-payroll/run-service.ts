@@ -149,6 +149,7 @@ import {
   recordHeldReleases,
   recordPart1Corrections,
 } from "./held-settlements.ts";
+import { mergeStandingTransferLinesForExport } from "./exports/merge-standing-transfers.ts";
 import { getNonEmployeePayrollRows, nonEmployeesForPart } from "./non-employees.ts";
 import { seedRunFromRecurring } from "./non-employee-recurring.ts";
 import { seedRunFromStandingTransfers } from "./standing-transfers.ts";
@@ -3747,7 +3748,7 @@ export async function buildRunSheet(
           previousNetByHrIdCompact: await previousMonthNetSalaryByHrIdCompact(period),
           // First-installment entries only: the Part 1 sheet is what finance
           // executes for Part 1, and a Part 2 non-employee is not paid then.
-          nonEmployees: await getNonEmployeePayrollRows(runId, "first"),
+          nonEmployees: mergeStandingTransferLinesForExport(await getNonEmployeePayrollRows(runId, "first")),
           previousSummary: await previousMonthSummary(period, "first_part"),
           heldSettlements,
           priorHeldBalances,
@@ -3758,7 +3759,7 @@ export async function buildRunSheet(
           previousSummary: await previousMonthSummary(period, "month_salary"),
           // BOTH parts: the full sheet is the month's complete picture, and
           // their amount lands under Month Salary either way.
-          nonEmployees: await getNonEmployeePayrollRows(runId),
+          nonEmployees: mergeStandingTransferLinesForExport(await getNonEmployeePayrollRows(runId)),
           heldSettlements,
           priorHeldBalances,
         });
@@ -3929,7 +3930,9 @@ export async function buildFinanceSheet(
     scope,
     // Mirrors buildRunSheet exactly: the Part 1 scope pays first-installment
     // entries, the full scope shows the month's whole picture.
-    nonEmployees: scope === "part1" ? nonEmployeesForPart(allNonEmployees, "first") : allNonEmployees,
+    nonEmployees: mergeStandingTransferLinesForExport(
+      scope === "part1" ? nonEmployeesForPart(allNonEmployees, "first") : allNonEmployees,
+    ),
   });
   // Coverage is per instalment, because the bank files are. The Part 1 scope answers for Part 1
   // only; the full sheet answers for both, so a Part 2 gap cannot hide behind a covered Part 1.
