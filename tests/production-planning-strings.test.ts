@@ -479,7 +479,7 @@ export function runProductionPlanningStringsTests() {
   );
   assert.deepEqual(
     PRODUCTION_PLANNING_TABS.map((tab) => tab.label),
-    ["المُخطِّط", "المخزون", "التكلفة", "تسجيل تشغيلة", "الإعدادات"],
+    ["المُخطِّط", "المخزون", "التكلفة", "التنفيذ", "الإعدادات"],
   );
   for (const tab of PRODUCTION_PLANNING_TABS) {
     assert.ok(tab.label.trim().length > 0 && tab.label.length <= 20, `${tab.key} needs a short noun-phrase label`);

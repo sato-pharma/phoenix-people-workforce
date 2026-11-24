@@ -163,12 +163,13 @@ export function runProductionPlanningFitsTheScreenTests() {
   ].map((match) => match[1]);
   assert.equal(
     tables.length,
-    5,
-    `${WORKSPACE}: found ${tables.length} tables, expected 5 (planner result, stock, cost, run ` +
-      `entry, composition). A new table needs its own colgroup and its own card list, so this count ` +
-      `is pinned. It went from 4 to 5 on 2026-10-09, when the Settings tab's formula list became a ` +
-      `table with an editor under it — raised deliberately, with the colgroup and the card list in ` +
-      `the same change, never to quiet a failure.`,
+    6,
+    `${WORKSPACE}: found ${tables.length} tables, expected 6 (planner result, stock, cost, the ` +
+      `execution preview, the factory balance, composition). A new table needs its own colgroup and ` +
+      `its own card list, so this count is pinned. It went from 4 to 5 on 2026-10-09, when the ` +
+      `Settings tab's formula list became a table with an editor under it, and from 5 to 6 on ` +
+      `2026-11-24, when the run entry became the execution's preview and factory-balance tables — each ` +
+      `raised deliberately, with the colgroup and the card list in the same change, never to quiet a failure.`,
   );
   for (const [index, table] of tables.entries()) {
     const tokens = table.split(/\s+/);
@@ -231,9 +232,9 @@ export function runProductionPlanningFitsTheScreenTests() {
   //     in it, and its first column is wider still: it carries the wrapping name, the code AND the
   //     "also used by" line that has to be read before a retire.
   assert.deepEqual(
-    colgroups[4],
+    colgroups[colgroups.length - 1],
     [37, 21, 21, 21],
-    `${WORKSPACE}: the composition table's colgroup is ${JSON.stringify(colgroups[4])}, not ` +
+    `${WORKSPACE}: the composition table's colgroup is ${JSON.stringify(colgroups[colgroups.length - 1])}, not ` +
       `[37,21,21,21]. Its material column holds the name, the code and the shared-product warning, ` +
       `and the two row actions are MERGED under the supplier rather than given a fifth column — a ` +
       `fifth takes the table under its natural width in the admin shell's 669px box.`,

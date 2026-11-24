@@ -110,7 +110,7 @@ export const PRODUCTION_PLANNING_TABS: readonly { key: ProductionPlanningTabKey;
   { key: "planner", label: "المُخطِّط" },
   { key: "stock", label: "المخزون" },
   { key: "cost", label: "التكلفة" },
-  { key: "run", label: "تسجيل تشغيلة" },
+  { key: "run", label: "التنفيذ" },
   { key: "settings", label: "الإعدادات" },
 ] as const;
 
@@ -214,7 +214,7 @@ export const PP = {
   excludedUnsettled: "لم يُتفق على من يوردها — غير محسوبة في الشراء",
   excludedNoComposition: "لا توجد تركيبة مُدخلة لهذه المادة",
   // Royanoxicam's foil: Sato's, with the grams per box still to come (owner, 2026-10-29).
-  excludedSatoNoAmount: "ساتو يوردها — الكمية فاضية وتُحسب من الاستهلاك الفعلي بعد تسجيل أول تشغيلة في تبويب تسجيل تشغيلة",
+  excludedSatoNoAmount: "ساتو يوردها — الكمية فاضية وتُحسب من الاستهلاك الفعلي بعد تسجيل أول تشغيلة في تبويب التنفيذ",
   heldFactoryBrings: "يوردها المصنع — لا رصيد لساتو منها",
   // The Stock and Cost tabs list only what Sato buys; this line says how many the factory brings.
   factoryHiddenNote: "مواد يوردها المصنع ولا تظهر هنا:",
@@ -322,6 +322,37 @@ export const PP = {
   learnedOverage: "نسبة الفاقد المقيسة",
   learnedNotEnoughRuns: "تشغيلة واحدة لا تكفي للقياس — النسبة الافتراضية ما زالت سارية",
   learnedNoTheoretical: "لا يوجد رقم متوقع للمقارنة",
+
+  // ── The execution: what was produced, and the factory's balance days later (owner, 2026-11-24) ──
+  // Verbal nouns and impersonal outcomes only, like every string here.
+  execTitle: "تسجيل الإنتاج الفعلي",
+  execSubtitle: "يُخصم من المخزون ما تحتاجه الكمية المنتجة حسب التركيبة فقط، بدون نسبة فاقد. الفاقد يُحسب لاحقًا من رصيد المصنع، على الفعلي فقط",
+  execPreview: "معاينة الخصم من المخزون",
+  execConfirm: "تأكيد الإنتاج وخصم المخزون",
+  execComesTo: "يعادل",
+  execDoses: "جرعة",
+  execStrips: "شريط",
+  execColFormula: "حسب التركيبة",
+  execColFromFactory: "من مخزن المصنع",
+  execColFromSato: "من مخازن ساتو",
+  execColUnrecorded: "غير مسجل في المخزون",
+  execUnrecordedHint: "ما لا يغطيه المخزون المسجل لا يُخصم بالسالب؛ يبقى ظاهرًا هنا حتى وصول رصيد المصنع",
+  execMeasuredLater: "لا يوجد سطر تركيبة — الاستهلاك يُقاس من رصيد المصنع",
+  execAwaitingTitle: "في انتظار رصيد المصنع",
+  execAwaitingSubtitle: "عند وصول رصيد المصنع يُسجَّل هنا، فيُحسب الفاقد: رصيد أول + المُسلَّم − رصيد المصنع، مقابل التركيبة",
+  execNoneAwaiting: "لا توجد تشغيلات في انتظار رصيد المصنع",
+  execBalanceHint: "رصيد أول المدة والمُسلَّم معبّآن من المخزون المسجل وقت الإنتاج، وتعديلهما متاح",
+  execFactoryBalance: "رصيد المصنع",
+  execBalanceDate: "تاريخ رصيد المصنع",
+  execBalanceSave: "حفظ رصيد المصنع وحساب الفاقد",
+  execCancel: "إلغاء الإنتاج وإرجاع الخصم",
+  execCancelReason: "سبب الإلغاء",
+  execCancelConfirm: "تأكيد الإلغاء",
+  execStageAwaiting: "في انتظار رصيد المصنع",
+  execStageBalanced: "تم حساب الفاقد",
+  execStageCancelled: "ملغاة",
+  execDeducted: "المخصوم من المخزون",
+  execWastePct: "نسبة الفاقد",
 
   // ── The settings tab ──────────────────────────────────────────────────────────────────────────
   settingsTitle: "الإعدادات",
@@ -597,7 +628,7 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   excludedFactory: "The factory supplies it — not counted in the buy list",
   excludedUnsettled: "Who supplies it is not settled — not counted in the buy list",
   excludedNoComposition: "No composition is entered for this material",
-  excludedSatoNoAmount: "Sato supplies it — no amount entered; it is calculated from the actual consumption once the first batch is recorded under Record a run",
+  excludedSatoNoAmount: "Sato supplies it — no amount entered; it is calculated from the actual consumption once the first batch is recorded under Execution",
   heldFactoryBrings: "The factory brings it — Sato holds none",
   factoryHiddenNote: "Materials the factory brings, not listed here:",
 
@@ -702,6 +733,40 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   learnedOverage: "Measured overage",
   learnedNotEnoughRuns: "One run is not enough to measure — the default is still in force",
   learnedNoTheoretical: "There is no expected figure to compare against",
+
+  // ── The execution: what was produced, and the factory's balance days later (owner, 2026-11-24) ──
+  execTitle: "Record what was produced",
+  execSubtitle:
+    "The produced quantity takes only its formula amount off stock, with no overage. The waste is worked out later from the factory's balance, on the actual only",
+  execPreview: "Preview what comes off stock",
+  execConfirm: "Confirm the production and take it off stock",
+  execComesTo: "Comes to",
+  execDoses: "doses",
+  execStrips: "strips",
+  execColFormula: "Formula amount",
+  execColFromFactory: "From the factory's store",
+  execColFromSato: "From Sato's stores",
+  execColUnrecorded: "Not in the stock records",
+  execUnrecordedHint:
+    "What no recorded lot holds is never taken below zero; it stays shown here until the factory's balance arrives",
+  execMeasuredLater: "No formula line — the consumption is measured from the factory's balance",
+  execAwaitingTitle: "Waiting for the factory's balance",
+  execAwaitingSubtitle:
+    "When the factory's balance arrives it is recorded here, and the waste is worked out: opening + delivered − the factory's balance, against the formula",
+  execNoneAwaiting: "No run is waiting for the factory's balance",
+  execBalanceHint:
+    "The opening balance and the delivered amount are filled in from the stock records at production, and can be changed",
+  execFactoryBalance: "Factory balance",
+  execBalanceDate: "Date of the factory's balance",
+  execBalanceSave: "Save the factory's balance and measure the waste",
+  execCancel: "Cancel the production and give the stock back",
+  execCancelReason: "Reason for cancelling",
+  execCancelConfirm: "Confirm the cancellation",
+  execStageAwaiting: "Waiting for the factory's balance",
+  execStageBalanced: "Waste measured",
+  execStageCancelled: "Cancelled",
+  execDeducted: "Taken off stock",
+  execWastePct: "Waste %",
 
   // ── The settings tab ──────────────────────────────────────────────────────────────────────────
   settingsTitle: "Settings",
@@ -1583,7 +1648,7 @@ export const PRODUCTION_PLANNING_TABS_EN: readonly { key: ProductionPlanningTabK
   { key: "planner", label: "Planner" },
   { key: "stock", label: "Stock" },
   { key: "cost", label: "Cost" },
-  { key: "run", label: "Record a run" },
+  { key: "run", label: "Execution" },
   { key: "settings", label: "Settings" },
 ] as const;
 
@@ -1727,7 +1792,13 @@ export type ProductionPlanningErrorKey =
   | "unitsPerBoxInvalid"
   | "stripsPerBoxInvalid"
   | "stripsInUse"
-  | "shownWeightInvalid";
+  | "shownWeightInvalid"
+  | "nothingProduced"
+  | "runNotFound"
+  | "runNotAwaitingBalance"
+  | "runCancelled"
+  | "cancelReasonRequired"
+  | "unknownExecutionAction";
 
 export const PRODUCTION_PLANNING_ERRORS: Record<ProductionPlanningErrorKey, string> = {
   unknownBasis: "أساس الحساب غير معروف.",
@@ -1761,6 +1832,12 @@ export const PRODUCTION_PLANNING_ERRORS: Record<ProductionPlanningErrorKey, stri
   stripsPerBoxInvalid: "عدد الشرائط في العلبة يجب أن يكون عددًا صحيحًا بين 1 و1000، أو يُترك فارغًا.",
   stripsInUse: "لا يمكن حذف عدد الشرائط ما دامت هناك مادة محسوبة لكل شريط في هذا المنتج.",
   shownWeightInvalid: "الوزن المعروض يجب أن يكون رقمًا أكبر من صفر، بأربعة أرقام عشرية على الأكثر، أو يُترك فارغًا.",
+  nothingProduced: "لا توجد كمية منتجة للتسجيل — يلزم عدد علب أو عينات.",
+  runNotFound: "التشغيلة غير موجودة.",
+  runNotAwaitingBalance: "هذه التشغيلة ليست في انتظار رصيد المصنع.",
+  runCancelled: "هذه التشغيلة ملغاة.",
+  cancelReasonRequired: "سبب الإلغاء مطلوب.",
+  unknownExecutionAction: "الإجراء المطلوب غير معروف.",
 };
 
 export const PRODUCTION_PLANNING_ERRORS_EN: Record<ProductionPlanningErrorKey, string> = {
@@ -1795,6 +1872,12 @@ export const PRODUCTION_PLANNING_ERRORS_EN: Record<ProductionPlanningErrorKey, s
   stripsPerBoxInvalid: "Strips per box must be a whole number from 1 to 1000, or left blank.",
   stripsInUse: "Strips per box cannot be cleared while a material in this product is counted per strip.",
   shownWeightInvalid: "A shown weight must be a number above zero with at most four decimals, or left blank.",
+  nothingProduced: "Nothing produced to record — a box or sample count is needed.",
+  runNotFound: "No such run.",
+  runNotAwaitingBalance: "This run is not waiting for the factory's balance.",
+  runCancelled: "This run is cancelled.",
+  cancelReasonRequired: "A reason for cancelling is required.",
+  unknownExecutionAction: "Unknown action.",
 };
 
 /**

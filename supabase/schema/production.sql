@@ -71029,12 +71029,19 @@ CREATE TABLE public.prodplan_run_materials (
     theoretical_qty numeric(24,6),
     note text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    deducted_qty numeric(24,6),
+    unrecorded_qty numeric(24,6) DEFAULT 0 NOT NULL,
+    closing_source text DEFAULT 'factory'::text NOT NULL,
     CONSTRAINT prodplan_run_materials_balance_check CHECK ((closing_qty <= (opening_qty + delivered_qty))),
     CONSTRAINT prodplan_run_materials_closing_check CHECK ((closing_qty >= (0)::numeric)),
+    CONSTRAINT prodplan_run_materials_closing_source_check CHECK ((closing_source = ANY (ARRAY['provisional'::text, 'factory'::text]))),
     CONSTRAINT prodplan_run_materials_count_whole_check CHECK (((unit_kind <> 'count'::text) OR ((opening_qty = trunc(opening_qty)) AND (delivered_qty = trunc(delivered_qty)) AND (closing_qty = trunc(closing_qty))))),
+    CONSTRAINT prodplan_run_materials_deducted_check CHECK (((deducted_qty IS NULL) OR (deducted_qty >= (0)::numeric))),
     CONSTRAINT prodplan_run_materials_delivered_check CHECK ((delivered_qty >= (0)::numeric)),
+    CONSTRAINT prodplan_run_materials_execution_whole_check CHECK (((unit_kind <> 'count'::text) OR (((deducted_qty IS NULL) OR (deducted_qty = trunc(deducted_qty))) AND (unrecorded_qty = trunc(unrecorded_qty))))),
     CONSTRAINT prodplan_run_materials_opening_check CHECK ((opening_qty >= (0)::numeric)),
-    CONSTRAINT prodplan_run_materials_theoretical_check CHECK (((theoretical_qty IS NULL) OR (theoretical_qty >= (0)::numeric)))
+    CONSTRAINT prodplan_run_materials_theoretical_check CHECK (((theoretical_qty IS NULL) OR (theoretical_qty >= (0)::numeric))),
+    CONSTRAINT prodplan_run_materials_unrecorded_check CHECK ((unrecorded_qty >= (0)::numeric))
 );
 
 ALTER TABLE public.prodplan_run_materials OWNER TO postgres;
@@ -71050,6 +71057,24 @@ COMMENT ON TABLE public.prodplan_run_materials IS 'What one run actually consume
 --
 
 COMMENT ON COLUMN public.prodplan_run_materials.theoretical_qty IS 'What the model predicted for this run, snapshotted at the moment the run was recorded. The gap between this and consumed_qty is the measured overage.';
+
+--
+-- Name: COLUMN prodplan_run_materials.deducted_qty; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.prodplan_run_materials.deducted_qty IS 'What the execution took off recorded stock — the formula quantity with no overage, as far as recorded stock reached.';
+
+--
+-- Name: COLUMN prodplan_run_materials.unrecorded_qty; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.prodplan_run_materials.unrecorded_qty IS 'What the formula needed beyond every recorded lot. The run happened, so the material existed; the stock records were short by this much.';
+
+--
+-- Name: COLUMN prodplan_run_materials.closing_source; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.prodplan_run_materials.closing_source IS 'provisional: closing is opening + delivered − deducted, the formula''s own answer. factory: the factory''s reported balance, so consumed_qty is the real consumption.';
 
 --
 -- Name: prodplan_runs; Type: TABLE; Schema: public; Owner: postgres
@@ -71075,14 +71100,24 @@ CREATE TABLE public.prodplan_runs (
     recorded_by_login text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    stage text DEFAULT 'balanced'::text NOT NULL,
+    saleable_boxes bigint,
+    exact_runs numeric(14,6),
+    balanced_on date,
+    balanced_by_login text,
+    cancelled_reason text,
+    CONSTRAINT prodplan_runs_cancel_reason_check CHECK (((stage <> 'cancelled'::text) OR (char_length(btrim(COALESCE(cancelled_reason, ''::text))) > 0))),
     CONSTRAINT prodplan_runs_count_check CHECK (((runs_count >= 1) AND (runs_count <= 1000))),
     CONSTRAINT prodplan_runs_dose_check CHECK ((snap_dose_ml > 0)),
+    CONSTRAINT prodplan_runs_exact_runs_check CHECK (((exact_runs IS NULL) OR (exact_runs > (0)::numeric))),
     CONSTRAINT prodplan_runs_exclusion_check CHECK (((is_excluded_from_learning = false) OR (char_length(btrim(COALESCE(exclusion_reason, ''::text))) > 0))),
     CONSTRAINT prodplan_runs_good_unit_check CHECK ((snap_good_unit_ml > 0)),
     CONSTRAINT prodplan_runs_good_units_check CHECK ((actual_good_units >= 0)),
     CONSTRAINT prodplan_runs_label_check CHECK (((char_length(btrim(run_label)) >= 1) AND (char_length(btrim(run_label)) <= 120))),
+    CONSTRAINT prodplan_runs_saleable_boxes_check CHECK (((saleable_boxes IS NULL) OR (saleable_boxes >= 0))),
     CONSTRAINT prodplan_runs_sample_unit_check CHECK ((snap_sample_unit_ml > 0)),
     CONSTRAINT prodplan_runs_samples_check CHECK ((actual_sample_units >= 0)),
+    CONSTRAINT prodplan_runs_stage_check CHECK ((stage = ANY (ARRAY['awaiting_balance'::text, 'balanced'::text, 'cancelled'::text]))),
     CONSTRAINT prodplan_runs_volume_check CHECK ((snap_run_volume_ml > 0))
 );
 
@@ -71099,6 +71134,24 @@ COMMENT ON TABLE public.prodplan_runs IS 'A finished production run as the facto
 --
 
 COMMENT ON COLUMN public.prodplan_runs.is_excluded_from_learning IS 'Set when the figures are known to be wrong. The row stays - it is still the record of what was reported - but the learner ignores it.';
+
+--
+-- Name: COLUMN prodplan_runs.stage; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.prodplan_runs.stage IS 'awaiting_balance: produced and taken off stock at the formula, waste not yet measured. balanced: the factory''s own closing balance is in, so consumed − formula is the measured waste. cancelled: the deduction was given back to stock. Only a balanced run teaches the overage learner.';
+
+--
+-- Name: COLUMN prodplan_runs.saleable_boxes; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.prodplan_runs.saleable_boxes IS 'The saleable box count as he typed it (22,130 for Saginkgo on 2026-11-24). actual_good_units is that × units_per_box.';
+
+--
+-- Name: COLUMN prodplan_runs.exact_runs; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.prodplan_runs.exact_runs IS 'The batches the produced boxes and samples come to, unrounded (23.294167). runs_count holds it rounded up, because that column is a whole number.';
 
 --
 -- Name: prodplan_settings; Type: TABLE; Schema: public; Owner: postgres
@@ -71179,9 +71232,13 @@ CREATE TABLE public.prodplan_stock_entries (
     recorded_by_login text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     expiry_date date,
+    run_id uuid,
+    moved_qty numeric(24,6),
     CONSTRAINT prodplan_stock_entries_count_whole_check CHECK (((unit_kind <> 'count'::text) OR (qty = trunc(qty)))),
+    CONSTRAINT prodplan_stock_entries_moved_check CHECK (((moved_qty IS NULL) OR (moved_qty >= (0)::numeric))),
+    CONSTRAINT prodplan_stock_entries_production_run_check CHECK (((source <> 'production'::text) OR ((run_id IS NOT NULL) AND (moved_qty IS NOT NULL)))),
     CONSTRAINT prodplan_stock_entries_qty_check CHECK ((qty >= (0)::numeric)),
-    CONSTRAINT prodplan_stock_entries_source_check CHECK ((source = ANY (ARRAY['factory_report'::text, 'own_count'::text, 'delivery'::text, 'adjustment'::text])))
+    CONSTRAINT prodplan_stock_entries_source_check CHECK ((source = ANY (ARRAY['factory_report'::text, 'own_count'::text, 'delivery'::text, 'adjustment'::text, 'production'::text])))
 );
 
 ALTER TABLE public.prodplan_stock_entries OWNER TO postgres;
@@ -71203,6 +71260,18 @@ COMMENT ON COLUMN public.prodplan_stock_entries.as_of_date IS 'The date the quan
 --
 
 COMMENT ON COLUMN public.prodplan_stock_entries.expiry_date IS 'When this lot expires. Null means not recorded — which is every Ivyronc row, and which keeps one current balance per material and location exactly as before. With a date, the current balance is the newest row per (material_id, location_id, expiry_date), so one material can hold several lots at one place.';
+
+--
+-- Name: COLUMN prodplan_stock_entries.run_id; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.prodplan_stock_entries.run_id IS 'The recorded run this row belongs to: its production deduction, the give-back of a cancelled run, or the factory balance that closed it.';
+
+--
+-- Name: COLUMN prodplan_stock_entries.moved_qty; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.prodplan_stock_entries.moved_qty IS 'For a run''s own rows: the amount this row took off the lot (production) or gave back to it (a cancelled run). The stored qty is the balance after it, so this is what makes a deduction reversible lot by lot.';
 
 --
 -- Name: push_subscriptions; Type: TABLE; Schema: public; Owner: postgres
@@ -87526,6 +87595,12 @@ CREATE INDEX prodplan_stock_entries_lot_idx ON public.prodplan_stock_entries USI
 CREATE INDEX prodplan_stock_entries_material_id_fk_idx ON public.prodplan_stock_entries USING btree (material_id, unit_kind);
 
 --
+-- Name: prodplan_stock_entries_run_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX prodplan_stock_entries_run_idx ON public.prodplan_stock_entries USING btree (run_id) WHERE (run_id IS NOT NULL);
+
+--
 -- Name: push_subscriptions_hr_id_idx; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -93470,6 +93545,13 @@ ALTER TABLE ONLY public.prodplan_stock_entries
 
 ALTER TABLE ONLY public.prodplan_stock_entries
     ADD CONSTRAINT prodplan_stock_entries_material_fk FOREIGN KEY (material_id, unit_kind) REFERENCES public.prodplan_materials(id, unit_kind) ON DELETE RESTRICT;
+
+--
+-- Name: prodplan_stock_entries prodplan_stock_entries_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.prodplan_stock_entries
+    ADD CONSTRAINT prodplan_stock_entries_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.prodplan_runs(id) ON DELETE RESTRICT;
 
 --
 -- Name: ats_application_events recruitment_application_events_application_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
