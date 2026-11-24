@@ -1835,6 +1835,9 @@ const employeePortalNavigationSectionSeeds = [
       // loadScopedClosingPerformanceReview; published-gated, from July 2026 upward (owner, same day:
       // "no show performance review in emp portal starting from july").
       { href: "/employee-portals/monthly-closing/performance-review", icon: Trophy, label: "Performance Review", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager"] },
+      // Customer Count — how many pharmacies bought, month by month, the manager's own team (owner,
+      // 2026-11-24). Roles mirror showCustomerCountTab: every Monthly Closing reader but the Medical Rep.
+      { href: "/employee-portals/customer-count", icon: UsersRound, label: "Customer Count", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
       // Sales vs Target — catalogued (rather than listed as intentionally uncuratable) so an admin
       // can hide it per role from Modules Control. Roles mirror showSalesVsTargetTab in
       // src/lib/employee-portal/navigation.ts; the enforcing gate is resolveVsTargetBound, and a
@@ -2937,6 +2940,17 @@ export const sourceOfSalesPageItems: readonly AdminToolsPageItem[] = [
     icon: ChartNoAxesColumnIncreasing,
     label: "Pharmacies to Visit",
     description: "Pharmacies that stopped, dropped or started buying, with the sheet to download.",
+    permissions: [{ resource: "sales" }],
+    roles: ["CEO", "SFE Manager", "Super Admin"],
+  },
+  {
+    // How many pharmacies bought, month by month, by line, product, region, area, brick and rep
+    // (owner, 2026-11-24: "a dashboard specialized for now customer count"). The same readers as the
+    // admin Monthly Closing; the page and its route enforce it.
+    href: "/sales/customer-count",
+    icon: UsersRound,
+    label: "Customer Count",
+    description: "How many pharmacies bought each month — by line, product, region, area, brick and rep.",
     permissions: [{ resource: "sales" }],
     roles: ["CEO", "SFE Manager", "Super Admin"],
   },
@@ -5513,6 +5527,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/sales/monthly-dashboard",
           "/sales/monthly-closing",
           "/sales/monthly-closing/performance-review",
+          "/sales/customer-count",
           "/sales/closing-corrections",
         ],
       },

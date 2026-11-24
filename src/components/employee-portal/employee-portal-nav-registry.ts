@@ -163,6 +163,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // The short label is "Performance", not "Review": the bottom nav shows `label` alone and the row
   // below already owns that word there — two tabs both reading "Review" name neither of them.
   { label: "Performance", fullLabel: "Performance Review", href: "/employee-portals/monthly-closing/performance-review", icon: Trophy, flags: ["showPerformanceReviewTab"], permission: { resource: "sales", action: "read" } },
+  { label: "Pharmacies", fullLabel: "Customer Count", href: "/employee-portals/customer-count", icon: UsersRound, flags: ["showCustomerCountTab"], permission: { resource: "sales", action: "read" } },
   { label: "Review", fullLabel: "Business Review", href: "/employee-portals/business-review", icon: ChartColumnBig, flags: ["showBusinessReviewTab"] },
   // Two DIFFERENT modules whose full names both start with "Territory" — the short `label` is all
   // the bottom nav shows, so they must not both read "Territory" there. Drilldown is the

@@ -400,6 +400,7 @@ function buildEmployeePortalSections({
   showWeeklyStockTab = false,
   showMonthlyClosingTab = false,
   showPerformanceReviewTab = false,
+  showCustomerCountTab = false,
   showSalesVsTargetTab = false,
   showMakeItHappenTab = false,
   showTerritoryDrilldownTab = false,
@@ -579,6 +580,8 @@ function buildEmployeePortalSections({
         ...(showMonthlyClosingTab ? [{ href: "/employee-portals/monthly-closing", label: "Monthly Closing", icon: CalendarRange }] : []),
         // The same closing, ranked — each sales manager over his own territory (owner, 2026-10-13).
         ...(showPerformanceReviewTab ? [{ href: "/employee-portals/monthly-closing/performance-review", label: "Performance Review", icon: Trophy }] : []),
+        // How many pharmacies bought, month by month — the manager's own team (owner, 2026-11-24).
+        ...(showCustomerCountTab ? [{ href: "/employee-portals/customer-count", label: "Customer Count", icon: UsersRound }] : []),
         ...(showTeamPerformanceTab ? [{ href: "/employee-portals/team-performance", label: "Team Performance", icon: Trophy }] : []),
         ...(showMedRepsPerformanceTab ? [{ href: "/employee-portals/med-reps-performance", label: "MRs Performance", icon: ChartColumnBig }] : []),
         ...(showDsmsPerformanceTab ? [{ href: "/employee-portals/dsms-performance", label: "DSMs Performance", icon: Users }] : []),

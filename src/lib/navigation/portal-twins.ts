@@ -241,6 +241,8 @@ const TWIN_RULES: readonly TwinRule[] = [
   { from: "/customer-360/marketing-customer/:customerId", to: SOS },
   { from: "/sales", to: SOS },
   { from: "/sales/closing-corrections", to: SOS },
+  // The Customer Count dashboard has a portal twin, the manager's own team (owner, 2026-11-24).
+  { from: "/sales/customer-count", to: "/employee-portals/customer-count" },
   { from: "/sales/customer-directory", to: SOS },
   { from: "/sales/customer-directory/:distributor/:clientCode", to: SOS },
   { from: "/sales/customer-mapping", to: SOS },
