@@ -15,9 +15,13 @@ type AuditClient = Pick<ReturnType<typeof getSupabaseAdmin>, "from">;
  * test that injected a fake into the caller still sent this one row to the real database, and a
  * local run of the suite loads `.env.local`, which is production. Resolved inside the `try` so that
  * a missing credential is still logged rather than thrown.
+ *
+ * `runId` is null only for a change that belongs to no run: the standing non-employee list. The
+ * column has been nullable since the table was made; the list wrote nothing at all before, so when all
+ * seven standing entries were removed between 6 October and 13 November 2026 nothing said who did it.
  */
 export async function writeAutomatedPayrollAudit(input: {
-  runId: string;
+  runId: string | null;
   actorHrId: string;
   action: string;
   stepKey?: StepKey | null;

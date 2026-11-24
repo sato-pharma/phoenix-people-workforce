@@ -908,3 +908,34 @@ export type ManualRowCandidate = {
    */
   lastMonthPart1?: number;
 };
+
+/** One person on the latest published month’s non-employee list, judged for copying into an open run. */
+export type PreviousNonEmployeeCandidate = {
+  /** The earlier run's row id — what the screen sends back for each ticked person. */
+  id: string;
+  part: NonEmployeePart;
+  fullNameEn: string;
+  fullNameAr: string;
+  totalSalary: number;
+  bankName: string | null;
+  bankAccount: string | null;
+  /** Why this person cannot be copied, in words; null when they can. */
+  blockedReason: string | null;
+  /** Already on this month's list for the same part — copying would pay them twice. */
+  alreadyOnThisRun: boolean;
+  /** Their standing-list entry for that part, when they still have one. */
+  standingEntryId: string | null;
+};
+
+export type PreviousNonEmployeeList = {
+  fromRunId: string | null;
+  fromMonthKey: string | null;
+  candidates: PreviousNonEmployeeCandidate[];
+};
+
+export type PreviousRunCopyResult = {
+  fromMonthKey: string;
+  copied: string[];
+  addedToStandingList: string[];
+  notCopied: Array<{ name: string; reason: string }>;
+};
