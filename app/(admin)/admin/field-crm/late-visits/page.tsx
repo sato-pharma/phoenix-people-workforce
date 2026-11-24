@@ -31,7 +31,7 @@ export default async function PhoenixCrmLateVisitsPage({ searchParams }: { searc
   return (
     <div className="space-y-5">
       <AdminPageHero
-        description="Visits a phone kept for want of signal and sent after their day closed. Each one waits for you, whole, exactly as it was logged. Approve enters it on the day it was pressed; Reject keeps it on file."
+        description="Visits a phone sent after their day closed, and visits logged while the phone gave no location. Each one waits for you, whole, exactly as it was logged. Approve enters it on the day it was pressed; Reject keeps it on file."
         eyebrow="CRM"
         icon={<Hourglass className="h-3.5 w-3.5" />}
         title="Late visits"

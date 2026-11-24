@@ -4969,7 +4969,7 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     href: "/admin/field-crm/late-visits",
     icon: Hourglass,
     label: "Late Visits",
-    description: "Visits a phone kept for want of signal and sent after their day closed. Approve each onto the day it was pressed, or reject it.",
+    description: "Visits sent after their day closed, or logged with no location. Approve each onto the day it was pressed, or reject it.",
     permissions: [{ resource: "phoenix_crm", action: "update" }],
     roles: ["Super Admin"],
   },
