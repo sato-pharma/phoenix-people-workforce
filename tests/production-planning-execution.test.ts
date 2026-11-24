@@ -219,6 +219,21 @@ export function runProductionPlanningExecutionTests() {
   assert.equal(whole?.runsCounted, BigInt(9));
   assert.equal(QTY_SCALE, BigInt(1_000_000));
 
+  // ── The form asks for BOXES and SAMPLES, never tablets (owner, 2026-11-24) ────────────────────
+  // His words on the live tab: "why trablets recorded … i want to put number of boxes or numebr
+  // samples". The field fed `saleableBoxes` under the old run form's "Tablets actually produced"
+  // label, so a tablet count typed as asked would have been read as that many BOXES.
+  const workspace = readFileSync("src/components/production-planning/production-planning-workspace.tsx", "utf8");
+  const runTab = workspace.slice(workspace.indexOf("export function RunTab("), workspace.indexOf("function RunHeadline("));
+  assert.ok(runTab.includes("label={t.execBoxesProduced}"), "the first field is labelled as boxes produced");
+  assert.ok(runTab.includes("label={t.execSamplesProduced}"), "the second field is labelled as samples produced");
+  assert.ok(!runTab.includes("S.runActualLabel("), "the execution form never takes the tablets/capsules/sachets label");
+  const headline = workspace.slice(workspace.indexOf("function RunHeadline("), workspace.indexOf("function ExecutionPreviewTable("));
+  assert.ok(
+    headline.includes("run.saleableBoxes ? t.execBoxesWord : saleableWord"),
+    "a recorded production reads its count as boxes, not as tablets",
+  );
+
   // ── The table agrees: 'production' is a source only an execution writes ────────────────────────
   const migration = readFileSync("supabase/migrations/20261124145502_production_planning_execution.sql", "utf8");
   assert.ok(migration.includes("'production'::text"), "the stock source CHECK must allow a production deduction");
