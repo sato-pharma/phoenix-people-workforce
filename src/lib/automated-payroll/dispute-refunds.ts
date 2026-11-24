@@ -37,20 +37,55 @@ function monthLabel(monthKey: string): string {
   return match ? `${MONTH_NAMES[Number(match[2]) - 1]} ${match[1]}` : monthKey;
 }
 
-/** Everything due this period, summed per employee, keyed by compact HR id. A cancelled refund is never due. */
+/** "a September 2026", "an October 2026" — the article the month's own first letter asks for. */
+export function withMonthArticle(label: string): string {
+  return `${/^[AEIOU]/i.test(label) ? "an" : "a"} ${label}`;
+}
+
+/**
+ * The Dispute Center already writes "Refund of a <Month YYYY> deduction" at the front of a refund's
+ * reason, so prefixing it again printed the phrase twice (October 2026's Other additions:
+ * "Refund of a September 2026 deduction: Refund of a September 2026 deduction; …" three times over).
+ * What is left after that phrase is the decision's own note, or nothing.
+ */
+const STORED_PREFIX = /^refund of an? [a-z]+ \d{4} deductions?\s*(?:[:;,—–-]\s*)?/i;
+
+function refundDetail(reason: string): string {
+  return reason.trim().replace(STORED_PREFIX, "").trim();
+}
+
+/**
+ * Everything due this period, summed per employee, keyed by compact HR id. A cancelled refund is never due.
+ * The reason names each month once: refunds of the same month with the same note are counted, never
+ * repeated ("Refund of 2 October 2026 deductions").
+ */
 export function disputeRefundsByCompact(
   rows: DisputeRefundRow[],
   period: PayrollPeriod,
 ): Map<string, DisputeRefundsForEmployee> {
   const key = periodMonthKey(period);
-  const byCompact = new Map<string, DisputeRefundsForEmployee>();
+  const groups = new Map<string, { amount: number; parts: Map<string, { month: string; detail: string; count: number }> }>();
   for (const row of rows) {
     if (row.status !== "recommended" || row.targetMonthKey !== key || !(row.amount > 0) || !row.employeeHrIdCompact) continue;
-    const current = byCompact.get(row.employeeHrIdCompact) ?? { amount: 0, reason: "" };
-    current.amount = roundCurrency(current.amount + row.amount);
-    const reason = `Refund of a ${monthLabel(row.sourceMonthKey)} deduction: ${row.reason.trim()}`;
-    current.reason = current.reason ? `${current.reason}; ${reason}` : reason;
-    byCompact.set(row.employeeHrIdCompact, current);
+    const group = groups.get(row.employeeHrIdCompact) ?? { amount: 0, parts: new Map() };
+    group.amount = roundCurrency(group.amount + row.amount);
+    const month = monthLabel(row.sourceMonthKey);
+    const detail = refundDetail(row.reason);
+    const partKey = `${month}\u0000${detail}`;
+    const part = group.parts.get(partKey) ?? { count: 0, detail, month };
+    part.count += 1;
+    group.parts.set(partKey, part);
+    groups.set(row.employeeHrIdCompact, group);
+  }
+  const byCompact = new Map<string, DisputeRefundsForEmployee>();
+  for (const [compact, group] of groups) {
+    const reason = [...group.parts.values()]
+      .map(({ count, detail, month }) => {
+        const head = count === 1 ? `Refund of ${withMonthArticle(month)} deduction` : `Refund of ${count} ${month} deductions`;
+        return detail ? `${head}: ${detail}` : head;
+      })
+      .join("; ");
+    byCompact.set(compact, { amount: group.amount, reason });
   }
   return byCompact;
 }
