@@ -3,6 +3,7 @@ import ExcelJS from "exceljs";
 import type { AssembledRow } from "../assemble.ts";
 import type { NonEmployeePayrollRow, PayrollPeriod } from "../types.ts";
 import { heldForScope, resolveBankRoute } from "./bank-coverage.ts";
+import { mergeStandingTransferLinesForExport } from "./merge-standing-transfers.ts";
 
 /**
  * FAB (First Abu Dhabi Bank / FABMISR) bulk salary-transfer upload file.
@@ -75,7 +76,8 @@ export function fabRowsForNonEmployees(
   scope: "part1" | "part2",
 ): FabSheetRow[] {
   const part = scope === "part1" ? "first" : "second";
-  return nonEmployees
+  // One transfer per payee per part: a standing transfer rides on the payee's own line.
+  return mergeStandingTransferLinesForExport(nonEmployees)
     .filter((entry) => entry.part === part)
     .filter((entry) => resolveBankRoute({ bankName: entry.bankName, bankAccount: entry.bankAccount }).route === "FAB")
     .map((entry) => ({
