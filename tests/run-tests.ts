@@ -1523,6 +1523,7 @@ import { runAnalyticsFilterIndependenceTests } from "./analytics-filter-independ
 import { runPortalSosScopeTests } from "./portal-sos-scope.test.ts";
 import { runPortalSosNoCoverageBannerTests } from "./portal-sos-no-coverage-banner.test.ts";
 import { runSosPharmacyActionsTests } from "./sos-pharmacy-actions.test.ts";
+import { runClosingPharmacyCountsTests } from "./closing-pharmacy-counts.test.ts";
 import { runSosPortalPremiumTests } from "./sos-portal-premium.test.ts";
 import { runTerritoryDrilldownPremiumTests } from "./territory-drilldown-premium.test.ts";
 import { runSosMonthPaceAreaNamesTests } from "./sos-month-pace-area-names.test.ts";
@@ -6517,6 +6518,7 @@ await runTest("analytics filter independence (no cross-dimension leakage)", runA
 await runTest("portal source-of-sales scope + smart filters", runPortalSosScopeTests);
 await runTest("portal source-of-sales never shows the coverage-gap banner", runPortalSosNoCoverageBannerTests);
 await runTest("portal source-of-sales pharmacy actions (stopped / dropping / new) + weekly month pace", runSosPharmacyActionsTests);
+await runTest("monthly closing pharmacy count: one distributor customer with net units above zero, distinct across regions, on screen and in the workbook", runClosingPharmacyCountsTests);
 await runTest("the portal Source of Sales month-pace strip names every area from the area master, never its code: an area with a target and no weekly row reads Sohag1 (not UE5), a direct-orders-only area reads its name, a code handed over as a name gives way, and an area with no name anywhere reads \"Unnamed area\" and keeps its money", runSosMonthPaceAreaNamesTests);
 await runTest("DM/RM seat-derived area scope (out-of-region areas)", runDmSeatAreaScopeTests);
 await runTest("District Manager sales scope never widens to the region or the line (targets line check, closing no-fallback, unseated fail-closed, read error not cached)", runDmSalesScopeFailClosedTests);

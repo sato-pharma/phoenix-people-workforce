@@ -6,6 +6,8 @@ import { Fragment, useLayoutEffect, useRef } from "react";
 import { AdminCallout } from "@/components/admin/admin-design-system";
 import { cn } from "@/lib/utils";
 import { isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
+import type { ClosingPharmacyCounts } from "@/lib/sales/closing-pharmacy-counts";
+import { buildPharmacyLookup, type PharmacyLookup } from "@/lib/sales/closing-pharmacy-lookup";
 import { formatNumber, formatPercent } from "@/lib/sales/format";
 import { lineHasOfficeChannel } from "@/lib/sales/office-distributor";
 import type {
@@ -233,6 +235,7 @@ function ProductCells({
   bandTint,
   cell,
   officeUnits,
+  pharmacies,
   productTotal,
   rowBg,
   variant,
@@ -241,6 +244,8 @@ function ProductCells({
   cell: MonthlyClosingCell;
   /** Office component of this cell's units. undefined ⇒ no cell; null ⇒ "—"; number ⇒ the figure. */
   officeUnits: number | null | undefined;
+  /** Pharmacies that bought this product here — the same three states as `officeUnits`. */
+  pharmacies: number | null | undefined;
   productTotal: number | null;
   rowBg?: string;
   variant: RowVariant;
@@ -255,6 +260,7 @@ function ProductCells({
     <>
       <NumCell bg={bg} value={cell.salesUnits} variant={variant} />
       {officeUnits !== undefined ? <NumCell bg={officeBg} value={officeUnits} variant={variant} /> : null}
+      {pharmacies !== undefined ? <NumCell bg={bg} value={pharmacies} variant={variant} /> : null}
       <NumCell bg={bg} kind="value" value={cell.salesValue} variant={variant} />
       <ContribCell bg={contrBg} value={contrib} variant={variant} />
       <NumCell bg={bg} target value={cell.targetUnits} variant={variant} />
@@ -297,6 +303,7 @@ function TotalCells({
   cell,
   grandTotal,
   officeValue,
+  pharmacies,
   rowBg,
   variant,
 }: {
@@ -304,6 +311,8 @@ function TotalCells({
   grandTotal: number | null;
   /** Office component of this row's total VALUE — the axis this block is measured on. */
   officeValue: number | null | undefined;
+  /** Distinct pharmacies that bought ANY product of the grid on this row — each counted once. */
+  pharmacies: number | null | undefined;
   rowBg?: string;
   variant: RowVariant;
 }) {
@@ -315,6 +324,7 @@ function TotalCells({
     <>
       <NumCell bg={bg} kind="value" value={cell.salesValue} variant={variant} />
       {officeValue !== undefined ? <NumCell bg={officeBg} kind="value" value={officeValue} variant={variant} /> : null}
+      {pharmacies !== undefined ? <NumCell bg={bg} value={pharmacies} variant={variant} /> : null}
       <ContribCell bg={bg} value={contrib} variant={variant} />
       <NumCell bg={bg} kind="value" target value={cell.targetValue} variant={variant} />
       <AchCell bg={bg} value={cell.achievement} variant={variant} />
@@ -340,12 +350,13 @@ function TotalCells({
 // ~250px). This is the guarantee for the name that is not.
 const SUB_HEADER_TOP = "var(--phx-closing-subhead-top, 44px)";
 
-function MetricHeaders({ showOffice }: { showOffice: boolean }) {
+function MetricHeaders({ showOffice, showPharmacies }: { showOffice: boolean; showPharmacies: boolean }) {
   const cell = "sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle";
   return (
     <>
       <th className={cell} style={{ top: SUB_HEADER_TOP }}>Units</th>
       {showOffice ? <th className={`${cell} phx-office`} style={{ top: SUB_HEADER_TOP }}>of wh. Office</th> : null}
+      {showPharmacies ? <th className={cell} style={{ top: SUB_HEADER_TOP }}>Pharmacies</th> : null}
       <th className={cell} style={{ top: SUB_HEADER_TOP }}>Value</th>
       <th className={`${cell} phx-contr`} style={{ top: SUB_HEADER_TOP }}>Contr %</th>
       <th className={`${cell} font-normal opacity-60`} style={{ top: SUB_HEADER_TOP }}>Tgt Units</th>
@@ -378,6 +389,8 @@ const COL = {
   famContr: 68, famTgt: 96, famValue: 102,
   // "of wh. Office" — wide enough for the longest header, which never wraps (owner's rule).
   office: 92,
+  // "Pharmacies" — the same rule: the header sits on one line.
+  pharm: 92,
   // The area / region name column. 196 -> 208 on 2026-09-26: at 196 the longest real area name,
   // "Dokki - Mohandseen - Bolak", needed 200px and was cut to "…Bola…" by an ellipsis — measured
   // on production data at 1440px, the only cell on this grid that overflowed. The grid already
@@ -399,6 +412,7 @@ function RegionBlock({
   columnGroups,
   grandTotalValue,
   office,
+  pharmacies,
   productTotals,
   region,
 }: {
@@ -406,11 +420,13 @@ function RegionBlock({
   columnGroups: ColumnGroup[];
   grandTotalValue: number;
   office: OfficeLookup;
+  pharmacies: PharmacyLookup;
   productTotals: number[];
   region: MonthlyClosingRegionGroup;
 }) {
   const officeUnits = (rowKey: string, idx: number) => office.unitsFor(rowKey, columns[idx]?.productCode ?? "");
   const officeValue = (rowKey: string) => office.valueFor(rowKey);
+  const pharmacyCell = (rowKey: string, idx: number) => pharmacies.cellFor(rowKey, columns[idx]?.productCode ?? "");
   return (
     <>
       {region.areas.map((area) => {
@@ -436,6 +452,7 @@ function RegionBlock({
                     cell={area.cells[idx]}
                     key={`${area.areaCode}-${idx}`}
                     officeUnits={officeUnits(`A:${area.areaCode}`, idx)}
+                    pharmacies={pharmacyCell(`A:${area.areaCode}`, idx)}
                     productTotal={productTotals[idx] ?? null}
                     rowBg={synthetic ? directBg : undefined}
                     variant="area"
@@ -453,7 +470,7 @@ function RegionBlock({
                 )}
               </Fragment>
             ))}
-            <TotalCells cell={area.rowTotal} grandTotal={grandTotalValue} officeValue={officeValue(`A:${area.areaCode}`)} rowBg={synthetic ? directBg : undefined} variant="area" />
+            <TotalCells cell={area.rowTotal} grandTotal={grandTotalValue} officeValue={officeValue(`A:${area.areaCode}`)} pharmacies={pharmacies.totalFor(`A:${area.areaCode}`)} rowBg={synthetic ? directBg : undefined} variant="area" />
           </tr>
         );
       })}
@@ -469,6 +486,7 @@ function RegionBlock({
                 cell={region.subtotal.cells[idx]}
                 key={`sub-${region.regionCode}-${idx}`}
                 officeUnits={officeUnits(`R:${region.regionCode}`, idx)}
+                pharmacies={pharmacyCell(`R:${region.regionCode}`, idx)}
                 productTotal={productTotals[idx] ?? null}
                 variant="subtotal"
               />
@@ -484,7 +502,7 @@ function RegionBlock({
             )}
           </Fragment>
         ))}
-        <TotalCells cell={region.subtotal.rowTotal} grandTotal={grandTotalValue} officeValue={officeValue(`R:${region.regionCode}`)} variant="subtotal" />
+        <TotalCells cell={region.subtotal.rowTotal} grandTotal={grandTotalValue} officeValue={officeValue(`R:${region.regionCode}`)} pharmacies={pharmacies.totalFor(`R:${region.regionCode}`)} variant="subtotal" />
       </tr>
     </>
   );
@@ -495,6 +513,8 @@ function RegionBlock({
 export function ClosingMatrixTable({
   matrix,
   office,
+  pharmacies,
+  pharmaciesNote = null,
 }: {
   matrix: MonthlyClosingMatrix;
   /**
@@ -503,6 +523,14 @@ export function ClosingMatrixTable({
    * render every "of wh. Office" as "—" and raise the callout below, never a silent 0.
    */
   office?: MonthlyClosingMatrix | null;
+  /**
+   * How many pharmacies bought, per area and product (closing-pharmacy-counts.ts). Undefined on a
+   * surface that does not carry the count (no column); null while it loads or when it could not be
+   * read — every Pharmacies cell then reads "—", never a zero.
+   */
+  pharmacies?: ClosingPharmacyCounts | null;
+  /** Plain words for why the count is empty, shown above the grid. Null when there is nothing to say. */
+  pharmaciesNote?: string | null;
 }) {
   const topRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -562,6 +590,13 @@ export function ClosingMatrixTable({
   // retail grand total and the "incl. Direct" total unchanged.
   const natOfficeUnits = (idx: number) => officeLookup.unitsFor("NAT", matrix.columns[idx]?.productCode ?? "");
   const natOfficeValue = officeLookup.valueFor("NAT");
+  // Read against THIS grid — the filtered one on screen — so a region, the nation and every row's
+  // total count distinct pharmacies over exactly the areas and products shown.
+  const pharmacyLookup = buildPharmacyLookup(pharmacies, matrix);
+  const natPharmacies = (idx: number) => pharmacyLookup.cellFor("NAT", matrix.columns[idx]?.productCode ?? "");
+  const natPharmacyTotal = pharmacyLookup.totalFor("NAT");
+  // Direct orders are not counted, so the Direct – National row has no pharmacies to show.
+  const directPharmacies = pharmacyLookup.shown ? null : undefined;
 
   // Per-product national totals for contribution % — derived from the grand total row.
   const productTotals = matrix.grandTotal.cells.map((c) => c.salesValue ?? 0);
@@ -569,9 +604,11 @@ export function ClosingMatrixTable({
 
   const tableWidth =
     COL.area + COL.name +
-    matrix.columns.length * (PRODUCT_GROUP_WIDTH + (officeLookup.shown ? COL.office : 0)) +
+    matrix.columns.length * (PRODUCT_GROUP_WIDTH + (officeLookup.shown ? COL.office : 0) + (pharmacyLookup.shown ? COL.pharm : 0)) +
     multiCount * FAMILY_GROUP_WIDTH +
-    COL.gtValue + (officeLookup.shown ? COL.gtOffice : 0) + COL.gtContr + COL.gtTgt + COL.gtAch;
+    COL.gtValue + (officeLookup.shown ? COL.gtOffice : 0) + (pharmacyLookup.shown ? COL.pharm : 0) + COL.gtContr + COL.gtTgt + COL.gtAch;
+  const productSpan = 6 + (officeLookup.shown ? 1 : 0) + (pharmacyLookup.shown ? 1 : 0);
+  const grandSpan = 4 + (officeLookup.shown ? 1 : 0) + (pharmacyLookup.shown ? 1 : 0);
 
   const bandHeader = "whitespace-nowrap px-3 align-middle";
 
@@ -601,6 +638,15 @@ export function ClosingMatrixTable({
         </div>
       ) : null}
 
+      {pharmacyLookup.shown && pharmaciesNote ? (
+        <div className="mb-3">
+          <AdminCallout tone="warning">
+            <AlertTriangle className="mt-0.5 h-4 w-4" />
+            <p>{pharmaciesNote} Every Pharmacies column shows &mdash;. The sales figures are unaffected.</p>
+          </AdminCallout>
+        </div>
+      ) : null}
+
       {/* Top horizontal scrollbar (synced proxy) */}
       <div
         className="overflow-x-auto overflow-y-hidden border-x border-t border-phx-line"
@@ -624,6 +670,7 @@ export function ClosingMatrixTable({
               ...group.indices.flatMap((_, iInGroup) => [
                 <col key={`u-${gi}-${iInGroup}`} style={{ width: COL.units }} />,
                 ...(officeLookup.shown ? [<col key={`o-${gi}-${iInGroup}`} style={{ width: COL.office }} />] : []),
+                ...(pharmacyLookup.shown ? [<col key={`p-${gi}-${iInGroup}`} style={{ width: COL.pharm }} />] : []),
                 <col key={`v-${gi}-${iInGroup}`} style={{ width: COL.value }} />,
                 <col key={`c-${gi}-${iInGroup}`} style={{ width: COL.contr }} />,
                 <col key={`tu-${gi}-${iInGroup}`} style={{ width: COL.tgtUnits }} />,
@@ -638,6 +685,7 @@ export function ClosingMatrixTable({
             ])}
             <col style={{ width: COL.gtValue }} />
             {officeLookup.shown ? <col style={{ width: COL.gtOffice }} /> : null}
+            {pharmacyLookup.shown ? <col style={{ width: COL.pharm }} /> : null}
             <col style={{ width: COL.gtContr }} />
             <col style={{ width: COL.gtTgt }} />
             <col style={{ width: COL.gtAch }} />
@@ -655,7 +703,7 @@ export function ClosingMatrixTable({
               <th className={`${bandHeader} ${STICKY2} top-0 z-40 h-11`} rowSpan={2} style={{ left: COL.area }}>Area Name</th>
               {columnGroups.flatMap((group, gi) => [
                 ...group.indices.map((idx) => (
-                  <th className={`${bandHeader} sticky top-0 z-30 h-11`} colSpan={officeLookup.shown ? 7 : 6} key={`ph-${gi}-${idx}`}>
+                  <th className={`${bandHeader} sticky top-0 z-30 h-11`} colSpan={productSpan} key={`ph-${gi}-${idx}`}>
                     <span className="block break-words text-phx-sm font-black leading-tight" style={{ color: "#FDBA74" }}>{matrix.columns[idx].productName}</span>
                   </th>
                 )),
@@ -666,18 +714,19 @@ export function ClosingMatrixTable({
                   </th>,
                 ] : []),
               ])}
-              <th className={`${bandHeader} phx-gt sticky top-0 z-30 h-11`} colSpan={officeLookup.shown ? 5 : 4}>Grand Total</th>
+              <th className={`${bandHeader} phx-gt sticky top-0 z-30 h-11`} colSpan={grandSpan}>Grand Total</th>
             </tr>
             {/* Row 2: per-column metric sub-headers */}
             <tr>
               {columnGroups.flatMap((group, gi) => [
                 ...group.indices.map((idx) => (
-                  <MetricHeaders key={`mh-${gi}-${idx}`} showOffice={officeLookup.shown} />
+                  <MetricHeaders key={`mh-${gi}-${idx}`} showOffice={officeLookup.shown} showPharmacies={pharmacyLookup.shown} />
                 )),
                 ...(group.isMulti ? [<FamilySubHeaders key={`fsh-${gi}`} />] : []),
               ])}
               <th className="phx-gt sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle" style={{ top: SUB_HEADER_TOP }}>Value</th>
               {officeLookup.shown ? <th className="phx-gt phx-office sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle" style={{ top: SUB_HEADER_TOP }}>of wh. Office</th> : null}
+              {pharmacyLookup.shown ? <th className="phx-gt sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle" style={{ top: SUB_HEADER_TOP }}>Pharmacies</th> : null}
               <th className="phx-gt phx-contr sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle" style={{ top: SUB_HEADER_TOP }}>Contr %</th>
               <th className="phx-gt sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle font-normal opacity-60" style={{ top: SUB_HEADER_TOP }}>Tgt Value</th>
               <th className="phx-gt phx-ach sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle" style={{ top: SUB_HEADER_TOP }}>Ach %</th>
@@ -691,6 +740,7 @@ export function ClosingMatrixTable({
                 grandTotalValue={grandTotalValue}
                 key={region.regionCode}
                 office={officeLookup}
+                pharmacies={pharmacyLookup}
                 productTotals={productTotals}
                 region={region}
               />
@@ -708,6 +758,7 @@ export function ClosingMatrixTable({
                       cell={matrix.grandTotal.cells[idx]}
                       key={`gt-${idx}`}
                       officeUnits={natOfficeUnits(idx)}
+                      pharmacies={natPharmacies(idx)}
                       productTotal={productTotals[idx] ?? null}
                       variant="grand"
                     />
@@ -724,7 +775,7 @@ export function ClosingMatrixTable({
                 </Fragment>
               ))}
               {/* rowTotal is the unmodified sum of all individual products — no family duplication */}
-              <TotalCells cell={matrix.grandTotal.rowTotal} grandTotal={grandTotalValue} officeValue={natOfficeValue} variant="grand" />
+              <TotalCells cell={matrix.grandTotal.rowTotal} grandTotal={grandTotalValue} officeValue={natOfficeValue} pharmacies={natPharmacyTotal} variant="grand" />
             </tr>
 
             {matrix.directNational ? (
@@ -739,6 +790,7 @@ export function ClosingMatrixTable({
                         cell={matrix.directNational!.cells[idx]}
                         key={`dn-${idx}`}
                         officeUnits={officeLookup.zero}
+                        pharmacies={directPharmacies}
                         productTotal={productTotals[idx] ?? null}
                         rowBg="bg-[#B6CEF8]"
                         variant="subtotal"
@@ -756,7 +808,7 @@ export function ClosingMatrixTable({
                     )}
                   </Fragment>
                 ))}
-                <TotalCells cell={matrix.directNational.rowTotal} grandTotal={grandTotalValue} officeValue={officeLookup.zero} rowBg="bg-[#B6CEF8]" variant="subtotal" />
+                <TotalCells cell={matrix.directNational.rowTotal} grandTotal={grandTotalValue} officeValue={officeLookup.zero} pharmacies={directPharmacies} rowBg="bg-[#B6CEF8]" variant="subtotal" />
               </tr>
             ) : null}
 
@@ -772,6 +824,7 @@ export function ClosingMatrixTable({
                         cell={matrix.companyTotal!.cells[idx]}
                         key={`ct-${idx}`}
                         officeUnits={natOfficeUnits(idx)}
+                        pharmacies={natPharmacies(idx)}
                         productTotal={productTotals[idx] ?? null}
                         variant="grand"
                       />
@@ -787,7 +840,7 @@ export function ClosingMatrixTable({
                     )}
                   </Fragment>
                 ))}
-                <TotalCells cell={matrix.companyTotal.rowTotal} grandTotal={grandTotalValue} officeValue={natOfficeValue} variant="grand" />
+                <TotalCells cell={matrix.companyTotal.rowTotal} grandTotal={grandTotalValue} officeValue={natOfficeValue} pharmacies={natPharmacyTotal} variant="grand" />
               </tr>
             ) : null}
           </tbody>

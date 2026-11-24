@@ -6,6 +6,7 @@ import { useMemo, useState, useTransition } from "react";
 
 import { ClosingDetailsPanel } from "@/components/sales/closing-details-panel";
 import { ClosingMatrixTable } from "@/components/sales/closing-matrix-table";
+import { useClosingPharmacies } from "@/components/sales/use-closing-pharmacies";
 import { PortalRepClosingList } from "@/components/sales/portal-rep-closing-list";
 import { formatPeriod } from "@/components/sales/target-visuals";
 import {
@@ -82,6 +83,14 @@ export function PortalMonthlyClosingView({ matrix, office = null, line, availabl
   const filteredOffice = useMemo(
     () => (office ? filterMonthlyClosingMatrix(office, filter) : null),
     [office, filter],
+  );
+
+  // The Pharmacies column — managers only, their own team (owner, 24 Nov 2026). A Medical Rep's
+  // stacked view carries no matrix columns, so nothing is read for him.
+  const pharmacies = useClosingPharmacies(
+    !isMedicalRep && line && selectedPeriod
+      ? `/api/employee-portals/monthly-closing/pharmacies?${new URLSearchParams({ line, period: selectedPeriod }).toString()}`
+      : null,
   );
 
   // Same option-building the admin workspace uses — regions/areas/products drawn from the (already
@@ -322,7 +331,12 @@ export function PortalMonthlyClosingView({ matrix, office = null, line, availabl
               isMedicalRep ? (
                 <PortalRepClosingList matrix={filteredMatrix} />
               ) : (
-                <ClosingMatrixTable matrix={filteredMatrix} office={filteredOffice} />
+                <ClosingMatrixTable
+                  matrix={filteredMatrix}
+                  office={filteredOffice}
+                  pharmacies={pharmacies.counts}
+                  pharmaciesNote={pharmacies.note}
+                />
               )
             ) : (
               <p className="px-4 py-8 text-center text-sm text-slate-500">
