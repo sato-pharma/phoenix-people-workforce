@@ -12,6 +12,7 @@ import {
   loadMonthlyClosingChannelComparison,
 } from "@/lib/sales/monthly-closing-channel-comparison";
 import { gateClosingDetailsPeriod } from "@/lib/sales/closing-details-publication-gate";
+import { loadAdminClosingPharmacyCounts, loadPortalClosingPharmacyCounts } from "@/lib/sales/closing-pharmacy-counts-loader";
 import { type ClosingDetailsFilters, loadMonthlyClosingDetails } from "@/lib/sales/monthly-closing-details";
 import { maskedClosingClientCodes, withoutMaskedSourceRows } from "@/lib/sales/closing-source-mask";
 import { resolveClosingFileName } from "@/lib/sales/closing-export-file-name";
@@ -324,6 +325,14 @@ export async function POST(request: Request) {
       // Completeness sheet data, started alongside the heavy reads. Degrades to null (the sheet
       // is omitted) rather than ever costing the workbook.
       const coveragePromise = loadMonthlySourceCoverage(matrix.line, matrix.period, access).catch(() => null);
+      // The Pharmacies column and the "Pharmacies by Brick" sheet — the SAME read the screen's column
+      // makes, so the workbook and the screen count the same pharmacies. Degrades to null (no column,
+      // no sheet) rather than ever costing the workbook.
+      const pharmaciesPromise = matrix.line && matrix.period
+        ? loadAdminClosingPharmacyCounts({ access, line: matrix.line, periods: [matrix.period] })
+          .then((result) => (result.ok ? result.counts : null))
+          .catch(() => null)
+        : Promise.resolve(null);
 
       // Channel Comparison — the ONLY sheet that reaches outside the exported month, so it is the
       // only one the route has to fetch extra data for. It covers the whole line across every
@@ -584,6 +593,7 @@ export async function POST(request: Request) {
         // builds it from an aggregate that carries no customer and no distributor. So rather than
         // hide it, the note below states in words that these figures are the whole month's Office.
         office: officeGrid,
+        pharmacies: await pharmaciesPromise,
         // Whether the Office grid above is comparable with the matrix, which is what decides the
         // "Closing Matrix (No Office)" tab. Under a row-level filter it is NOT — the note three
         // lines up says so in words — and subtracting the whole month's Office from a narrowed
@@ -793,6 +803,11 @@ export async function POST(request: Request) {
           // The EPDA tab: the whole month's spread, drawn on this viewer's own matrix only.
           await loadClosingStoreSplit(details.line, details.period)
             .then((split) => split.epdaUnits ?? null)
+            .catch(() => null),
+          // Managers only, their own team — the same read as the portal screen's Pharmacies column.
+          // The loader refuses a Medical Rep; any failure leaves the column out, never the file.
+          await loadPortalClosingPharmacyCounts({ access, line: details.line, period: details.period })
+            .then((result) => (result.ok ? result.counts : null))
             .catch(() => null),
         )
       : await buildClosingDetailsWorkbook(shownDetails);

@@ -31,6 +31,7 @@ import { describePeriodSelection, periodLabel } from "@/lib/sales/monthly-closin
 import type { MonthlySourceCoverage } from "@/lib/sales/source-coverage";
 import { quietSourcesSentence } from "@/lib/sales/source-quiet-periods";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { useClosingPharmacies } from "@/components/sales/use-closing-pharmacies";
 import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 
@@ -142,6 +143,17 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
     () => (office ? filterMonthlyClosingMatrix(office, filter) : null),
     [office, filter],
   );
+
+  // The Pharmacies column (owner, 24 Nov 2026). Read for the line and months on screen, beside the
+  // matrix rather than inside its load, and looked up against the FILTERED grid by the table itself.
+  const pharmacyUrl = useMemo(() => {
+    if (!selectedLine || selectedPeriods.length === 0) return null;
+    const query = new URLSearchParams({ line: selectedLine });
+    if (selectedPeriods.length === 1) query.set("period", selectedPeriods[0]);
+    else query.set("periods", selectedPeriods.join(","));
+    return `/api/sales/monthly-closing/pharmacies?${query.toString()}`;
+  }, [selectedLine, selectedPeriods]);
+  const pharmacies = useClosingPharmacies(pharmacyUrl);
 
   // One plain-language sentence about completeness, or null to show nothing. Missing sources are
   // named (human names, standing rule) with their last-month scale, so "the number looks low"
@@ -967,7 +979,12 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
                     this fitting family-grain summary sits above it. Both are folded from the SAME
                     matrix object, so they cannot disagree. */}
                 <ClosingSummaryFits matrix={filteredMatrix} />
-                <ClosingMatrixTable matrix={filteredMatrix} office={filteredOffice} />
+                <ClosingMatrixTable
+                  matrix={filteredMatrix}
+                  office={filteredOffice}
+                  pharmacies={pharmacies.counts}
+                  pharmaciesNote={pharmacies.note}
+                />
               </>
             ) : (
               <ClosingDetailsPanel
