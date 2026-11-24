@@ -3,14 +3,18 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { writeAutomatedPayrollAudit } from "./audit.ts";
 import { getRunById } from "./draft-store.ts";
-import { validateNonEmployeePayrollInput } from "./non-employees.ts";
+import { getNonEmployeePayrollRows, validateNonEmployeePayrollInput } from "./non-employees.ts";
 import { actorId, assertAutomatedPayrollHrActor } from "./permissions.ts";
 import { holdRun } from "./run-hold.ts";
 import { seedRunFromStandingTransfers } from "./standing-transfers.ts";
 import { RUN_HOLD_ACTIONS } from "./transition-claim.ts";
 import type {
   MonthlySalaryRun,
+  NonEmployeePayrollRow,
   NonEmployeePart,
+  PreviousNonEmployeeCandidate,
+  PreviousNonEmployeeList,
+  PreviousRunCopyResult,
   RecurringNonEmployeeInput,
   RecurringNonEmployeeRow,
   RecurringSeedResult,
@@ -159,11 +163,47 @@ export async function addRecurringNonEmployee(
     .single();
   if (error) rethrowDuplicate(error, input.fullNameEn, part);
 
-  // No automated_payroll_audit row here on purpose: that table's run_id is a NOT
-  // NULL foreign key to a payroll run, and a register edit belongs to no run. The
-  // audit trail for the register is its own created_by/updated_at plus the
-  // `non_employee_recurring_seeded` row written the moment it first reaches a run.
-  return mapRow(data as Row);
+  const row = mapRow(data as Row);
+  await auditRosterChange(access, "non_employee_recurring_added", row);
+  return row;
+}
+
+/**
+ * EVERY CHANGE TO THE STANDING LIST IS RECORDED (owner, 2026-11-24, after November's Part 1 opened with
+ * no non-employees). This file used to say a register edit could not be audited because the audit
+ * table's run_id was NOT NULL — it never was. So the list wrote nothing, all seven standing entries
+ * were removed between 6 October and 13 November 2026, and nothing anywhere said who removed them.
+ * The row carries no run (a register change belongs to none); best-effort like every audit row.
+ */
+async function auditRosterChange(
+  access: AccessContext,
+  action: "non_employee_recurring_added" | "non_employee_recurring_updated" | "non_employee_recurring_deleted",
+  row: RecurringNonEmployeeRow,
+  before?: RecurringNonEmployeeRow,
+): Promise<void> {
+  await writeAutomatedPayrollAudit({
+    runId: null,
+    actorHrId: actorId(access),
+    action,
+    detail: {
+      recurringId: row.id,
+      part: row.part,
+      fullNameEn: row.fullNameEn,
+      fullNameAr: row.fullNameAr,
+      totalSalary: row.totalSalary,
+      bankName: row.bankName,
+      active: row.active,
+      ...(before
+        ? { before: { part: before.part, totalSalary: before.totalSalary, bankName: before.bankName, active: before.active } }
+        : {}),
+    },
+  });
+}
+
+async function readRosterEntry(id: string): Promise<RecurringNonEmployeeRow | null> {
+  const { data, error } = await getSupabaseAdmin().from(TABLE).select("*").eq("id", id).maybeSingle();
+  if (error) throw error;
+  return data ? mapRow(data as Row) : null;
 }
 
 export async function updateRecurringNonEmployee(
@@ -188,6 +228,7 @@ export async function updateRecurringNonEmployee(
   if (input.part !== undefined) payload.part = input.part;
   if (input.active !== undefined) payload.active = input.active;
 
+  const before = await readRosterEntry(id);
   const { data, error } = await getSupabaseAdmin()
     .from(TABLE)
     .update(payload)
@@ -198,7 +239,9 @@ export async function updateRecurringNonEmployee(
     rethrowDuplicate(error, input.fullNameEn, isNonEmployeePart(input.part) ? input.part : "first");
   }
   if (!data) throw new Error("Not found: standing roster entry does not exist.");
-  return mapRow(data as Row);
+  const row = mapRow(data as Row);
+  await auditRosterChange(access, "non_employee_recurring_updated", row, before ?? undefined);
+  return row;
 }
 
 /**
@@ -208,8 +251,11 @@ export async function updateRecurringNonEmployee(
  */
 export async function deleteRecurringNonEmployee(access: AccessContext, id: string): Promise<void> {
   assertAutomatedPayrollHrActor(access);
+  // Read first, so the record names who was removed and what they were paid.
+  const before = await readRosterEntry(id);
   const { error } = await getSupabaseAdmin().from(TABLE).delete().eq("id", id);
   if (error) throw error;
+  if (before) await auditRosterChange(access, "non_employee_recurring_deleted", before);
 }
 
 // ---- Seeding a run ----------------------------------------------------------
@@ -458,5 +504,277 @@ export async function syncRunFromRecurring(
       heldBackPartClosed: [...roster.heldBackPartClosed, ...transfers.heldBackPartClosed],
       standingTransfersAdded: transfers.inserted,
     };
+  });
+}
+
+// ---- Copying last month's list ----------------------------------------------
+
+/**
+ * BRINGING BACK LAST MONTH'S NON-EMPLOYEES (owner, 2026-11-24: "in automated salary the non employees in
+ * part 1 disappeared"). All seven standing entries were removed between 6 October and 13 November 2026,
+ * so the November run opened on 22 November with nobody to copy. The earlier months still hold every
+ * person, amount and bank — so the screen shows the latest PUBLISHED month's list, HR ticks who comes
+ * back, and only then is anything written.
+ *
+ * Each person copied is put on this month's list at LAST MONTH'S amount (what HR was shown), and back on
+ * the standing list when they are not on it, so the month after seeds itself again. Nobody already on
+ * this month's list for that part is copied twice, and a part whose money is out is never added to.
+ */
+type IdentityFields = {
+  bankAccount?: string | null;
+  fullNameEn?: string | null;
+  fullNameAr?: string | null;
+};
+
+/**
+ * Every key a person can be recognised by — the account and both names. Matching on ANY shared key is
+ * the side that never pays twice: the standing list's unique index is on the name, and a row typed by
+ * hand may carry the account under a differently spelt name.
+ */
+function identityKeys(entry: IdentityFields): string[] {
+  const keys: string[] = [];
+  // Spaces, dashes and dots are how an account is typed, not part of it.
+  const account = String(entry.bankAccount ?? "").replace(/[^\p{L}\p{N}]+/gu, "").toLowerCase();
+  if (account) keys.push(`account:${account}`);
+  for (const name of [entry.fullNameEn, entry.fullNameAr]) {
+    const normal = String(name ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+    if (normal) keys.push(`name:${normal}`);
+  }
+  return keys;
+}
+
+function partLabel(part: NonEmployeePart): string {
+  return part === "first" ? "Part 1" : "Part 2";
+}
+
+/** Pure — the whole decision of who may be copied, so it is assertable without a database. */
+export function planPreviousRunCopy(input: {
+  previous: NonEmployeePayrollRow[];
+  roster: RecurringNonEmployeeRow[];
+  current: Array<IdentityFields & { part: NonEmployeePart; standingTransferId?: string | null }>;
+  phase: MonthlySalaryRun["phase"];
+}): PreviousNonEmployeeCandidate[] {
+  // A standing-transfer line (standing-transfers.ts) is part of an EMPLOYEE's salary, not the payee's
+  // own entry. It never counts as the payee being on this month's list (Anwar Gaweesh's 1,500 line and
+  // his own salary go to one account), and it is never offered for copying: the transfer seeds its own
+  // line every month it is due, so a copy would pay it twice and make it a permanent standing entry.
+  const onThisRun = new Set(
+    input.current
+      .filter((row) => !row.standingTransferId)
+      .flatMap((row) => identityKeys(row).map((key) => `${row.part}\u0000${key}`)),
+  );
+  const standing = new Map<string, string>();
+  for (const entry of input.roster) {
+    for (const key of identityKeys(entry)) {
+      const slot = `${entry.part}\u0000${key}`;
+      if (!standing.has(slot)) standing.set(slot, entry.id);
+    }
+  }
+
+  return input.previous.filter((row) => !row.standingTransferId).map((row) => {
+    const keys = identityKeys(row).map((key) => `${row.part}\u0000${key}`);
+    let blockedReason: string | null = null;
+    if (!partStillOpen(row.part, input.phase)) {
+      blockedReason = `${partLabel(row.part)} is already confirmed, so nobody can be added to it.`;
+    } else {
+      try {
+        validateNonEmployeePayrollInput({
+          fullNameAr: row.fullNameAr,
+          fullNameEn: row.fullNameEn,
+          totalSalary: row.totalSalary,
+          bankName: row.bankName,
+          bankAccount: row.bankAccount,
+          part: row.part,
+        });
+      } catch (error) {
+        blockedReason = String(error instanceof Error ? error.message : error).replace(/^Validation:\s*/, "");
+      }
+    }
+    return {
+      id: row.id,
+      part: row.part,
+      fullNameEn: row.fullNameEn,
+      fullNameAr: row.fullNameAr,
+      totalSalary: row.totalSalary,
+      bankName: row.bankName,
+      bankAccount: row.bankAccount,
+      blockedReason,
+      alreadyOnThisRun: keys.some((key) => onThisRun.has(key)),
+      standingEntryId: keys.map((key) => standing.get(key)).find(Boolean) ?? null,
+    };
+  });
+}
+
+/** "2026-10" → "October 2026". */
+function monthName(monthKey: string): string {
+  const [year, month] = monthKey.split("-").map(Number);
+  if (!year || !month) return monthKey;
+  return new Date(Date.UTC(year, month - 1, 1)).toLocaleString("en-GB", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/** The latest PUBLISHED run before this one — the last list that was actually paid. */
+async function previousPublishedRun(run: MonthlySalaryRun): Promise<{ id: string; monthKey: string } | null> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("automated_payroll_runs")
+    .select("id,month_key")
+    .eq("phase", "published")
+    .lt("month_key", run.monthKey)
+    .order("month_key", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? { id: String((data as Row).id), monthKey: String((data as Row).month_key) } : null;
+}
+
+/** Every standing entry, switched-off ones too — a switched-off entry is still that person's entry. */
+async function allRosterRows(): Promise<RecurringNonEmployeeRow[]> {
+  const { data, error } = await getSupabaseAdmin().from(TABLE).select("*");
+  if (error) {
+    if (isMissingTableError(error)) return [];
+    throw error;
+  }
+  return ((data ?? []) as Row[]).map(mapRow);
+}
+
+async function requireOpenRun(runId: string): Promise<MonthlySalaryRun> {
+  const run = await getRunById(runId);
+  if (!run) throw new Error("Not found: payroll run does not exist.");
+  if (run.phase === "published") throw new Error("Conflict: this run is already published.");
+  if (run.phase === "cancelled") throw new Error("Conflict: this run was cancelled.");
+  return run;
+}
+
+async function loadPreviousRunPlan(run: MonthlySalaryRun): Promise<PreviousNonEmployeeList> {
+  const previous = await previousPublishedRun(run);
+  if (!previous) return { fromRunId: null, fromMonthKey: null, candidates: [] };
+  const [previousRows, roster, current] = await Promise.all([
+    getNonEmployeePayrollRows(previous.id),
+    allRosterRows(),
+    getNonEmployeePayrollRows(run.id),
+  ]);
+  return {
+    fromRunId: previous.id,
+    fromMonthKey: previous.monthKey,
+    candidates: planPreviousRunCopy({ previous: previousRows, roster, current, phase: run.phase }),
+  };
+}
+
+/** What the screen shows before anything is copied. Reads only. */
+export async function previewPreviousRunNonEmployees(
+  access: AccessContext,
+  runId: string,
+): Promise<PreviousNonEmployeeList> {
+  assertAutomatedPayrollHrActor(access);
+  const run = await requireOpenRun(runId);
+  return loadPreviousRunPlan(run);
+}
+
+/**
+ * Copy the ticked people from last month's list. Under the run's hold, and the plan is worked out again
+ * inside it, so a person added or a part confirmed since the screen loaded is honoured.
+ */
+export async function copyPreviousRunNonEmployees(
+  access: AccessContext,
+  runId: string,
+  selectedIds: string[],
+): Promise<PreviousRunCopyResult> {
+  assertAutomatedPayrollHrActor(access);
+  if (selectedIds.length === 0) throw new Error("Validation: tick at least one person to copy.");
+  const run = await requireOpenRun(runId);
+  const actorHrId = actorId(access);
+
+  return holdRun({ runId, expected: [run.phase], action: RUN_HOLD_ACTIONS.nonEmployeeCopy }, async () => {
+    const fresh = await requireOpenRun(runId);
+    const plan = await loadPreviousRunPlan(fresh);
+    if (!plan.fromRunId || !plan.fromMonthKey) {
+      throw new Error("Not found: there is no earlier published month to copy from.");
+    }
+    const fromMonthKey = plan.fromMonthKey;
+    const byId = new Map(plan.candidates.map((candidate) => [candidate.id, candidate]));
+    if (selectedIds.some((id) => !byId.has(id))) {
+      throw new Error("Conflict: last month's list changed since this screen opened. Reload and tick again.");
+    }
+
+    const notCopied: PreviousRunCopyResult["notCopied"] = [];
+    const toCopy: PreviousNonEmployeeCandidate[] = [];
+    for (const id of new Set(selectedIds)) {
+      const candidate = byId.get(id);
+      if (!candidate) continue;
+      const name = candidate.fullNameEn || candidate.fullNameAr;
+      if (candidate.blockedReason) {
+        notCopied.push({ name, reason: candidate.blockedReason });
+      } else if (candidate.alreadyOnThisRun) {
+        notCopied.push({ name, reason: `already on this month's ${partLabel(candidate.part)} list.` });
+      } else {
+        toCopy.push(candidate);
+      }
+    }
+
+    const addedToStandingList: string[] = [];
+    const runRows: Row[] = [];
+    for (const candidate of toCopy) {
+      let recurringId = candidate.standingEntryId;
+      if (!recurringId) {
+        const { data, error } = await getSupabaseAdmin()
+          .from(TABLE)
+          .insert({
+            full_name_ar: candidate.fullNameAr.trim(),
+            full_name_en: candidate.fullNameEn.trim(),
+            total_salary: candidate.totalSalary,
+            bank_name: candidate.bankName?.trim() || null,
+            bank_account: candidate.bankAccount?.trim() || null,
+            part: candidate.part,
+            active: true,
+            note: `Brought back from the ${monthName(fromMonthKey)} list.`,
+            created_by: actorHrId,
+          })
+          .select("*")
+          .single();
+        if (error) rethrowDuplicate(error, candidate.fullNameEn, candidate.part);
+        const entry = mapRow(data as Row);
+        recurringId = entry.id;
+        addedToStandingList.push(`${entry.fullNameEn || entry.fullNameAr} (${partLabel(entry.part)})`);
+        await auditRosterChange(access, "non_employee_recurring_added", entry);
+      }
+      runRows.push({
+        run_id: runId,
+        recurring_id: recurringId,
+        full_name_ar: candidate.fullNameAr,
+        full_name_en: candidate.fullNameEn,
+        total_salary: candidate.totalSalary,
+        bank_name: candidate.bankName,
+        bank_account: candidate.bankAccount,
+        part: candidate.part,
+        created_by: actorHrId,
+      });
+    }
+
+    if (runRows.length > 0) {
+      const { error } = await getSupabaseAdmin().from(RUN_TABLE).insert(runRows);
+      if (error) throw error;
+    }
+
+    const copied = toCopy.map(
+      (candidate) => `${candidate.fullNameEn || candidate.fullNameAr} (${partLabel(candidate.part)})`,
+    );
+    await writeAutomatedPayrollAudit({
+      runId,
+      actorHrId,
+      action: "non_employee_copied_from_previous_run",
+      detail: {
+        fromRunId: plan.fromRunId,
+        fromMonthKey,
+        copied,
+        total: Math.round(toCopy.reduce((sum, candidate) => sum + candidate.totalSalary, 0) * 100) / 100,
+        addedToStandingList,
+        notCopied,
+      },
+    });
+
+    return { fromMonthKey, copied, addedToStandingList, notCopied };
   });
 }

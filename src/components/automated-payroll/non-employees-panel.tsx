@@ -13,6 +13,7 @@ import type {
 import { cn } from "@/lib/utils";
 
 import { formatPayrollMoney } from "./format";
+import { PreviousMonthNonEmployees } from "./previous-month-non-employees";
 import { RecurringNonEmployeesPanel } from "./recurring-non-employees-panel";
 import { WrappingTextField } from "./wrapping-text-field";
 
@@ -369,7 +370,9 @@ export function NonEmployeesPanel({ runId, part, locked, onChange, onDirtyChange
         <div className="border-l-4 border-slate-300 bg-slate-50 px-4 py-2.5 text-sm text-slate-600">
           Read-only — this can only be edited while {partLabel} is open.
         </div>
-      ) : null}
+      ) : (
+        <PreviousMonthNonEmployees runId={runId} onCopied={() => load()} />
+      )}
 
       {/* Desktop: a real table, so the admin shell's own black header and orange grid draw it (it was a grid of
           divs with a hand-painted header). Fits by MERGING — the English name over the Arabic, the bank over the

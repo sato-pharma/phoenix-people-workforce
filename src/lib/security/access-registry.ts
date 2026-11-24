@@ -760,6 +760,10 @@ export const accessRegistry = [
   // one-click GET, which decided by a token in the query string with no session, was removed on
   // 2026-10-26, and this entry used to call the whole route public-token.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/excuses/:id/decision", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // The Super Admin's Admin controls on one excuse (owner, 2026-11-24): PATCH edits, DELETE removes.
+  // No permission-matrix key exists for excuses, so the gate is the role check in the service
+  // (canManageExcuseRecords), which also writes the required audit row.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH", "DELETE"], pattern: "/api/excuses/:id", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/exports", permission: { resource: "probation", action: "export" }, guard: "domain-helper" }),
   // Split for the same reason the hiring pack below is: the blanket said `read` for a PATCH that
   // changes a checklist, and a registry that understates what a route can do is worse than no
@@ -1808,6 +1812,8 @@ export const accessRegistry = [
   // seeded from, plus the on-demand sync into an already-open run. Same
   // Super-Admin domain-helper gate as the per-run list above.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/automated-payroll/runs/:runId/non-employees/sync", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // Copy last published month's list back into an open run (owner, 2026-11-24) — GET previews, POST copies.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/automated-payroll/runs/:runId/non-employees/previous", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/automated-payroll/non-employee-recurring", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PUT", "DELETE"], pattern: "/api/automated-payroll/non-employee-recurring/:id", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/automated-payroll/finance", permission: null, guard: "domain-helper" }),

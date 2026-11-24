@@ -222,6 +222,17 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             emailRecipients: n("Direct manager"),
             sideEffects: "Moves returned_to_employee back to pending_manager.",
           },
+          {
+            id: "admin_edit",
+            name: "Super Admin edits or deletes the request",
+            actor: "Super Admin",
+            role: "Super Admin only (Admin controls on the request page)",
+            statusProduced: "any status, or deleted",
+            notificationRecipients: [],
+            emailRecipients: [],
+            sideEffects:
+              "Corrects the type, date, status or reply (updateExcuseRequestAsAdmin) or removes the row (deleteExcuseRequestAsAdmin); a status changed to a decision is recorded as the Super Admin's, never the manager's; a required audit row keeps the old and new values. Nobody is notified. The status of the Super Admin's own request is refused.",
+          },
         ],
       },
     ],

@@ -5,6 +5,7 @@ import { adminPanelClassName, adminPanelHeaderClassName, adminSoftPanelClassName
 import type { ExcuseApprovalDetail } from "@/lib/approvals-hub/service";
 import { requestStatusLabel } from "@/lib/approvals-hub/request-status-label";
 import { DecisionActions } from "@/components/approvals-hub/decision-actions";
+import { ExcuseAdminControls } from "@/components/approvals-hub/excuse-admin-controls";
 
 type Props = {
   detail: ExcuseApprovalDetail;
@@ -82,6 +83,7 @@ export function ExcuseRequestDetail({ detail, backHref }: Props) {
             backHref={backHref}
           />
         ) : null}
+        {detail.canAdminManage ? <ExcuseAdminControls backHref={backHref} row={req} /> : null}
       </div>
     </div>
   );

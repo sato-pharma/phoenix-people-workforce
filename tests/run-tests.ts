@@ -1372,6 +1372,7 @@ import { runSosInvoiceDateTests } from "./sos-invoice-date.test.ts";
 import { runSystemCleanupCenterTests } from "./system-cleanup-center.test.ts";
 import { runExcusesTests } from "./excuses.test.ts";
 import { runExcuseManagerGapTests } from "./excuse-manager-gap.test.ts";
+import { runExcuseAdminControlsTests } from "./excuse-admin-controls.test.ts";
 import { runExpenseAccessScopeTests } from "./expense-access-scope.test.ts";
 import { runRlsFallbackDoorTests } from "./rls-fallback-door.test.ts";
 import { runSalesPayrollHierarchyScopeTests } from "./sales-payroll-hierarchy-scope.test.ts";
@@ -1758,6 +1759,7 @@ import { runDeductionOpenStepSavedFigureTests } from "./deduction-open-step-save
 import { runAutomatedPayrollCellHistoryTests } from "./automated-payroll-cell-history.test.ts";
 import { runAutomatedPayrollDayCollisionTests } from "./automated-payroll-day-collisions.test.ts";
 import { runAutomatedPayrollNonEmployeeSeedingTests } from "./automated-payroll-non-employee-seeding.test.ts";
+import { runAutomatedPayrollNonEmployeeCopyPreviousTests } from "./automated-payroll-non-employee-copy-previous.test.ts";
 import { runAutomatedPayrollFailClosedReadTests } from "./automated-payroll-fail-closed-reads.test.ts";
 import { runPayrollPayslipNoticeTests } from "./payroll-payslip-notice.test.ts";
 import { runPayrollSameMonthJoinerLeaverTests } from "./payroll-same-month-joiner-leaver.test.ts";
@@ -3821,6 +3823,10 @@ await runTest(
 await runTest(
   "automated payroll: the standing roster never pays twice, nor adds to an instalment already paid",
   runAutomatedPayrollNonEmployeeSeedingTests,
+);
+await runTest(
+  "automated payroll: last month's non-employees can be copied back, never twice, and every standing-list change is recorded",
+  runAutomatedPayrollNonEmployeeCopyPreviousTests,
 );
 await runTest(
   "automated payroll: a failed read does not look like a quiet month",
@@ -6185,6 +6191,7 @@ await runTest("sos invoice date", runSosInvoiceDateTests);
 await runTest("system cleanup center", runSystemCleanupCenterTests);
 await runTest("excuses", runExcusesTests);
 await runTest("excuse manager gap listing (stuck-approval detection + daily cron)", runExcuseManagerGapTests);
+await runTest("excuse admin controls (Super Admin edit and delete)", runExcuseAdminControlsTests);
 await runTest("expense access scope (PM/GPM/TM self+reports)", runExpenseAccessScopeTests);
 await runTest("payroll and outstation reads go through one logged row-security door and re-narrow their rows (audit L10)", runRlsFallbackDoorTests);
 await runTest("sales + payroll TEAM/HIERARCHY seat-continuity scope (resolver adoption)", runSalesPayrollHierarchyScopeTests);
