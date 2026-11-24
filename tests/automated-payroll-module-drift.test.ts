@@ -11,6 +11,7 @@ import {
   MODULE_SOURCED_STEP_KEYS,
   pricedMoneyField,
   RECOMMENDED_AT_CONFIRM_KEY,
+  repeatedInAnotherColumn,
   snapshotFromSummary,
   snapshotRecommendations,
   stepsWhereModuleMoved,
@@ -163,7 +164,7 @@ export function runAutomatedPayrollModuleDriftTests() {
     stepKey: "p1_other_deductions",
     rows: [row({ hrId: "A-10", fullName: "Nahed", recommended: { p1odOtherValue: 0 } })],
     snapshot: {},
-    chargedByCompact: { a10: { p1odOtherValue: 2931 } },
+    chargedByCompact: { a10: { p1odOtherValue: 2931, fingerprintValue: 2933.32 } },
   });
   assert.equal(
     unbacked.rows.length,
@@ -189,6 +190,45 @@ export function runAutomatedPayrollModuleDriftTests() {
   assert.match(describeModuleDrift(unbacked), /no approved deduction behind them/);
   assert.match(describeModuleDrift(unbacked), /2931\.00/, "the sentence names the money, not a count");
 
+  // AN UNBACKED CHARGE NOTHING ELSE ON THE ROW REPEATS IS NOT REPORTED (owner, 2026-11-24: "make
+  // this not block this", then "Hide it when no repeat"). Live November 2026: Esraa Ahmed Elshahat
+  // Mohamed (B-40), 1,133.33 typed on Resignations CRM, every other deduction column on her row 0 or
+  // empty — the warning's own remedy ("clear it only where the same money is charged in another
+  // column") had nothing to check. Day counts and additions on the row are not "another column".
+  const alone = detectModuleDrift({
+    stepKey: "p1_resignation_crm",
+    rows: [row({ hrId: "B-40", fullName: "Esraa Ahmed", recommended: { crm: 0, resignationCrmDays: 0 } })],
+    snapshot: { b40: { crm: 0, resignationCrmDays: 0 } },
+    chargedByCompact: {
+      b40: { crm: 1133.33, resignationCrmDays: 2, p1odOtherValue: 0, unpaidVacations: 0, ecolPaid: 133.33 },
+    },
+  });
+  assert.equal(alone.unbackedCharges, 0, "a typed charge no other column repeats raises no warning");
+  assert.deepEqual(alone.rows, [], "and leaves no row in the Show-who list");
+  const repeated = detectModuleDrift({
+    stepKey: "p1_resignation_crm",
+    rows: [row({ hrId: "B-40", fullName: "Esraa Ahmed", recommended: { crm: 0, resignationCrmDays: 0 } })],
+    snapshot: { b40: { crm: 0, resignationCrmDays: 0 } },
+    chargedByCompact: { b40: { crm: 1133.33, resignationCrmDays: 2, p1odNoRecordValue: 566.67 } },
+  });
+  assert.equal(repeated.unbackedCharges, 1, "the same row with money in another deduction column is still reported");
+  assert.equal(repeated.staleCharges, 0, "and still never blocks");
+  assert.equal(
+    repeatedInAnotherColumn({ unpaidVacations: 241.94 }, "p1odVacationValue", "unpaidVacations"),
+    false,
+    "a leaver's own Unpaid Vacation column is the figure itself, never another column",
+  );
+  assert.equal(
+    repeatedInAnotherColumn({ crm: 500, fingerprintValue: 0, overtime: 900 }, "p1odOtherValue", "p1odOtherValue"),
+    true,
+    "a real charge in another deduction column counts",
+  );
+  assert.equal(
+    repeatedInAnotherColumn({ overtime: 900, incentive: 60000, p1odOtherDays: 2 }, "p1odOtherValue", "p1odOtherValue"),
+    false,
+    "additions and day counts are never a repeat",
+  );
+
   // A LOAN typed on Part 1 is already inside the frozen first part once Part 1 is confirmed — paid,
   // nothing left to clear (owner, 2026-11-09: Mahmoud Ibrahim Ahmed Mohamed (A-1), 1,250.00 loan,
   // "already deducted from him first part"). Hidden then; still shown before; "Other" never hidden.
@@ -197,7 +237,7 @@ export function runAutomatedPayrollModuleDriftTests() {
       stepKey: "p1_other_deductions",
       rows: [row({ hrId: "A-1", fullName: "Mahmoud", recommended: { [field]: 0 } })],
       snapshot: {},
-      chargedByCompact: { a1: { [field]: 1250 } },
+      chargedByCompact: { a1: { [field]: 1250, fingerprintValue: 400 } },
       part1Confirmed,
     }).unbackedCharges;
   assert.equal(typedLoan(true, "p1odLoanValue"), 0, "a typed Part 1 loan is not reported once Part 1 is paid");
@@ -612,7 +652,7 @@ export function runAutomatedPayrollModuleDriftTests() {
       }),
     ],
     snapshot: { a10: { p1odOtherDays: 0, p1odOtherValue: 0 } },
-    chargedByCompact: { a10: { p1odOtherDays: 2, p1odOtherValue: 2931 } },
+    chargedByCompact: { a10: { p1odOtherDays: 2, p1odOtherValue: 2931, fingerprintValue: 2933.32 } },
   });
   assert.deepEqual(
     typedDays.rows.filter((r) => r.proposedNow === 0 && r.charged > 0).map((r) => r.field),

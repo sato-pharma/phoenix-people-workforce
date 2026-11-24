@@ -136,6 +136,55 @@ export function chargedFieldFor(stepKey: StepKey, field: string, lifecycle: Step
   return field;
 }
 
+/**
+ * Every draft column that CHARGES money — the columns an unbacked charge could be repeating.
+ *
+ * Day counts, reasons, additions, expenses, held releases and deferrals are left out on purpose:
+ * none of them is a deduction, so none of them can be "the same money charged in another column".
+ */
+export const DEDUCTION_MONEY_COLUMNS: readonly string[] = [
+  "fingerprintValue",
+  "unpaidVacations",
+  "crm",
+  "manualOtherDeductions",
+  "p1odCrmValue",
+  "p1odVacationValue",
+  "p1odNoRecordValue",
+  "p1odLoanValue",
+  "p1odOtherValue",
+  "specialDeductionValue",
+];
+
+/**
+ * Whether another deduction column on the SAME employee's row charges money too.
+ *
+ * 🔴 AN UNBACKED CHARGE NOTHING ELSE ON THE ROW REPEATS IS NOT REPORTED (owner, 2026-11-24, of
+ * Esraa Ahmed Elshahat Mohamed's 1,133.33 typed on Resignations CRM: "make this not block this",
+ * then "Hide it when no repeat"). The finding's own remedy was "clear the figure only where the same
+ * money is already being charged in another column" — so a row where every other deduction column
+ * is empty has nothing to check, and the warning only asked him to look at a figure he had just
+ * typed. Where another column DOES carry money the row is still reported: that is the exact shape
+ * of September 2026's double-charged lateness (Nahed Tarek Hattab, 2,931.00 Other beside 2,933.32
+ * Fingerprint for the same six days).
+ *
+ * Both `field` and `chargedField` are the figure's own column (a leaver's Unpaid Vacation lives in
+ * `unpaidVacations`, see `chargedFieldFor`), so neither counts as "another" column.
+ */
+export function repeatedInAnotherColumn(
+  draftFields: Record<string, number>,
+  field: string,
+  chargedField: string,
+): boolean {
+  return DEDUCTION_MONEY_COLUMNS.some(
+    (column) =>
+      column !== field &&
+      column !== chargedField &&
+      typeof draftFields[column] === "number" &&
+      Number.isFinite(draftFields[column]) &&
+      draftFields[column] > 0,
+  );
+}
+
 /** Classify a history entry's reason into who set the figure. */
 export function chargeSourceKind(writeReason: string | null | undefined): ChargeSource["kind"] {
   if (writeReason === "step_saved") return "typed";
@@ -340,6 +389,12 @@ export function detectModuleDrift(input: {
         input.stepKey === "p1_other_deductions" &&
         field === "p1odLoanValue"
       ) {
+        continue;
+      }
+      // An unbacked charge no other deduction column on the row repeats — see
+      // `repeatedInAnotherColumn`. Only with the draft in hand: without it there is no row to read,
+      // and the older reading (report it) stands.
+      if (unbacked && atConfirm === 0 && draftFields && !repeatedInAnotherColumn(draftFields, field, chargedField)) {
         continue;
       }
 
