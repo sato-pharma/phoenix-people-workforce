@@ -69,9 +69,12 @@ export function runPrivateCalendarsAdminAnyEmployeeTests() {
 
   // The pool is the directory itself.
   assert.ok(
-    /const pool = statusFilter === "all" \? allEmployees : allEmployees\.filter\(isWorking\)/.test(source),
+    /const pool = statusFilter === "all"\s*\? allEmployees\s*: statusFilter === "left"\s*\? allEmployees\.filter\(\(emp\) => !isWorking\(emp\)\)\s*: allEmployees\.filter\(isWorking\)/.test(source),
     "the candidate pool must be the whole directory, narrowed only by the employment-status choice",
   );
+  // A leaver can be listed on his own (owner, 2026-11-24: "make me able to filter and choose even if
+  // employee is resigned").
+  assert.ok(source.includes('<option value="left">'), "the status filter offers the people who have left on their own");
 
   // 2. Every filter is both offered and applied.
   const filters: Array<{ key: string; applied: RegExp }> = [

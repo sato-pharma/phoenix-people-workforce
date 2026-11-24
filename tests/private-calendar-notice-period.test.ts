@@ -7,6 +7,8 @@ import {
   isWithinNoticePeriod,
   type EmployeeDirectoryRow,
 } from "../src/lib/employees/employee-directory.ts";
+import type { AccessContext } from "../src/lib/auth/permissions.ts";
+import { privateCalendarRosterForRequest } from "../src/lib/private-calendar/roster.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // A NOTICE PERIOD IS STILL WORK — the Private Calendar reads a leaver until the day AFTER his exit.
@@ -137,8 +139,13 @@ export function runPrivateCalendarNoticePeriodTests() {
   );
   assert.equal(
     (service.match(/await privateCalendarEmployees\(start\)/g) ?? []).length,
-    2,
-    "both calendar reads — the month workspace and the day-evidence door — use it",
+    1,
+    "the day-evidence door reads exactly the notice-period roster",
+  );
+  assert.match(
+    service,
+    /const employees = privateCalendarRosterForRequest\(\{[\s\S]*?allRows: await getEmployeeDirectoryRows\(\{ includeInactive: true \}\)/,
+    "the month workspace reads the same roster through privateCalendarRosterForRequest",
   );
 
   const noActivity = service.slice(service.indexOf("export async function getCompanyNoActivityDays"));
@@ -152,6 +159,35 @@ export function runPrivateCalendarNoticePeriodTests() {
     noActivityBody,
     /ACTIVE ONLY, deliberately/,
     "and it says so in the code, so nobody later 'fixes' it to match the calendar",
+  );
+
+  // ── 4b. A global viewer opens a leaver's calendar for ANY month (owner, 2026-11-24) ──────────
+  // "i need in private calendars for resignations to be also available for me to see and check if
+  // anyone asked about details … even if employee is resigned". The roster alone drops a leaver the
+  // day after his exit, so opening his calendar for a later month threw "Selected employee was not
+  // found." and his review requests could not be read at all.
+  const superAdmin = { hrId: "b-10", role: "Super Admin", scope: "company" } as unknown as AccessContext;
+  const manager = { hrId: "b-50", role: "District Manager", scope: "team" } as unknown as AccessContext;
+  const stillHere = employee({ hrId: "B-200" });
+  const rows = [stillHere, alreadyLeft];
+  const hrIds = (list: EmployeeDirectoryRow[]) => list.map((row) => row.hrId);
+  const ask = (
+    access: AccessContext,
+    requested: string | null,
+    viewMode: "employee" | "team" = "employee",
+    fromDate = "2026-11-01",
+  ) => hrIds(privateCalendarRosterForRequest({ access, allRows: rows, fromDate, requestedEmployeeHrId: requested, viewMode }));
+
+  assert.deepEqual(ask(superAdmin, "B-182"), ["B-200", "B-182"], "the Super Admin opens a leaver by HR id after his exit month");
+  assert.deepEqual(ask(superAdmin, "b-182"), ["B-200", "B-182"], "the HR id is read case-blind");
+  assert.deepEqual(ask(superAdmin, null), ["B-200"], "nobody asked for, no leaver added");
+  assert.deepEqual(ask(superAdmin, "B-182", "team"), ["B-200"], "the team view keeps the roster as it was");
+  assert.deepEqual(ask(manager, "B-182"), ["B-200"], "only a global viewer reaches a leaver past his exit day");
+  assert.deepEqual(ask(superAdmin, "B-200"), ["B-200"], "someone already on the roster is not added twice");
+  assert.deepEqual(
+    ask(superAdmin, "B-182", "employee", "2026-10-01"),
+    ["B-200", "B-182"],
+    "inside his notice window he is on the roster already, and appears once",
   );
 
   // ── 5. The door writes no entry for an employee it never read ────────────────────────────────

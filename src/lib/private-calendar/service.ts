@@ -60,6 +60,7 @@ import {
   type PrivateCalendarWorkspace,
 } from "@/lib/private-calendar/logic";
 import { summarizePrivateCalendarVisits } from "@/lib/private-calendar/activity-kinds";
+import { privateCalendarRosterForRequest } from "@/lib/private-calendar/roster";
 
 type VacationCalendarRow = {
   day_part: string | null;
@@ -443,7 +444,16 @@ export async function getPrivateCalendarWorkspace(input: {
   await assertPermission(input.access, "attendance", "read");
 
   const { start, end } = monthBounds(input.year, input.month);
-  const employees = await privateCalendarEmployees(start);
+  const viewMode = normalizeViewMode(input.viewMode);
+  // A global viewer who asks for one person who has already left gets that person's calendar too —
+  // his review requests stay readable after his exit day (privateCalendarRosterForRequest).
+  const employees = privateCalendarRosterForRequest({
+    access: input.access,
+    allRows: await getEmployeeDirectoryRows({ includeInactive: true }),
+    fromDate: start,
+    requestedEmployeeHrId: input.employeeHrId,
+    viewMode,
+  });
   const globalHrIds = configuredPrivateCalendarGlobalHrIds();
   const byCanonicalHrId = buildPrivateCalendarHierarchyIndex(employees);
   const visibleEmployees = sortEmployees(
@@ -455,7 +465,6 @@ export async function getPrivateCalendarWorkspace(input: {
     requestedEmployeeHrId: input.employeeHrId,
     visibleEmployees,
   });
-  const viewMode = normalizeViewMode(input.viewMode);
   const scopeEmployees = viewMode === "team" ? visibleEmployees : [selectedEmployee];
   const scopeHrIds = scopeEmployees.map((employee) => employee.hrId);
 
