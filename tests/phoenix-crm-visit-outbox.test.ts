@@ -13,7 +13,7 @@ import {
   waitingCustomerIds,
   type OutboxDeps,
 } from "../src/lib/phoenix-crm/visit-outbox.ts";
-import { VISIT_OUTBOX_MAX_ENTRIES, VISIT_RESEND_GAP_MS, type QueuedVisit } from "../src/lib/phoenix-crm/visit-resend-rules.ts";
+import { MANAGER_SINGLE_VISIT, VISIT_OUTBOX_MAX_ENTRIES, VISIT_RESEND_GAP_MS, type QueuedVisit } from "../src/lib/phoenix-crm/visit-resend-rules.ts";
 import { markVisitsCanBeHeld, visitsCanBeHeldNow } from "../src/components/phoenix-crm/visit-hold-signal.ts";
 
 /**
@@ -74,6 +74,8 @@ type Harness = {
   deps: OutboxDeps;
   storage: FakeStorage;
   sent: Array<Record<string, unknown>>;
+  /** What each send was handed beside its body: the entry, whose kind names the route. */
+  sentEntries: QueuedVisit[];
   reports: Array<{ visitId: string; outcome: string; queuedSeconds: number | null }>;
   reportedCodes: Array<string | null>;
   sleeps: number[];
@@ -91,10 +93,13 @@ function harness(options: {
   personHrId?: string;
   statusFails?: boolean | (() => boolean);
   send?: OutboxDeps["send"];
+  /** Files a late visit; absent, the phone has no filing (as before 24 Nov 2026). */
+  fileLate?: OutboxDeps["fileLate"];
 } = {}): Harness {
   const storage = new FakeStorage();
   for (const held of options.entries ?? []) keepQueuedVisit(storage, ME, held);
   const sent: Harness["sent"] = [];
+  const sentEntries: QueuedVisit[] = [];
   const reports: Harness["reports"] = [];
   const reportedCodes: Harness["reportedCodes"] = [];
   const sleeps: number[] = [];
@@ -110,10 +115,12 @@ function harness(options: {
       if (fails) throw new Error("no signal");
       return { enabled: options.enabled ?? true, personHrId: options.personHrId ?? ME, savedVisitIds: options.savedVisitIds ?? [], serverNowMs: options.serverNowMs ?? SERVER_NOON };
     },
-    send: async (body) => {
+    send: async (body, held) => {
       sent.push(body);
-      return options.send ? options.send(body) : { duplicate: false };
+      sentEntries.push(held);
+      return options.send ? options.send(body, held) : { duplicate: false };
     },
+    ...(options.fileLate ? { fileLate: options.fileLate } : {}),
     report: (held, outcome, queuedSeconds) => {
       reports.push({ visitId: held.visitId, outcome, queuedSeconds });
       reportedCodes.push(held.refusalCode);
@@ -125,7 +132,7 @@ function harness(options: {
       changes += 1;
     },
   };
-  return { deps, storage, sent, reports, reportedCodes, sleeps, statusReads, changes: () => changes, held: () => readQueuedVisits(storage, ME) };
+  return { deps, storage, sent, sentEntries, reports, reportedCodes, sleeps, statusReads, changes: () => changes, held: () => readQueuedVisits(storage, ME) };
 }
 
 export async function runPhoenixCrmVisitOutboxTests(): Promise<void> {
@@ -141,6 +148,128 @@ export async function runPhoenixCrmVisitOutboxTests(): Promise<void> {
   checkTheFormKeepsThePressFirst();
   await checkAnotherPersonSignedIn();
   await checkTheCloseIsStrict();
+  await checkAManagersOwnSingleVisit();
+  await checkALateVisitIsFiled();
+}
+
+/**
+ * A visit past its window is FILED whole for the Super Admin, never sent and never left for the person to remember
+ * (owner, 24 Nov 2026: "never any visit to be lost", then "SUPER ADMIN APPROVE IT ONLY SUPER ADMIN").
+ */
+async function checkALateVisitIsFiled(): Promise<void> {
+  const filedEntries: QueuedVisit[] = [];
+  const late = harness({ entries: [entry()], nowMs: START + 121 * 60_000, fileLate: async (held) => void filedEntries.push(held) });
+  assert.equal(await drainVisitOutbox(late.deps), 0);
+  assert.equal(late.sent.length, 0, "🔴 a late visit is never SENT: it would be dated on arrival");
+  assert.equal(filedEntries.length, 1, "🔴 it is filed for the Super Admin");
+  assert.equal(filedEntries[0]?.body.comment, "Saw the doctor", "whole, the very body of the press");
+  assert.equal(late.held()[0]?.status, "filed", "and the phone says it was sent for approval");
+  assert.equal(late.reports[0]?.outcome, "timed_out");
+
+  // Across 02:00 too.
+  const crossed = harness({
+    entries: [entry()],
+    nowMs: START + 20 * 60_000,
+    serverNowMs: Date.parse("2026-11-03T00:10:00.000Z"),
+    fileLate: async () => undefined,
+  });
+  await drainVisitOutbox(crossed.deps);
+  assert.equal(crossed.held()[0]?.status, "filed");
+
+  // No signal while filing: nothing is decided, it waits for the next pass.
+  const offline = harness({
+    entries: [entry(), entry({ visitId: "visit-2", pressedAtMs: START + 60_000 })],
+    nowMs: START + 125 * 60_000,
+    fileLate: async () => {
+      throw { code: "offline", message: "No connection." };
+    },
+  });
+  assert.equal(await drainVisitOutbox(offline.deps), 2, "🔴 both still waiting: a dropped signal decides nothing");
+  assert.equal(offline.reports.length, 0);
+
+  // 🔴 A server error is not a refusal: the visit keeps waiting and is filed on a later pass, never left to be lost.
+  const serverDown = harness({
+    entries: [entry()],
+    nowMs: START + 121 * 60_000,
+    fileLate: async () => {
+      throw { code: "failed", message: "Could not save this visit.", status: 503 };
+    },
+  });
+  assert.equal(await drainVisitOutbox(serverDown.deps), 1, "🔴 a server error leaves it waiting");
+  assert.equal(serverDown.held()[0]?.status, "waiting");
+
+  // Refused (a test persona, the switch flipped between reads): the person logs it again, as before filing existed.
+  const refused = harness({
+    entries: [entry()],
+    nowMs: START + 121 * 60_000,
+    fileLate: async () => {
+      throw { code: "late_visit_not_filed", message: "Not filed." };
+    },
+  });
+  await drainVisitOutbox(refused.deps);
+  assert.equal(refused.held()[0]?.status, "too_late");
+
+  // Switched off: never filed, never sent.
+  let filedWhileOff = 0;
+  const off = harness({ entries: [entry()], enabled: false, fileLate: async () => void (filedWhileOff += 1) });
+  await drainVisitOutbox(off.deps);
+  assert.equal(filedWhileOff, 0, "switched off, nothing is filed either");
+  assert.equal(off.held()[0]?.status, "too_late");
+
+  // A filed visit is safe off the phone, so it gives up its place to a new press on a full phone.
+  const full = new FakeStorage();
+  for (let index = 0; index < VISIT_OUTBOX_MAX_ENTRIES; index += 1) {
+    keepQueuedVisit(full, ME, entry({ visitId: `full-${index}`, status: index === 3 ? "filed" : "waiting", pressedAtMs: START + index }));
+  }
+  assert.equal(keepQueuedVisit(full, ME, entry({ visitId: "new-press" })), true, "🔴 a new press is kept on a full phone holding a filed visit");
+  assert.equal(readQueuedVisits(full, ME).some((held) => held.visitId === "full-3"), false, "the filed one went");
+  assert.equal(keepQueuedVisit(full, ME, entry({ visitId: "another-press" })), false, "with nothing filed left, a full phone still refuses");
+  assert.equal(readQueuedVisits(full, ME).length, VISIT_OUTBOX_MAX_ENTRIES);
+}
+
+/**
+ * A manager's own single visit is held on his phone too (owner, 24 Nov 2026: "never any visit to be lost from either a
+ * rep or from the manager"). It sends to its own route, and the territory screens never take it for one of theirs.
+ */
+async function checkAManagersOwnSingleVisit(): Promise<void> {
+  const territory = entry({ visitId: "visit-1", customerId: "customer-1" });
+  const single = entry({ visitId: "ref-1", customerId: "customer-1", kind: MANAGER_SINGLE_VISIT, body: { clientRef: "ref-1", customerId: "customer-1" } });
+
+  const both = harness({ entries: [territory, single] });
+  assert.equal(both.held().length, 2, "both are on the phone");
+  assert.equal(findHeldVisit([single], { seatId: "seat-1", customerId: "customer-1", pressedDay: "2026-11-03" }), null, "🔴 a territory visit never reuses the id of his own single visit");
+  assert.equal(findHeldVisit(both.held(), { seatId: "seat-1", customerId: "customer-1", pressedDay: "2026-11-03" })?.visitId, "visit-1");
+  assert.equal(waitingCustomerIds([single], "seat-1").size, 0, "and the territory's list does not hide the customer for it");
+
+  await drainVisitOutbox(both.deps);
+  assert.equal(both.sentEntries.length, 2, "🔴 his own single visit is sent by the same pass");
+  assert.equal(both.sentEntries.find((held) => held.visitId === "ref-1")?.kind, MANAGER_SINGLE_VISIT, "and the send is told what it is, so it goes to its own route");
+  assert.equal(both.held().length, 0, "landed, both leave the phone");
+
+  // Already on file under its client ref: settled with no second POST.
+  const landed = harness({ entries: [single], savedVisitIds: ["ref-1"] });
+  await drainVisitOutbox(landed.deps);
+  assert.equal(landed.sent.length, 0, "a single visit that had landed is not sent again");
+  assert.deepEqual(landed.reports.map((report) => report.outcome), ["already_saved"]);
+
+  // A kind this code does not know is never read, so it can never be sent to the wrong route.
+  const storage = new FakeStorage();
+  storage.setItem(ownerScopedStorageKey(VISIT_OUTBOX_KEY_BASE, ME) ?? "", JSON.stringify([{ ...entry(), kind: "something_else" }]));
+  assert.equal(readQueuedVisits(storage, ME).length, 0);
+
+  const engine = stripComments(readFileSync("src/components/phoenix-crm/visit-outbox-engine.ts", "utf8"));
+  assert.match(engine, /if \(isManagerSingleVisit\(entry\)\) \{[\s\S]*?crmPostWithin<unknown>\(MANAGER_SINGLE_VISIT_PATH, visit, "today", VISIT_SAVE_TIMEOUT_MS\)/, "🔴 it is sent to My single visits' own route");
+  const status = stripComments(readFileSync("src/lib/phoenix-crm/server/visit-resend-log.ts", "utf8"));
+  assert.ok(status.includes("loadManagerVisitClientRefsOnFile({ enteredByHrId: hrId, clientRefs: ids })"), "🔴 the status read answers his single visits by their client ref");
+  const screen = stripComments(readFileSync("src/components/phoenix-crm/manager-single-visits.tsx", "utf8"));
+  assert.ok(screen.includes("kind: MANAGER_SINGLE_VISIT,"), "🔴 My single visits keeps the press on the phone before the request goes");
+  assert.ok(screen.indexOf("holdVisitPress({") < screen.indexOf("await crmPostWithin<ManagerTodayView>(VISITS, body"), "kept first, then sent");
+  assert.match(screen, /if \(isRetryableFailure\(failure\)\) \{\s*leaveVisitWaiting\(queueOwnerHrId, logging\.clientRef\);/, "only no signal is held; a refusal is shown as before");
+  assert.ok(screen.includes("<VisitOutboxNote"), "and what it holds is shown on his screen, with Log it again and Remove");
+  const view = stripComments(readFileSync("src/lib/phoenix-crm/server/manager-visits.ts", "utf8"));
+  assert.ok(view.includes("visitQueueOwnerHrId: !isTest && viewer.config.settings.visitResendEnabled ? viewer.hrId : null,"), "the same off switch, never a test login");
+  const tab = stripComments(readFileSync("src/components/phoenix-crm/visits-tab.tsx", "utf8"));
+  assert.ok(tab.includes("entry.seatId === seatId && !isManagerSingleVisit(entry)"), "🔴 a territory's Visits screen never shows his own single visit as one of its own");
 }
 
 async function checkAnotherPersonSignedIn(): Promise<void> {

@@ -3,8 +3,8 @@
 /**
  * Phoenix CRM — whether the screen open now can keep a visit on this phone, for the portal's header to read.
  *
- * Only the Visits screen knows, because only the server's day answer says so (`heldVisitsOwnerHrId`), and a manager's
- * save is not held. 🔴 THE SHELL IMPORTS THIS ON EVERY PAGE, so it imports React and nothing else: the sending code and
+ * Only the Visits screen knows, because only the server's day answer says so (`heldVisitsOwnerHrId`) — for the rep on
+ * his own territory and, since 24 Nov 2026, a manager entering visits on it. 🔴 THE SHELL IMPORTS THIS ON EVERY PAGE, so it imports React and nothing else: the sending code and
  * its rules stay out of the shell (`visit-outbox-runner.tsx`).
  */
 

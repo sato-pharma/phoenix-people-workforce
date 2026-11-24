@@ -56,7 +56,22 @@ export function heldRefusalSentence(message: string | null): string | null {
   return sentence && !SPEAKS_OF_THE_READING.test(sentence) ? sentence : null;
 }
 
-type QueuedVisitStatus = "waiting" | "refused" | "too_late";
+/**
+ * `filed`: it missed its window and is on file for the Super Admin's decision (`late-visit-rules.ts`). Nothing is left
+ * for the person to do: the row says so and goes when they tap OK, or when the phone needs the room.
+ */
+type QueuedVisitStatus = "waiting" | "refused" | "too_late" | "filed";
+
+/**
+ * A manager's own single visit ("My single visits"), held on his phone the same way a territory visit is (owner,
+ * 24 Nov 2026: "never any visit to be lost from either a rep or from the manager"). It sends to its own route, its id
+ * is the visit's `client_ref`, and only the My single visits screen shows it. No kind is a territory visit.
+ */
+export const MANAGER_SINGLE_VISIT = "manager_single" as const;
+
+export function isManagerSingleVisit(entry: Pick<QueuedVisit, "kind">): boolean {
+  return entry.kind === MANAGER_SINGLE_VISIT;
+}
 
 /** How an entry ended, as the resend log files it. A CHECK on the table is the one list of these. */
 export type VisitResendOutcome = "landed_late" | "already_saved" | "refused" | "timed_out" | "removed" | "relogged";
@@ -81,6 +96,8 @@ export type QueuedVisit = {
   refusalMessage: string | null;
   /** The very body the first press sent. */
   body: Record<string, unknown>;
+  /** What was held: a manager's own single visit, or (absent) a visit on a territory. */
+  kind?: typeof MANAGER_SINGLE_VISIT;
 };
 
 /** The duration a resend carries: bounded, whole, and never a date. Null when there is nothing to say. */

@@ -2194,6 +2194,7 @@ import { runPhoenixCrmOfflineClockTests } from "./phoenix-crm-offline-clock.test
 import { runPhoenixCrmVisitDatingTests } from "./phoenix-crm-visit-dating.test.ts";
 import { runPhoenixCrmVisitResendRulesTests } from "./phoenix-crm-visit-resend-rules.test.ts";
 import { runPhoenixCrmVisitOutboxTests } from "./phoenix-crm-visit-outbox.test.ts";
+import { runPhoenixCrmLateVisitsTests } from "./phoenix-crm-late-visits.test.ts";
 import { runPhoenixCrmQueuedEvidenceTests } from "./phoenix-crm-queued-evidence.test.ts";
 import { runPhoenixCrmOfflineWireTests } from "./phoenix-crm-offline-wire.test.ts";
 import { runPhoenixCrmRefusalMessagesTests } from "./phoenix-crm-refusal-messages.test.ts";
@@ -8083,6 +8084,11 @@ await runTest(
 await runTest(
   "Phoenix CRM's visit queue survives no signal, a late refusal, a repeat, 02:00, sign-out and a second person on the phone",
   runPhoenixCrmVisitOutboxTests,
+);
+
+await runTest(
+  "Phoenix CRM: a held visit past its window is filed whole, and only the Super Admin approves it onto the day it was pressed",
+  runPhoenixCrmLateVisitsTests,
 );
 
 await runTest(

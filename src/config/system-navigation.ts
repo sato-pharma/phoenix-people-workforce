@@ -4949,6 +4949,17 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin"],
   },
   {
+    // A visit a phone held for want of signal that reached Phoenix after its day closed, filed whole for the Super Admin
+    // to approve onto the day it was pressed or reject (owner, 24 Nov 2026: "SUPER ADMIN APPROVE IT ONLY SUPER ADMIN").
+    // His ALONE: `canEnterMissedRecords` is the enforcing gate inside the page and the decide route; this card only draws the link.
+    href: "/admin/field-crm/late-visits",
+    icon: Hourglass,
+    label: "Late Visits",
+    description: "Visits a phone kept for want of signal and sent after their day closed. Approve each onto the day it was pressed, or reject it.",
+    permissions: [{ resource: "phoenix_crm", action: "update" }],
+    roles: ["Super Admin"],
+  },
+  {
     // Any rep, a switch and the dates (owner, 2026-11-03: "open or close this feature by a toggle or be able to
     // control duration for any rep"). The Super Admin's and, since 2026-11-03, the SFE Manager's:
     // `canManageRepExceptions` is the enforcing gate inside the page and the route; this card only draws the link.
@@ -5635,6 +5646,8 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/field-crm/visit-recording",
           // The Phoenix Camera's photos and their decisions: field evidence, the Super Admin's alone, same band.
           "/admin/field-crm/camera-reviews",
+          // A held visit that reached Phoenix after its day closed: the Super Admin's own decision on field work, same band.
+          "/admin/field-crm/late-visits",
           // A rep's polyclinics and their daily number: the same Super Admin's own controls over a rep's field work.
           "/admin/field-crm/venue-caps",
           // Any rep's unplanned visit limit and its dates: the same two people's controls.
