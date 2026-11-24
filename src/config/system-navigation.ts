@@ -4886,6 +4886,17 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "SFE Manager"],
   },
   {
+    // The rep visits export (owner, 24 Nov 2026): one rep and a range as a workbook — cover, visits day by day,
+    // the area's bricks, repeats, every day's record, a pivot-ready table, the doctor list by brick. The Super
+    // Admin's alone: `canExportRepVisits` is the enforcing gate in the page, the route and the loader.
+    href: "/admin/rep-visits-export",
+    icon: FileSpreadsheet,
+    label: "Rep visits export",
+    description: "One rep and a date range as an Excel workbook: the rep's cover, visits day by day, the area's bricks, repeat visits, every day's record, a table ready to pivot, and the doctor list by brick.",
+    permissions: [{ resource: "phoenix_crm", action: "read" }],
+    roles: ["Super Admin"],
+  },
+  {
     // Places the Google Maps check could not confirm (owner, 2026-10-03: "held for review and only
     // system admin can approve or reject"). The SFE Manager reads it and recommends (2026-10-19, narrowed
     // 2026-11-19: "only able to recommend validation or not recommend, never able to take a decision").
@@ -5614,6 +5625,8 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/phoenix-crm/far-visit-holds",
           // The old CRM's visits Phoenix did not take over as visits: a record kept, read-only, same band.
           "/admin/phoenix-crm/visits-archive",
+          // One rep's visits, bricks and doctors as a workbook: field evidence, the Super Admin's alone, same band.
+          "/admin/rep-visits-export",
           // A place Google Maps could not confirm: the same band, the Super Admin's and the SFE Manager's.
           "/admin/field-crm/validation-reviews",
           // What the SFE Manager recommended on those checks, waiting for the Super Admin: the same band.

@@ -220,6 +220,9 @@ export function runPhoenixCrmImportedHistoryTests() {
     "src/lib/phoenix-crm/server/visit-report.ts": 5,
     "src/lib/phoenix-crm/server/visits.ts": 2,
     "src/lib/phoenix-crm/server/week-progress.ts": 1,
+    // The Rep visits export (owner, 2026-11-24) is one rep's history as the reviewed sheet: a copied visit is work the
+    // rep did, so it is listed on purpose, and the row says it was copied (the select names the mark).
+    "src/lib/rep-visits-export/server.ts": 1,
     // The visits-by-id read (2026-11-17) now fetches the mark itself, so a fact beside a copied or archived visit opens no door.
     "src/lib/system-audit/detectors/visit-lifecycle.ts": 14,
   };
