@@ -56,7 +56,11 @@ export function heldRefusalSentence(message: string | null): string | null {
   return sentence && !SPEAKS_OF_THE_READING.test(sentence) ? sentence : null;
 }
 
-type QueuedVisitStatus = "waiting" | "refused" | "too_late";
+/**
+ * `filed`: it missed its window and is on file for the Super Admin's decision (`late-visit-rules.ts`). Nothing is left
+ * for the person to do: the row says so and goes when they tap OK, or when the phone needs the room.
+ */
+type QueuedVisitStatus = "waiting" | "refused" | "too_late" | "filed";
 
 /**
  * A manager's own single visit ("My single visits"), held on his phone the same way a territory visit is (owner,

@@ -93,6 +93,8 @@ function harness(options: {
   personHrId?: string;
   statusFails?: boolean | (() => boolean);
   send?: OutboxDeps["send"];
+  /** Files a late visit; absent, the phone has no filing (as before 24 Nov 2026). */
+  fileLate?: OutboxDeps["fileLate"];
 } = {}): Harness {
   const storage = new FakeStorage();
   for (const held of options.entries ?? []) keepQueuedVisit(storage, ME, held);
@@ -118,6 +120,7 @@ function harness(options: {
       sentEntries.push(held);
       return options.send ? options.send(body, held) : { duplicate: false };
     },
+    ...(options.fileLate ? { fileLate: options.fileLate } : {}),
     report: (held, outcome, queuedSeconds) => {
       reports.push({ visitId: held.visitId, outcome, queuedSeconds });
       reportedCodes.push(held.refusalCode);
@@ -146,6 +149,82 @@ export async function runPhoenixCrmVisitOutboxTests(): Promise<void> {
   await checkAnotherPersonSignedIn();
   await checkTheCloseIsStrict();
   await checkAManagersOwnSingleVisit();
+  await checkALateVisitIsFiled();
+}
+
+/**
+ * A visit past its window is FILED whole for the Super Admin, never sent and never left for the person to remember
+ * (owner, 24 Nov 2026: "never any visit to be lost", then "SUPER ADMIN APPROVE IT ONLY SUPER ADMIN").
+ */
+async function checkALateVisitIsFiled(): Promise<void> {
+  const filedEntries: QueuedVisit[] = [];
+  const late = harness({ entries: [entry()], nowMs: START + 121 * 60_000, fileLate: async (held) => void filedEntries.push(held) });
+  assert.equal(await drainVisitOutbox(late.deps), 0);
+  assert.equal(late.sent.length, 0, "🔴 a late visit is never SENT: it would be dated on arrival");
+  assert.equal(filedEntries.length, 1, "🔴 it is filed for the Super Admin");
+  assert.equal(filedEntries[0]?.body.comment, "Saw the doctor", "whole, the very body of the press");
+  assert.equal(late.held()[0]?.status, "filed", "and the phone says it was sent for approval");
+  assert.equal(late.reports[0]?.outcome, "timed_out");
+
+  // Across 02:00 too.
+  const crossed = harness({
+    entries: [entry()],
+    nowMs: START + 20 * 60_000,
+    serverNowMs: Date.parse("2026-11-03T00:10:00.000Z"),
+    fileLate: async () => undefined,
+  });
+  await drainVisitOutbox(crossed.deps);
+  assert.equal(crossed.held()[0]?.status, "filed");
+
+  // No signal while filing: nothing is decided, it waits for the next pass.
+  const offline = harness({
+    entries: [entry(), entry({ visitId: "visit-2", pressedAtMs: START + 60_000 })],
+    nowMs: START + 125 * 60_000,
+    fileLate: async () => {
+      throw { code: "offline", message: "No connection." };
+    },
+  });
+  assert.equal(await drainVisitOutbox(offline.deps), 2, "🔴 both still waiting: a dropped signal decides nothing");
+  assert.equal(offline.reports.length, 0);
+
+  // 🔴 A server error is not a refusal: the visit keeps waiting and is filed on a later pass, never left to be lost.
+  const serverDown = harness({
+    entries: [entry()],
+    nowMs: START + 121 * 60_000,
+    fileLate: async () => {
+      throw { code: "failed", message: "Could not save this visit.", status: 503 };
+    },
+  });
+  assert.equal(await drainVisitOutbox(serverDown.deps), 1, "🔴 a server error leaves it waiting");
+  assert.equal(serverDown.held()[0]?.status, "waiting");
+
+  // Refused (a test persona, the switch flipped between reads): the person logs it again, as before filing existed.
+  const refused = harness({
+    entries: [entry()],
+    nowMs: START + 121 * 60_000,
+    fileLate: async () => {
+      throw { code: "late_visit_not_filed", message: "Not filed." };
+    },
+  });
+  await drainVisitOutbox(refused.deps);
+  assert.equal(refused.held()[0]?.status, "too_late");
+
+  // Switched off: never filed, never sent.
+  let filedWhileOff = 0;
+  const off = harness({ entries: [entry()], enabled: false, fileLate: async () => void (filedWhileOff += 1) });
+  await drainVisitOutbox(off.deps);
+  assert.equal(filedWhileOff, 0, "switched off, nothing is filed either");
+  assert.equal(off.held()[0]?.status, "too_late");
+
+  // A filed visit is safe off the phone, so it gives up its place to a new press on a full phone.
+  const full = new FakeStorage();
+  for (let index = 0; index < VISIT_OUTBOX_MAX_ENTRIES; index += 1) {
+    keepQueuedVisit(full, ME, entry({ visitId: `full-${index}`, status: index === 3 ? "filed" : "waiting", pressedAtMs: START + index }));
+  }
+  assert.equal(keepQueuedVisit(full, ME, entry({ visitId: "new-press" })), true, "🔴 a new press is kept on a full phone holding a filed visit");
+  assert.equal(readQueuedVisits(full, ME).some((held) => held.visitId === "full-3"), false, "the filed one went");
+  assert.equal(keepQueuedVisit(full, ME, entry({ visitId: "another-press" })), false, "with nothing filed left, a full phone still refuses");
+  assert.equal(readQueuedVisits(full, ME).length, VISIT_OUTBOX_MAX_ENTRIES);
 }
 
 /**

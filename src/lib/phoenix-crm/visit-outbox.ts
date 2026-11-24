@@ -38,7 +38,7 @@ function isEntry(value: unknown): value is QueuedVisit {
     typeof entry.pressedAtMs === "number" &&
     typeof entry.body === "object" &&
     entry.body !== null &&
-    (entry.status === "waiting" || entry.status === "refused" || entry.status === "too_late") &&
+    (entry.status === "waiting" || entry.status === "refused" || entry.status === "too_late" || entry.status === "filed") &&
     // A kind this phone's code does not know is never sent to the wrong route.
     (entry.kind === undefined || isManagerSingleVisit(entry))
   );
@@ -79,8 +79,13 @@ function writeAll(storage: OutboxStorage, ownerHrId: unknown, entries: QueuedVis
  */
 export function keepQueuedVisit(storage: OutboxStorage | null, ownerHrId: unknown, entry: QueuedVisit): boolean {
   if (!storage || !isOwnedByViewer(entry.ownerHrId, ownerHrId)) return false;
-  const others = readQueuedVisits(storage, ownerHrId).filter((held) => held.visitId !== entry.visitId);
-  if (others.length >= VISIT_OUTBOX_MAX_ENTRIES) return false;
+  let others = readQueuedVisits(storage, ownerHrId).filter((held) => held.visitId !== entry.visitId);
+  // A visit already on file for the Super Admin is safe off this phone, so it gives up its place before a new press is refused one.
+  while (others.length >= VISIT_OUTBOX_MAX_ENTRIES) {
+    const filed = others.findIndex((held) => held.status === "filed");
+    if (filed < 0) return false;
+    others = others.filter((_, index) => index !== filed);
+  }
   return writeAll(storage, ownerHrId, [...others, entry]);
 }
 
@@ -124,6 +129,11 @@ export type OutboxDeps = {
    * SendFailure when refused or unreachable.
    */
   send: (body: Record<string, unknown>, entry: QueuedVisit) => Promise<{ duplicate: boolean }>;
+  /**
+   * Files a visit that missed its window for the Super Admin to decide (`server/late-visits.ts`). Absent, the visit waits
+   * for the person to log it again, as before. Throws a SendFailure when it could not be filed.
+   */
+  fileLate?: (entry: QueuedVisit) => Promise<void>;
   /** Files how an entry ended. Answers nothing and must never throw. */
   report: (entry: QueuedVisit, outcome: VisitResendOutcome, queuedSeconds: number | null) => void;
   sleep: (ms: number) => Promise<void>;
@@ -178,9 +188,13 @@ export async function drainVisitOutbox(deps: OutboxDeps): Promise<number> {
       deps.changed();
       continue;
     }
-    // Off, past two hours or across 02:00: never sent by itself. The rep logs it again, and it is a fresh visit.
+    // Off: never sent by itself, and the rep logs it again as a fresh visit. Past two hours or across 02:00 it is never
+    // SENT either, because it would be dated on arrival (owner, 24 Nov 2026: "never any visit to be lost") — it is
+    // FILED whole for the Super Admin, who alone may approve it onto the day it was pressed.
     if (!status.enabled || isTooLateToSend(entry, nowMs, nowMs + serverAheadOfPhoneMs, VISIT_RESEND_GAP_MS + VISIT_SAVE_TIMEOUT_MS)) {
-      keepQueuedVisit(storage, ownerHrId, { ...entry, status: "too_late", sendingUntilMs: 0 });
+      const ended = status.enabled && deps.fileLate ? await fileLateEntry(deps, entry) : "too_late";
+      if (ended === "stopped") break;
+      keepQueuedVisit(storage, ownerHrId, { ...entry, status: ended, sendingUntilMs: 0 });
       deps.report(entry, "timed_out", queuedSeconds);
       deps.changed();
       continue;
@@ -193,6 +207,26 @@ export async function drainVisitOutbox(deps: OutboxDeps): Promise<number> {
     if (stopped) break;
   }
   return waiting().length;
+}
+
+/**
+ * Files one late entry. `stopped` means the signal, the sign-in or the server stopped it: it stays waiting and is filed
+ * on a later pass. Only a plain refusal (the switch off, a test login, a body the server will not keep) leaves it for
+ * the person to log again — the answer this phone gave before filing existed. 🔴 A server error is not a refusal: the
+ * visit would be left to a person who may never log it again, which is the loss this exists to stop.
+ */
+async function fileLateEntry(deps: OutboxDeps, entry: QueuedVisit): Promise<"filed" | "too_late" | "stopped"> {
+  try {
+    await deps.fileLate?.(entry);
+    return "filed";
+  } catch (error) {
+    const httpStatus = (error as { status?: unknown } | null)?.status;
+    if (isStopper(failureOf(error).code) || (typeof httpStatus === "number" && httpStatus >= 500)) {
+      keepQueuedVisit(deps.storage, deps.ownerHrId, { ...entry, sendingUntilMs: 0 });
+      return "stopped";
+    }
+    return "too_late";
+  }
 }
 
 /** Sends one entry to its end. True when the signal or the sign-in stopped it, so the pass ends here. */

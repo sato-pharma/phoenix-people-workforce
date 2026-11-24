@@ -10,6 +10,7 @@
 
 import { CrmBlock, CrmButton, CrmNote, CrmPill } from "@/components/phoenix-crm/ui";
 import { forgetHeldVisit, reportVisitResend } from "@/components/phoenix-crm/visit-outbox-client";
+import { VISIT_FILED_DISMISS, VISIT_FILED_LINE, VISIT_FILED_PILL } from "@/lib/phoenix-crm/late-visit-rules";
 import {
   heldRefusalSentence,
   VISIT_LOG_AGAIN,
@@ -33,7 +34,8 @@ export function VisitOutboxNote({
   if (entries.length === 0) return null;
 
   const waiting = entries.filter((entry) => entry.status === "waiting");
-  const stuck = entries.filter((entry) => entry.status !== "waiting");
+  const filed = entries.filter((entry) => entry.status === "filed");
+  const stuck = entries.filter((entry) => entry.status === "refused" || entry.status === "too_late");
   const sentenceOf = (entry: QueuedVisit) => (entry.status === "refused" ? heldRefusalSentence(entry.refusalMessage) : null);
 
   return (
@@ -50,6 +52,23 @@ export function VisitOutboxNote({
               ))}
             </ul>
             <p className="text-xs font-semibold text-slate-600">{VISIT_WAITING_LINE}</p>
+          </div>
+        ) : null}
+        {filed.length > 0 ? (
+          <div className="grid min-w-0 gap-2">
+            <ul className="grid min-w-0 gap-1.5">
+              {filed.map((entry) => (
+                <li className="flex min-w-0 flex-wrap items-center justify-between gap-2 border border-slate-200 bg-white px-3 py-2.5" key={entry.visitId}>
+                  <span className="min-w-[9rem] flex-1 break-words text-sm font-black text-slate-950">{entry.customerName}</span>
+                  <CrmPill tone="good">{VISIT_FILED_PILL}</CrmPill>
+                  {/* It is on file, so dismissing it here files nothing: the row is simply gone from this phone. */}
+                  <CrmButton onClick={() => forgetHeldVisit(ownerHrId, entry.visitId)} size="sm" variant="ghost">
+                    {VISIT_FILED_DISMISS}
+                  </CrmButton>
+                </li>
+              ))}
+            </ul>
+            <p className="text-xs font-semibold text-slate-600">{VISIT_FILED_LINE}</p>
           </div>
         ) : null}
         {stuck.map((entry) => (

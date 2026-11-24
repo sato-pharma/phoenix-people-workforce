@@ -18,6 +18,8 @@ import { isManagerSingleVisit, VISIT_RESEND_TICK_MS, VISIT_SAVE_TIMEOUT_MS } fro
 
 /** A manager's own single visit (`MANAGER_SINGLE_VISIT`). Its repeat is answered as saved by its `client_ref`. */
 const MANAGER_SINGLE_VISIT_PATH = "/api/phoenix-crm/manager-plans/visits";
+/** A visit that missed its window, filed whole for the Super Admin (`server/late-visits.ts`). */
+const LATE_VISITS_PATH = "/api/phoenix-crm/late-visits";
 
 type StatusAnswer = { enabled: boolean; personHrId: string; savedVisitIds: string[]; serverNow: string };
 
@@ -58,6 +60,26 @@ export function startVisitOutbox(ownerHrId: string): VisitOutboxEngine {
       }
       const saved = await crmPostWithin<{ duplicate?: boolean }>("/api/phoenix-crm/visits", body, "visit", VISIT_SAVE_TIMEOUT_MS);
       return { duplicate: saved?.duplicate === true };
+    },
+    fileLate: async (entry) => {
+      await crmPostWithin<unknown>(
+        LATE_VISITS_PATH,
+        {
+          record: "file",
+          visit: {
+            id: entry.visitId,
+            kind: isManagerSingleVisit(entry) ? "manager_single" : "territory",
+            seatId: entry.seatId,
+            customerId: entry.customerId,
+            customerName: entry.customerName,
+            pressedDay: entry.pressedDay,
+            pressedAtDevice: new Date(entry.pressedAtMs).toISOString(),
+            body: entry.body,
+          },
+        },
+        "filed",
+        VISIT_SAVE_TIMEOUT_MS,
+      );
     },
     report: reportVisitResend,
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
