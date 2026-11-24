@@ -22,7 +22,7 @@ import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
 import { CrmButton, CrmNote, CrmPill } from "@/components/phoenix-crm/ui";
 import { DOOR_CAPTURED_AGAIN_TEXT } from "@/lib/phoenix-crm/door-captured-again";
 import { adviseOnReview } from "@/lib/phoenix-crm/place-check-advice";
-import { APPROVAL_NEEDS_FULL_NAME, approvalNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
+import { approvalNeedsFullName, SHORT_NAME_APPROVAL_NOTE } from "@/lib/phoenix-crm/pm-name-rules";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
 import { SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT } from "@/lib/phoenix-crm/super-admin-approval-rules";
 import {
@@ -147,8 +147,8 @@ function Decision({ row, scope = "" }: { row: ValidationReviewRow; scope?: strin
   const done = usePlaceCheckDone();
   const { saved, markSaved } = useSavedOutcome(row);
   const [note, setNote] = useState("");
-  // 🔴 A clinic customer with only one or two names is never approved — sent back for all three (owner,
-  // 2026-11-07, "Send them back to the rep"). Approve is disabled and the reason opens on short_name.
+  // A clinic customer with only one or two names: the reason opens on short_name, so Reject sends him back
+  // for all three (owner, 2026-11-07). Approve stays open — the Super Admin is never blocked (24 Nov 2026).
   const shortName = approvalNeedsFullName(row);
   // Opens on the reason the system's own confident reading gives, and on nothing otherwise.
   const [reason, setReason] = useState<ValidationRefusalReason | "">(() => (shortName ? "short_name" : (adviseOnReview(row).refusal ?? "")));
@@ -168,7 +168,7 @@ function Decision({ row, scope = "" }: { row: ValidationReviewRow; scope?: strin
         {row.refusalLabel ? <p className="break-words text-xs font-semibold text-slate-700">The rep was told: {row.refusalLabel}</p> : null}
         {row.decisionNote ? <p className="break-words text-xs text-slate-600">{row.decisionNote}</p> : null}
         {row.restorable ? <Restore row={row} scope={scope} /> : null}
-        {/* The database would refuse the take-back (19 Nov 2026), so the row says why and offers nothing. */}
+        {/* Captured again since (19 Nov 2026): a fact beside the button, which stays (owner, 24 Nov 2026). */}
         {row.capturedAgain ? <CrmNote tone="neutral">{DOOR_CAPTURED_AGAIN_TEXT}</CrmNote> : null}
         {row.refusable ? <RejectAfterApproval row={row} scope={scope} /> : null}
         {/* What the administrator approved, only he rejects (owner, 2026-11-16). */}
@@ -230,7 +230,7 @@ function Decision({ row, scope = "" }: { row: ValidationReviewRow; scope?: strin
         />
       ) : (
         <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2" data-decide-pair>
-          <CrmButton disabled={saving !== null || shortName} onClick={() => void decide("approve")} variant="primary">
+          <CrmButton disabled={saving !== null} onClick={() => void decide("approve")} variant="primary">
             {saving === "approve" ? "Approving…" : "Approve"}
           </CrmButton>
           <CrmButton disabled={saving !== null} onClick={() => (reason === "" ? setPicking(true) : void decide("reject"))} variant="danger">
@@ -238,7 +238,7 @@ function Decision({ row, scope = "" }: { row: ValidationReviewRow; scope?: strin
           </CrmButton>
         </div>
       )}
-      {shortName ? <p className="break-words text-xs font-semibold text-slate-700">{APPROVAL_NEEDS_FULL_NAME}</p> : null}
+      {shortName ? <p className="break-words text-xs font-semibold text-slate-700">{SHORT_NAME_APPROVAL_NOTE}</p> : null}
       {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
     </div>
   );

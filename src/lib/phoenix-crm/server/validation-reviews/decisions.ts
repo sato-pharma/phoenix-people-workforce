@@ -11,11 +11,12 @@ import { logError } from "@/lib/observability/log";
 import { cleanText } from "@/lib/phoenix-crm/entry-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { canDecideValidationReviews, canRestoreValidation, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { callPhoenixCrm } from "@/lib/phoenix-crm/server/db";
+import { callPhoenixCrm, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { keepReviewAdviceQuietly } from "@/lib/phoenix-crm/server/stored-advice";
 import { tellDecisionComment } from "@/lib/phoenix-crm/server/place-notes";
 import { followLineTwinCopiesQuietly, shareAcrossLinesQuietly } from "@/lib/phoenix-crm/server/line-twins";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
+import { restoreSharedPlace } from "@/lib/phoenix-crm/server/shared-places";
 import { parseValidationRefusalReason, VALIDATION_REASON_REQUIRED } from "@/lib/phoenix-crm/validation-feedback";
 import { parseDoctorFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import { invalidateMyMapSnapshotCache } from "@/lib/dashboard/invalidation";
@@ -54,7 +55,15 @@ export async function decideValidationReview(
   const refusalReason = decision === "reject" ? parseValidationRefusalReason(body.refusalReason) : null;
   if (decision === "reject" && !refusalReason) throw validationError(VALIDATION_REASON_REQUIRED);
   const reviewId = String(body.reviewId).toLowerCase();
-  if (decision === "approve") await refuseApprovalOfShortName(await reviewCustomerId(reviewId));
+  // 🔴 THE SUPER ADMIN IS NEVER BLOCKED (owner, 24 Nov 2026: "never block admin from appproving rejecting re
+  // approving or rejecdting never ever ever never"). His Approve on a REJECTED review is the take-back
+  // (`restoreValidation`), which clears whatever stands in the way first, and no short name refuses him.
+  const neverBlocked = canRestoreValidation(viewer);
+  if (decision === "approve" && neverBlocked && (await reviewStatus(reviewId)) === "rejected") {
+    const restored = await restoreValidation(viewer, { reviewId, note: body.note });
+    return { reviewId: restored.reviewId, status: "approved", waitingForBuilding: restored.waitingForBuilding, reopened: false };
+  }
+  if (decision === "approve" && !neverBlocked) await refuseApprovalOfShortName(await reviewCustomerId(reviewId));
   // What the system advised, read while the review still waits, and kept once the decision has landed.
   const adviceThen = await adviceOnWaitingReview(reviewId);
   // `review_not_found` and `review_decided` come back worded by the module's refusal table (db.ts).
@@ -145,13 +154,22 @@ export async function restoreValidation(
     name = parsed.value;
   }
 
-  // `review_not_found`, `review_not_rejected` and `place_not_retired` come back worded by the
-  // module's refusal table (db.ts).
+  // 🔴 A RETIRED BUILDING IS BROUGHT BACK FIRST, THROUGH ITS OWN DOOR (owner, 24 Nov 2026: "never block
+  // admin"), so the building's other customers get their bells, distances and line copies exactly as when
+  // he presses "Approve it after all" on the building. The function below would bring it back too; going
+  // through the door first is what runs those follow-ups.
+  const reviewId = String(body.reviewId).toLowerCase();
+  const retiredBuilding = await retiredBuildingOfReview(reviewId);
+  if (retiredBuilding) await restoreSharedPlace(viewer, { sharedPlaceId: retiredBuilding, note });
+
+  // `review_not_found` and `review_not_rejected` come back worded by the module's refusal table (db.ts).
+  // For the Super Admin nothing else is refused: a dropped customer is put back on the list, a door
+  // captured again keeps the place in use and records the approval (migration 20261124113734).
   const result = await callPhoenixCrm<Row>("phoenix_crm_restore_validation", {
     p:
       name === null
-        ? { review_id: String(body.reviewId).toLowerCase(), actor_hr_id: viewer.hrId, note }
-        : { review_id: String(body.reviewId).toLowerCase(), actor_hr_id: viewer.hrId, note, name },
+        ? { review_id: reviewId, actor_hr_id: viewer.hrId, note }
+        : { review_id: reviewId, actor_hr_id: viewer.hrId, note, name },
   });
   // The place is measurable again, so every visit to the customer gets its distance back.
   await restampVisitLocationsQuietly({
@@ -174,4 +192,27 @@ export async function restoreValidation(
     // His building is still being checked: the place is back and he counts once the building is approved.
     waitingForBuilding: result.waiting_for_building === true,
   };
+}
+
+/** Where a review stands now, for the Super Admin's Approve on a rejected one. */
+async function reviewStatus(reviewId: string): Promise<string | null> {
+  const { data, error } = await getSupabaseAdmin().from("phoenix_crm_validation_reviews").select("status").eq("id", reviewId).maybeSingle();
+  throwIfError(error);
+  return text((data as Row | null)?.status);
+}
+
+/** The building a refused place is seated in, when that building is retired too; null otherwise. */
+async function retiredBuildingOfReview(reviewId: string): Promise<string | null> {
+  const admin = getSupabaseAdmin();
+  const { data: review, error: reviewError } = await admin.from("phoenix_crm_validation_reviews").select("place_id").eq("id", reviewId).maybeSingle();
+  throwIfError(reviewError);
+  const placeId = text((review as Row | null)?.place_id);
+  if (!placeId) return null;
+  const { data: place, error: placeError } = await admin.from("phoenix_crm_places").select("shared_place_id").eq("id", placeId).maybeSingle();
+  throwIfError(placeError);
+  const buildingId = text((place as Row | null)?.shared_place_id);
+  if (!buildingId) return null;
+  const { data: building, error: buildingError } = await admin.from("phoenix_crm_shared_places").select("status").eq("id", buildingId).maybeSingle();
+  throwIfError(buildingError);
+  return text((building as Row | null)?.status) === "retired" ? buildingId : null;
 }

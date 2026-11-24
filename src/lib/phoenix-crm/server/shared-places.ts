@@ -886,6 +886,18 @@ export async function decideSharedPlace(viewer: PhoenixCrmViewer, raw: unknown):
   const refusalReason = decision === "reject" ? buildingRefusalReason(body.refusalReason) : null;
   if (decision === "reject" && !refusalReason) throw validationError(VALIDATION_REASON_REQUIRED);
 
+  // 🔴 THE SUPER ADMIN IS NEVER BLOCKED (owner, 24 Nov 2026: "never block admin from appproving rejecting re
+  // approving or rejecdting never ever ever never"). His Approve on a RETIRED building is its take-back.
+  if (decision === "approve" && canRestoreValidation(viewer)) {
+    const sharedPlaceId = String(body.sharedPlaceId).toLowerCase();
+    const { data: building, error: buildingError } = await getSupabaseAdmin().from("phoenix_crm_shared_places").select("status").eq("id", sharedPlaceId).maybeSingle();
+    throwIfError(buildingError);
+    if (text((building as Row | null)?.status) === "retired") {
+      const restored = await restoreSharedPlace(viewer, { sharedPlaceId, note: body.note });
+      return { sharedPlaceId: restored.sharedPlaceId, name: restored.name, status: "active", placesRetired: 0, reopened: [] };
+    }
+  }
+
   // What the system advised, read while the building is still held, and kept once the decision has landed.
   const adviceThen = await adviceOnHeldBuilding(String(body.sharedPlaceId).toLowerCase());
   const result = await callPhoenixCrm<Row>("phoenix_crm_decide_shared_place", {

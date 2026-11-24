@@ -18,9 +18,12 @@ import { haversineKm } from "@/lib/pharmacy-search/geo";
 /** The line the Google check draws round a door, as the restore function uses it. */
 export const DOOR_CAPTURED_AGAIN_METERS = 150;
 
-/** What the row says where "Approve it after all" would be. A fact, never a promise, and no name. */
+/**
+ * What the row says beside "Approve it after all". A fact, never a promise, and no name. Since 24 Nov 2026
+ * the button stays (owner: "never block admin"), so the sentence says what approving does.
+ */
 export const DOOR_CAPTURED_AGAIN_TEXT =
-  "Captured again at this door since the refusal. The place in use stands, so there is nothing to bring back.";
+  "Captured again at this door since the refusal. Approving keeps the place in use and records the approval.";
 
 export type DoorPlace = {
   id: string;

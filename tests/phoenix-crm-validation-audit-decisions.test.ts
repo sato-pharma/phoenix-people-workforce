@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { DOOR_CAPTURED_AGAIN_METERS, doorCapturedAgain, type DoorPlace } from "@/lib/phoenix-crm/door-captured-again";
+import { DOOR_CAPTURED_AGAIN_METERS, DOOR_CAPTURED_AGAIN_TEXT, doorCapturedAgain, type DoorPlace } from "@/lib/phoenix-crm/door-captured-again";
 
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 import { placeCheckListSourceAt } from "./support/place-check-list-source.ts";
@@ -102,8 +102,12 @@ export function runPhoenixCrmValidationAuditDecisionsTests(): void {
   const loader = stripComments(placeCheckSplitSource("validation-reviews", read));
   const marked = loader.slice(loader.indexOf("async function markDoorsCapturedAgain("), loader.indexOf("export async function loadValidationReviews("));
   assert.ok(marked.includes('query.eq("status", "active")'), "the customer's ACTIVE places are what the door is compared with");
-  assert.match(marked, /row\.restorable = false;\s+row\.capturedAgain = true;/, "🔴 a captured-again row offers no take-back, and says why");
-  assertBefore(loader, "await Promise.all([markDoorsCapturedAgain(rows, reviews, placeById), markEarlierDecisions(rows, reviews, decides)]);", "row.status === \"rejected\" && row.restorable && decided >= rejectedSince", "it is marked before the 90-day undo window is judged, so it drops back to 14 days");
+  // 🔴 SINCE 24 NOV 2026 THE MARK IS INFORMATION, NEVER A REFUSAL (owner: "never block admin"): the row keeps its
+  // take-back, and approving it records the approval and keeps the place in use.
+  assert.match(marked, /row\.capturedAgain = true;/, "a captured-again row says so");
+  assert.doesNotMatch(marked, /row\.restorable = false/, "🔴 and keeps its Approve it after all");
+  assert.match(marked, /placeById\.get\(row\.placeId\)\?\.status === "retired"/, "only a place still retired is compared with the door");
+  assert.match(DOOR_CAPTURED_AGAIN_TEXT, /Approving keeps the place in use/, "the sentence says what approving does");
   for (const screen of ["src/components/phoenix-crm/validation-review-queue.tsx", "src/components/phoenix-crm/shared-place-customers.tsx"]) {
     assert.ok(stripComments(placeCheckListSourceAt(screen, read)).includes("DOOR_CAPTURED_AGAIN_TEXT"), `${screen} draws the reason where the button was`);
   }
