@@ -60,6 +60,7 @@ import {
   HR_PAPER_EXIT_INTERVIEW_V1,
   HR_PAPER_HANDOVER_RECORD_V1,
   HR_PAPER_HEALTH_INSURANCE_AUTHORIZATION_V1,
+  HR_PAPER_HOSPITAL_AUTHORIZATION_V1,
   HR_PAPER_INSURANCE_PRINT_LETTER_V1,
   HR_PAPER_NDA_V1,
   HR_PAPER_SALARY_ADJUSTMENT_V1,
@@ -224,6 +225,10 @@ const RENDERERS: Record<
   healthInsuranceAuthorization: {
     render: housePaper(HR_PAPER_HEALTH_INSURANCE_AUTHORIZATION_V1),
     copies: systemContractDefaults.healthInsuranceAuthorizationCopies,
+  },
+  hospitalAuthorization: {
+    render: housePaper(HR_PAPER_HOSPITAL_AUTHORIZATION_V1),
+    copies: systemContractDefaults.hospitalAuthorizationCopies,
   },
   insurancePrintLetter: {
     render: housePaper(HR_PAPER_INSURANCE_PRINT_LETTER_V1),

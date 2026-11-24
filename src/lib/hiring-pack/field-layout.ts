@@ -86,6 +86,7 @@ export const DOCUMENT_SURFACES: Readonly<Record<HiringPackDocument, DocumentSurf
   salaryAdjustment: "flow",
   socialInsuranceAuthorization: "flow",
   healthInsuranceAuthorization: "flow",
+  hospitalAuthorization: "flow",
   insurancePrintLetter: "flow",
   handoverRecord: "flow",
   exitInterview: "flow",

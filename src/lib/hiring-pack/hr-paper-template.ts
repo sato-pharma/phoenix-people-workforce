@@ -136,7 +136,14 @@ export type HrPaperToken =
   | "FIRST_WARNING_FROM"
   | "FIRST_WARNING_TO"
   // A deadline the desk sets
-  | "COMPLETION_DEADLINE";
+  | "COMPLETION_DEADLINE"
+  // The hospital authorisation letter (owner, 2026-11-24). `HOSPITAL_NAME` is the one hospital the
+  // letter is addressed to, typed by HR per person; `DELEGATE_TITLE` and `DELEGATE_WORKS` agree the
+  // sentence with the person's recorded gender — «الدكتورة … والتي تعمل» for Rania Alaa, who is
+  // addressed as a doctor ("DOCTORA RANIA") — and fall back to the masculine generic the papers use.
+  | "HOSPITAL_NAME"
+  | "DELEGATE_TITLE"
+  | "DELEGATE_WORKS";
 
 /** One labelled box in an identity or data grid. */
 export type HrPaperField = {

@@ -1083,6 +1083,56 @@ export const HR_PAPER_HEALTH_INSURANCE_AUTHORIZATION_V1: HrPaperTemplate = {
   footerAr: PACK_FOOTER_AR,
 };
 
+/**
+ * 13a — تفويض مستشفى. The owner, 2026-11-24: Rania Alaa's letter is "only Kafr El Sheikh University
+ * Hospital" — "add to HR Forms". ONE hospital per letter, named in the address, in the body and in a
+ * line of its own that limits the authorisation to it. The hospital is typed by HR on the paper
+ * (HOSPITAL_NAME, kept on the person's hiring profile) and rules until it is, because Phoenix holds no
+ * register of which hospital a representative is sent to. The name, national ID and job title come
+ * from the record. It wears the HR premium identity — the dress he asked for on her letter.
+ */
+export const HR_PAPER_HOSPITAL_AUTHORIZATION_V1: HrPaperTemplate = {
+  id: "hospital-authorization-v1",
+  kind: "letter",
+  version: 1,
+  // The masthead is plain text on every paper, so the hospital is named in the body three times
+  // instead: the address, the authorisation itself and the line that limits it.
+  titleAr: "تفويض — زيارة مستشفى",
+  subtitleAr: "خطاب تفويض موجّه إلى مستشفى واحد فقط",
+  purposeAr: "يُحرَّر من نسختين — الأصل يُسلَّم لإدارة المستشفى، وصورة تُحفظ بملف الخدمة.",
+  bindingLineAr: null,
+
+  firstPartyHeadingAr: null,
+  firstPartyLinesAr: [],
+
+  secondPartyHeadingAr: null,
+  secondPartyFields: [],
+  sections: [],
+
+  bodyParagraphsAr: [
+    "التاريخ: {{ISSUE_DATE}}",
+    "السيد الأستاذ الدكتور / مدير {{HOSPITAL_NAME}}",
+    "تحية طيبة وبعد ...",
+    "فوضنا نحن {{COMPANY_NAME}} {{DELEGATE_TITLE}} / {{EMPLOYEE_NAME}} ، بطاقة رقم قومي / {{NATIONAL_ID}} ، {{DELEGATE_WORKS}} لدينا بوظيفة {{JOB_TITLE}} ، في زيارة {{HOSPITAL_NAME}} ولقاء السادة الأطباء بأقسام المستشفى لعرض المعلومات العلمية الخاصة بمستحضرات الشركة.",
+    "ويقتصر هذا التفويض على {{HOSPITAL_NAME}} فقط.",
+    "وشكراً لحسن تعاونكم.",
+    "وتفضلوا بقبول فائق الاحترام",
+  ],
+  operativeHeadingAr: null,
+  operativeParagraphsAr: [],
+  checklist: null,
+  openTable: null,
+  declarationAr: null,
+
+  signaturesHeadingAr: null,
+  signatureColumns: [{ headingAr: "مدير الموارد البشرية", fieldsAr: HR_SIGNING_FIELDS_AR }],
+  signatoryNoteLinesAr: [],
+  receiptAcknowledgmentAr: null,
+  serviceNoteAr: null,
+  serviceFields: [],
+  footerAr: PACK_FOOTER_AR,
+};
+
 /** 14 — خطاب استخراج برينت تأميني. */
 export const HR_PAPER_INSURANCE_PRINT_LETTER_V1: HrPaperTemplate = {
   id: "insurance-print-request-v1",
@@ -1309,6 +1359,7 @@ export const HR_PAPERS: readonly HrPaperTemplate[] = [
   HR_PAPER_SALARY_ADJUSTMENT_V1,
   HR_PAPER_SOCIAL_INSURANCE_AUTHORIZATION_V1,
   HR_PAPER_HEALTH_INSURANCE_AUTHORIZATION_V1,
+  HR_PAPER_HOSPITAL_AUTHORIZATION_V1,
   HR_PAPER_INSURANCE_PRINT_LETTER_V1,
   HR_PAPER_DOCUMENTS_RETURN_V1,
   HR_PAPER_EXPERIENCE_CERTIFICATE_V1,

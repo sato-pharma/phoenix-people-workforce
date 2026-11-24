@@ -157,6 +157,12 @@ export function buildHrPaperValues(
       };
     })(),
 
+    // The hospital authorisation letter. The hospital is typed by HR on the paper and kept on this
+    // person; nothing prints a hospital the desk did not name.
+    HOSPITAL_NAME: profile.authorizationHospitalAr ?? "",
+    DELEGATE_TITLE: arabicGender(employee.gender) === "أنثى" ? "الدكتورة" : "الدكتور",
+    DELEGATE_WORKS: arabicGender(employee.gender) === "أنثى" ? "والتي تعمل" : "والذي يعمل",
+
     // ABSENCE_FROM / ABSENCE_TO / FIRST_WARNING_* are absent on purpose — see the header note.
     // COMPLETION_DEADLINE likewise: it is a date the desk sets when it hands the checklist over.
   };
