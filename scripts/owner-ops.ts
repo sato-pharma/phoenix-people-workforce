@@ -16,6 +16,15 @@
 //                 evidence_status 'pending' (no shop photo). No route writes this; the 25 Nov pins were
 //                 one hand UPDATE, so it is done here with that UPDATE's own guard (no pin yet) plus a
 //                 live venue and a coordinate inside Egypt.
+//   load-crm-list importListTemplate                (POST /api/phoenix-crm/list/template/import)
+//                 The territory's own template is built (buildListTemplateFor, the download the SFE
+//                 gets), the body's rows are written into it, and the filled sheet is handed to the
+//                 upload's own function — so every check of that upload runs (the seat marker, the
+//                 row rules, the database's same-name skip). Customers land "to validate" for the rep.
+//   seat-in-building seatWaitingCustomersInVenue     (the Super Admin's door; no screen calls it yet)
+//                 Customers still waiting, with hours and no place, are seated in an approved building
+//                 at its own point; the building's timetable is then read for each, and only the ones it
+//                 NAMES are validated (phoenix_crm_settle_venue_timetable). It never validates by itself.
 //
 // WHO IT ACTS AS. B-10, the owner, built the way a real signed-in request is: his live
 // app_auth_users row (active, not a test account, role read strictly), his employee lifecycle gate,
@@ -310,6 +319,242 @@ async function runPinPharmacy(plan: Extract<OwnerOpsPlan, { job: "pin-pharmacy" 
   return { employees, focus: { pharmacyIds: [plan.pharmacyId] } };
 }
 
+/** One row of the load-crm-list body, in the template's own column keys. */
+type CrmListRow = Partial<Record<"listType" | "name" | "speciality" | "grade" | "potentialGrade" | "phone" | "daysAndHours" | "whereToFind" | "note", string>>;
+
+/**
+ * Write rows under a sheet's header, column by column as the header names them. The header is found the
+ * way the upload finds it — a row holding every required label — so a template that grows a preamble
+ * line still fills.
+ */
+function fillSheetRows(
+  sheet: import("exceljs").Worksheet,
+  columns: ReadonlyArray<{ key: string; label: string; aliases: readonly string[] }>,
+  required: readonly string[],
+  rows: ReadonlyArray<Record<string, string | undefined>>,
+  fold: (value: unknown) => string,
+  cellText: (value: import("exceljs").CellValue) => string,
+): void {
+  let header: { rowNumber: number; at: Map<string, number> } | null = null;
+  for (let rowNumber = 1; rowNumber <= Math.min(40, sheet.rowCount) && !header; rowNumber += 1) {
+    const at = new Map<string, number>();
+    const row = sheet.getRow(rowNumber);
+    for (let column = 1; column <= Math.max(columns.length, sheet.columnCount); column += 1) {
+      const text = fold(cellText(row.getCell(column).value));
+      const match = columns.find((entry) => fold(entry.label) === text || entry.aliases.includes(text));
+      if (match && !at.has(match.key)) at.set(match.key, column);
+    }
+    if (required.every((key) => at.has(key))) header = { rowNumber, at };
+  }
+  if (!header) throw new Error(`the sheet "${sheet.name}" has no header row this job can fill`);
+  // The first row under the header whose named cells are all empty — the template ships formatted blank
+  // rows, so `rowCount` would put the rows hundreds of lines down, past where an SFE would type.
+  const isEmpty = (rowNumber: number) =>
+    [...header!.at.values()].every((column) => cellText(sheet.getRow(rowNumber).getCell(column).value).trim() === "");
+  let next = header.rowNumber + 1;
+  while (!isEmpty(next)) next += 1;
+  for (const entry of rows) {
+    while (!isEmpty(next)) next += 1;
+    const row = sheet.getRow(next);
+    for (const [key, column] of header.at) {
+      const value = entry[key];
+      if (value !== undefined && value !== "") row.getCell(column).value = value;
+    }
+    row.commit();
+    next += 1;
+  }
+}
+
+/**
+ * Customers onto a rep's Phoenix CRM list as "to validate", and hours onto customers already waiting —
+ * through the SFE's own list-template upload (importListTemplate), never a hand insert. The PLACE is
+ * never written: the rep captures it at the door, which is how the customer is validated.
+ */
+async function runLoadCrmList(plan: Extract<OwnerOpsPlan, { job: "load-crm-list" }>, owner: AccessContext) {
+  if (!fs.existsSync(plan.bodyPath)) fail(`--body ${plan.bodyPath}: no such file`, 2);
+  let body: { customers?: CrmListRow[]; hours?: CrmListRow[] };
+  try {
+    body = JSON.parse(fs.readFileSync(plan.bodyPath, "utf8")) as typeof body;
+  } catch (error) {
+    fail(`--body ${plan.bodyPath} is not JSON: ${errorText(error)}`, 2);
+  }
+  const customers = Array.isArray(body.customers) ? body.customers : [];
+  const hours = Array.isArray(body.hours) ? body.hours : [];
+  if (customers.length === 0 && hours.length === 0) fail("the body has neither customers nor hours", 2);
+
+  // The route's own gate, then the route's own viewer.
+  const { assertPermission } = await import("@/lib/auth/permissions");
+  await assertPermission(owner, "phoenix_crm", "approve");
+  const { resolvePhoenixCrmViewer } = await import("@/lib/phoenix-crm/server/access");
+  const viewer = await resolvePhoenixCrmViewer(owner);
+
+  const { buildListTemplateFor, importListTemplate } = await import("@/lib/phoenix-crm/server/list-template");
+  const rules = await import("@/lib/phoenix-crm/list-template-rules");
+  const { excelCellText, loadExcelWorkbook } = await import("@/lib/uploads/exceljs-rows");
+
+  const template = await buildListTemplateFor(viewer, plan.seatId, false);
+  console.log(`Territory: ${plan.seatId} — ${customers.length} customer(s) to add, hours for ${hours.length} already waiting`);
+  for (const row of customers) console.log(`  + ${row.listType ?? "?"}  ${row.name ?? "?"}  ${row.speciality ?? ""}  ${row.daysAndHours ?? ""}`);
+  for (const row of hours) console.log(`  ~ ${row.listType ?? "?"}  ${row.name ?? "?"}  hours ${row.daysAndHours ?? ""}`);
+
+  const workbook = await loadExcelWorkbook(new Uint8Array(template.buffer).buffer);
+  const customerSheet = workbook.getWorksheet(rules.TEMPLATE_SHEET) ?? workbook.worksheets[0];
+  if (!customerSheet) throw new Error("the template has no customer sheet");
+  if (customers.length > 0) {
+    fillSheetRows(customerSheet, rules.TEMPLATE_COLUMNS, rules.TEMPLATE_REQUIRED_KEYS, customers, rules.foldHeader, excelCellText);
+  }
+  if (hours.length > 0) {
+    const existing = workbook.getWorksheet(rules.TEMPLATE_EXISTING_SHEET);
+    if (!existing) throw new Error(`the template has no "${rules.TEMPLATE_EXISTING_SHEET}" sheet for the hours`);
+    fillSheetRows(existing, rules.TEMPLATE_EXISTING_COLUMNS, ["listType", "name", "daysAndHours"], hours, rules.foldHeader, excelCellText);
+  }
+  const filled = Buffer.from(await workbook.xlsx.writeBuffer());
+
+  const form = new FormData();
+  form.set("file", new File([filled], template.fileName, { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+  form.set("seatId", plan.seatId);
+  const result = await importListTemplate(viewer, form);
+  console.log(`\nThe app accepted it: ${result.loaded} customer(s) loaded, hours set for ${result.hoursSet}, ${result.refused.length} row(s) refused or skipped`);
+  for (const refusal of result.refused) console.log(`  row ${refusal.row}: ${refusal.reason}`);
+
+  if (plan.apply) {
+    // The route's own audit line, word for word.
+    const { writeAuditLog } = await import("@/lib/admin/audit");
+    await writeAuditLog({
+      actorLoginId: owner.loginId ?? null,
+      entityId: result.seatId,
+      entityType: "phoenix_crm_list_template_import",
+      summary: `Loaded ${result.loaded} customer(s) onto the Phoenix CRM list for ${result.seatId} from a sheet (${result.refused.length} row(s) refused, days and hours set for ${result.hoursSet})`,
+    });
+  }
+
+  // PROOF — the territory's rows for every name this run named, as the database holds them now. A proof
+  // that cannot be read is exit 3, never a refusal: on --apply the write has already happened.
+  try {
+    await crmListProof(plan, customers, hours);
+  } catch (error) {
+    console.error(`\nPROOF NOT READ — ${errorText(error)}`);
+    process.exitCode = 3;
+  }
+  return { employees: [] as string[], focus: {}, proofDone: true };
+}
+
+async function crmListProof(plan: Extract<OwnerOpsPlan, { job: "load-crm-list" }>, customers: CrmListRow[], hours: CrmListRow[]) {
+  const { getSupabaseAdmin } = await import("@/lib/supabase/server");
+  const names = [...new Set([...customers, ...hours].map((row) => String(row.name ?? "").trim()).filter(Boolean))];
+  const proof = await getSupabaseAdmin()
+    .from("phoenix_crm_customers")
+    .select("id, list_type, name, speciality, status, origin, intake_where, intake_timings, created_at")
+    .eq("seat_id", plan.seatId)
+    .eq("is_test", false)
+    .in("name", names);
+  if (proof.error) throw proof.error;
+  console.log(`\nPROOF — ${plan.seatId}: the rows named by this run${plan.apply ? "" : " (as they are NOW — the dry run changed nothing)"}`);
+  for (const row of (proof.data ?? []) as Array<Record<string, unknown>>) {
+    const timings = Array.isArray(row.intake_timings) ? `${row.intake_timings.length} sitting(s)` : "no hours";
+    console.log(`  ${String(row.list_type)}  ${String(row.name)}  ${String(row.speciality ?? "")}  ${String(row.status)}  ${String(row.origin)}  ${timings}  ${String(row.intake_where ?? "")}  ${String(row.id)}`);
+  }
+}
+
+/**
+ * Waiting customers seated in an approved building that has a timetable, through
+ * seatWaitingCustomersInVenue — the board then validates only those it names. The runner first reads the
+ * building and every customer and says what the database would refuse, because a dry run's fenced RPC
+ * never reaches the database's own checks.
+ */
+async function runSeatInBuilding(plan: Extract<OwnerOpsPlan, { job: "seat-in-building" }>, owner: AccessContext) {
+  const { assertPermission } = await import("@/lib/auth/permissions");
+  await assertPermission(owner, "phoenix_crm", "approve");
+  const { resolvePhoenixCrmViewer } = await import("@/lib/phoenix-crm/server/access");
+  const viewer = await resolvePhoenixCrmViewer(owner);
+  const { getSupabaseAdmin } = await import("@/lib/supabase/server");
+
+  const building = await getSupabaseAdmin()
+    .from("phoenix_crm_shared_places")
+    .select("id, name, kind, status, seat_id, is_test, schedule_photo_path")
+    .eq("id", plan.buildingId)
+    .maybeSingle();
+  if (building.error) throw building.error;
+  const venue = building.data as Record<string, unknown> | null;
+  if (!venue) fail(`--building ${plan.buildingId}: no such building`, 1);
+  console.log(`Building: ${String(venue.name)} (${String(venue.kind)}, ${String(venue.status)}) on ${String(venue.seat_id)} — timetable ${venue.schedule_photo_path ? "on file" : "MISSING"}`);
+  const preflight = await seatInBuildingRows(plan);
+  const problems: string[] = [];
+  if (String(venue.seat_id) !== plan.seatId) problems.push(`the building is on ${String(venue.seat_id)}, not ${plan.seatId}`);
+  if (venue.status !== "active") problems.push(`the building is ${String(venue.status)}, not approved`);
+  if (!venue.schedule_photo_path) problems.push("the building has no timetable on file");
+  for (const id of plan.customerIds) {
+    const row = preflight.customers.get(id);
+    if (!row) problems.push(`${id}: no such customer`);
+    else if (String(row.seat_id) !== plan.seatId) problems.push(`${String(row.name)}: on ${String(row.seat_id)}, not ${plan.seatId}`);
+    else if (row.status !== "pending") problems.push(`${String(row.name)}: ${String(row.status)}, not waiting`);
+    else if (row.list_type !== "AM" && row.list_type !== "PM") problems.push(`${String(row.name)}: a pharmacy`);
+    else if ((preflight.places.get(id) ?? []).length > 0) problems.push(`${String(row.name)}: already has a place (move it instead)`);
+    else if (!Array.isArray(row.intake_timings) || row.intake_timings.length === 0) problems.push(`${String(row.name)}: no hours`);
+    else console.log(`  + ${String(row.list_type)}  ${String(row.name)}  ${(row.intake_timings as unknown[]).length} sitting(s)  ${id}`);
+  }
+  if (problems.length > 0) fail(`the database would refuse this seating:\n  ${problems.join("\n  ")}`, 1);
+
+  const { seatWaitingCustomersInVenue } = await import("@/lib/phoenix-crm/server/place-move");
+  const result = await seatWaitingCustomersInVenue(viewer, {
+    seatId: plan.seatId,
+    sharedPlaceId: plan.buildingId,
+    customerIds: plan.customerIds,
+    reason: plan.reason,
+  });
+  console.log(`\nThe app ${plan.apply ? "seated" : "would seat"} ${plan.apply ? result.seated.length : plan.customerIds.length} customer(s) in ${result.sharedPlaceName}; the board validated ${result.validated}`);
+
+  if (plan.apply) {
+    const { writeAuditLog } = await import("@/lib/admin/audit");
+    await writeAuditLog({
+      actorLoginId: owner.loginId ?? null,
+      entityId: plan.buildingId,
+      entityType: "phoenix_crm_seat_waiting_in_venue",
+      summary: `Seated ${result.seated.length} waiting customer(s) in ${result.sharedPlaceName} on ${plan.seatId}; the timetable validated ${result.validated}`,
+    });
+  }
+
+  try {
+    const after = await seatInBuildingRows(plan);
+    console.log(`\nPROOF — the customers as the database holds them now${plan.apply ? "" : " (the dry run changed nothing)"}`);
+    for (const id of plan.customerIds) {
+      const row = after.customers.get(id);
+      const place = (after.places.get(id) ?? []).find((entry) => entry.shared_place_id === plan.buildingId);
+      const verdict = place?.schedule_check && typeof place.schedule_check === "object" ? String((place.schedule_check as Record<string, unknown>).verdict ?? "") : "not read";
+      console.log(`  ${String(row?.name ?? id)}  ${String(row?.status ?? "?")}  validated ${String(row?.validated_at ?? "—")}  place ${place ? String(place.id) : "none"}  board: ${place ? verdict : "—"}`);
+    }
+  } catch (error) {
+    console.error(`
+PROOF NOT READ — ${errorText(error)}`);
+    process.exitCode = 3;
+  }
+  return { employees: [] as string[], focus: {}, proofDone: true };
+}
+
+async function seatInBuildingRows(plan: Extract<OwnerOpsPlan, { job: "seat-in-building" }>) {
+  const { getSupabaseAdmin } = await import("@/lib/supabase/server");
+  const customers = await getSupabaseAdmin()
+    .from("phoenix_crm_customers")
+    .select("id, name, seat_id, status, list_type, intake_timings, validated_at")
+    .in("id", plan.customerIds);
+  if (customers.error) throw customers.error;
+  const places = await getSupabaseAdmin()
+    .from("phoenix_crm_places")
+    .select("id, customer_id, shared_place_id, schedule_check")
+    .in("customer_id", plan.customerIds)
+    .eq("status", "active");
+  if (places.error) throw places.error;
+  const byPlace = new Map<string, Array<Record<string, unknown>>>();
+  for (const row of (places.data ?? []) as Array<Record<string, unknown>>) {
+    const key = String(row.customer_id);
+    byPlace.set(key, [...(byPlace.get(key) ?? []), row]);
+  }
+  return {
+    customers: new Map(((customers.data ?? []) as Array<Record<string, unknown>>).map((row) => [String(row.id), row])),
+    places: byPlace,
+  };
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   if (argv.includes("--help") || argv.includes("-h")) {
@@ -342,11 +587,13 @@ async function main() {
   const owner = await liveAccessContext(OWNER_LOGIN_ID);
   console.log(`Acting as: ${owner.label}`);
 
-  let outcome: { employees: string[]; focus: { doctorNames?: string[]; pharmacyIds?: string[] } } | null = null;
+  let outcome: { employees: string[]; focus: { doctorNames?: string[]; pharmacyIds?: string[] }; proofDone?: boolean } | null = null;
   let refused: string | null = null;
   try {
     if (plan.job === "link-doctor") outcome = await runLinkDoctor(plan, owner.access);
     else if (plan.job === "merge-venues") outcome = await runMergeVenues(plan, owner.access);
+    else if (plan.job === "load-crm-list") outcome = await runLoadCrmList(plan, owner.access);
+    else if (plan.job === "seat-in-building") outcome = await runSeatInBuilding(plan, owner.access);
     else outcome = await runPinPharmacy(plan, owner.access);
   } catch (error) {
     refused = errorText(error);
@@ -364,12 +611,12 @@ async function main() {
   }
 
   const employees = outcome?.employees ?? [];
-  if (employees.length === 0) {
+  if (employees.length === 0 && !outcome?.proofDone) {
     console.log("\nPROOF — no employee holds a doctor linked to this pharmacy, so no workspace to open (pass --employee).");
   }
   // A proof that could not be read is exit 3, never 1: on --apply the write has already happened, and
   // "refused" would read as "nothing changed".
-  if (!plan.apply) console.log("\n(The proof below is the workspace as it is NOW — the dry run changed nothing.)");
+  if (!plan.apply && employees.length > 0) console.log("\n(The proof below is the workspace as it is NOW — the dry run changed nothing.)");
   for (const hrId of employees) {
     try {
       await proofRead(hrId, outcome!.focus);

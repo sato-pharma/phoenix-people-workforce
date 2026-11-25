@@ -27,7 +27,7 @@ import { canDecideSharedPlaces, sharedPlaceForSeating } from "@/lib/phoenix-crm/
 import { settleVenueTimetable } from "@/lib/phoenix-crm/server/venue-timetable";
 import { assertPlaceIsNotSuperAdmins } from "@/lib/phoenix-crm/server/super-admin-approval";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
-import { followLineTwinCopiesQuietly } from "@/lib/phoenix-crm/server/line-twins";
+import { followLineTwinCopiesQuietly, shareAcrossLinesQuietly } from "@/lib/phoenix-crm/server/line-twins";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
@@ -261,5 +261,86 @@ export async function seatPlacesInVenue(viewer: PhoenixCrmViewer, raw: unknown):
     seated,
     timetableOnFile,
     held: Array.isArray(result.held) ? result.held.length : 0,
+  };
+}
+
+export type SeatedWaitingResult = {
+  sharedPlaceId: string;
+  sharedPlaceName: string;
+  seated: { placeId: string; customerId: string; customerName: string }[];
+  /** Customers the building's board named, and so validated. */
+  validated: number;
+};
+
+/**
+ * The Super Admin seats customers still WAITING to be validated — on the list, with their hours, with no
+ * place — in an approved building that has a timetable on file (owner, 26 Nov 2026: "We validate them
+ * with this timetable photo if it carries their name").
+ *
+ * 🔴 IT NEVER VALIDATES ANYBODY ITSELF. The database only seats them at the building's own point
+ * (phoenix_crm_seat_waiting_customers_in_venue); the board is then read for each of them and
+ * phoenix_crm_settle_venue_timetable validates exactly those it names (`match`). A board that does not
+ * name a customer leaves him waiting, and an unreadable one (`unjudged`) decides nothing.
+ *
+ * 🔴 SUPER ADMIN ONLY, through `canDecideSharedPlaces`, as the move into a building.
+ */
+export async function seatWaitingCustomersInVenue(viewer: PhoenixCrmViewer, raw: unknown): Promise<SeatedWaitingResult> {
+  const body = record(raw);
+  const { seat, isTest } = territoryForRead(viewer, body.seatId, readTestFlag(body.test));
+  if (!canDecideSharedPlaces(viewer)) throw forbiddenError("Only the Super Admin seats a waiting customer in a polyclinic.");
+  const ids = Array.isArray(body.customerIds) ? body.customerIds : [];
+  if (ids.length === 0) throw validationError("Choose at least one waiting customer to seat in the building.");
+  if (ids.length > SEAT_IN_VENUE_MAX_PLACES) throw validationError("Seat at most 60 customers at a time.");
+  if (!ids.every((id) => isUuid(id))) throw validationError("Reload the list and choose the customers again.");
+  const customerIds = [...new Set(ids.map((id) => String(id).toLowerCase()))];
+  const reason = cleanText(body.reason, PLACE_MOVE_REASON_MAX);
+  if (!reason || reason.length < PLACE_MOVE_REASON_MIN) {
+    throw validationError(`Write why they are seated (at least ${PLACE_MOVE_REASON_MIN} characters).`);
+  }
+  const venue = await sharedPlaceForSeating({ seatId: seat.seatId, isTest, sharedPlaceId: String(body.sharedPlaceId ?? "") });
+  if (!venue.schedulePhotoPath) throw validationError("This building has no timetable on file, so nothing can validate them. Photograph its timetable first.");
+
+  const result = await callPhoenixCrm<Row>("phoenix_crm_seat_waiting_customers_in_venue", {
+    p: {
+      seat_id: seat.seatId,
+      actor_hr_id: viewer.hrId,
+      is_test: isTest,
+      shared_place_id: venue.sharedPlaceId,
+      customer_ids: customerIds,
+      reason,
+    },
+  });
+  const seated = (Array.isArray(result.seated) ? result.seated : []).map((entry) => {
+    const row = record(entry);
+    return { placeId: String(row.place_id), customerId: String(row.customer_id), customerName: String(row.customer_name ?? "") };
+  });
+
+  // The board decides, after the commit. A settle that fails is logged, never answered as an error: the
+  // seating is saved, and the next settle of this building reads them again.
+  let validated = 0;
+  try {
+    const settled = await settleVenueTimetable({ viewer, seatId: seat.seatId, isTest, sharedPlaceId: venue.sharedPlaceId, schedulePhotoPath: venue.schedulePhotoPath });
+    validated = settled.validated;
+  } catch (error) {
+    logError("Phoenix CRM waiting customers seated in a building but not settled", { error, labels: { event: "phoenix_crm_seat_waiting_settle_failed" } });
+  }
+  for (const entry of seated) {
+    await restampVisitLocationsQuietly({
+      seatId: seat.seatId,
+      isTest,
+      customerId: entry.customerId,
+      actorHrId: viewer.hrId,
+      settings: viewer.config.settings,
+      scope: "all",
+    });
+    // A validated doctor's rows on the other two lines take the validation (it returns at once for one
+    // still waiting).
+    await shareAcrossLinesQuietly(entry.customerId);
+  }
+  return {
+    sharedPlaceId: venue.sharedPlaceId,
+    sharedPlaceName: String(result.shared_place_name ?? venue.name),
+    seated,
+    validated,
   };
 }

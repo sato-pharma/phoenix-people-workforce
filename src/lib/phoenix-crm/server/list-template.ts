@@ -340,7 +340,10 @@ function toPayload(customer: TemplateCustomerRow): Row {
   return {
     grade: customer.grade,
     intake_note: customer.note,
-    intake_timings: customer.timings,
+    // 🔴 `timings`, the key the loader READS (`v_row -> 'timings'`), never the column's name. Sent as
+    // `intake_timings` from 6 Oct to 26 Nov 2026, the loader read nothing and every one of the 1,667
+    // customers loaded from a sheet in that time landed with no hours, without a word to anyone.
+    timings: customer.timings,
     intake_where: customer.whereToFind,
     list_type: customer.listType,
     name: customer.name,

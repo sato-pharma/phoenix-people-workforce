@@ -43,6 +43,8 @@ function read(path: string): string {
 
 const MIGRATION = "supabase/migrations/20261003000753_phoenix_crm_list_template_bulk_add.sql";
 const MIGRATION_HOURS = "supabase/migrations/20261005221500_phoenix_crm_list_sheet_days_and_hours.sql";
+/** The LAST definer of phoenix_crm_load_list_customers — the body production runs. */
+const MIGRATION_NAME_FOLD = "supabase/migrations/20261006002000_phoenix_crm_customer_name_fold.sql";
 
 function cells(overrides: Partial<Record<TemplateColumnKey, unknown>> = {}): Partial<Record<TemplateColumnKey, unknown>> {
   return { grade: "A", listType: "PM", name: "Dr Ahmed Shalaby", potentialGrade: "AB", ...overrides };
@@ -620,7 +622,23 @@ function checkDaysAndHours(): void {
   assert.match(service, /acceptsHours: row\.status === "pending" && places\.length === 0/, "the sheet asks the raw status whether hours may still be written");
   assert.doesNotMatch(service, /acceptsHours: standing\(/, "never the printed label, which can never equal a status");
   assert.match(service, /hours: hours\.map\(hoursPayload\)/, "the upload sends the second sheet's hours with the load");
-  assert.match(service, /intake_timings: customer\.timings/, "and the first sheet's hours travel on the customer");
+  // 🔴 THE KEY THE CUSTOMER'S HOURS TRAVEL UNDER IS THE KEY THE LIVE LOADER READS. The service sent
+  // `intake_timings` (the column's name) while the loader reads `v_row -> 'timings'`, so from 6 Oct to
+  // 26 Nov 2026 all 1,667 customers loaded from a sheet landed with no hours and nothing said so. Read
+  // the key out of the payload and look for it in the loader's own new-customer loop.
+  const payload = service.slice(service.indexOf("function toPayload("), service.indexOf("function toPayload(") + 900);
+  const hoursKey = /(\w+): customer\.timings/.exec(payload)?.[1];
+  assert.ok(hoursKey, "the first sheet's hours travel on the customer");
+  const liveLoader = read(MIGRATION_NAME_FOLD);
+  const customerLoop = liveLoader.slice(
+    liveLoader.indexOf("create or replace function public.phoenix_crm_load_list_customers"),
+    liveLoader.indexOf("if jsonb_typeof(p -> 'hours') = 'array' then"),
+  );
+  assert.ok(customerLoop.length > 0, "the loader's new-customer loop is found in its last definer");
+  assert.ok(
+    customerLoop.includes(`v_row -> '${hoursKey}'`),
+    `the payload sends the hours as "${hoursKey}", which the loader's new-customer loop must read — it reads v_row -> 'timings'`,
+  );
   // A sheet downloaded before this column existed has no such sheet, or has it with no hours column.
   // Neither may throw: the upload it belongs to must still load its customers.
   const reader = service.slice(service.indexOf("function readExistingHours("));

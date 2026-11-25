@@ -66,6 +66,7 @@ export const READINESS_WRITERS: ReadonlySet<string> = new Set([
   "phoenix_crm_return_request",
   "phoenix_crm_reverse_list_request",
   "phoenix_crm_seat_places_in_venue",
+  "phoenix_crm_seat_waiting_customers_in_venue",
   "phoenix_crm_settle_venue_timetable",
   "phoenix_crm_share_line_validation",
   "phoenix_crm_update_place",

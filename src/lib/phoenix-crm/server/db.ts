@@ -133,6 +133,14 @@ const REFUSALS: Record<string, Refusal> = {
   // only if a caller ever surfaces them: the board was replaced while he took the other photos, or more than five.
   timetable_changed: { status: 409, message: "This timetable was replaced while you took the other photos. Reload the page and photograph it again." },
   too_many_timetable_pages: { status: 400, message: "A timetable takes at most five photos. Remove one and save again." },
+  // Seating a WAITING customer in a building (owner, 26 Nov 2026 — the Super Admin's
+  // phoenix_crm_seat_waiting_customers_in_venue). The board is the whole evidence, so a building without one
+  // is refused; a customer who is not waiting, already has a place, or has no hours is the move's or the
+  // list's business, not this door's.
+  shared_place_no_timetable: { status: 409, message: "This building has no timetable on file, so nothing can validate them. Photograph its timetable first." },
+  customer_not_waiting: { status: 409, message: "This customer is not waiting to be validated any more. Reload the list." },
+  customer_has_a_place: { status: 409, message: "This customer already has a place. Move that place into the building instead." },
+  customer_has_no_hours: { status: 400, message: "This customer has no days and hours yet. Set them first, then seat the customer." },
   pharmacy_cannot_be_seated: { status: 409, message: "A pharmacy cannot be moved into a polyclinic or centre." },
   no_places_chosen: { status: 400, message: "Tick at least one customer to move into the polyclinic." },
   note_required: { status: 400, message: "Write a note explaining why." },
@@ -415,6 +423,7 @@ export const CUSTOMER_360_PHOENIX_WRITERS: ReadonlySet<string> = new Set([
   "phoenix_crm_reverse_unplanned_visit",
   "phoenix_crm_save_visit",
   "phoenix_crm_seat_places_in_venue",
+  "phoenix_crm_seat_waiting_customers_in_venue",
   "phoenix_crm_set_venue_timetable",
   "phoenix_crm_settle_venue_timetable",
   "phoenix_crm_share_line_validation",

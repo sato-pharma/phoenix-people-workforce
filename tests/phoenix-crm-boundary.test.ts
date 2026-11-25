@@ -1223,6 +1223,9 @@ const LATER_MIGRATIONS = [
   // Add to a timetable on file instead of replacing it (owner, 25 Nov 2026: "replace the current timetable or ... add to
   // what exists"): one NEW function, phoenix_crm_append_timetable_pages. It replaces nothing.
   "supabase/migrations/20261125234726_phoenix_crm_append_timetable_pages.sql",
+  // Seat a waiting customer in a building its timetable names (owner, 26 Nov 2026: "We validate them with this timetable
+  // photo if it carries their name"): one NEW function, phoenix_crm_seat_waiting_customers_in_venue. It replaces nothing.
+  "supabase/migrations/20261126003900_phoenix_crm_seat_waiting_customers_in_venue.sql",
 ];
 
 /**

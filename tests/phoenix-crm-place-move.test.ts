@@ -145,9 +145,48 @@ function checkScreens(): void {
   assert.match(tab, /case "move-place": \{[\s\S]*?<PlaceMoveScreen\b/, "the List opens the move screen, which itself refuses anyone but a mover");
 }
 
+/**
+ * The Super Admin seats a customer still WAITING to be validated in an approved building that has a timetable
+ * (owner, 26 Nov 2026: "We validate them with this timetable photo if it carries their name"). The door only
+ * seats; the building's board validates, and only a doctor it names.
+ */
+function checkSeatWaitingInVenue(): void {
+  const migration = stripComments(
+    readFileSync(new URL("supabase/migrations/20261126003900_phoenix_crm_seat_waiting_customers_in_venue.sql", ROOT), "utf8").replace(/\r\n/g, "\n"),
+  );
+  const fn = /create or replace function public\.phoenix_crm_seat_waiting_customers_in_venue\(p jsonb\)([\s\S]*?)\n\$\$;/.exec(migration);
+  assert.ok(fn, "phoenix_crm_seat_waiting_customers_in_venue is defined in its migration");
+  const body = fn[1];
+  assert.match(body, /security definer/, "it runs as the owner");
+  assert.match(body, /schedule_photo_path is null then\s*raise exception 'phoenix_crm:shared_place_no_timetable';/, "a building with no timetable is refused");
+  assert.match(body, /v_venue\.status <> 'active' then\s*raise exception 'phoenix_crm:shared_place_held';/, "a building still waiting for the Super Admin is refused");
+  assert.match(body, /v_customer\.status <> 'pending' then\s*raise exception 'phoenix_crm:customer_not_waiting';/, "only a waiting customer is seated");
+  assert.match(body, /raise exception 'phoenix_crm:customer_has_a_place';/, "a customer with a place is the move's, not this door's");
+  assert.match(body, /raise exception 'phoenix_crm:customer_has_no_hours';/, "a customer with no hours is refused");
+  assert.match(body, /raise exception 'phoenix_crm:pharmacy_cannot_be_seated';/, "a pharmacy is never seated");
+  assert.match(body, /char_length\(v_reason\) < 10/, "a reason under 10 characters is refused");
+  assert.match(body, /'shared_place', v_venue\.brick_lookup, v_venue\.id/, "the place is the building's own point");
+  assert.match(body, /v_venue\.schedule_photo_path, now\(\), 'active'/, "and its photograph is the building's board");
+  assert.match(body, /'place_seated'/, "every seating is on the list's record");
+  assert.doesNotMatch(body, /validated_at/, "the door itself never validates anybody — the board's settle does");
+  assert.doesNotMatch(body, /update public\.phoenix_crm_customers/, "and it never changes the customer's status");
+  assert.match(migration, /grant execute on function public\.phoenix_crm_seat_waiting_customers_in_venue\(jsonb\) to service_role;/, "the server alone calls it");
+  assert.match(migration, /revoke execute on function public\.phoenix_crm_seat_waiting_customers_in_venue\(jsonb\) from public, anon, authenticated;/, "never the browser");
+
+  const service = read("src/lib/phoenix-crm/server/place-move.ts");
+  const seat = functionBody(service, "seatWaitingCustomersInVenue");
+  const gate = seat.indexOf("if (!canDecideSharedPlaces(viewer))");
+  const call = seat.indexOf('callPhoenixCrm<Row>("phoenix_crm_seat_waiting_customers_in_venue"');
+  const settle = seat.indexOf("settleVenueTimetable(");
+  assert.ok(gate > -1 && call > gate, "the Super Admin is checked before anything is written");
+  assert.ok(seat.indexOf("venue.schedulePhotoPath") > -1 && seat.indexOf("venue.schedulePhotoPath") < call, "and a building with no board is refused first");
+  assert.ok(settle > call, "the board is read after the seating commits");
+}
+
 export function runPhoenixCrmPlaceMoveTests(): void {
   checkDatabase();
   checkService();
   checkAccess();
   checkScreens();
+  checkSeatWaitingInVenue();
 }

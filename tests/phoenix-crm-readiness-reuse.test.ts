@@ -84,6 +84,7 @@ async function sharedCopyIsDroppedByAListWriteOnly(): Promise<void> {
     "phoenix_crm_decide_shared_place",
     "phoenix_crm_restore_shared_place",
     "phoenix_crm_seat_places_in_venue",
+    "phoenix_crm_seat_waiting_customers_in_venue",
     "phoenix_crm_settle_venue_timetable",
     "phoenix_crm_update_place",
   ]) {
