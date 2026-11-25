@@ -329,7 +329,7 @@ function fillSheetRows(
   required: readonly string[],
   rows: ReadonlyArray<Record<string, string | undefined>>,
   fold: (value: unknown) => string,
-  cellText: (value: unknown) => string,
+  cellText: (value: import("exceljs").CellValue) => string,
 ): void {
   let header: { rowNumber: number; at: Map<string, number> } | null = null;
   for (let rowNumber = 1; rowNumber <= Math.min(40, sheet.rowCount) && !header; rowNumber += 1) {
@@ -393,7 +393,7 @@ async function runLoadCrmList(plan: Extract<OwnerOpsPlan, { job: "load-crm-list"
   for (const row of customers) console.log(`  + ${row.listType ?? "?"}  ${row.name ?? "?"}  ${row.speciality ?? ""}  ${row.daysAndHours ?? ""}`);
   for (const row of hours) console.log(`  ~ ${row.listType ?? "?"}  ${row.name ?? "?"}  hours ${row.daysAndHours ?? ""}`);
 
-  const workbook = await loadExcelWorkbook(template.buffer);
+  const workbook = await loadExcelWorkbook(new Uint8Array(template.buffer).buffer);
   const customerSheet = workbook.getWorksheet(rules.TEMPLATE_SHEET) ?? workbook.worksheets[0];
   if (!customerSheet) throw new Error("the template has no customer sheet");
   if (customers.length > 0) {
