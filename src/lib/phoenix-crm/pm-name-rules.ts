@@ -36,13 +36,26 @@ import {
  * board never passes on its father's and family name alone.
  */
 
+/**
+ * 🔴 TWO NAMES ARE ENOUGH — THE MIDDLE NAME IS OPTIONAL (owner, 2026-11-26: "make the system phoenix crm
+ * accept 2 names"). This replaces the three-name rule of 2026-11-07 described above: a clinic doctor now
+ * needs at least his first and last name. Everything that counted three — Add visit, the plan, the
+ * validation door, Place checks, the line twins — asks this one number, so it can never disagree.
+ * Measured the day he said it: the four Shorouk doctors on Nora Kamal's list were validated with two names
+ * each, and Add visit still asked her for a third.
+ */
+export const DOCTOR_NAME_MIN_WORDS = 2;
+
+/** What the rep reads when the name is short: the first and last name, the middle one optional. */
+export const DOCTOR_NAME_SHORT = "Write the first and last name. The middle name is optional.";
+
 export type DoctorNameParts = { first: string; middle: string; last: string };
 
 export const EMPTY_DOCTOR_NAME: DoctorNameParts = { first: "", middle: "", last: "" };
 
-export const DOCTOR_NAME_FIELDS: ReadonlyArray<{ key: keyof DoctorNameParts; label: string }> = [
+export const DOCTOR_NAME_FIELDS: ReadonlyArray<{ key: keyof DoctorNameParts; label: string; optional?: boolean }> = [
   { key: "first", label: "First name" },
-  { key: "middle", label: "Middle name" },
+  { key: "middle", label: "Middle name", optional: true },
   { key: "last", label: "Last name" },
 ];
 
@@ -51,7 +64,7 @@ export const FULL_NAME_APPROVE_AT = 60;
 
 /** What Add visit and the visit save say about a blocked doctor: the way out, in his own words. */
 export function fullNameNeededSentence(name: string): string {
-  return `${name} needs a full name first. Open this customer in your list, tap Change the details and write the first, middle and last name.`;
+  return `${name} needs a full name first. Open this customer in your list, tap Change the details and write the first and last name.`;
 }
 
 /**
@@ -59,7 +72,7 @@ export function fullNameNeededSentence(name: string): string {
  * button that opens it (owner, 2026-11-09 — the old note repeated the name and offered no way out).
  */
 export const FULL_NAME_WRITE_SENTENCE =
-  "Write this customer's first, middle and last name, as the signboard shows them, and the visit opens.";
+  "Write this customer's first and last name, as the signboard shows them, and the visit opens.";
 
 /** The button under that note: it opens the List on this customer's Change the details screen. */
 export const FULL_NAME_WRITE_BUTTON = "Write the full name";
@@ -144,12 +157,13 @@ export function doctorNamePartProblem(value: unknown, label: string): string | n
 /** The three fields as one name, or why not. */
 export function doctorFullNameProblem(parts: DoctorNameParts): string | null {
   for (const field of DOCTOR_NAME_FIELDS) {
+    if (field.optional && !cleanPart(parts[field.key])) continue;
     const problem = doctorNamePartProblem(parts[field.key], field.label);
     if (problem) return problem;
   }
   // The joined name is counted the way doctorNeedsFullName counts it, or a name every box passed can still
   // be saved short — an open compound (عبد, ابو) swallows the next box's word.
-  if (doctorNameWordCount(joinDoctorName(parts)) < 3) return "Write the first, middle and last name.";
+  if (doctorNameWordCount(joinDoctorName(parts)) < DOCTOR_NAME_MIN_WORDS) return DOCTOR_NAME_SHORT;
   const doubled = doubledNamePart(joinDoctorName(parts));
   if (doubled) return doubledNameSentence(doubled);
   return null;
@@ -182,7 +196,7 @@ function bareName(word: string): string {
 
 /** What the rep reads when one name fills two boxes: his own fix, never that anybody looked. */
 function doubledNameSentence(word: string): string {
-  return `${word} is written twice. Write the first, middle and last name, each one once.`;
+  return `${word} is written twice. Write each name once.`;
 }
 
 export function joinDoctorName(parts: DoctorNameParts): string {
@@ -206,7 +220,7 @@ export function parseDoctorFullName(
     return problem ? { ok: false, error: problem } : { ok: true, value: joinDoctorName(parts) };
   }
   const whole = cleanPart(name);
-  if (doctorNameWordCount(whole) < 3) return { ok: false, error: "Write the first, middle and last name." };
+  if (doctorNameWordCount(whole) < DOCTOR_NAME_MIN_WORDS) return { ok: false, error: DOCTOR_NAME_SHORT };
   const doubled = doubledNamePart(whole);
   if (doubled) return { ok: false, error: doubledNameSentence(doubled) };
   return { ok: true, value: whole };
@@ -257,7 +271,7 @@ export function doctorNeedsFullName(customer: {
   if (String(customer.listType ?? "").toUpperCase() !== "PM") return false;
   if (customer.status === "dropped") return false;
   if (typeof customer.fullNameHeld === "string" && customer.fullNameHeld.trim()) return false;
-  return doctorNameWordCount(String(customer.name ?? "")) < 3;
+  return doctorNameWordCount(String(customer.name ?? "")) < DOCTOR_NAME_MIN_WORDS;
 }
 
 /** The person names a stored signboard or timetable reading holds — what the full name is held against. */
@@ -376,14 +390,14 @@ export type HeldFullNameBoard = {
 export function validationNeedsFullName(subject: { listType: unknown; name: unknown }): boolean {
   if (String(subject.listType ?? "").toUpperCase() !== "PM") return false;
   const name = String(subject.name ?? "");
-  return doctorNameWordCount(name) < 3 || doubledNamePart(name) !== null;
+  return doctorNameWordCount(name) < DOCTOR_NAME_MIN_WORDS || doubledNamePart(name) !== null;
 }
 
 /** What the rep reads above the three boxes at the door: his own fix, in his own words. */
-export const VALIDATION_FULL_NAME_ASK = "Write the first, middle and last name as the sign shows them.";
+export const VALIDATION_FULL_NAME_ASK = "Write the first and last name as the sign shows them. The middle name is optional.";
 
 /** The refusal when a short-named doctor's validation arrives without the three names. */
-export const VALIDATION_FULL_NAME_MISSING = "Write the first, middle and last name.";
+export const VALIDATION_FULL_NAME_MISSING = DOCTOR_NAME_SHORT;
 
 /** The error code of that refusal, so the screen returns the rep to the step that holds the boxes. */
 export const VALIDATION_FULL_NAME_CODE = "phoenix_crm_full_name_needed";
@@ -404,7 +418,7 @@ export function approvalNeedsFullName(row: { listType: unknown; customerName: un
  * the short-name reason so the rep writes all three. A fact, never a refusal.
  */
 export const SHORT_NAME_APPROVAL_NOTE =
-  "This customer has only one or two names, or one name written twice. Approve accepts the name as it stands; Reject sends it back so the rep writes the first, middle and last name.";
+  "This customer has only one name, or one name written twice. Approve accepts the name as it stands; Reject sends it back so the rep writes the first and last name.";
 
 export const APPROVAL_NEEDS_FULL_NAME =
-  "This customer has only one or two names, or one name written twice. Send it back so the rep writes the first, middle and last name.";
+  "This customer has only one name, or one name written twice. Send it back so the rep writes the first and last name.";

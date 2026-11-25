@@ -7,8 +7,9 @@ import { DOCTOR_NAME_FIELDS, type DoctorNameParts } from "@/lib/phoenix-crm/pm-n
 const PART_MAX = 40;
 
 /**
- * A clinic doctor's name as three required boxes, first, middle and last (owner, 2026-11-07,
- * pm-name-rules.ts). An AM account and a pharmacy keep their one name box.
+ * A clinic doctor's name as three boxes, first, middle and last; the middle one is optional (owner,
+ * 2026-11-26, pm-name-rules.ts — all three were required from 2026-11-07). An AM account and a pharmacy
+ * keep their one name box.
  */
 export function DoctorNameFields({
   disabled,
@@ -27,7 +28,7 @@ export function DoctorNameFields({
   return (
     <div className={stacked ? "grid min-w-0 gap-3" : "grid min-w-0 gap-3 sm:col-span-2 sm:grid-cols-3"}>
       {DOCTOR_NAME_FIELDS.map((field) => (
-        <CrmField htmlFor={`${idPrefix}-${field.key}`} key={field.key} label={field.label}>
+        <CrmField htmlFor={`${idPrefix}-${field.key}`} key={field.key} label={field.optional ? `${field.label} (optional)` : field.label}>
           <input
             autoComplete="off"
             className={crmInputClassName}
@@ -36,13 +37,13 @@ export function DoctorNameFields({
             id={`${idPrefix}-${field.key}`}
             maxLength={PART_MAX}
             onChange={(event) => onChange({ ...value, [field.key]: event.target.value })}
-            required
+            required={!field.optional}
             value={value[field.key]}
           />
         </CrmField>
       ))}
       <p className={stacked ? "text-xs font-medium leading-5 text-slate-500" : "text-xs font-medium leading-5 text-slate-500 sm:col-span-3"}>
-        The customer&apos;s own three names, as the signboard shows them. No Dr or د.
+        The customer&apos;s own names, as the signboard shows them. The middle name is optional. No Dr or د.
       </p>
     </div>
   );

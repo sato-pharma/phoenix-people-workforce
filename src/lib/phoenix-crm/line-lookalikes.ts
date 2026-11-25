@@ -479,7 +479,7 @@ export const LOOKALIKE_REFUSAL_TEXT: Record<LookalikeRefusal, string> = {
   in_review: "A validation of this customer already waits for the Super Admin.",
   drop_requested: "A request to drop this customer waits.",
   full_name_held: "This customer's full name waits for the Super Admin.",
-  needs_full_name: "A PM customer needs all three names before validation.",
+  needs_full_name: "A PM customer needs the first and last name before validation.",
   not_found: "One of the two customers is no longer on a list.",
   source_not_validated: "The other line's customer is no longer validated with a place of its own.",
   not_comparable: "The two customers are not on two lines of one area's same list.",

@@ -178,7 +178,7 @@ function runScreenNameMaskingTests() {
     "This location is not at <name> on Google Maps (it must be within <n> m). Stand at its entrance, then take the photo and press Capture location again.",
     "the name is masked as one run, however many words and spaces, and the English around it is kept",
   );
-  const fullName = (name: string) => `${name} needs a full name first. Open this customer in your list, tap Change the details and write the first, middle and last name.`;
+  const fullName = (name: string) => `${name} needs a full name first. Open this customer in your list, tap Change the details and write the first and last name.`;
   assert.equal(
     userScreenSignature(refusal(fullName("ابانوب عوض"), { api_path: "/api/phoenix-crm/plans" })),
     userScreenSignature(refusal(fullName("عبدالرحمن عبدالرازق"), { api_path: "/api/phoenix-crm/plans" })),
