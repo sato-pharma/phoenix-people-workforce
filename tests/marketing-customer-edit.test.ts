@@ -7,7 +7,7 @@ import {
   canEditMarketingCustomer,
   normalizeCustomerDetailsEdit,
 } from "../src/lib/marketing-requests/customer-edit.ts";
-import { distributorCodeMatchKey } from "../src/lib/marketing-requests/service.ts";
+import { distributorCodeMatchKey, isDeskAttachEntry } from "../src/lib/marketing-requests/service.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The Super Admin edits a customer already on file (owner, 2026-11-25: "make the super admin able
@@ -92,6 +92,24 @@ export function runMarketingCustomerEditTests() {
   assert.notEqual(distributorCodeMatchKey(7, "887"), distributorCodeMatchKey(8, "887"), "the same code at another distributor is another pharmacy");
   assert.equal(distributorCodeMatchKey(7, "000"), "7::0", "a code of zeros keeps one zero rather than becoming empty");
   assert.equal(distributorCodeMatchKey(7, "AB12"), distributorCodeMatchKey(7, "ab12"));
+
+  // A desk save that NAMES the doctor on file and brings no capture of him only adds pharmacies.
+  // 26 Nov 2026 00:06: linking Salah El Hol this way took the "complete the customer" branch,
+  // re-stamped Dr Othman El Shewehy's validation and added a third copy of his contact.
+  const othman = "2911d0e4-9a97-4017-ae48-415ccca258a9";
+  assert.equal(isDeskAttachEntry({ evidenceStatus: "missing", existingCustomerId: othman, isOnBehalf: true }), true,
+    "a desk save naming the doctor on file, with no capture of him, leaves his row and contacts alone");
+  assert.equal(isDeskAttachEntry({ evidenceStatus: "pending", existingCustomerId: othman, isOnBehalf: true }), false,
+    "a desk save that brings a pin or a photo of him still completes his evidence");
+  assert.equal(isDeskAttachEntry({ evidenceStatus: "missing", existingCustomerId: othman, isOnBehalf: false }), false,
+    "a rep's own save is never turned into an attach");
+  assert.equal(isDeskAttachEntry({ evidenceStatus: "missing", existingCustomerId: "  ", isOnBehalf: true }), false);
+  {
+    const service = readFileSync(new URL("../src/lib/marketing-requests/service.ts", import.meta.url), "utf8");
+    const deskBlock = service.slice(service.indexOf("const deskAttachCustomerIds = new Set<string>();"));
+    assert.ok(/isDeskAttachEntry\(\{[^}]*existingCustomerId: entry\.existingCustomerId/.test(deskBlock.slice(0, 1200)),
+      "Save Validation asks isDeskAttachEntry of every named customer before the CRM-pick lookup");
+  }
 
   // The "attach only" switch skips the customer write and revives removed links, so it may come
   // from the server's own call alone — never from what a browser sends.

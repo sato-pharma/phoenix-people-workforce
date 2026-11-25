@@ -1016,6 +1016,7 @@ import { runVenueValidationRuleTests } from "./venue-validation-rule.test.ts";
 import { runMarketingVenueMergeTests } from "./marketing-venue-merge.test.ts";
 import { runMarketingVenueMergeCodeCollisionTests } from "./marketing-venue-merge-code-collision.test.ts";
 import { runMarketingVenueMergeRouteTests } from "./marketing-venue-merge-route.test.ts";
+import { runOwnerOpsRunnerTests } from "./owner-ops-runner.test.ts";
 import { runMarketingRoiTrackerTests } from "./marketing-roi-tracker.test.ts";
 import { runMarketingRoiFastAwaitingDataTests } from "./marketing-roi-fast-awaiting-data.test.ts";
 import { runMarketingRoiRefreshScheduleTests } from "./marketing-roi-refresh-schedule.test.ts";
@@ -1451,6 +1452,7 @@ import { runHiringPackCustomTemplateTests } from "./hiring-pack-custom-templates
 import { runHiringDocumentFileSourceTests } from "./hiring-document-file-source.test.ts";
 import { runHiringPackPaperArtworkTests } from "./hiring-pack-paper-artwork.test.ts";
 import { runPrintBannerScriptTests } from "./print-banner-script.test.ts";
+import { runServerArabicFontconfigTests } from "./server-arabic-fontconfig.test.ts";
 import { runHiringPackPaperFilingTests } from "./hiring-pack-paper-filing.test.ts";
 import { runHiringPackDocumentRegistryTests } from "./hiring-pack-document-registry.test.ts";
 import { runHiringPackFieldLayoutTests } from "./hiring-pack-field-layout.test.ts";
@@ -5383,6 +5385,10 @@ await runTest(
   "marketing venue merge route + admin action (the merge is reachable at all, the route delegates authorization instead of re-deciding it, it is registered as its own audited CSRF mutation rather than falling through the /api/marketing-requests/** blanket, the picker reads the venue table so an unlinked duplicate is still offerable, and the Customer Database gate still matches the service's)",
   runMarketingVenueMergeRouteTests,
 );
+await runTest(
+  "owner-ops (the owner's desk jobs run from the app's own code) is a DRY RUN unless the literal token --apply is on the command line: --apply=yes, --apply=false and a bare apply are refused, as are a flag of another job, a flag given twice, a non-uuid id, a self-merge and a swapped pin; the dry-run fence hands no table write, Telegram or e-mail to the network while a read passes and every write is listed; and the runner installs that fence before it imports any app module, skipping it only under --apply after the tree-is-current check",
+  runOwnerOpsRunnerTests,
+);
 await runTest("marketing request overlap detection (double-count guard)", runMarketingRequestOverlapTests);
 await runTest("marketing request twin guard (double-payment refusal)", runMarketingRequestTwinGuardTests);
 await runTest("marketing validation draft recovery (stale evidence must never be restored)", runMarketingValidationDraftTests);
@@ -6257,6 +6263,7 @@ await runTest("hiring pack company templates (a custom document cannot collide w
 await runTest("hiring pack paper filing (a slot is matched on its pinned column not its name, a retired or missing slot refuses rather than guesses, a filed name survives a Windows download)", runHiringPackPaperFilingTests);
 await runTest("hiring pack paper artwork (a scan is embedded as bytes because setContent gives the page no origin, and an unreadable one is reported so filing refuses rather than storing a blank government form)", runHiringPackPaperArtworkTests);
 await runTest("print banner script (the Download PDF script must PARSE in a browser — a backslash lost to the template literal once made it a comment, and the button stayed hidden on every document with nothing red anywhere)", runPrintBannerScriptTests);
+await runTest("server Arabic fontconfig (the image refuses Noto Sans Math, which drew every regular-weight Arabic word letter by letter in the expense trip PDF)", runServerArabicFontconfigTests);
 await runTest("hiring document file source (every source reads back as itself so an issued paper is never reported as an upload, and the exhaustive badge Record is asserted at runtime because ignoreBuildErrors lets a missing key deploy)", runHiringDocumentFileSourceTests);
 await runTest("hiring pack company template printing (a blank template prints its artwork, pages print in upload order, an unfillable placeholder blanks the whole field rather than printing braces)", runHiringPackCustomTemplateRenderTests);
 await runTest("hiring pack document registry (every document — the ten in code and an uploaded one — resolves a name, a copy count and a surface at RUNTIME, which ignoreBuildErrors means the compiler cannot promise)", runHiringPackDocumentRegistryTests);

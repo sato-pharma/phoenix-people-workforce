@@ -5,7 +5,7 @@ import { resolveAccessContext } from "@/lib/auth/server";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { phoenixCrmFailure, searchOf } from "@/lib/phoenix-crm/server/http";
 import { createSharedPlace, loadSharedPlacesFor } from "@/lib/phoenix-crm/server/shared-places";
-import { addVenueTimetable } from "@/lib/phoenix-crm/server/venue-timetable";
+import { addVenueTimetable, addVenueTimetablePages } from "@/lib/phoenix-crm/server/venue-timetable";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
@@ -42,6 +42,11 @@ export async function POST(request: Request) {
     if (body?.action === "timetable") {
       const timetable = await addVenueTimetable(viewer, body);
       return NextResponse.json({ success: true, timetable });
+    }
+    // Photos ADDED to the timetable on file, which stays (owner, 25 Nov 2026: "replace ... or add to what exists").
+    if (body?.action === "timetable_pages") {
+      const timetablePages = await addVenueTimetablePages(viewer, body);
+      return NextResponse.json({ success: true, timetablePages });
     }
     const sharedPlace = await createSharedPlace(viewer, body);
     return NextResponse.json({ sharedPlace, success: true });

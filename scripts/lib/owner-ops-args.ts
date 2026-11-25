@@ -1,0 +1,165 @@
+// scripts/lib/owner-ops-args.ts
+// ---------------------------------------------------------------------------
+// THE COMMAND LINE OF scripts/owner-ops.ts, AND NOTHING ELSE — no imports, no database, no env.
+//
+// Kept apart from the runner so tests/owner-ops-runner.test.ts can pin the one rule that matters
+// most here without a database: 🔴 A RUN IS A DRY RUN UNLESS THE LITERAL TOKEN `--apply` IS ON THE
+// COMMAND LINE. `--apply=yes`, `--Apply`, `--aply` and `apply` (no dashes) never turn a dry run into a
+// write; the first is refused here and the rest by the runner's unknown-flag gate or as a stray word.
+//
+// Each job takes only its own flags. A flag that belongs to another job is refused rather than ignored
+// (`merge-venues --lat 31` is somebody who meant a different job), and a value flag given twice is
+// refused rather than "last one wins".
+// ---------------------------------------------------------------------------
+
+export const OWNER_OPS_JOBS = ["link-doctor", "merge-venues", "pin-pharmacy"] as const;
+export type OwnerOpsJob = (typeof OWNER_OPS_JOBS)[number];
+
+/** Every flag the runner knows, for refuseUnknownFlags. */
+export const OWNER_OPS_FLAGS = [
+  "--apply",
+  "--body",
+  "--employee",
+  "--help",
+  "--lat",
+  "--lng",
+  "--loser",
+  "--pharmacy",
+  "--reason",
+  "--survivor",
+  "-h",
+] as const;
+
+const VALUE_FLAGS_BY_JOB: Record<OwnerOpsJob, readonly string[]> = {
+  "link-doctor": ["--body"],
+  "merge-venues": ["--survivor", "--loser", "--reason", "--employee"],
+  "pin-pharmacy": ["--pharmacy", "--lat", "--lng", "--employee"],
+};
+
+/**
+ * Egypt's box, generously. A pin outside it is refused: usually latitude and longitude swapped. The two
+ * ranges OVERLAP, so this catches a swap only where it lands outside Egypt (Aswan, 24.09 / 32.90, swapped
+ * is latitude 32.90); a swapped Cairo or Delta pin (29.95 / 31.25) still reads as a place in Egypt, which
+ * is why the runner prints the pin row and the proof read for a human to look at.
+ */
+export const EGYPT_LATITUDE_RANGE = [21.5, 32] as const;
+export const EGYPT_LONGITUDE_RANGE = [24.5, 37] as const;
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export type OwnerOpsPlan =
+  | { job: "link-doctor"; apply: boolean; bodyPath: string }
+  | { job: "merge-venues"; apply: boolean; survivorId: string; loserId: string; reason: string; employeeHrId: string | null }
+  | { job: "pin-pharmacy"; apply: boolean; pharmacyId: string; latitude: number; longitude: number; employeeHrId: string | null };
+
+export type OwnerOpsParse = { ok: true; plan: OwnerOpsPlan } | { ok: false; error: string };
+
+export const OWNER_OPS_USAGE = `owner-ops — the owner's desk jobs, run from the app's own code against the database in .env.local.
+
+A DRY RUN BY DEFAULT: the job runs fully through the app's own checks, every write it would make is
+listed and none is sent. Only --apply writes. Every run ends with a proof read.
+
+  link-doctor  --body <file.json>
+      Link a doctor's pharmacies to an employee (the Super Admin desk entry). The file is the exact
+      body of POST /api/marketing-requests/validation, onBehalfOfHrId included
+      (docs/owner-operations-recipes.md).
+  merge-venues --survivor <pharmacy id> --loser <pharmacy id> --reason "<why they are one shop>" [--employee <hr id>]
+      Fold a duplicate pharmacy copy into the one that stays. One copy per run.
+  pin-pharmacy --pharmacy <pharmacy id> --lat <latitude> --lng <longitude> [--employee <hr id>]
+      Put a map pin on a saved pharmacy that has none (evidence stays pending: no shop photo).
+
+  --apply      write for real (refused from a tree behind origin/main)
+  --employee   whose draft workspace the proof read opens; by default every employee holding a
+               doctor linked to the pharmacy
+
+Run:
+  node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node \\
+    --import ./tests/register-alias-loader.mjs scripts/owner-ops.ts <job> <flags>`;
+
+function flagName(token: string): string {
+  return token.split("=")[0] ?? token;
+}
+
+export function parseOwnerOpsArgs(argv: readonly string[]): OwnerOpsParse {
+  const [jobToken, ...rest] = argv;
+  if (!jobToken || jobToken.startsWith("-")) {
+    return { ok: false, error: `name the job first: ${OWNER_OPS_JOBS.join(", ")}` };
+  }
+  if (!(OWNER_OPS_JOBS as readonly string[]).includes(jobToken)) {
+    return { ok: false, error: `"${jobToken}" is not a job this runner knows; it knows ${OWNER_OPS_JOBS.join(", ")}` };
+  }
+  const job = jobToken as OwnerOpsJob;
+  const allowed = VALUE_FLAGS_BY_JOB[job];
+
+  let apply = false;
+  const values = new Map<string, string>();
+  for (let index = 0; index < rest.length; index += 1) {
+    const token = rest[index]!;
+    const name = flagName(token);
+    if (name === "--apply") {
+      if (token !== "--apply") return { ok: false, error: "--apply takes no value; write it on its own" };
+      apply = true;
+      continue;
+    }
+    if (!token.startsWith("-")) {
+      return { ok: false, error: `"${token}" is not a flag or a flag's value — quote a value that has spaces in it` };
+    }
+    if (!allowed.includes(name)) {
+      return { ok: false, error: `${name} is not a flag of ${job}; it takes ${allowed.join(" ")} and --apply` };
+    }
+    if (values.has(name)) return { ok: false, error: `${name} is given twice` };
+    let value: string | undefined;
+    if (token.includes("=")) {
+      value = token.slice(token.indexOf("=") + 1);
+    } else {
+      value = rest[index + 1];
+      index += 1;
+    }
+    if (value === undefined || value.trim() === "" || value.startsWith("--")) {
+      return { ok: false, error: `${name} needs a value` };
+    }
+    values.set(name, value.trim());
+  }
+
+  const need = (name: string): string | { error: string } => values.get(name) ?? { error: `${job} needs ${name}` };
+  const id = (name: string): string | { error: string } => {
+    const value = need(name);
+    if (typeof value !== "string") return value;
+    return UUID.test(value) ? value.toLowerCase() : { error: `${name} must be a pharmacy id (a uuid), got "${value}"` };
+  };
+
+  if (job === "link-doctor") {
+    const bodyPath = need("--body");
+    if (typeof bodyPath !== "string") return { ok: false, ...bodyPath };
+    return { ok: true, plan: { job, apply, bodyPath } };
+  }
+
+  if (job === "merge-venues") {
+    const survivorId = id("--survivor");
+    if (typeof survivorId !== "string") return { ok: false, ...survivorId };
+    const loserId = id("--loser");
+    if (typeof loserId !== "string") return { ok: false, ...loserId };
+    if (survivorId === loserId) return { ok: false, error: "--survivor and --loser are the same pharmacy" };
+    const reason = need("--reason");
+    if (typeof reason !== "string") return { ok: false, ...reason };
+    return { ok: true, plan: { job, apply, survivorId, loserId, reason, employeeHrId: values.get("--employee") ?? null } };
+  }
+
+  const pharmacyId = id("--pharmacy");
+  if (typeof pharmacyId !== "string") return { ok: false, ...pharmacyId };
+  const coordinate = (name: string, [low, high]: readonly [number, number]): number | { error: string } => {
+    const raw = need(name);
+    if (typeof raw !== "string") return raw;
+    const value = Number(raw);
+    if (!Number.isFinite(value)) return { error: `${name} must be a number, got "${raw}"` };
+    if (value < low || value > high) {
+      return { error: `${name} ${value} is outside Egypt (${low} to ${high}) — are latitude and longitude swapped?` };
+    }
+    return value;
+  };
+  const latitude = coordinate("--lat", EGYPT_LATITUDE_RANGE);
+  if (typeof latitude !== "number") return { ok: false, ...latitude };
+  const longitude = coordinate("--lng", EGYPT_LONGITUDE_RANGE);
+  if (typeof longitude !== "number") return { ok: false, ...longitude };
+  return { ok: true, plan: { job, apply, pharmacyId, latitude, longitude, employeeHrId: values.get("--employee") ?? null } };
+}

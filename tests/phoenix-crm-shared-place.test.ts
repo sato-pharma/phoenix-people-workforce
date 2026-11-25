@@ -250,8 +250,8 @@ export function runPhoenixCrmSharedPlaceTests(): void {
   if (seated.ok) {
     assert.deepEqual(
       Object.keys(seated.value).sort(),
-      ["extraPhotoPaths", "label", "photoPath", "photoUploaded", "session", "sharedPlaceId", "standingAt", "timings"],
-      "🔴 EIGHT KEYS (the timetable's other photos since 25 Nov 2026), AND NONE OF THEM A POINT — the one reading is `standingAt`, which asks whether he is in the building and is never stored (tests/phoenix-crm-seat-at-building.test.ts)",
+      ["addedPhotoPaths", "extraPhotoPaths", "label", "photoPath", "photoUploaded", "session", "sharedPlaceId", "standingAt", "timings"],
+      "🔴 NINE KEYS (the timetable's other photos, and the photos ADDED to the board on file, since 25 Nov 2026), AND NONE OF THEM A POINT — the one reading is `standingAt`, which asks whether he is in the building and is never stored (tests/phoenix-crm-seat-at-building.test.ts)",
     );
     assert.equal(seated.value.standingAt, null, "and a body naming no `standingAt` is not measured");
     assert.equal(seated.value.session, null, "a build that names no session leaves it null, and the database seats him in his own list");
@@ -280,11 +280,11 @@ export function runPhoenixCrmSharedPlaceTests(): void {
   // 1 ─ The server decides reuse, from the VENUE's stored path. A body cannot ask for it.
   assert.ok(service.includes("export function effectiveSeatedPhoto("), "one function decides which photo a seating is saved against");
   assert.ok(
-    service.includes("if (seated.photoPath) return { path: seated.photoPath, reused: false, extraPaths: seated.extraPhotoPaths };"),
+    service.includes("if (seated.photoPath) return { path: seated.photoPath, reused: false, extraPaths: seated.extraPhotoPaths, addedPaths: [] };"),
     "a photo sent from the phone is a REPLACEMENT of the board on the wall",
   );
   assert.ok(
-    service.includes("return { path: venue.schedulePhotoPath, reused: true, extraPaths: venue.scheduleExtraPhotoPaths };"),
+    service.includes("return { path: venue.schedulePhotoPath, reused: true, extraPaths: venue.scheduleExtraPhotoPaths, addedPaths };"),
     "🔴 and reuse resolves from the VENUE's own column — never from a flag on the body, which is why the seated draft still has exactly four keys",
   );
   assert.ok(
@@ -355,7 +355,7 @@ export function runPhoenixCrmSharedPlaceTests(): void {
     "🔴 the stamp burned into the timetable photo is the BUILDING's name — the old customer stamp is what made one image per doctor unavoidable",
   );
   assert.ok(!seatedScreen.includes("photoBlockedReason"), "so the 'write the customer's name first' gate is gone with it");
-  assert.ok(seatedScreen.includes("SEATED_PLACE_PHOTO_REPLACE"), "and the only way back to the camera is the board on the wall having changed");
+  assert.ok(seatedScreen.includes("SEATED_PLACE_PHOTO_REPLACE"), "and the only way back to the camera is the board on the wall having changed (or a photo ADDED to it, owner 25 Nov 2026)");
   assert.ok(
     seatedScreen.includes("draft.replacingTimetable || !draft.timetableOnFile"),
     "the phone asks for a photo of the FIRST customer in a building, and of a rep who said the board changed — nobody else",

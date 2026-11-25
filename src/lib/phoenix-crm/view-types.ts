@@ -32,7 +32,7 @@ export type {
   TerritoryListView,
   ValidateResult,
 } from "@/lib/phoenix-crm/server/list";
-export type { AddedVenueTimetable } from "@/lib/phoenix-crm/server/venue-timetable";
+export type { AddedVenueTimetable, AddedVenueTimetablePages } from "@/lib/phoenix-crm/server/venue-timetable";
 export type { PlaceMoveResult, PlaceMoveTarget, SeatedInVenueResult } from "@/lib/phoenix-crm/server/place-move";
 export type { TrustedPointApplied, TrustedPointLocation, TrustedPointPreview } from "@/lib/phoenix-crm/server/trusted-point";
 export type { AdminPhotoApplied, AdminPhotoRepAsk, AdminPhotoState } from "@/lib/phoenix-crm/server/admin-photo";
