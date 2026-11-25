@@ -242,6 +242,8 @@ export type AuditEntityType =
   | "crm_team_visits_export"
   // One rep's visits over a chosen range, downloaded as the reviewed workbook by the Super Admin (Rep visits export).
   | "rep_visits_export"
+  // One rep's effectiveness review (customers, KPIs, sales vs target) downloaded as Excel or PDF by the Super Admin.
+  | "rep_effectiveness_export"
   // District Managers' Plans downloaded as a workbook: every district manager's week under the Regional Sales Manager.
   | "crm_district_plans_export"
   // Pulling the mobile numbers behind the organogram export. The only route in the module
