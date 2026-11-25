@@ -73,7 +73,7 @@ export function runMarketingCustomerEditTests() {
       pharmacyCode: " 372045 ",
     },
     pinnedAt,
-  );
+  ) as unknown as { capturedAt?: string; displayName?: string; vendorCodes?: unknown; venueType?: string };
   assert.equal(fresh.venueType, "pharmacy");
   assert.equal(fresh.displayName, "Salah El Hol");
   assert.equal(fresh.capturedAt, pinnedAt, "the pin carries the moment it was placed, as a desk map pick does");
