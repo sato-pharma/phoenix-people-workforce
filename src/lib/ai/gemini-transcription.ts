@@ -25,7 +25,7 @@
 import { GroqTranscriptionError, isHallucinatedTranscript, type GroqTranscriptionCode } from "@/lib/ai/groq-transcription";
 import { closeWebmTimelineGaps, isWebmRecording } from "@/lib/ai/webm-timeline";
 import { recordAiCall, type AiCallProvider } from "@/lib/observability/ai-metrics";
-import { logError } from "@/lib/observability/log";
+import { logError, logWarning } from "@/lib/observability/log";
 
 /** The model the listening test chose. Not the "transcribe" model, which lost it (see the header). */
 export const GEMINI_TRANSCRIPTION_MODEL = "gemini-3.5-flash";
@@ -174,7 +174,13 @@ export async function transcribeWithGemini(request: GeminiTranscriptionRequest):
       ...(rescued ? { failedOverTo: request.fallback } : {}),
     });
     // No body, ever: a refused key's answer can quote the key.
-    logError(`Gemini transcription failed: ${code}`, {
+    //
+    // 🔴 A LEG WHISPER IS ABOUT TO ANSWER IS A WARNING, NEVER AN ERROR (25 Nov 2026). An ERROR line is also
+    // a System Audit row, so until this a Gemini timeout on a note Whisper then wrote out in full sent the
+    // owner "New error in Phoenix — Gemini transcription failed: timeout" beside the failed-over row
+    // `recordAiCall` already wrote for the same leg (20:07 and 20:08 Cairo: two notes, both written). The
+    // alarm for a refused key or a used-up account is `recordAiCall`'s, not this line's, so nothing is lost.
+    (rescued ? logWarning : logError)(`Gemini transcription failed: ${code}`, {
       labels: { event: "gemini_transcription_failed", context: request.purpose, status: status ?? null },
     });
     return new GeminiTranscriptionError(code, detail, status);
