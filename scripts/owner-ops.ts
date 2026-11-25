@@ -21,6 +21,10 @@
 //                 gets), the body's rows are written into it, and the filled sheet is handed to the
 //                 upload's own function — so every check of that upload runs (the seat marker, the
 //                 row rules, the database's same-name skip). Customers land "to validate" for the rep.
+//   seat-in-building seatWaitingCustomersInVenue     (the Super Admin's door; no screen calls it yet)
+//                 Customers still waiting, with hours and no place, are seated in an approved building
+//                 at its own point; the building's timetable is then read for each, and only the ones it
+//                 NAMES are validated (phoenix_crm_settle_venue_timetable). It never validates by itself.
 //
 // WHO IT ACTS AS. B-10, the owner, built the way a real signed-in request is: his live
 // app_auth_users row (active, not a test account, role read strictly), his employee lifecycle gate,
@@ -452,6 +456,105 @@ async function crmListProof(plan: Extract<OwnerOpsPlan, { job: "load-crm-list" }
   }
 }
 
+/**
+ * Waiting customers seated in an approved building that has a timetable, through
+ * seatWaitingCustomersInVenue — the board then validates only those it names. The runner first reads the
+ * building and every customer and says what the database would refuse, because a dry run's fenced RPC
+ * never reaches the database's own checks.
+ */
+async function runSeatInBuilding(plan: Extract<OwnerOpsPlan, { job: "seat-in-building" }>, owner: AccessContext) {
+  const { assertPermission } = await import("@/lib/auth/permissions");
+  await assertPermission(owner, "phoenix_crm", "approve");
+  const { resolvePhoenixCrmViewer } = await import("@/lib/phoenix-crm/server/access");
+  const viewer = await resolvePhoenixCrmViewer(owner);
+  const { getSupabaseAdmin } = await import("@/lib/supabase/server");
+
+  const building = await getSupabaseAdmin()
+    .from("phoenix_crm_shared_places")
+    .select("id, name, kind, status, seat_id, is_test, schedule_photo_path")
+    .eq("id", plan.buildingId)
+    .maybeSingle();
+  if (building.error) throw building.error;
+  const venue = building.data as Record<string, unknown> | null;
+  if (!venue) fail(`--building ${plan.buildingId}: no such building`, 1);
+  console.log(`Building: ${String(venue.name)} (${String(venue.kind)}, ${String(venue.status)}) on ${String(venue.seat_id)} — timetable ${venue.schedule_photo_path ? "on file" : "MISSING"}`);
+  const preflight = await seatInBuildingRows(plan);
+  const problems: string[] = [];
+  if (String(venue.seat_id) !== plan.seatId) problems.push(`the building is on ${String(venue.seat_id)}, not ${plan.seatId}`);
+  if (venue.status !== "active") problems.push(`the building is ${String(venue.status)}, not approved`);
+  if (!venue.schedule_photo_path) problems.push("the building has no timetable on file");
+  for (const id of plan.customerIds) {
+    const row = preflight.customers.get(id);
+    if (!row) problems.push(`${id}: no such customer`);
+    else if (String(row.seat_id) !== plan.seatId) problems.push(`${String(row.name)}: on ${String(row.seat_id)}, not ${plan.seatId}`);
+    else if (row.status !== "pending") problems.push(`${String(row.name)}: ${String(row.status)}, not waiting`);
+    else if (row.list_type !== "AM" && row.list_type !== "PM") problems.push(`${String(row.name)}: a pharmacy`);
+    else if ((preflight.places.get(id) ?? []).length > 0) problems.push(`${String(row.name)}: already has a place (move it instead)`);
+    else if (!Array.isArray(row.intake_timings) || row.intake_timings.length === 0) problems.push(`${String(row.name)}: no hours`);
+    else console.log(`  + ${String(row.list_type)}  ${String(row.name)}  ${(row.intake_timings as unknown[]).length} sitting(s)  ${id}`);
+  }
+  if (problems.length > 0) fail(`the database would refuse this seating:\n  ${problems.join("\n  ")}`, 1);
+
+  const { seatWaitingCustomersInVenue } = await import("@/lib/phoenix-crm/server/place-move");
+  const result = await seatWaitingCustomersInVenue(viewer, {
+    seatId: plan.seatId,
+    sharedPlaceId: plan.buildingId,
+    customerIds: plan.customerIds,
+    reason: plan.reason,
+  });
+  console.log(`\nThe app ${plan.apply ? "seated" : "would seat"} ${plan.apply ? result.seated.length : plan.customerIds.length} customer(s) in ${result.sharedPlaceName}; the board validated ${result.validated}`);
+
+  if (plan.apply) {
+    const { writeAuditLog } = await import("@/lib/admin/audit");
+    await writeAuditLog({
+      actorLoginId: owner.loginId ?? null,
+      entityId: plan.buildingId,
+      entityType: "phoenix_crm_seat_waiting_in_venue",
+      summary: `Seated ${result.seated.length} waiting customer(s) in ${result.sharedPlaceName} on ${plan.seatId}; the timetable validated ${result.validated}`,
+    });
+  }
+
+  try {
+    const after = await seatInBuildingRows(plan);
+    console.log(`\nPROOF — the customers as the database holds them now${plan.apply ? "" : " (the dry run changed nothing)"}`);
+    for (const id of plan.customerIds) {
+      const row = after.customers.get(id);
+      const place = (after.places.get(id) ?? []).find((entry) => entry.shared_place_id === plan.buildingId);
+      const verdict = place?.schedule_check && typeof place.schedule_check === "object" ? String((place.schedule_check as Record<string, unknown>).verdict ?? "") : "not read";
+      console.log(`  ${String(row?.name ?? id)}  ${String(row?.status ?? "?")}  validated ${String(row?.validated_at ?? "—")}  place ${place ? String(place.id) : "none"}  board: ${place ? verdict : "—"}`);
+    }
+  } catch (error) {
+    console.error(`
+PROOF NOT READ — ${errorText(error)}`);
+    process.exitCode = 3;
+  }
+  return { employees: [] as string[], focus: {}, proofDone: true };
+}
+
+async function seatInBuildingRows(plan: Extract<OwnerOpsPlan, { job: "seat-in-building" }>) {
+  const { getSupabaseAdmin } = await import("@/lib/supabase/server");
+  const customers = await getSupabaseAdmin()
+    .from("phoenix_crm_customers")
+    .select("id, name, seat_id, status, list_type, intake_timings, validated_at")
+    .in("id", plan.customerIds);
+  if (customers.error) throw customers.error;
+  const places = await getSupabaseAdmin()
+    .from("phoenix_crm_places")
+    .select("id, customer_id, shared_place_id, schedule_check")
+    .in("customer_id", plan.customerIds)
+    .eq("status", "active");
+  if (places.error) throw places.error;
+  const byPlace = new Map<string, Array<Record<string, unknown>>>();
+  for (const row of (places.data ?? []) as Array<Record<string, unknown>>) {
+    const key = String(row.customer_id);
+    byPlace.set(key, [...(byPlace.get(key) ?? []), row]);
+  }
+  return {
+    customers: new Map(((customers.data ?? []) as Array<Record<string, unknown>>).map((row) => [String(row.id), row])),
+    places: byPlace,
+  };
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   if (argv.includes("--help") || argv.includes("-h")) {
@@ -490,6 +593,7 @@ async function main() {
     if (plan.job === "link-doctor") outcome = await runLinkDoctor(plan, owner.access);
     else if (plan.job === "merge-venues") outcome = await runMergeVenues(plan, owner.access);
     else if (plan.job === "load-crm-list") outcome = await runLoadCrmList(plan, owner.access);
+    else if (plan.job === "seat-in-building") outcome = await runSeatInBuilding(plan, owner.access);
     else outcome = await runPinPharmacy(plan, owner.access);
   } catch (error) {
     refused = errorText(error);

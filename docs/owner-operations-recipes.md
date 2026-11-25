@@ -171,6 +171,23 @@ node --env-file-if-exists=.env.local --experimental-strip-types --experimental-s
   Tuesday timetable of مستشفى الشروق الخاصة. Three doctors were added: محمد محروس (Chest), محمد أنور (ENT)
   and احمد الجوهري (Chest). احمد توفيق was already waiting and got his hours.
 
+### Validate waiting doctors from a building's timetable
+
+- **Run:** `owner-ops.ts seat-in-building --seat <territory seat id> --building <shared place id> --customers <id,id,…> --reason "<why, 10 to 500 characters>"`
+- **What it calls:** `seatWaitingCustomersInVenue` in `src/lib/phoenix-crm/server/place-move.ts` (Super Admin only), which
+  calls `phoenix_crm_seat_waiting_customers_in_venue`. It seats each customer at the building's own point, with the
+  building's timetable as his photograph, exactly as the move into a building does. It never validates anybody.
+  `settleVenueTimetable` then reads the board for each of them, and the database validates only a customer the board
+  names (`match`) with no review waiting. A board that does not name him leaves him waiting.
+- **What it refuses:** a building that is retired, still waiting for the Super Admin, or has no timetable on file; a
+  customer who is not on the seat, is a pharmacy, is not waiting, already has a place (the move is his door), or has
+  no hours yet (set them first with `load-crm-list`'s `hours`). The runner reads all of this first and fails with
+  the same refusals before anything is written.
+- **The ids:** the building from `phoenix_crm_shared_places` by seat and name; the customers from
+  `phoenix_crm_customers` by seat and name, `status = 'pending'`.
+- **Proof:** each customer's status, `validated_at`, his new place and the board's verdict for him.
+- First done for Nora Kamal (`SEAT-PED-REP-D12`), 26 Nov 2026: the four doctors on the Tuesday timetable of مستشفي الشروق.
+
 ### How these were run before the runner
 
 On 25 Nov these routes were called on the SPARE laptop's dev server with dev-auth headers
