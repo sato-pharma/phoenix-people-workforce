@@ -272,6 +272,14 @@ function theSuperAdminsAlone(): void {
   assert.match(page, /const REVIEW_ROUTE = "\/api\/admin\/rep-effectiveness-export"/);
   assert.match(page, /value="xlsx"/);
   assert.match(page, /value="pdf"/);
+  // Both rep pickers are comboboxes you can type into (owner, 26 Nov 2026: "make the 2 droplists combobox"),
+  // and exactly one field named rep reaches the download URL: the rep's id, never the typed label.
+  assert.equal((page.match(/<RepCombobox name="rep" options=\{options\} \/>/g) ?? []).length, 2, "both rep pickers are comboboxes");
+  assert.doesNotMatch(page, /<select name="rep"/, "no plain rep list is left");
+  const combo = stripComments(readFileSync("src/components/rep-visits-export/rep-combobox.tsx", "utf8"));
+  const searchable = combo.slice(combo.indexOf("<SearchableSelect"), combo.indexOf("</SearchableSelect>"));
+  assert.doesNotMatch(searchable, /\bname=/, "the typing box is unnamed, so the typed label never reaches the URL");
+  assert.match(combo, /name=\{name\}\s+onChange=\{\(\) => undefined\}\s+required/, "the one submitted field is checked, so no rep stops the download");
   const registry = readFileSync("src/lib/security/access-registry.ts", "utf8");
   assert.match(registry, /pattern: "\/api\/admin\/rep-effectiveness-export"/);
 }
