@@ -89,6 +89,22 @@ export function odometerMayRefuse(refusedTries: number): boolean {
  */
 export const ODOMETER_SCAN_MAX_OUTPUT_TOKENS = 2_000;
 
+/**
+ * 🔴 AN ODOMETER WHOSE DIGITS STAND ON THEIR SIDE IS TURNED UPRIGHT AND READ AGAIN (owner, 2026-11-25: "make the
+ * odometer reader read sideways digits"). Dina Hamdy's car shows its kilometres on a narrow strip whose digits run
+ * top to bottom in the photo; the fast reader refused her sharp, lit arrival photo of 481,442 km four times out of
+ * four, and read her departure photo as 148,456 instead of 481,456 two times out of four.
+ *
+ * Asking a model which way to turn the photo does not work: it judged by the speedometer and the stamp, and named
+ * the wrong turn three times out of four. What works is showing it the SAME photo four ways in one look — as
+ * taken, a quarter clockwise, a quarter anticlockwise, upside down — and having it read the view whose odometer
+ * digits stand upright: 10 readings out of 10 right on both of her photos, on the fast and the strong model.
+ */
+export const ODOMETER_VIEW_TURNS = [0, 90, 270, 180] as const;
+
+/** How each view is named to the reader, in the order of ODOMETER_VIEW_TURNS (sharp's `rotate` turns clockwise). */
+export const ODOMETER_VIEW_NAMES = ["as taken", "turned a quarter clockwise", "turned a quarter anticlockwise", "upside down"] as const;
+
 /** No car on the road has driven a million kilometres; a longer number is a misread. */
 const MAX_ODOMETER_KM = 999_999;
 
