@@ -2223,6 +2223,21 @@ function definedColumns<T extends Record<string, unknown>>(columns: T): Partial<
  * this function returned unconditionally before, so the attach-only path is unchanged.
  */
 /**
+ * Whether one customer entry of a save only ADDS PHARMACIES to a customer already on file: a desk
+ * save (the Super Admin, on behalf of an employee) that names that customer and brings no capture of
+ * him at all — no photo, no pin, no timestamp. His row is then left exactly as it stands: no
+ * re-stamped validation, no undo entry, no photo, and no new contact. A desk save that DOES bring a
+ * capture of him still completes his evidence, as the Pending tab's "Capture Evidence" does.
+ */
+export function isDeskAttachEntry(entry: {
+  evidenceStatus: MarketingEvidenceStatus;
+  existingCustomerId: string | null;
+  isOnBehalf: boolean;
+}): boolean {
+  return entry.isOnBehalf && Boolean(cleanText(entry.existingCustomerId)) && entry.evidenceStatus === "missing";
+}
+
+/**
  * The key two distributor codes are the SAME pharmacy under, for the find-before-create on Save
  * Validation: the distributor, and the code with spacing, case and leading zeros dropped — Overseas
  * prints "0001513103" where a rep types "1513103". A lone "0" stays "0".
@@ -6916,6 +6931,15 @@ export async function createMarketingValidationRecord(
   //    reuse, or codes split over several venues, are left exactly as before.
   const deskAttachCustomerIds = new Set<string>();
   if (isOnBehalf) {
+    // A desk save that NAMES the customer on file ("existingCustomerId", as scripts/owner-ops.ts
+    // link-doctor sends it) and brings no capture of him is the same attach. Until this it took the
+    // "complete the customer" branch instead, and on 26 Nov 2026 00:06 linking Salah El Hol re-stamped
+    // Dr Othman El Shewehy's validation and added a third copy of his contact.
+    for (const entry of normalized.customers) {
+      if (isDeskAttachEntry({ evidenceStatus: entry.evidenceStatus, existingCustomerId: entry.existingCustomerId, isOnBehalf })) {
+        deskAttachCustomerIds.add(String(entry.existingCustomerId));
+      }
+    }
     for (const [entry, pick] of doctorPicks) {
       if (!pick.phoenixCrmCustomerId) continue;
       const onFile = await supabase
