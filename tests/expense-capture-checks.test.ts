@@ -34,6 +34,7 @@ import {
   type FrameReading,
 } from "@/lib/outstation/blank-frame";
 import { inspectEvidencePhoto } from "@/lib/outstation/evidence-photo-inspection";
+import { odometerScanRequest, odometerViewsOf } from "@/lib/outstation/odometer-scan";
 import {
   canAttachMissingOutstationTicket,
   missingTicketAttachedSentence,
@@ -54,6 +55,8 @@ import {
   odometerRecordOf,
   odometerRefusalMessage,
   odometerRefusedTriesOf,
+  ODOMETER_VIEW_NAMES,
+  ODOMETER_VIEW_TURNS,
   type OdometerRead,
 } from "@/lib/outstation/odometer-scan-rules";
 import { returnFareLabel, returnTicketState } from "@/lib/outstation/return-ticket";
@@ -241,6 +244,37 @@ export async function runExpenseCaptureChecksTests() {
   assert.equal(departureBelowArrivalMessage(arrivalRead, { status: "unavailable" }), null);
   // The reader gets room to finish: 600 stopped the second provider mid-answer on 24 and 25 Nov 2026.
   assert.ok(ODOMETER_SCAN_MAX_OUTPUT_TOKENS >= 2_000, "the odometer reader's answer room");
+  // Digits on their side (owner, 2026-11-25: "make the odometer reader read sideways digits"): the photo goes to
+  // the reader four ways in one look — as taken, a quarter clockwise, a quarter anticlockwise, upside down. A
+  // photo 4 wide and 2 high with one white corner shows each turn: sideways it is 2 wide, and the corner moves.
+  const { default: sharp } = await import("sharp");
+  const raw = Buffer.alloc(4 * 2 * 3, 0);
+  raw.fill(255, 0, 3); // the top-left pixel white
+  const photo = await sharp(raw, { raw: { channels: 3, height: 2, width: 4 } }).jpeg({ quality: 100 }).toBuffer();
+  const views = await odometerViewsOf(photo);
+  assert.ok(views, "a photo the server can open is turned");
+  assert.equal(views.length, 4, "four views of the one photo");
+  assert.equal(views[0], photo, "the first view is the photo as taken, untouched");
+  const shapes = await Promise.all(views.map(async (view) => {
+    const { data, info } = await sharp(view).raw().toBuffer({ resolveWithObject: true });
+    const brightest = [...Array(info.width * info.height).keys()].reduce((best, index) => (data[index * info.channels] > data[best * info.channels] ? index : best), 0);
+    return { corner: [brightest % info.width, Math.floor(brightest / info.width)], size: [info.width, info.height] };
+  }));
+  assert.deepEqual(shapes, [
+    { corner: [0, 0], size: [4, 2] }, // as taken
+    { corner: [1, 0], size: [2, 4] }, // a quarter clockwise: the top-left corner goes to the top-right
+    { corner: [0, 3], size: [2, 4] }, // a quarter anticlockwise: it goes to the bottom-left
+    { corner: [3, 1], size: [4, 2] }, // upside down: it goes to the bottom-right
+  ], "each view is the photo turned the way the reader is told it is");
+  assert.equal(await odometerViewsOf(Buffer.from("not a photo")), null, "a photo the server cannot open is not read (kept as not read)");
+  const request = odometerScanRequest(views);
+  const images = request.input[0].content.filter((part) => part.type === "input_image");
+  assert.equal(images.length, 4, "all four views go in the one look");
+  assert.deepEqual(images.map((part) => ("image_url" in part ? part.image_url : "")), views.map((view) => `data:image/jpeg;base64,${view.toString("base64")}`), "in the order the instructions name them");
+  ODOMETER_VIEW_NAMES.forEach((name, index) => assert.ok(request.instructions.includes(`image ${index + 1} ${name}`), `the instructions name image ${index + 1} as ${name}`));
+  assert.deepEqual([...ODOMETER_VIEW_TURNS], [0, 90, 270, 180]);
+  assert.equal(request.model, "gpt-5.4", "the strong tier reads it (the cheap one refused a sharp sideways photo four times out of four)");
+  assert.ok(request.text.format.schema.required.includes("upright_image"), "the reader says which view it read");
   // A train or bus photo is measured, never read for an odometer.
   readerCalls.length = 0;
   assert.deepEqual(await inspect({ car: false }), { frame: REAL, odometer: null });
