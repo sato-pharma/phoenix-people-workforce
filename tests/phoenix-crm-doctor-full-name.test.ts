@@ -8,6 +8,9 @@ import {
   doctorNamePartProblem,
   doctorNameWordCount,
   doctorNeedsFullName,
+  DOCTOR_NAME_FIELDS,
+  DOCTOR_NAME_MIN_WORDS,
+  DOCTOR_NAME_SHORT,
   FULL_NAME_APPROVE_AT,
   FULL_NAME_WRITE_BUTTON,
   FULL_NAME_WRITE_SENTENCE,
@@ -28,7 +31,8 @@ import { placeCheckSplitSourceAt } from "./support/place-check-split-source.ts";
 
 /**
  * Owner, 2026-11-07 (pm-name-rules.ts): a clinic doctor's name is first, middle and last — three
- * required boxes, each a real name; any doctor on the list with one or two names is planned as normal
+ * boxes, each a real name. Owner, 2026-11-26: "make the system phoenix crm accept 2 names" — the middle box
+ * is optional and two names are a full name. Any doctor on the list with ONE name is planned as normal
  * (owner, 2026-11-08) but never visited until the full name is written; the full name is held against his signboard — 60%+
  * saved, anything less waits for the Super Admin, never refused — "do not strict rejection or foolish
  * approvals", and "let a refused full name wait for my decision instead of blocking the rep".
@@ -49,20 +53,30 @@ function checkEachBoxIsARealName(): void {
   assert.match(doctorNamePartProblem("ا", "Last name") ?? "", /too short/);
 
   assert.equal(doctorFullNameProblem({ first: "أحمد", middle: "كمال", last: "حسن" }), null);
-  assert.match(doctorFullNameProblem({ first: "أحمد", middle: "", last: "حسن" }) ?? "", /middle name/);
+  // Owner, 2026-11-26: "accept 2 names" — the middle box may stay empty; the first and the last may not.
+  assert.equal(DOCTOR_NAME_MIN_WORDS, 2);
+  assert.equal(doctorFullNameProblem({ first: "أحمد", middle: "", last: "حسن" }), null, "two names are a full name");
+  assert.equal(doctorFullNameProblem({ first: "أحمد", middle: "  ", last: "حسن" }), null, "a blank middle box is empty");
+  assert.match(doctorFullNameProblem({ first: "أحمد", middle: "", last: "" }) ?? "", /Write the last name/, "the last name is still required");
+  assert.match(doctorFullNameProblem({ first: "", middle: "كمال", last: "حسن" }) ?? "", /Write the first name/, "and the first");
+  assert.match(doctorFullNameProblem({ first: "أحمد", middle: "مستشفي", last: "حسن" }) ?? "", /names a place/, "a middle name written is still checked");
+  assert.equal(DOCTOR_NAME_FIELDS.find((field) => field.key === "middle")?.optional, true);
+  assert.equal(DOCTOR_NAME_FIELDS.filter((field) => field.optional).length, 1, "only the middle box is optional");
   assert.equal(joinDoctorName({ first: " أحمد ", middle: "كمال", last: "حسن" }), "أحمد كمال حسن");
 }
 
 function checkTheServerTakesThreeNamesForAClinicDoctor(): void {
   const parts = parseDoctorFullName({ first: "Ahmed", middle: "Kamal", last: "Hassan" }, "ignored");
   assert.deepEqual(parts, { ok: true, value: "Ahmed Kamal Hassan" });
-  // A caller one release behind sends the whole name: three words pass, two never do.
+  // A caller one release behind sends the whole name: two words pass since 2026-11-26, one never does.
   assert.equal(parseDoctorFullName(undefined, "Ahmed Kamal Hassan").ok, true);
-  assert.equal(parseDoctorFullName(undefined, "Dr. Ahmed Kamal").ok, false);
+  assert.equal(parseDoctorFullName(undefined, "Dr. Ahmed Kamal").ok, true);
+  assert.equal(parseDoctorFullName(undefined, "Dr. Ahmed").ok, false);
+  assert.deepEqual(parseDoctorFullName({ first: "Ahmed", middle: "", last: "Hassan" }, null), { ok: true, value: "Ahmed Hassan" });
 
   // PM: the three names; AM: the one name box as before.
   assert.equal(parseOutsideCustomer({ listType: "PM", name: "Omar" }).ok, false);
-  assert.equal(parseOutsideCustomer({ listType: "PM", name: "Omar Hardan" }).ok, false);
+  assert.equal(parseOutsideCustomer({ listType: "PM", name: "Omar Hardan" }).ok, true, "two names are enough (owner, 2026-11-26)");
   const pm = parseOutsideCustomer({ listType: "PM", name: "x", nameParts: { first: "Omar", middle: "Ali", last: "Hardan" } });
   assert.equal(pm.ok && pm.value.name, "Omar Ali Hardan");
   assert.equal(parseNewCustomer({ listType: "PM", name: "Tarek", proposedGrade: "A" }).ok, false);
@@ -77,10 +91,12 @@ function checkTheEditOpensOnWhatHeWrote(): void {
 }
 
 function checkWhoIsBlocked(): void {
-  const base = { listType: "PM", origin: "new", status: "active", name: "عمر حردان", fullNameHeld: null };
+  const base = { listType: "PM", origin: "new", status: "active", name: "عمر", fullNameHeld: null };
   assert.equal(doctorNeedsFullName(base), true);
   assert.equal(doctorNeedsFullName({ ...base, status: "pending" }), true, "every status, the owner's choice");
-  assert.equal(doctorNeedsFullName({ ...base, name: "Dr. Omar Hardan" }), true, "the title is not a name");
+  assert.equal(doctorNeedsFullName({ ...base, name: "Dr. Omar" }), true, "the title is not a name");
+  assert.equal(doctorNeedsFullName({ ...base, name: "عمر حردان" }), false, "two names are not blocked (owner, 2026-11-26)");
+  assert.equal(doctorNeedsFullName({ ...base, name: "محمد محروس" }), false, "the Shorouk doctors visit with two names");
   assert.equal(doctorNeedsFullName({ ...base, name: "عمر علي حردان" }), false);
   assert.equal(doctorNeedsFullName({ ...base, origin: "reference" }), true, "any doctor on the list, the iReports360 list too");
   assert.equal(doctorNeedsFullName({ ...base, listType: "AM" }), false);
@@ -185,14 +201,15 @@ function bodyOf(path: string, signature: string): string {
 }
 
 function checkTheThreeNamesAreAskedAtValidation(): void {
-  // Owner, 2026-11-07: "Don't accept from the beginning the two names. Must enter the three names."
-  assert.equal(validationNeedsFullName({ listType: "PM", name: "سامي فؤاد" }), true, "two names on a clinic customer are asked for three");
+  // Owner, 2026-11-07: "Must enter the three names"; 2026-11-26: "accept 2 names".
+  assert.equal(validationNeedsFullName({ listType: "PM", name: "سامي فؤاد" }), false, "two names validate since 2026-11-26");
   assert.equal(validationNeedsFullName({ listType: "PM", name: "سامي" }), true, "and one name too");
-  assert.equal(validationNeedsFullName({ listType: "pm", name: "Dr. Sami Fouad" }), true, "the title is not a name");
+  assert.equal(validationNeedsFullName({ listType: "pm", name: "Dr. Sami" }), true, "the title is not a name");
   assert.equal(validationNeedsFullName({ listType: "PM", name: "سامي فؤاد منصور" }), false, "three names validate as before");
   assert.equal(validationNeedsFullName({ listType: "AM", name: "مستشفى السلام" }), false, "an AM place is never asked");
   assert.equal(validationNeedsFullName({ listType: "Pharmacy", name: "صيدلية" }), false, "nor a pharmacy");
-  assert.equal(approvalNeedsFullName({ listType: "PM", customerName: "سامي فؤاد" }), true, "Place checks never approves a short name");
+  assert.equal(approvalNeedsFullName({ listType: "PM", customerName: "سامي" }), true, "Place checks never approves a one-word name");
+  assert.equal(approvalNeedsFullName({ listType: "PM", customerName: "سامي فؤاد" }), false, "two names approve");
   assert.equal(approvalNeedsFullName({ listType: "PM", customerName: "سامي فؤاد منصور" }), false);
   assert.equal(approvalNeedsFullName({ listType: "AM", customerName: "عيادة" }), false);
 
@@ -286,12 +303,12 @@ function checkACompoundIsNeverSplitAcrossTwoBoxes(): void {
   assert.equal(doctorNamePartProblem("عبد الله", "First name"), null);
   assert.equal(doctorNamePartProblem("نور الدين", "First name"), null);
   assert.equal(doctorFullNameProblem({ first: "عماد الدين", middle: "احمد", last: "سالم" }), null);
-  // The joined name is counted again: an open compound in the first box swallows the middle name, so
-  // every box passes on its own and the saved name would still be two words.
-  const swallowed = { first: "عبد ابو", middle: "محمد", last: "علي" };
-  assert.equal(doctorNamePartProblem(swallowed.first, "First name"), null, "the box alone passes");
-  assert.equal(doctorNameWordCount(joinDoctorName(swallowed)), 2);
-  assert.equal(doctorFullNameProblem(swallowed), "Write the first, middle and last name.", "a joined two-word name is refused");
+  // The joined name is counted again: an open compound in the first box swallows the next box's name, so
+  // every box passes on its own and the saved name would still be one word.
+  const swallowed = { first: "عبد", middle: "", last: "محمد" };
+  assert.equal(doctorNameWordCount(joinDoctorName(swallowed)), 1);
+  assert.equal(doctorFullNameProblem({ first: "عبد ابو", middle: "", last: "محمد" }), DOCTOR_NAME_SHORT, "a joined one-word name is refused");
+  assert.equal(DOCTOR_NAME_SHORT, "Write the first and last name. The middle name is optional.");
   assert.equal(parseDoctorFullName(split, null).ok, false, "the server refuses it too");
 }
 
@@ -306,7 +323,7 @@ function checkAddVisitOffersTheWayToTheFullName(): void {
   assert.ok(note.includes("<CrmButton onClick={() => onWriteFullName(customer.customerId)} variant=\"primary\">"), "a primary button");
   assert.ok(note.includes("{FULL_NAME_WRITE_BUTTON}"), "the button's words");
   assert.equal(FULL_NAME_WRITE_BUTTON, "Write the full name");
-  assert.match(FULL_NAME_WRITE_SENTENCE, /first, middle and last name, as the signboard shows them, and the visit opens\./);
+  assert.match(FULL_NAME_WRITE_SENTENCE, /first and last name, as the signboard shows them, and the visit opens\./);
   assert.ok(!/\b(accounts?|doctors?)\b/i.test(FULL_NAME_WRITE_SENTENCE + FULL_NAME_WRITE_BUTTON), "the screen words obey the AM · PM rule");
   assert.ok(tab.includes("onWriteFullName({ seatId, test, customerId });"), "the tab hands the customer to the page");
 

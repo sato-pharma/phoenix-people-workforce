@@ -135,8 +135,8 @@ export const VALIDATION_REFUSAL_REASONS = [
     // it is offered on a customer's own signboard and on a seated customer's timetable — never on a
     // building, which has no person's name (`phoenix_crm_shared_places`' CHECK does not hold it).
     key: "short_name",
-    label: "Only one or two names — needs the full name",
-    rep: "Write this customer's first, middle and last name as the sign or the timetable shows them, then validate again.",
+    label: "Only one name — needs the full name",
+    rep: "Write this customer's first and last name as the sign or the timetable shows them, then validate again.",
     kinds: ["signboard", "schedule"],
   },
 ] as const;

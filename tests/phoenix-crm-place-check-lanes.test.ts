@@ -248,9 +248,14 @@ function runLaneTests() {
   // The board's own rows.
   assert.equal(laneOfReviewRow(review({})).lane, "ready", "a clinic whose photographed sign names the customer is Ready");
   assert.deepEqual(
-    laneOfReviewRow(review({ listType: "PM", customerName: "Mona Said" })),
+    laneOfReviewRow(review({ listType: "PM", customerName: "Mona" })),
     { lane: "your_call", because: LANE_SHORT_NAME },
-    "🔴 the same evidence under a two-name doctor is his call",
+    "🔴 the same evidence under a one-name doctor is his call",
+  );
+  assert.deepEqual(
+    laneOfReviewRow(review({ listType: "PM", customerName: "Mona Said" })),
+    { lane: "ready", because: null },
+    "🔴 a first and last name is a full name since 2026-11-26 — the same evidence under a two-name doctor is Ready",
   );
   assert.equal(
     laneOfReviewRow(review({ reason: "sign_other_name", evidence: { checkReason: null, heldBecause: null, legibility: null, problem: null, signboard: null } })).lane,

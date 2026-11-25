@@ -71,9 +71,9 @@ export async function runPhoenixCrmFullNameCorrectionTests(): Promise<void> {
     "a corrected name never rides on a Reject",
   );
   assert.equal(
-    await refusal(() => decideHeldFullName(SUPER_ADMIN, { customerId: CUSTOMER, decision: "approve", nameParts: { first: "احمد", middle: "", last: "علي" } })),
-    "Write the middle name.",
-    "the third name is required — the same three-box rule a rep's own boxes keep",
+    await refusal(() => decideHeldFullName(SUPER_ADMIN, { customerId: CUSTOMER, decision: "approve", nameParts: { first: "احمد", middle: "", last: "" } })),
+    "Write the last name.",
+    "the last name is required — the same rule a rep's own boxes keep; the middle box is optional since 2026-11-26",
   );
   assert.equal(
     await refusal(() => decideHeldFullName(SUPER_ADMIN, { customerId: CUSTOMER, decision: "approve", nameParts: { first: "مستشفي", middle: "محمد", last: "علي" } })),

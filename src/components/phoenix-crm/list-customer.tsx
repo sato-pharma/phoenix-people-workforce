@@ -374,7 +374,7 @@ export function CustomerScreen({
         {customer.needsFullName && view.canEdit ? (
           <>
             <CrmNote className="mt-3" title={FULL_NAME_NEEDED_TAG} tone="warn">
-              {customer.name} stays out of your plan and your visits until you write the customer&apos;s first, middle and last name, as the signboard
+              {customer.name} stays out of your plan and your visits until you write the customer&apos;s first and last name, as the signboard
               shows them.
             </CrmNote>
             <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">

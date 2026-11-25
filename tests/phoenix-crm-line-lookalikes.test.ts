@@ -134,7 +134,7 @@ function runListTests(): void {
     assert.equal(list[0].confidence, "certain", "the rule itself would have paired them");
     assert.equal(list[0].nameKind, "same");
   }
-  assert.deepEqual(listFor(customer({ name: "احمد صبري" }), validated({ name: "احمد صبري مشعل" })), [], "a clinic doctor without three names cannot be validated");
+  assert.deepEqual(listFor(customer({ name: "احمد" }), validated({ name: "احمد صبري مشعل" })), [], "a clinic doctor with one name cannot be validated");
   assert.deepEqual(
     listFor(customer({ speciality: "Pediatrics" }), validated({ name: "احمد صبري معشل", speciality: "Chest" })),
     [],

@@ -34,7 +34,7 @@ A pair is one waiting row and one validated row when ALL of these hold:
   list (AM with AM, PM with PM — pharmacies are never compared: no line shares a pharmacy's validation);
 - the validated row is active, validated in Phoenix CRM, with a place of its own (never a `line_twin` copy);
 - the waiting row could be validated now (`waitingRefusal` — still waiting, no active place, no review or
-  drop waiting, its full name not held; a PM customer written with all three names);
+  drop waiting, its full name not held; a PM customer written with at least the first and last name);
 - **the rule does not already pair them** — a pair `areLineTwins` accepts is the rule's to share, never this
   list's. **Except a waiting row whose own last capture was rejected** (owner, 23 Nov 2026: "I must know that
   this is one customer, but it has those validations"): the rule no longer shares onto it, so the rule's pair

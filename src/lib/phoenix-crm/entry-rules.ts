@@ -20,7 +20,7 @@
 
 import { readAccuracyInput } from "@/lib/geo/coordinate-input";
 import { BROWSER_PLACEHOLDER } from "@/lib/phoenix-crm/browser-name";
-import { parseDoctorFullName } from "@/lib/phoenix-crm/pm-name-rules";
+import { DOCTOR_NAME_SHORT, parseDoctorFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import { distanceMeters, isUsableFix } from "@/lib/phoenix-crm/geo";
 import { readLocationReaderAnswer } from "@/lib/phoenix-crm/location-reader-probe";
 import { isPharmacyListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
@@ -840,13 +840,13 @@ export function parseOutsideCustomer(raw: unknown): EntryRuleResult<OutsideCusto
   const listType = parseListType(body.listType);
   if (!listType) return { ok: false, error: "Choose AM or PM." };
   // The name is checked first, then the type and the speciality.
-  // A clinic doctor is written as three names, first, middle and last (owner, 2026-11-07,
-  // pm-name-rules.ts); an AM account keeps its one name.
+  // A clinic doctor is written as his first and last name, the middle one optional (owner, 2026-11-26,
+  // pm-name-rules.ts — it was three names from 2026-11-07); an AM account keeps its one name.
   if (listType === "PM") {
     const full = parseDoctorFullName(body.nameParts, body.name);
     if (!full.ok) return full;
     const name = cleanText(full.value, CUSTOMER_NAME_MAX);
-    if (!name) return { ok: false, error: "Write the first, middle and last name." };
+    if (!name) return { ok: false, error: DOCTOR_NAME_SHORT };
     const kind = customerKindOf(body, listType);
     if (!kind.ok) return kind;
     return { ok: true, value: { listType, name, ...kind.value } };

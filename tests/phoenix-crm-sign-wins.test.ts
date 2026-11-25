@@ -103,7 +103,7 @@ function checkTheRule() {
   for (const sign of ["other_name", "no_name", "unjudged", null]) {
     assert.equal(left({ signVerdict: sign }), "sign_does_not_name_the_customer", `only a sign that names the customer wins (${String(sign)})`);
   }
-  assert.equal(left({ needsFullName: true }), "short_name", "a clinic customer short of three names is never approved (owner, 2026-11-07)");
+  assert.equal(left({ needsFullName: true }), "short_name", "a clinic customer short of a first and last name is never approved (owner, 2026-11-07)");
   assert.equal(left({ openIntegrityCase: true }), "integrity_case_open", "a place with an unsettled integrity case is his to read first");
   assert.equal(left({ sfeRecommended: true }), "sfe_recommended", "a place the SFE Manager recommended on waits on that page");
 
