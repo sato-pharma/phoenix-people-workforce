@@ -134,6 +134,11 @@ RUN apk add --no-cache \
     font-noto \
     font-noto-arabic \
     ffmpeg
+# font-noto also installs Noto Sans Math, which carries Arabic letters it cannot join, and Chromium's
+# fallback chose it for regular-weight Arabic: the expense trip PDF printed every word letter by
+# letter (25 Nov 2026). This rule refuses that one font; the reason is in the file itself.
+COPY infra/fontconfig/50-phoenix-arabic.conf /etc/fonts/conf.d/50-phoenix-arabic.conf
+RUN fc-cache -f
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 
