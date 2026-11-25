@@ -263,6 +263,10 @@ export async function runPhoenixCrmRefusedReadingsBoardTests(): Promise<void> {
         "src/lib/phoenix-crm/server/places-to-recheck.ts",
         "src/lib/phoenix-crm/server/refused-readings-board.ts",
         "src/lib/phoenix-crm/server/refused-readings.ts",
+        // List Validation (owner, 26 Nov 2026): the place refusals per AM and PM customer, counted as "tried and
+        // blocked" days, read for the Super Admin and the SFE Manager only (`canReadValidationProgress`), and
+        // never shown to a rep.
+        "src/lib/phoenix-crm/server/validation-progress.ts",
       ],
       "the recorder writes it, and the board and the re-check list read it — no rep-facing screen, payload or report names it",
     );

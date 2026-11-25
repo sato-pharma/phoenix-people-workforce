@@ -414,7 +414,7 @@ export type AuditEntityType =
   // failure must not refuse a reader the board he is allowed on. No migration: audit_logs has no
   // CHECK on entity_type.
   | "phoenix_crm_integrity_export"
-  // Doctor List Validation as Excel (owner, 26 Nov 2026): every rep's AM and PM list, validated or not, with the
+  // List Validation as Excel (owner, 26 Nov 2026): every rep's AM and PM list, validated or not, with the
   // hiring date and the doctors still waiting — the Super Admin's and the SFE Manager's. Best-effort audit, as the
   // integrity export is: a download is a read. No migration: audit_logs has no CHECK on entity_type.
   | "phoenix_crm_validation_progress_export"

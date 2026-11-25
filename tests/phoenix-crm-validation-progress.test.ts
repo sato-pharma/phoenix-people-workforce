@@ -72,7 +72,7 @@ export async function runPhoenixCrmValidationProgressTests(): Promise<void> {
   assert.equal(isNewStarter(null), false, "no hiring date is never a new starter");
   assert.equal(daysBetween("2026-11-25", "2026-11-26"), 1);
 
-  const two = built.doctors.find((doctor) => doctor.doctor === "Dr. Two");
+  const two = built.waiting.find((row) => row.customer === "Dr. Two");
   assert.ok(two);
   assert.equal(two.blockedDays, 2, "a day with two refused tries is one day");
   assert.equal(two.refusedTries, 3);
@@ -80,8 +80,8 @@ export async function runPhoenixCrmValidationProgressTests(): Promise<void> {
   assert.equal(two.lastBlockedDay, "2026-11-24");
   assert.equal(two.reasons, `${validationRefusalLabel("timetable_missing")} (2); ${validationRefusalLabel("signboard_unreadable")} (1)`);
   assert.equal(two.triedBy, "Rana Adel");
-  assert.equal(built.doctors.length, 3, "the second sheet lists every doctor not validated, tried or not, and no validated one");
-  assert.ok(!built.doctors.some((doctor) => doctor.doctor === "Dr. One"));
+  assert.equal(built.waiting.length, 3, "the second sheet lists every doctor not validated, tried or not, and no validated one");
+  assert.ok(!built.waiting.some((row) => row.customer === "Dr. One"));
 
   const vacant = built.reps.find((rep) => rep.seatId === "SEAT-B");
   assert.ok(vacant);
@@ -108,7 +108,7 @@ export async function runPhoenixCrmValidationProgressTests(): Promise<void> {
   assert.deepEqual(pedia.reps.map((rep) => rep.seatId), ["SEAT-B"]);
   assert.deepEqual(pedia.lines, ["CNS", "Pedia"], "the line choices never shrink to the chosen line");
   assert.equal(pedia.totals.total, 1);
-  assert.ok(pedia.doctors.every((doctor) => doctor.lineName === "Pedia"));
+  assert.ok(pedia.waiting.every((row) => row.lineName === "Pedia"));
   const unknown = report("Nonsense");
   assert.equal(unknown.line, null, "a line that has no list is ignored");
   assert.equal(unknown.totals.total, built.totals.total);
@@ -139,8 +139,8 @@ export async function runPhoenixCrmValidationProgressTests(): Promise<void> {
   const doctorCells = cells(workbook.getWorksheet("Not validated")!);
   for (const name of ["Dr. Two", "Dr. Three", "Dr. Four"]) assert.equal(doctorCells.filter((value) => value === name).length, 1, `${name} is listed once`);
   assert.ok(!doctorCells.includes("Dr. One"), "a validated doctor is not on the Not validated sheet");
-  assert.equal(validationProgressFileName("2026-11-25T22:30:00.000Z"), "doctor-list-validation-2026-11-26.xlsx", "the file is named by the Cairo day");
-  assert.equal(validationProgressFileName("2026-11-25T22:30:00.000Z", "Anti Infective"), "doctor-list-validation-anti-infective-2026-11-26.xlsx", "and by the line when narrowed");
+  assert.equal(validationProgressFileName("2026-11-25T22:30:00.000Z"), "list-validation-2026-11-26.xlsx", "the file is named by the Cairo day");
+  assert.equal(validationProgressFileName("2026-11-25T22:30:00.000Z", "Anti Infective"), "list-validation-anti-infective-2026-11-26.xlsx", "and by the line when narrowed");
   const managerCells = cells(workbook.getWorksheet("District managers")!);
   assert.ok(managerCells.includes("Weaam Mahmoud"), "the District managers sheet names each manager");
   assert.ok(repCells.includes("Days since hire") && repCells.includes("New starter") && repCells.includes("Last validation"));

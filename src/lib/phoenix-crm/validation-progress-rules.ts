@@ -75,14 +75,14 @@ export type ValidationRepRow = {
   unlinkedBlockedDays: number;
 };
 
-export type ValidationDoctorRow = {
+export type ValidationWaitingRow = {
   seatId: string;
   repName: string;
   hireDate: string | null;
   lineName: string;
   areaName: string;
   managerName: string;
-  doctor: string;
+  customer: string;
   listType: ValidationListType;
   speciality: string;
   grade: string;
@@ -119,7 +119,8 @@ export type ValidationProgressReport = {
   line: string | null;
   reps: ValidationRepRow[];
   managers: ValidationManagerRow[];
-  doctors: ValidationDoctorRow[];
+  /** Every AM and PM customer not validated yet. */
+  waiting: ValidationWaitingRow[];
   totals: { total: number; validated: number; notValidated: number; triedBlocked: number; neverTried: number; reps: number; vacantSeats: number };
 };
 
@@ -242,7 +243,7 @@ export function buildValidationProgress(input: {
     return row;
   };
 
-  const doctors: ValidationDoctorRow[] = [];
+  const waiting: ValidationWaitingRow[] = [];
   for (const customer of input.customers) {
     if (line && (input.seats.get(customer.seatId)?.lineName ?? "") !== line) continue;
     const row = repRow(customer.seatId);
@@ -267,14 +268,14 @@ export function buildValidationProgress(input: {
     const triedBy = [
       ...new Set(tries.map((entry) => entry.repHrId).filter((id): id is string => Boolean(id)).map((id) => input.peopleNames.get(id.toUpperCase()) ?? id)),
     ].sort((left, right) => left.localeCompare(right));
-    doctors.push({
+    waiting.push({
       seatId: customer.seatId,
       repName: row.repName,
       hireDate: row.hireDate,
       lineName: row.lineName,
       areaName: row.areaName,
       managerName: row.managerName,
-      doctor: customer.name,
+      customer: customer.name,
       listType: customer.listType,
       speciality: customer.speciality ?? "",
       grade: customer.grade ?? "",
@@ -293,7 +294,7 @@ export function buildValidationProgress(input: {
   const order = (left: { lineName: string; areaName: string; repName: string }, right: { lineName: string; areaName: string; repName: string }) =>
     left.lineName.localeCompare(right.lineName) || left.areaName.localeCompare(right.areaName) || left.repName.localeCompare(right.repName);
   const reps = [...repRows.values()].sort(order);
-  doctors.sort((left, right) => order(left, right) || right.blockedDays - left.blockedDays || left.doctor.localeCompare(right.doctor));
+  waiting.sort((left, right) => order(left, right) || right.blockedDays - left.blockedDays || left.customer.localeCompare(right.customer));
 
   const managerRows = new Map<string, ValidationManagerRow>();
   for (const rep of reps) {
@@ -338,5 +339,5 @@ export function buildValidationProgress(input: {
     }),
     { total: 0, validated: 0, notValidated: 0, triedBlocked: 0, neverTried: 0, reps: 0, vacantSeats: 0 },
   );
-  return { asOfDay: input.asOfDay, lines, line, reps, managers, doctors, totals };
+  return { asOfDay: input.asOfDay, lines, line, reps, managers, waiting, totals };
 }

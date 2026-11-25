@@ -177,8 +177,8 @@ export default async function PhoenixCrmValidationProgressPage({
     <div className="space-y-5">
       <AdminPageHero
         eyebrow="CRM"
-        title="Doctor list validation"
-        description="Each medical rep's AM and PM list: how many doctors are validated, how many are still waiting, and of those, which the rep tried and was blocked on and which were never tried. The export is read from the system at the moment you press it."
+        title="List validation"
+        description="Each medical rep's AM and PM list: how many customers are validated, how many are still waiting, and of those, which the rep tried and was blocked on and which were never tried. The export is read from the system at the moment you press it."
         icon={<ClipboardList className="h-3.5 w-3.5" />}
       />
 
@@ -206,7 +206,7 @@ export default async function PhoenixCrmValidationProgressPage({
             Export to Excel
           </button>
           <p className="min-w-0 flex-1 text-sm leading-6 text-slate-600">
-            {report?.line ?? "Every line"}: the cover, each rep with the hiring date and last validation, each district manager, and every doctor not validated yet with the days the rep tried and was blocked.
+            {report?.line ?? "Every line"}: the cover, each rep with the hiring date and last validation, each district manager, and every customer not validated yet with the days the rep tried and was blocked.
           </p>
         </form>
       </div>
@@ -218,7 +218,7 @@ export default async function PhoenixCrmValidationProgressPage({
       ) : (
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <AdminStatCard icon={<ClipboardList className="h-5 w-5" />} label="Doctors on the lists" value={report.totals.total} description={`${report.totals.reps} reps · ${report.reps.filter((rep) => rep.newStarter).length} new starters (under ${NEW_STARTER_DAYS} days) · ${report.totals.vacantSeats} vacant seats`} tone="blue" size="compact" />
+            <AdminStatCard icon={<ClipboardList className="h-5 w-5" />} label="On the AM and PM lists" value={report.totals.total} description={`${report.totals.reps} reps · ${report.reps.filter((rep) => rep.newStarter).length} new starters (under ${NEW_STARTER_DAYS} days) · ${report.totals.vacantSeats} vacant seats`} tone="blue" size="compact" />
             <AdminStatCard icon={<BadgeCheck className="h-5 w-5" />} label="Validated" value={report.totals.validated} description={`${percent(report.totals.total === 0 ? 0 : report.totals.validated / report.totals.total)} of the lists`} tone="emerald" size="compact" />
             <AdminStatCard icon={<ClipboardList className="h-5 w-5" />} label="Never tried" value={report.totals.neverTried} description="Not validated, and no try recorded" tone="orange" size="compact" />
             <AdminStatCard icon={<ShieldAlert className="h-5 w-5" />} label="Tried and blocked" value={report.totals.triedBlocked} description="Not validated, at least one try refused" tone="rose" size="compact" />

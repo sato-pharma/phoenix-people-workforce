@@ -4881,7 +4881,7 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     // `canReadValidationProgress` inside the page, the route and the loader, and this card only draws the link.
     href: "/admin/phoenix-crm/validation-progress",
     icon: ClipboardList,
-    label: "Doctor List Validation",
+    label: "List Validation",
     description: "Each medical rep's AM and PM list with the hiring date: validated, not validated, and which of those the rep tried and was blocked on — with an Excel export read live.",
     permissions: [{ resource: "phoenix_crm", action: "read" }],
     roles: ["Super Admin", "SFE Manager"],

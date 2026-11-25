@@ -19,6 +19,7 @@ import {
   type ValidationRefusalRow,
   type ValidationSeat,
 } from "@/lib/phoenix-crm/validation-progress-rules";
+import { parseListType } from "@/lib/phoenix-crm/entry-rules";
 import { type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { chunk, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
@@ -99,12 +100,14 @@ export async function loadValidationProgress(viewer: PhoenixCrmViewer, options: 
   const customers: ValidationCustomerRow[] = customerRows.flatMap((row) => {
     const id = text(row.id);
     const seatId = text(row.seat_id);
-    if (!id || !seatId) return [];
+    // A pharmacy is a third list and never validated, so it is left out here, never filed under PM.
+    const listType = parseListType(row.list_type);
+    if (!id || !seatId || (listType !== "AM" && listType !== "PM")) return [];
     return [
       {
         id,
         seatId,
-        listType: row.list_type === "AM" ? "AM" : "PM",
+        listType,
         name: text(row.name) ?? "Unnamed customer",
         speciality: text(row.speciality),
         grade: text(row.grade),

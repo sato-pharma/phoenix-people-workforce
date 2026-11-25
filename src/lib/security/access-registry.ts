@@ -981,7 +981,7 @@ export const accessRegistry = [
   // asked on the route before any read and again in the loader) on top of phoenix_crm:read. Rate-limited and audited.
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/admin/rep-effectiveness-export", permission: { resource: "phoenix_crm", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/crm/team-visits/export", permission: { resource: "phoenix_crm", action: "read" }, guard: "domain-helper" }),
-  // Doctor List Validation as XLSX (owner, 2026-11-26) — the Super Admin's and the SFE Manager's: phoenix_crm:read, then
+  // List Validation as XLSX (owner, 2026-11-26) — the Super Admin's and the SFE Manager's: phoenix_crm:read, then
   // canReadValidationProgress before any read (a 404 for anyone else, as the refused-readings board). Read live, rate-limited and audited.
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/admin/phoenix-crm/validation-progress/export", permission: { resource: "phoenix_crm", action: "read" }, guard: "domain-helper" }),
   // District Managers' Plans as XLSX (owner, 2026-11-09, the premium pass) — the Regional Sales Manager's alone, like

@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
       actorLoginId: access.loginId ?? null,
       entityType: "phoenix_crm_validation_progress_export",
       entityId: null,
-      summary: `Exported Doctor List Validation, ${report.line ?? "every line"} (${report.totals.reps} reps, ${report.totals.total} doctors, ${report.totals.notValidated} not validated)`,
+      summary: `Exported List Validation, ${report.line ?? "every line"} (${report.totals.reps} reps, ${report.totals.total} AM and PM customers, ${report.totals.notValidated} not validated)`,
     });
 
     return new NextResponse(new Uint8Array(buffer), {
@@ -62,6 +62,6 @@ export async function GET(request: NextRequest) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message: clientSafeErrorMessage(error, "Forbidden") }, { status: 403 });
     }
-    return NextResponse.json({ error: "export_failed", message: clientSafeErrorMessage(error, "Doctor List Validation could not be exported.") }, { status: 500 });
+    return NextResponse.json({ error: "export_failed", message: clientSafeErrorMessage(error, "List Validation could not be exported.") }, { status: 500 });
   }
 }

@@ -1,5 +1,5 @@
 /**
- * Doctor list validation, by medical rep — as a workbook, in the house identity (SATO-DIS-2026-01: the masthead, the
+ * Customer list validation, by medical rep — as a workbook, in the house identity (SATO-DIS-2026-01: the masthead, the
  * blue header band, the hairline grid and the 6% zebra), the same dress as Visits — Yesterday and Today.
  *
  * It re-derives nothing: every figure is read off the report `buildValidationProgress` made, the same one the page
@@ -9,7 +9,7 @@
  *   Reps               — one row per rep seat: hiring date, days since hire, new starter, the list and its validation,
  *                        the last validation day.
  *   District managers  — each district manager's reps together.
- *   Not validated      — every doctor still waiting, with the days the rep tried and was blocked (each day once).
+ *   Not validated      — every customer still waiting, with the days the rep tried and was blocked (each day once).
  */
 
 import ExcelJS from "exceljs";
@@ -62,14 +62,14 @@ function columnLetter(columns: readonly Column[], label: string): string {
 export function validationProgressFileName(generatedAtIso: string, line: string | null = null): string {
   const cairoDay = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(generatedAtIso));
   const lineSlug = line ? `${line.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}-` : "";
-  return `doctor-list-validation-${lineSlug}${cairoDay}.xlsx`;
+  return `list-validation-${lineSlug}${cairoDay}.xlsx`;
 }
 
 export async function buildValidationProgressWorkbook(report: ValidationProgressReport, generatedAtIso: string): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   workbook.created = new Date(generatedAtIso);
   const lineWords = report.line ?? "Every line";
-  const subtitle = `Doctor list validation by medical rep · AM and PM lists · ${lineWords}`;
+  const subtitle = `AM and PM list validation by medical rep · ${lineWords}`;
   const provenance = [houseGeneratedAt(generatedAtIso), "Read live from Phoenix CRM"];
   const { totals } = report;
   const newStarters = report.reps.filter((rep) => rep.newStarter).length;
@@ -81,19 +81,19 @@ export async function buildValidationProgressWorkbook(report: ValidationProgress
       ["Reps", String(totals.reps)],
       [`New starters (under ${NEW_STARTER_DAYS} days)`, String(newStarters)],
       ["Vacant seats with a list", String(totals.vacantSeats)],
-      ["Doctors on the lists", String(totals.total)],
+      ["Customers on the AM and PM lists", String(totals.total)],
       ["Validated", `${totals.validated} (${percent(totals.total === 0 ? 0 : totals.validated / totals.total)})`],
       ["Not validated", String(totals.notValidated)],
       ["Not validated — tried and was blocked", String(totals.triedBlocked)],
       ["Not validated — never tried", String(totals.neverTried)],
-      ["The list", "A rep's AM and PM doctors on the list: validated, or waiting to be validated at the clinic. Dropped doctors and pharmacies are not counted — a pharmacy is never validated."],
-      ["Blocked", "A validation try for that doctor that Phoenix CRM refused — the location, the nameplate, the timetable or the Google Maps listing. Each day is counted once, however many tries were refused on it."],
+      ["The list", "A rep's AM and PM customers on the list: validated, or waiting to be validated at the clinic. Dropped customers and pharmacies are not counted — a pharmacy is never validated."],
+      ["Blocked", "A validation try for that customer that Phoenix CRM refused — the location, the nameplate, the timetable or the Google Maps listing. Each day is counted once, however many tries were refused on it."],
       ["New starter", `A rep hired fewer than ${NEW_STARTER_DAYS} days before the day of this file, counted from the hiring date on file.`],
-      ["Last validation", "The latest day a doctor on the rep's list was validated."],
-      ["Not linked to a doctor", "A refusal the phone sent before a doctor was chosen (a blocked location or camera, a new capture) cannot be filed against one doctor. It is counted on the rep's row apart."],
+      ["Last validation", "The latest day a customer on the rep's list was validated."],
+      ["Not linked to a customer", "A refusal the phone sent before a customer was chosen (a blocked location or camera, a new capture) cannot be filed against one customer. It is counted on the rep's row apart."],
     ],
     subtitle,
-    title: "Doctor list validation",
+    title: "List validation",
   });
 
   // Reps — one row per rep seat.
@@ -114,7 +114,7 @@ export async function buildValidationProgressWorkbook(report: ValidationProgress
     { label: "Not validated — never tried", right: true, width: 13 },
     { label: "Validated %", right: true, width: 11, numFmt: "0%", dataBar: true },
     { label: "Last validation", width: 13, numFmt: DAY_FORMAT },
-    { label: "Days blocked with no doctor named", right: true, width: 14 },
+    { label: "Days blocked with no customer named", right: true, width: 14 },
   ];
   const repSheet = workbook.addWorksheet("Reps", { properties: { defaultRowHeight: 18 } });
   const repStart = writeHouseMasthead(workbook, repSheet, { columns: repColumns.length, provenance, subtitle, title: "Reps" });
@@ -155,7 +155,7 @@ export async function buildValidationProgressWorkbook(report: ValidationProgress
     columns: repColumns,
     note: `A vacant seat keeps its list and has no hiring date. During a handover both people are named and the earlier hiring date is shown. A new starter was hired fewer than ${NEW_STARTER_DAYS} days ago.`,
     rows: repRows,
-    title: "Each rep's doctor list",
+    title: "Each rep's AM and PM list",
     totals: [
       "Total",
       "",
@@ -247,14 +247,14 @@ export async function buildValidationProgressWorkbook(report: ValidationProgress
     managerSheet.autoFilter = { from: { row: managerStart + 1, column: 1 }, to: { row: lastManagerRow, column: managerColumns.length } };
   }
 
-  // Not validated — every doctor still waiting.
-  const doctorColumns: Column[] = [
+  // Not validated — every customer still waiting.
+  const waitingColumns: Column[] = [
     { label: "Medical rep", width: 26 },
     { label: "Hiring date", width: 13, numFmt: DAY_FORMAT },
     { label: "Line", width: 13 },
     { label: "Area", width: 18 },
     { label: "District manager", width: 24 },
-    { label: "Doctor", width: 30 },
+    { label: "Customer", width: 30 },
     { label: "List", width: 7 },
     { label: "Speciality", width: 18 },
     { label: "Grade", width: 7 },
@@ -265,33 +265,33 @@ export async function buildValidationProgressWorkbook(report: ValidationProgress
     { label: "Why it was refused (tries)", width: 44 },
     { label: "Tried by", width: 24 },
   ];
-  const doctorSheet = workbook.addWorksheet("Not validated", { properties: { defaultRowHeight: 18 } });
-  const doctorStart = writeHouseMasthead(workbook, doctorSheet, { columns: doctorColumns.length, provenance, subtitle, title: "Not validated" });
-  doctorSheet.views = [{ showGridLines: false, state: "frozen", xSplit: 1, ySplit: doctorStart + 1 }];
-  writeHouseTable(doctorSheet, doctorStart, {
-    columns: doctorColumns,
-    note: "Days tried and blocked: the different days a validation try for this doctor was refused. 0 means it was never tried.",
-    rows: report.doctors.map((doctor) => [
-      doctor.repName,
-      doctor.repName === VACANT_SEAT_NAME ? "" : day(doctor.hireDate),
-      doctor.lineName,
-      doctor.areaName,
-      doctor.managerName,
-      doctor.doctor,
-      doctor.listType,
-      doctor.speciality,
-      doctor.grade,
-      doctor.blockedDays,
-      doctor.refusedTries,
-      day(doctor.firstBlockedDay),
-      day(doctor.lastBlockedDay),
-      doctor.reasons,
-      doctor.triedBy,
+  const waitingSheet = workbook.addWorksheet("Not validated", { properties: { defaultRowHeight: 18 } });
+  const waitingStart = writeHouseMasthead(workbook, waitingSheet, { columns: waitingColumns.length, provenance, subtitle, title: "Not validated" });
+  waitingSheet.views = [{ showGridLines: false, state: "frozen", xSplit: 1, ySplit: waitingStart + 1 }];
+  writeHouseTable(waitingSheet, waitingStart, {
+    columns: waitingColumns,
+    note: "Days tried and blocked: the different days a validation try for this customer was refused. 0 means it was never tried.",
+    rows: report.waiting.map((row) => [
+      row.repName,
+      row.repName === VACANT_SEAT_NAME ? "" : day(row.hireDate),
+      row.lineName,
+      row.areaName,
+      row.managerName,
+      row.customer,
+      row.listType,
+      row.speciality,
+      row.grade,
+      row.blockedDays,
+      row.refusedTries,
+      day(row.firstBlockedDay),
+      day(row.lastBlockedDay),
+      row.reasons,
+      row.triedBy,
     ]),
-    title: "Doctors not validated yet",
+    title: "Customers not validated yet",
   });
-  if (report.doctors.length > 0) {
-    doctorSheet.autoFilter = { from: { row: doctorStart + 1, column: 1 }, to: { row: doctorStart + 1 + report.doctors.length, column: doctorColumns.length } };
+  if (report.waiting.length > 0) {
+    waitingSheet.autoFilter = { from: { row: waitingStart + 1, column: 1 }, to: { row: waitingStart + 1 + report.waiting.length, column: waitingColumns.length } };
   }
 
   return Buffer.from(await workbook.xlsx.writeBuffer());
