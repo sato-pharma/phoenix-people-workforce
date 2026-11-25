@@ -61,8 +61,9 @@ function oneMonthOfRows(): void {
     // Bought and returned in the month: no purchase.
     row({ clientCode: "C2", clientName: "Returned", qty: 2, salesValue: 100 }),
     row({ clientCode: "C2", clientName: "Returned", qty: -2, effectiveUnits: -2, salesValue: -100 }),
-    // A direct order: sales, never a pharmacy that bought.
-    row({ clientCode: "C3", clientName: "Nursery", isDirect: true, salesValue: 5000, qty: 650 }),
+    // A direct order: sales, never a pharmacy that bought. The closing LEAVES IT OUT of the invoice totals
+    // (exclusion "direct"), exactly as production stores it, and the achievement still counts it.
+    row({ clientCode: "C3", clientName: "Nursery", isDirect: true, includedInClosing: false, salesValue: 5000, qty: 650 }),
     // A customer the closing books in two areas: a wholesaler's share here, judged across the whole line.
     row({ clientCode: "W1", clientName: "Wholesaler", salesValue: 700, qty: 7 }),
     row({ clientCode: "W1", clientName: "Wholesaler", areaCode: "D17", sheetAreaCode: "D17", salesValue: 900, qty: 9 }),
@@ -78,7 +79,7 @@ function oneMonthOfRows(): void {
     "one pharmacy buying two products; the return, the direct order, the wholesaler and the other area are not buyers",
   );
   assert.equal(buyers[0].name, "صيدلية النور", "the pharmacy keeps its invoice name");
-  assert.equal(sources.direct, 5000);
+  assert.equal(sources.direct, 5000, "a direct order left out of the invoice totals is still the month's direct order");
   assert.equal(sources.wholesalerShare, 700, "the shared customer is a wholesaler's share although only one of its areas is ours");
   assert.equal(sources.pharmacy, 400, "the return nets to nothing inside pharmacy sales");
   assert.equal(sources.other, 40);
@@ -168,7 +169,10 @@ function theNumbers(): void {
   assert.equal(g.from, "2026-09");
   assert.equal(g.start + g.steps.reduce((sum, s) => sum + s.change, 0), g.end, "the bridge adds up to the change it explains");
   assert.equal(g.steps.find((s) => s.label === "Direct orders")?.change, 500);
-  assert.ok(g.steps.some((s) => s.label.startsWith("Closing allocations")), "a gap between the closing and its rows is named, never hidden");
+  // October's closing holds 100 more than its rows: the share the closing spreads to the area by formula.
+  assert.equal(report.sources["2026-10"].wholesalerShare, 700, "the spread share joins the wholesaler and store share");
+  assert.equal(g.steps.find((s) => s.label.startsWith("Wholesaler and store share"))?.change, 300);
+  assert.ok(!g.steps.some((s) => s.label.startsWith("Closing allocations")), "no unexplained step once the spread share is counted");
   // Pharmacies: newest buyers first; a first purchase in the rep's months is new, one before her is not.
   const byName = new Map(report.pharmacies.map((p) => [p.name, p]));
   assert.equal(byName.get("Pharmacy P3")?.newInRepTime, true);

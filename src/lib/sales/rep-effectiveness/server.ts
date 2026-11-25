@@ -193,11 +193,21 @@ export async function loadRepEffectiveness(access: AccessContext, raw: { hrId?: 
     return { month, holder, isRepMonth: false, products, sources, buyers, managerName: seatNow?.managerName ?? null };
   });
 
-  // Her months: the seat model names her as the holder. When it names nobody for any month, the months from her hire month on.
+  // Her months. 🔴 THE SEAT MODEL KNOWS ONLY TODAY'S HOLDER: asked for July it names her, hired in
+  // September (measured 25 Nov 2026, `rep_hr_id` on every month of the area). So the hire month decides,
+  // and a month before it never carries her name. With no hire date, the seat holder's name decides.
   const mine = nameKey(repName);
-  const matched = loaded.some((m) => nameKey(m.holder) === mine);
   const hireMonth = text(employee.hire_date)?.slice(0, 7) ?? null;
-  for (const m of loaded) m.isRepMonth = matched ? nameKey(m.holder) === mine : Boolean(hireMonth && m.month >= hireMonth);
+  const shortName = tidyAllCapitalsName(repName).split(" ").slice(0, 2).join(" ");
+  for (const m of loaded) {
+    if (hireMonth) {
+      m.isRepMonth = m.month >= hireMonth;
+      if (!m.isRepMonth) m.holder = `Before ${shortName} joined`;
+    } else {
+      const holder = nameKey(m.holder);
+      m.isRepMonth = Boolean(holder) && (holder === mine || mine.startsWith(`${holder} `));
+    }
+  }
 
   const rep: EffRep = {
     hrId,

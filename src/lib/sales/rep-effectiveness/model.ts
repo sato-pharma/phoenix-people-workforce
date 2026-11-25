@@ -27,6 +27,7 @@
  * across products is VALUE.
  */
 
+import { kpiIndexOf } from "@/lib/crm/kpi-index";
 import type { KpiRepRow } from "@/lib/crm/kpis-board";
 import { closingAreaOf } from "@/lib/sales/closing-row-area";
 import { monthBuyingEntries, type PharmacyCountRow } from "@/lib/sales/closing-pharmacy-counts";
@@ -231,12 +232,15 @@ export function summariseClosingMonth(rows: readonly PharmacyCountRow[], areaCod
   const sources: EffSources = { direct: 0, wholesalerShare: 0, pharmacy: 0, other: 0 };
   const names = new Map<string, string>();
   for (const row of rows) {
-    if (row.includedInClosing !== true || closingAreaOf(row) !== area) continue;
+    if (closingAreaOf(row) !== area) continue;
     const value = Number(row.salesValue) || 0;
+    // A direct order is LEFT OUT of the invoice totals (exclusion "direct") and still counts in the
+    // closing's achievement, so it is asked before `includedInClosing` — asked after, it never counted.
     if (row.isDirect) {
       sources.direct += value;
       continue;
     }
+    if (row.includedInClosing !== true) continue;
     const kind = classifyRowKind(row, shared);
     if (kind === "pharmacy") sources.pharmacy += value;
     else if (kind === "wholesalerShare") sources.wholesalerShare += value;
@@ -265,7 +269,19 @@ export function kpiFiguresOf(row: KpiRepRow): EffKpiFigures {
     pmPerDay: row.noGpsFeed ? null : row.pmRate,
     amAttainmentPct: row.amAttainmentPct,
     pmAttainmentPct: row.pmAttainmentPct,
-    overallPct: row.justStarted ? null : (row.kpiIndex?.overallPct ?? null),
+    // Scored exactly as the KPIs board's own export scores a rep row (`overallPct` in kpis-board-workbook.ts).
+    overallPct: row.justStarted
+      ? null
+      : kpiIndexOf({
+          coveragePct: row.coveragePct,
+          frequencyPct: row.frequencyPct,
+          hasMeasurablePlan: row.hasMeasurablePlan,
+          amAttainmentPct: row.amAttainmentPct,
+          pmAttainmentPct: row.pmAttainmentPct,
+          hasCallRate: row.hasCallRate,
+          noGpsFeed: row.noGpsFeed,
+          justStarted: false,
+        }).overallPct,
     justStarted: Boolean(row.justStarted),
   };
 }
@@ -316,8 +332,11 @@ export function buildRepEffectiveness(input: {
       perProduct.set(b.product, set);
     }
     for (const p of products) customers[p.code][m.month] = perProduct.get(p.code)?.size ?? 0;
-    sources[m.month] = m.sources;
     const actualValue = m.products.reduce((sum, p) => sum + p.actualValue, 0);
+    // The closing spreads the wholesalers' and stores' sales to every area by formula; that share is on
+    // no invoice row of the area, so it is what the achievement holds beyond the area's own rows.
+    const spread = actualValue - sumSources(m.sources);
+    sources[m.month] = { ...m.sources, wholesalerShare: m.sources.wholesalerShare + (Math.abs(spread) >= 1 ? spread : 0) };
     const targets = m.products.map((p) => p.targetValue).filter((v): v is number => v != null);
     const targetValue = targets.length > 0 ? targets.reduce((sum, v) => sum + v, 0) : null;
     const directValue = m.sources.direct;
@@ -396,13 +415,13 @@ export function buildRepEffectiveness(input: {
   if (months.length >= 2) {
     const prev = months[months.length - 2];
     const last = months[months.length - 1];
-    const a = prev.sources;
-    const b = last.sources;
+    const a = sources[prev.month];
+    const b = sources[last.month];
     const start = sales[sales.length - 2].actualValue;
     const end = sales[sales.length - 1].actualValue;
     const steps: EffGrowthStep[] = [
       { label: "Direct orders", change: b.direct - a.direct },
-      { label: "Wholesaler share booked to the area", change: b.wholesalerShare - a.wholesalerShare },
+      { label: "Wholesaler and store share, spread to the area by formula", change: b.wholesalerShare - a.wholesalerShare },
       { label: "Pharmacies buying through distributors", change: b.pharmacy - a.pharmacy },
       { label: "Main Stores and rows with no customer code", change: b.other - a.other },
     ];
