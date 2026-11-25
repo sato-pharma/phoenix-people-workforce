@@ -170,17 +170,16 @@ export function doctorOnFileNotice(
   input: { ownerHrId: string | null | undefined; ownerName: string | null | undefined; isDeskMode: boolean },
 ): { tone: "ok" | "warn" | "info"; text: string } | null {
   const own = doctorOnFileFor(doctor, input.ownerHrId);
-  const code = (entry: CrmDoctorOnFile) => (entry.customerCode ? ` (${entry.customerCode})` : "");
   if (own && input.isDeskMode) {
     return {
       tone: "ok",
-      text: `Already on file for ${input.ownerName ?? "this employee"}${code(own)}. Saving adds only the pharmacies below; the doctor on file is left as it is.`,
+      text: `Already on file for ${input.ownerName ?? "this employee"}. Saving adds only the pharmacies below; the doctor on file is left as it is.`,
     };
   }
   if (own) {
     return {
       tone: "warn",
-      text: `You validated this doctor already${code(own)}. Saving again here makes a second copy. Find the doctor in the Validated tab instead.`,
+      text: "You already have this doctor on file: open it from your Validate or Validated tab. Saving again here makes a second copy.",
     };
   }
   const others = doctor.onFile;

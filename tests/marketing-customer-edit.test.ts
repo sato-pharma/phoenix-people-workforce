@@ -162,6 +162,10 @@ export function runMarketingCustomerEditTests() {
     assert.equal(doctorOnFileNotice(othman, { ownerHrId: "X-1", ownerName: null, isDeskMode: false })?.tone, "info",
       "a doctor on another rep's file is normal: the rep gets his own copy");
     assert.equal(doctorOnFileNotice(nobody, { ownerHrId: "S-5", ownerName: null, isDeskMode: true }), null);
+    for (const isDeskMode of [true, false]) {
+      const text = doctorOnFileNotice(othman, { ownerHrId: "S-5", ownerName: "Sahar ElGallad", isDeskMode })?.text ?? "";
+      assert.ok(!text.includes("MKT-CUS-"), "the notice names people, never a customer code");
+    }
     const card = readFileSync(new URL("../src/components/employee-portal/marketing-validation-workspace.tsx", import.meta.url), "utf8");
     assert.ok(card.includes("crmDoctorOptionLabel(doctor, saveOwnerHrId)") && card.includes("doctorOnFileNotice("), "the picker shows the mark and the notice");
     const service = readFileSync(new URL("../src/lib/marketing-requests/crm-doctor-pick-service.ts", import.meta.url), "utf8");
