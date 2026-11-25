@@ -125,7 +125,14 @@ function widths(sheet: ExcelJS.Worksheet, values: number[]): void {
 }
 function print(sheet: ExcelJS.Worksheet, tall: number | undefined = 1): void {
   sheet.pageSetup = { orientation: "landscape", paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: tall, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } };
-  sheet.views = [{ showGridLines: false }];
+  // A frozen pane set before this call is kept: replacing the views wiped every sheet's frozen header.
+  const kept = sheet.views?.[0];
+  sheet.views = [kept ? { ...kept, showGridLines: false } : { showGridLines: false }];
+}
+
+/** Keeps the header row (and the label column) on screen while the sheet scrolls. */
+function freeze(sheet: ExcelJS.Worksheet, headerRow: number, labelCols = 1): void {
+  sheet.views = [{ state: "frozen", ySplit: headerRow, xSplit: labelCols, showGridLines: false }];
 }
 
 const isRep = (report: RepEffectivenessReport, month: string) => report.repMonths.includes(month);
@@ -171,30 +178,33 @@ export async function buildRepEffectivenessWorkbook(report: RepEffectivenessRepo
       put(ws, r, 2, v, { align: LEFT });
       r += 1;
     }
-    const grid = (title: string, rows: EffScoreRow[], months: string[], targetHead: string) => {
+    // Every KPI month is the rep's own, so the KPI grid wears her colour on every column.
+    const grid = (title: string, rows: EffScoreRow[], months: string[], targetHead: string, mine: (m: string) => boolean, toDate: string | null = null) => {
       r += 1;
       r = section(ws, r, title, W);
       head(ws, r, 1, "");
-      months.forEach((m, i) => head(ws, r, i + 2, monthShort(m), monthHead(report, m)));
+      months.forEach((m, i) => head(ws, r, i + 2, `${monthShort(m)}${m === toDate ? " to date" : ""}`, mine(m) ? AMBER : NAVY));
       head(ws, r, months.length + 2, targetHead);
       r += 1;
       rows.forEach((row, i) => {
         put(ws, r, 1, row.label, { align: LEFT, bold: row.strong, color: row.strong ? NAVY : INK, bg: i % 2 ? ZEBRA : null });
         months.forEach((m, j) => {
           const v = row.values[m] ?? null;
-          const bg = monthBg(report, m, i % 2 === 1);
+          const bg = mine(m) ? AMBER_PALE : i % 2 === 1 ? ZEBRA : null;
           if (row.kind === "pct") pct(ws, r, j + 2, v, { bg });
           else put(ws, r, j + 2, v, { fmt: row.kind === "rate" ? "0.0" : MONEY, bold: row.strong, bg });
         });
         const t = row.target ?? null;
         put(ws, r, months.length + 2, t == null ? "" : row.kind === "pct" ? t / 100 : t, { fmt: row.kind === "pct" ? "0%" : row.kind === "rate" ? "0.0" : MONEY, color: MUTED, size: 9 });
+        if (row.group) for (let c = 1; c <= months.length + 2; c += 1) ws.getCell(r, c).border = { ...BOX, top: { style: "medium", color: argb(NAVY) } };
         r += 1;
       });
     };
-    grid("The area, month by month", sc.closing, sc.months, "On the map");
-    grid("KPIs", sc.kpi, sc.kpiMonths, "Target");
+    grid("The area, month by month", sc.closing, sc.months, "On the map", (m) => isRep(report, m));
+    grid("KPIs", sc.kpi, sc.kpiMonths, "Target", () => true, sc.kpiToDate);
     widths(ws, [34, ...Array.from({ length: W - 1 }, () => 14)]);
     print(ws);
+    freeze(ws, 0, 1);
   }
 
   // ── 2. KPIs vs target ──────────────────────────────────────────────────────────────────────────
@@ -210,7 +220,7 @@ export async function buildRepEffectivenessWorkbook(report: RepEffectivenessRepo
     ["", "95%", "100%", "2.0", "100%", "10.0", "100%", "100%"].forEach((t, i) => put(ws, r, i + 2, t || DASH, { color: MUTED, size: 9 }));
     r += 1;
     for (const k of report.kpis) {
-      const label = `${monthLong(k.month)}${k.toDate ? " (to date)" : ""}`;
+      const label = `${monthLong(k.month)}${k.toDate ? " to date" : ""}`;
       put(ws, r, 1, label, { bold: true, color: NAVY, bg: AMBER_PALE, align: LEFT });
       put(ws, r, 2, k.unread ? "Board could not be read" : report.rep.name, { bold: true, bg: AMBER_PALE, align: LEFT });
       kpiCells(ws, r, 3, k.unread ? null : k.rep, AMBER_PALE);
@@ -227,8 +237,9 @@ export async function buildRepEffectivenessWorkbook(report: RepEffectivenessRepo
       ws.mergeCells(r, 1, r, W);
       put(ws, r, 1, "No KPI month falls on or after the rep's hiring date.", { align: LEFT, color: MUTED });
     }
-    widths(ws, [20, 34, 11, 11, 12, 12, 12, 12, 11]);
+    widths(ws, [24, 34, 11, 11, 12, 12, 12, 12, 11]);
     print(ws, 0);
+    freeze(ws, 5, 2);
   }
 
   // ── 3. Sales vs target ─────────────────────────────────────────────────────────────────────────
@@ -267,7 +278,7 @@ export async function buildRepEffectivenessWorkbook(report: RepEffectivenessRepo
       r += 2;
     }
     widths(ws, [16, 24, 11, 11, 9, 15, 15, 9, 26]);
-    ws.views = [{ state: "frozen", ySplit: 5, showGridLines: false }];
+    freeze(ws, 5, 2);
     print(ws, 0);
   }
 
@@ -297,6 +308,7 @@ export async function buildRepEffectivenessWorkbook(report: RepEffectivenessRepo
     });
     widths(ws, [16, 24, 12, 13, 12, 12, 12, 13, 13, 11, 12]);
     print(ws);
+    freeze(ws, 5, 1);
   }
 
   // ── 5. Customers per product, and by brick ─────────────────────────────────────────────────────
@@ -345,6 +357,7 @@ export async function buildRepEffectivenessWorkbook(report: RepEffectivenessRepo
     });
     widths(ws, [26, ...report.months.map(() => 9), 14]);
     print(ws);
+    freeze(ws, 5, 1);
   }
 
   // ── 6. Pharmacy by month ───────────────────────────────────────────────────────────────────────

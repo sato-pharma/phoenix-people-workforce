@@ -156,8 +156,10 @@ export type EffGrowthStep = { label: string; change: number };
  * One line of the scorecard — numbers only (owner, 25 Nov 2026: "I don't need all this text. I need numbers").
  * `values` is keyed by month; null is "no figure", never a zero.
  */
-export type EffScoreRow = { label: string; kind: "count" | "money" | "pct" | "rate"; values: Record<string, number | null>; target?: number | null; strong?: boolean };
-export type EffScorecard = { months: string[]; closing: EffScoreRow[]; kpiMonths: string[]; kpi: EffScoreRow[] };
+/** `group` opens a new block of the grid (a rule above it). */
+export type EffScoreRow = { label: string; kind: "count" | "money" | "pct" | "rate"; values: Record<string, number | null>; target?: number | null; strong?: boolean; group?: boolean };
+/** `kpiToDate` names the running KPI month, read to date. Every KPI month is the rep's own (none falls before the hire month). */
+export type EffScorecard = { months: string[]; closing: EffScoreRow[]; kpiMonths: string[]; kpiToDate: string | null; kpi: EffScoreRow[] };
 
 export type RepEffectivenessReport = {
   rep: EffRep;
@@ -450,7 +452,7 @@ export function buildRepEffectiveness(input: {
     sources,
     growth,
     kpis: [...input.kpis].sort((x, y) => x.month.localeCompare(y.month)),
-    scorecard: { months: [], closing: [], kpiMonths: [], kpi: [] },
+    scorecard: { months: [], closing: [], kpiMonths: [], kpiToDate: null, kpi: [] },
   };
   report.scorecard = buildScorecard(report);
   return report;
@@ -466,12 +468,12 @@ export function buildScorecard(report: RepEffectivenessReport): EffScorecard {
   const closing: EffScoreRow[] = [
     { label: "Pharmacies buying, any product", kind: "count", values: by((s) => s.pharmaciesBuying), target: report.universe.total, strong: true },
     ...report.products.map((p) => ({ label: `Pharmacies buying ${p.name}`, kind: "count" as const, values: Object.fromEntries(months.map((m) => [m, report.customers[p.code]?.[m] ?? 0])) })),
-    { label: "Sales (EGP)", kind: "money", values: by((s) => s.actualValue), strong: true },
+    { label: "Sales (EGP)", kind: "money", values: by((s) => s.actualValue), strong: true, group: true },
     { label: "Target (EGP)", kind: "money", values: by((s) => s.targetValue) },
     { label: "Achievement", kind: "pct", values: by((s) => s.achievementPct), strong: true },
     { label: "Direct orders (EGP)", kind: "money", values: by((s) => s.directValue) },
     { label: "Achievement without direct orders", kind: "pct", values: by((s) => (s.directValue > EPSILON ? s.achievementWithoutDirectPct : s.achievementPct)) },
-    { label: "Pharmacy sales (EGP)", kind: "money", values: Object.fromEntries(months.map((m) => [m, report.sources[m]?.pharmacy ?? null])) },
+    { label: "Pharmacy sales (EGP)", group: true, kind: "money", values: Object.fromEntries(months.map((m) => [m, report.sources[m]?.pharmacy ?? null])) },
     { label: "Wholesaler and store share (EGP)", kind: "money", values: Object.fromEntries(months.map((m) => [m, report.sources[m]?.wholesalerShare ?? null])) },
   ];
   const kpiMonths = report.kpis.map((k) => k.month);
@@ -484,7 +486,7 @@ export function buildScorecard(report: RepEffectivenessReport): EffScorecard {
     { label: "Account visits a day", kind: "rate", values: kv((f) => f.amPerDay), target: 2 },
     { label: "Doctor visits a day", kind: "rate", values: kv((f) => f.pmPerDay), target: 10 },
   ];
-  return { months, closing, kpiMonths, kpi };
+  return { months, closing, kpiMonths, kpiToDate: report.kpis.find((k) => k.toDate)?.month ?? null, kpi };
 }
 
 export function reviewFileName(repName: string, months: readonly string[], ext: "xlsx" | "pdf"): string {

@@ -99,12 +99,18 @@ export function buildRepEffectivenessDocument(report: RepEffectivenessReport): s
   ];
 
   const sc = report.scorecard;
-  const scoreTable = (rows: EffScoreRow[], months: string[], targetHead: string) => `
-  <table class="tbl grid">
+  // Every KPI month is the rep's own, so the KPI grid rules every column; the closing grid rules hers only.
+  const scoreTable = (rows: EffScoreRow[], months: string[], targetHead: string, mine: (m: string) => boolean, toDate: string | null = null) => `
+  <table class="tbl grid score">
     <colgroup><col style="width:30%">${months.map(() => "<col>").join("")}<col style="width:11%"></colgroup>
-    <thead><tr><th></th>${months.map(mh).join("")}<th class="num">${targetHead}</th></tr></thead>
+    <thead><tr><th></th>${months.map((m) => `<th class="num${mine(m) ? " mine" : ""}">${esc(monthShort(m))}${m === toDate ? ' <span class="todate">to date</span>' : ""}</th>`).join("")}<th class="num">${targetHead}</th></tr></thead>
     <tbody>${rows
-      .map((row) => `<tr><td class="${row.strong ? "strong deep" : ""}">${esc(row.label)}</td>${months.map((m) => md(m, scoreValue(row, row.values[m]), row.strong)).join("")}<td class="num thin">${row.target == null ? "" : scoreValue(row, row.target)}</td></tr>`)
+      .map(
+        (row, i) =>
+          `<tr${rows[i + 1]?.group ? ' class="cut"' : ""}><td class="${row.strong ? "strong deep" : ""}">${esc(row.label)}</td>${months
+            .map((m) => `<td class="num${mine(m) ? " mine" : ""}${row.strong ? " strong" : ""}">${scoreValue(row, row.values[m])}</td>`)
+            .join("")}<td class="num thin">${row.target == null ? "" : scoreValue(row, row.target)}</td></tr>`,
+      )
       .join("")}</tbody>
   </table>`;
 
@@ -113,9 +119,9 @@ export function buildRepEffectivenessDocument(report: RepEffectivenessReport): s
   ${masthead(false)}
   <div class="facts">${facts.map(([k, v]) => `<div class="fact"><p class="fact__k">${k}</p><p class="fact__v">${v}</p></div>`).join("")}</div>
   <h2 class="h2">The area, month by month</h2>
-  ${scoreTable(sc.closing, sc.months, "On the map")}
+  ${scoreTable(sc.closing, sc.months, "On the map", isRep)}
   <h2 class="h2">KPIs</h2>
-  ${scoreTable(sc.kpi, sc.kpiMonths, "Target")}
+  ${scoreTable(sc.kpi, sc.kpiMonths, "Target", () => true, sc.kpiToDate)}
   ${chrome}
 </section>`;
 
@@ -265,5 +271,7 @@ body { font-family: "Segoe UI", "Noto Sans", "Helvetica Neue", Arial, sans-serif
 .tbl tr.sum td { border-top: .6pt solid ${c.deep}; }
 .grid th.mine { color: ${c.blue}; border-top: 1.6pt solid ${c.blue}; }
 .grid td.mine { color: ${c.deep}; }
+.score tr.cut td { border-bottom: .9pt solid ${c.deep}; }
+.score .todate { display: block; font-weight: 400; letter-spacing: .4pt; text-transform: none; color: ${c.muted}; }
 `;
 }
