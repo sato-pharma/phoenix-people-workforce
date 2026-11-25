@@ -1123,6 +1123,22 @@ export const MODULES = [
     keywords: ["pharmacy code sync", "pharmacy code re-check", "master re-check", "pharmacy-code sync", "hidden vendor", "not found code", "code resolver", "marketing_pharmacy_distributor_codes"],
     tables: ["marketing_pharmacy_distributor_codes"],
   },
+  // The Super Admin's edit of a customer on file (owner, 2026-11-25), its own module because
+  // `marketing`'s pointer has no room. The service and tests also match `marketing`'s globs.
+  {
+    id: "marketing-customer-edit",
+    title: "Editing a marketing customer on file, and find-before-create on Save Validation",
+    scope: "The Super Admin's Edit on Customer Check (name, speciality, phone, add a pharmacy by distributor code, remove one with a reason) and Save Validation attaching a pharmacy or CRM doctor already on file instead of copying it.",
+    globs: [
+      "src/lib/marketing-requests/customer-edit*",
+      "src/components/marketing-requests/customer-edit-panel*",
+      "app/api/marketing-requests/validated-customers/*/edit/**",
+      "app/api/marketing-requests/validated-customers/*/pharmacies/**",
+      "tests/marketing-customer-edit*",
+    ],
+    keywords: ["edit customer", "edit the customer", "add pharmacy to customer", "remove pharmacy from customer", "find before create", "duplicate customer on save", "saved twice"],
+    tables: [],
+  },
   // Dr. Rasha's two sheets (owner, 2026-11-10), their own module rather than more globs on `marketing`,
   // whose pointer sits near its 4,000-byte margin. The migration and tests also match `marketing`'s
   // own globs, so those files load the pair.

@@ -14,6 +14,7 @@ import { haversineKm } from "@/lib/sales/normalizer/geo-validate";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/http/uuid";
+import { canEditMarketingCustomer } from "@/lib/marketing-requests/customer-edit";
 import {
   VENUE_TYPE_UNANSWERED_MESSAGE,
   parseVenueTypeChoice,
@@ -853,6 +854,8 @@ export type ValidatedCustomerDetail = {
     | null;
   /** Whether THIS viewer may transfer or revert. False for the view-only SFE Manager. */
   viewerCanTransfer: boolean;
+  /** Whether THIS viewer may change the customer and its pharmacies — the Super Admin alone (`customer-edit.ts`). */
+  viewerCanEdit: boolean;
 };
 
 /**
@@ -864,7 +867,11 @@ export async function getValidatedMarketingCustomerDetail(
   customerId: string,
 ): Promise<ValidatedCustomerDetail> {
   assertValidatedCustomerRegisterAccess(access);
-  return assembleValidatedMarketingCustomerDetail(customerId, canTransferValidatedCustomers(access));
+  return assembleValidatedMarketingCustomerDetail(
+    customerId,
+    canTransferValidatedCustomers(access),
+    canEditMarketingCustomer(access),
+  );
 }
 
 /**
@@ -878,6 +885,7 @@ export async function getValidatedMarketingCustomerDetail(
 async function assembleValidatedMarketingCustomerDetail(
   customerId: string,
   viewerCanTransfer: boolean,
+  viewerCanEdit = false,
 ): Promise<ValidatedCustomerDetail> {
   const id = String(customerId ?? "").trim();
   if (!id) throw validationError("A customer id is required.");
@@ -1213,6 +1221,7 @@ async function assembleValidatedMarketingCustomerDetail(
     pharmacies,
     photoUrl: photo?.signedUrl ?? null,
     transfer,
+    viewerCanEdit,
     viewerCanTransfer,
   };
 }
