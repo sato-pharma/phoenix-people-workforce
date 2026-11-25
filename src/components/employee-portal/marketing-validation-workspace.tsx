@@ -112,6 +112,7 @@ import {
   isLicenseOnlyPharmacyNote,
 } from "@/lib/venues/pharmacy-license";
 import { CODELESS_VENUES_GO_TO_DIRECT_ORDERS } from "@/lib/marketing-requests/coded-venues-only";
+import { findVenueOnFileByCode, pharmacyNameAfterSuggestion } from "@/lib/marketing-requests/pharmacy-code-first";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
@@ -3772,6 +3773,213 @@ export function MarketingValidationWorkspace() {
                           </div>
                           ) : (
                           <div className="grid gap-3 md:grid-cols-6">
+                            {/* CODE FIRST (owner, 26 Nov 2026: "It must be easier"). The distributor
+                                code comes before everything else: it finds the venue already on file
+                                (attached in one tap) and the distributor's own name for the shop. */}
+                            <div className="md:col-span-6">
+                              <div className="space-y-2.5">
+                                <div
+                                  className={
+                                    (pharmacy.venueType === null || choiceRequiresDistributorCode(pharmacy.venueType))
+                                      ? "flex items-center justify-between gap-3"
+                                      : "hidden"
+                                  }
+                                >
+                                  <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">
+                                    Distributor code — start here
+                                  </p>
+                                  <Button
+                                    className={`h-10 gap-1.5 rounded-none border border-slate-200 bg-white px-2.5 text-phx-xs font-bold text-slate-600 hover:bg-slate-50 sm:h-7 ${adminControlDepthClassName}`}
+                                    onClick={() =>
+                                      updatePharmacy(customer.key, pharmacy.key, {
+                                        vendorCodes: [...pharmacy.vendorCodes, newVendorCodeLine(defaultDistributorId)],
+                                      })
+                                    }
+                                    type="button"
+                                  >
+                                    <Plus className="h-3 w-3" />
+                                    Add
+                                  </Button>
+                                </div>
+                                {!(pharmacy.venueType === null || choiceRequiresDistributorCode(pharmacy.venueType)) ? null : pharmacy.vendorCodes.map((line) => {
+                                  const codeCheck = codeChecks[line.key];
+                                  // A venue already on file that holds this code: attached in one tap,
+                                  // never captured a second time (find-before-create, same match key).
+                                  const venueOnFile = findVenueOnFileByCode(
+                                    workspace.reusablePharmacies,
+                                    line.distributorId,
+                                    line.distributorCode,
+                                  );
+                                  return (
+                                  <div key={line.key}>
+                                    {/* Phone: distributor + remove on one row, the code on its own full-width
+                                        row below (the old three-across row left ~54px of the distributor's
+                                        name visible at 360px). From `sm` up: distributor · code · remove. */}
+                                    <div className="grid grid-cols-[minmax(0,1fr)_40px] gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_40px]">
+                                      <SelectField
+                                        disabled={workspace.distributors.length === 0}
+                                        onChange={(value) => {
+                                          updateVendorCode(customer.key, pharmacy.key, line.key, { distributorId: value });
+                                          checkVendorCode(line.key, value, line.distributorCode);
+                                        }}
+                                        value={line.distributorId}
+                                      >
+                                        <option value="">Vendor</option>
+                                        {workspace.distributors.map((distributor: MarketingDistributor) => (
+                                          <option key={distributor.id} value={distributor.id}>
+                                            {distributor.displayName}
+                                          </option>
+                                        ))}
+                                      </SelectField>
+                                      <Input
+                                        className="order-last col-span-2 text-phx-md sm:order-none sm:col-span-1"
+                                        onChange={(event) => {
+                                          const nextCode = event.target.value;
+                                          updateVendorCode(customer.key, pharmacy.key, line.key, { distributorCode: nextCode });
+                                          checkVendorCode(line.key, line.distributorId, nextCode, {
+                                            area: pharmacy.area,
+                                            governorate: pharmacy.governorate,
+                                          });
+                                        }}
+                                        placeholder="Code"
+                                        value={line.distributorCode}
+                                      />
+                                      <button
+                                        aria-label="Remove vendor"
+                                        className={`flex h-10 w-full items-center justify-center rounded-none border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 ${adminControlDepthClassName}`}
+                                        disabled={pharmacy.vendorCodes.length === 1}
+                                        onClick={() =>
+                                          updatePharmacy(customer.key, pharmacy.key, {
+                                            vendorCodes: pharmacy.vendorCodes.length === 1
+                                              ? pharmacy.vendorCodes
+                                              : pharmacy.vendorCodes.filter((item) => item.key !== line.key),
+                                          })
+                                        }
+                                        type="button"
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </button>
+                                    </div>
+                                    {/* THE CODE SUGGESTIONS — ranked by where he just stood, and
+                                        NEVER narrowed by it (owner ruling, 2026-09-29). Every
+                                        candidate the code he typed matches is here; the place only
+                                        decides which comes first, because half the reference import
+                                        carries no area and a filter would hide those shops for good.
+
+                                        Tapping one fills the code. He can still type anything — this
+                                        is a shortcut, not a gate, and nothing here tells him he is
+                                        being checked: each row describes the CODE's registered
+                                        place, never his. */}
+                                    {(codeSuggestions[line.key] ?? []).length > 0 ? (
+                                      <div className={`mt-1.5 max-h-48 overflow-y-auto rounded-none border border-slate-200 bg-white ${adminRecessedDepthClassName}`}>
+                                        {(codeSuggestions[line.key] ?? []).map((suggestion) => (
+                                          <button
+                                            className="flex w-full items-start justify-between gap-2 border-b border-slate-100 px-2.5 py-2 text-left last:border-b-0 hover:bg-orange-50"
+                                            key={suggestion.code}
+                                            onClick={() => {
+                                              updateVendorCode(customer.key, pharmacy.key, line.key, {
+                                                distributorCode: suggestion.code,
+                                              });
+                                              // The distributor's own shop name fills an empty name box.
+                                              updatePharmacy(customer.key, pharmacy.key, {
+                                                name: pharmacyNameAfterSuggestion(pharmacy.name, suggestion.name),
+                                              });
+                                              checkVendorCode(line.key, line.distributorId, suggestion.code, {
+                                                area: pharmacy.area,
+                                                governorate: pharmacy.governorate,
+                                              });
+                                            }}
+                                            type="button"
+                                          >
+                                            <span className="min-w-0">
+                                              <span className="block text-phx-sm font-bold text-slate-900">
+                                                {suggestion.code}
+                                                {suggestion.name ? ` · ${suggestion.name}` : ""}
+                                              </span>
+                                              {suggestion.address ? (
+                                                <span className="block text-phx-xs font-medium text-slate-500" dir="auto">
+                                                  {suggestion.address}
+                                                </span>
+                                              ) : null}
+                                            </span>
+                                            <span
+                                              className={`shrink-0 text-phx-sm font-black uppercase tracking-[0.1em] ${
+                                                suggestion.proximity === "same_area"
+                                                  ? "text-emerald-700"
+                                                  : suggestion.proximity === "same_governorate"
+                                                    ? "text-slate-600"
+                                                    : "text-slate-400"
+                                              }`}
+                                            >
+                                              {proximityLabel(suggestion.proximity)}
+                                            </span>
+                                          </button>
+                                        ))}
+                                      </div>
+                                    ) : null}
+                                    {codeCheck ? (
+                                      <p
+                                        className={`mt-1.5 flex items-center gap-1.5 text-phx-xs font-bold ${
+                                          codeCheck === "tracked"
+                                            ? "text-emerald-700"
+                                            : codeCheck === "untracked"
+                                              ? "text-amber-700"
+                                              : "text-slate-500"
+                                        }`}
+                                      >
+                                        {codeCheck === "checking" ? (
+                                          <>
+                                            <LoadingSpinner />
+                                            Checking Phoenix database…
+                                          </>
+                                        ) : null}
+                                        {codeCheck === "tracked" ? (
+                                          <>
+                                            <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                                            In Phoenix sales database — sales can be tracked.
+                                          </>
+                                        ) : null}
+                                        {codeCheck === "untracked" ? (
+                                          <>
+                                            <ShieldX className="h-3.5 w-3.5 shrink-0" />
+                                            Not in our database yet — sales won’t be auto-tracked.
+                                          </>
+                                        ) : null}
+                                        {codeCheck === "unknown" ? (
+                                          <>Could not check the database right now.</>
+                                        ) : null}
+                                      </p>
+                                    ) : null}
+                                    {venueOnFile ? (
+                                      <div className="mt-2 flex flex-col gap-2 rounded-none border border-emerald-200 bg-emerald-50/60 p-2.5 sm:flex-row sm:items-center sm:justify-between">
+                                        <p className="min-w-0 text-phx-xs font-bold text-emerald-800">
+                                          Already on file:{" "}
+                                          <span dir="auto">{venueOnFile.displayName}</span>
+                                          {venueOnFile.capturedAddress || venueOnFile.areaName ? (
+                                            <span className="block font-medium text-emerald-700" dir="auto">
+                                              {venueOnFile.capturedAddress ?? venueOnFile.areaName}
+                                            </span>
+                                          ) : null}
+                                        </p>
+                                        <Button
+                                          className={`h-10 shrink-0 rounded-none border border-emerald-300 bg-white px-3 text-phx-xs font-bold text-emerald-800 hover:bg-emerald-50 sm:h-8 ${adminControlDepthClassName}`}
+                                          onClick={() =>
+                                            updatePharmacy(customer.key, pharmacy.key, {
+                                              existingPharmacyId: venueOnFile.id,
+                                              source: "existing",
+                                            })
+                                          }
+                                          type="button"
+                                        >
+                                          Use this pharmacy
+                                        </Button>
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
                             {isDeskMode && (crmPharmacies[customer.crmAreaSeatId] ?? []).length > 0 ? (
                               <div className="md:col-span-6">
                                 <Field label="Copy from the rep's CRM pharmacies (name and location)">
@@ -3891,171 +4099,7 @@ export function MarketingValidationWorkspace() {
                                   )}
                                   <p className="mt-1.5 text-phx-xs text-slate-600">{CODELESS_VENUES_GO_TO_DIRECT_ORDERS}</p>
                                 </div>
-                                <div
-                                  className={
-                                    choiceRequiresDistributorCode(pharmacy.venueType)
-                                      ? "flex items-center justify-between gap-3"
-                                      : "hidden"
-                                  }
-                                >
-                                  <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">
-                                    Vendor Codes
-                                  </p>
-                                  <Button
-                                    className={`h-10 gap-1.5 rounded-none border border-slate-200 bg-white px-2.5 text-phx-xs font-bold text-slate-600 hover:bg-slate-50 sm:h-7 ${adminControlDepthClassName}`}
-                                    onClick={() =>
-                                      updatePharmacy(customer.key, pharmacy.key, {
-                                        vendorCodes: [...pharmacy.vendorCodes, newVendorCodeLine(defaultDistributorId)],
-                                      })
-                                    }
-                                    type="button"
-                                  >
-                                    <Plus className="h-3 w-3" />
-                                    Add
-                                  </Button>
-                                </div>
-                                {!choiceRequiresDistributorCode(pharmacy.venueType) ? null : pharmacy.vendorCodes.map((line) => {
-                                  const codeCheck = codeChecks[line.key];
-                                  return (
-                                  <div key={line.key}>
-                                    {/* Phone: distributor + remove on one row, the code on its own full-width
-                                        row below (the old three-across row left ~54px of the distributor's
-                                        name visible at 360px). From `sm` up: distributor · code · remove. */}
-                                    <div className="grid grid-cols-[minmax(0,1fr)_40px] gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_40px]">
-                                      <SelectField
-                                        disabled={workspace.distributors.length === 0}
-                                        onChange={(value) => {
-                                          updateVendorCode(customer.key, pharmacy.key, line.key, { distributorId: value });
-                                          checkVendorCode(line.key, value, line.distributorCode);
-                                        }}
-                                        value={line.distributorId}
-                                      >
-                                        <option value="">Vendor</option>
-                                        {workspace.distributors.map((distributor: MarketingDistributor) => (
-                                          <option key={distributor.id} value={distributor.id}>
-                                            {distributor.displayName}
-                                          </option>
-                                        ))}
-                                      </SelectField>
-                                      <Input
-                                        className="order-last col-span-2 text-phx-md sm:order-none sm:col-span-1"
-                                        onChange={(event) => {
-                                          const nextCode = event.target.value;
-                                          updateVendorCode(customer.key, pharmacy.key, line.key, { distributorCode: nextCode });
-                                          checkVendorCode(line.key, line.distributorId, nextCode, {
-                                            area: pharmacy.area,
-                                            governorate: pharmacy.governorate,
-                                          });
-                                        }}
-                                        placeholder="Code"
-                                        value={line.distributorCode}
-                                      />
-                                      <button
-                                        aria-label="Remove vendor"
-                                        className={`flex h-10 w-full items-center justify-center rounded-none border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 ${adminControlDepthClassName}`}
-                                        disabled={pharmacy.vendorCodes.length === 1}
-                                        onClick={() =>
-                                          updatePharmacy(customer.key, pharmacy.key, {
-                                            vendorCodes: pharmacy.vendorCodes.length === 1
-                                              ? pharmacy.vendorCodes
-                                              : pharmacy.vendorCodes.filter((item) => item.key !== line.key),
-                                          })
-                                        }
-                                        type="button"
-                                      >
-                                        <Trash2 className="h-3 w-3" />
-                                      </button>
-                                    </div>
-                                    {/* THE CODE SUGGESTIONS — ranked by where he just stood, and
-                                        NEVER narrowed by it (owner ruling, 2026-09-29). Every
-                                        candidate the code he typed matches is here; the place only
-                                        decides which comes first, because half the reference import
-                                        carries no area and a filter would hide those shops for good.
-
-                                        Tapping one fills the code. He can still type anything — this
-                                        is a shortcut, not a gate, and nothing here tells him he is
-                                        being checked: each row describes the CODE's registered
-                                        place, never his. */}
-                                    {(codeSuggestions[line.key] ?? []).length > 0 ? (
-                                      <div className={`mt-1.5 max-h-48 overflow-y-auto rounded-none border border-slate-200 bg-white ${adminRecessedDepthClassName}`}>
-                                        {(codeSuggestions[line.key] ?? []).map((suggestion) => (
-                                          <button
-                                            className="flex w-full items-start justify-between gap-2 border-b border-slate-100 px-2.5 py-2 text-left last:border-b-0 hover:bg-orange-50"
-                                            key={suggestion.code}
-                                            onClick={() => {
-                                              updateVendorCode(customer.key, pharmacy.key, line.key, {
-                                                distributorCode: suggestion.code,
-                                              });
-                                              checkVendorCode(line.key, line.distributorId, suggestion.code, {
-                                                area: pharmacy.area,
-                                                governorate: pharmacy.governorate,
-                                              });
-                                            }}
-                                            type="button"
-                                          >
-                                            <span className="min-w-0">
-                                              <span className="block text-phx-sm font-bold text-slate-900">
-                                                {suggestion.code}
-                                                {suggestion.name ? ` · ${suggestion.name}` : ""}
-                                              </span>
-                                              {suggestion.address ? (
-                                                <span className="block text-phx-xs font-medium text-slate-500" dir="auto">
-                                                  {suggestion.address}
-                                                </span>
-                                              ) : null}
-                                            </span>
-                                            <span
-                                              className={`shrink-0 text-phx-sm font-black uppercase tracking-[0.1em] ${
-                                                suggestion.proximity === "same_area"
-                                                  ? "text-emerald-700"
-                                                  : suggestion.proximity === "same_governorate"
-                                                    ? "text-slate-600"
-                                                    : "text-slate-400"
-                                              }`}
-                                            >
-                                              {proximityLabel(suggestion.proximity)}
-                                            </span>
-                                          </button>
-                                        ))}
-                                      </div>
-                                    ) : null}
-                                    {codeCheck ? (
-                                      <p
-                                        className={`mt-1.5 flex items-center gap-1.5 text-phx-xs font-bold ${
-                                          codeCheck === "tracked"
-                                            ? "text-emerald-700"
-                                            : codeCheck === "untracked"
-                                              ? "text-amber-700"
-                                              : "text-slate-500"
-                                        }`}
-                                      >
-                                        {codeCheck === "checking" ? (
-                                          <>
-                                            <LoadingSpinner />
-                                            Checking Phoenix database…
-                                          </>
-                                        ) : null}
-                                        {codeCheck === "tracked" ? (
-                                          <>
-                                            <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                                            In Phoenix sales database — sales can be tracked.
-                                          </>
-                                        ) : null}
-                                        {codeCheck === "untracked" ? (
-                                          <>
-                                            <ShieldX className="h-3.5 w-3.5 shrink-0" />
-                                            Not in our database yet — sales won’t be auto-tracked.
-                                          </>
-                                        ) : null}
-                                        {codeCheck === "unknown" ? (
-                                          <>Could not check the database right now.</>
-                                        ) : null}
-                                      </p>
-                                    ) : null}
-                                  </div>
-                                  );
-                                })}
-                                {/* The licence sits directly under the codes it stands in for.
+                                {/* The licence stands in for the codes typed at the top of the card.
                                     `vendorCodes` here are the rows ON SCREEN, so a rep who has not
                                     typed a code yet sees the prompt — which is the moment it is
                                     useful, not after the form is complete. */}

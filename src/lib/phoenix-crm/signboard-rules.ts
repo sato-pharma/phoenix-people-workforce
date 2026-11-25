@@ -350,7 +350,19 @@ export function personNameWords(text: string): NameWord[] {
     groups.push([word]);
     open = COMPOUND_HEADS.has(word);
   }
-  return groups.map((parts) => ({ word: parts.join(""), core: parts.length > 1 ? compoundCore(parts) : null }));
+  return groups.map((parts) => ({ word: joinedCompound(parts), core: parts.length > 1 ? compoundCore(parts) : null }));
+}
+
+/**
+ * 🔴 ONE ALEF WHERE A NAME ENDING IN ا MEETS ITS TAIL (Hadeer Abdelnaser, 23 Nov 2026). El Kholafaa's
+ * timetable read "د. صبحي عطا الله" twice, close and straight, and both photos were refused because the
+ * list holds صبحي عطالله محمد: joined as written, عطا + الله is عطاالله, which never equals عطالله, so his
+ * family name was "missing" from a board that carried it. Arabic writes the compound with the two
+ * alefs merged, so the join keeps one — on either side, and on a list row already written as one word
+ * with both (عطاالله). Only before a tail (الله, الدين); a head never ends in ا.
+ */
+function joinedCompound(parts: readonly string[]): string {
+  return parts.join("").replace(/ا(ال(?:له|دين))$/, "$1");
 }
 
 // 🔴 A NAME IS WRITTEN WITH AND WITHOUT ITS ال, AND THAT IS STILL ONE NAME — on any word of it, the

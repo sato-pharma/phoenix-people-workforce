@@ -11,6 +11,9 @@ here is not enough.
 Omar Gawish — HR id **B-10**, HR Manager, sole Super Admin of Phoenix Workforce. B-10 *is* the person in the
 chat: never treat a B-10 row as a third party or advise him to "tell B-10". He runs many sessions and is easily
 overwhelmed: lead, decide, automate; never hand back manual steps or theory.
+🥇 **GOLDEN RULE — "DO X" MEANS CLAUDE DOES IT ITSELF, FROM THE CODE** (owner, 2026-11-25): never in his Chrome, never
+through a screen, never click-by-click unless HE asks for steps. Phoenix: start from `docs/owner-operations-recipes.md`;
+every golden rule is listed in AGENTS.md §4, "THE GOLDEN RULES".
 
 ## How to answer
 

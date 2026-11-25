@@ -196,3 +196,31 @@ On 25 Nov these routes were called on the SPARE laptop's dev server with dev-aut
 that night. A scratch script that fabricates a Super Admin viewer was refused by Claude Code's safety
 check on 9 Oct 2026. `scripts/owner-ops.ts` is the reviewed, committed form: it reads B-10's real
 login row instead of fabricating one. A new desk job becomes a new subcommand there, with its recipe here.
+
+## Phoenix CRM
+
+### Approve a rejected validation after all ("Approve it after all")
+
+- **What it calls:** `restoreValidation(viewer, { reviewId, note })` in `src/lib/phoenix-crm/server/validation-reviews.ts`,
+  the same path `POST /api/phoenix-crm/validation-reviews/restore` takes. The viewer is
+  `resolvePhoenixCrmViewer(createAccessContext({ hrId: "B-10", loginId, role, source: "session" }))`, built
+  from his one active, non-test `app_auth_users` row (as `liveAccessContext` in `scripts/owner-ops.ts` does).
+  There is no runner job for it yet. On 26 Nov 2026 it ran from a throwaway file in the worktree with the
+  alias loader and `--env-file-if-exists=.env.local`, one call per review id.
+- **Ids:** the place's ONE `phoenix_crm_validation_reviews` row (`place_id` is unique). A customer with two
+  places has two reviews. The second answers `validated: false` once the first has validated him, which is
+  correct.
+- **Proof:** the customer is `active` with `validated_at`, the place is `active`, the review is `approved` by `B-10`.
+
+### A one-time location-only exception (no photo kept)
+
+- **Only on his word for the named cases.** The standing rule is "no customer is validated without a photo"
+  (`.claude/rules/phoenix-crm-place-checks.md`). On 26 Nov 2026 he allowed it once, for Hadeer Abdelnaser
+  (B-95) and the doctors with no signboard naming them: Siham Sobhy, Hisham Samih Ismail, Wael Abu El Kheir,
+  and Hisham Khodeir (both clinics). His words: "exception only for this time, for this rep, location only, no photo".
+  Ahmed Eid was left alone, because he has no capture and so no location.
+- **How:** back up the places, reviews and customers first (`phoenix_crm_backup_20261126.paper_exception_*`).
+  Then `photo_path = null` with `trusted_basis = { kind: "owner_exception_location_only", decided_by_hr_id,
+  decided_on, reason, removed_photo_path }`. The `phoenix_crm_places_photo_or_trusted` CHECK needs one of the
+  two. The stored file stays in storage, and its path stays in `removed_photo_path`. Only after that comes
+  the take-back above, so the line copies are made without the photo. The point stays the photo's own reading.
