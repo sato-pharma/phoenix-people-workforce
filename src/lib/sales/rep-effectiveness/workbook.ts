@@ -20,11 +20,12 @@ import {
   monthShort,
   pctOf,
   type EffKpiFigures,
+  type EffScoreRow,
   type RepEffectivenessReport,
 } from "@/lib/sales/rep-effectiveness/model";
 
 export const REP_EFFECTIVENESS_SHEETS = [
-  "Answers",
+  "Scorecard",
   "KPIs vs target",
   "Sales vs target",
   "Area history",
@@ -152,16 +153,15 @@ export async function buildRepEffectivenessWorkbook(report: RepEffectivenessRepo
   wb.created = new Date(report.generatedAt);
   const generated = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Africa/Cairo" }).format(new Date(report.generatedAt));
   const span = report.months.length ? `${monthLong(report.months[0])} to ${monthLong(report.months[report.months.length - 1])}` : "no published month";
-  const repSpan = report.repMonths.length ? report.repMonths.map(monthShort).join(", ") : "none of the published months";
 
-  // ── 1. Answers ─────────────────────────────────────────────────────────────────────────────────
+  // ── 1. Scorecard — numbers only (owner, 25 Nov 2026: "I don't need all this text. I need numbers") ──
   {
-    const ws = wb.addWorksheet("Answers");
-    const W = 8;
-    let r = banner(ws, report, "Effectiveness review", `Read from the live system on ${generated}, Cairo time. Sales and targets are the published monthly closing (${span}). ${report.rep.name}'s months in the seat: ${repSpan}.`, W);
+    const ws = wb.addWorksheet("Scorecard");
+    const sc = report.scorecard;
+    const W = 2 + Math.max(sc.months.length, sc.kpiMonths.length);
+    let r = banner(ws, report, "Effectiveness review", `${span} · read ${generated}, Cairo time`, W);
     const facts: [string, string][] = [
       ["Area", `${report.rep.areaName}${report.rep.regionName ? ` · ${report.rep.regionName}` : ""}`],
-      ["Line", report.rep.line],
       ["Manager", report.rep.managerName ?? "Not recorded"],
       ["Hiring date", report.rep.hireDate ?? "Not recorded"],
     ];
@@ -171,52 +171,29 @@ export async function buildRepEffectivenessWorkbook(report: RepEffectivenessRepo
       put(ws, r, 2, v, { align: LEFT });
       r += 1;
     }
-    r += 1;
-    const last = report.sales[report.sales.length - 1];
-    const lastKpi = [...report.kpis].reverse().find((k) => k.rep && !k.unread) ?? null;
-    const tiles: [string, string][] = [
-      [last ? `${last.pharmaciesBuying}${report.universe.total != null ? ` of ${report.universe.total.toLocaleString("en-US")}` : ""}` : DASH, last ? `Pharmacies buying in ${monthLong(last.month)}` : "Pharmacies buying"],
-      [report.repAveragePerProduct != null ? String(report.repAveragePerProduct) : DASH, "Pharmacies per product a month, rep's months"],
-      [last?.achievementPct != null ? `${last.achievementPct}%` : DASH, last ? `Sales vs target, ${monthLong(last.month)}${last.achievementWithoutDirectPct != null ? ` (${last.achievementWithoutDirectPct}% without direct orders)` : ""}` : "Sales vs target"],
-      [lastKpi?.rep?.overallPct != null ? `${lastKpi.rep.overallPct}%` : DASH, lastKpi ? `Overall KPI, ${monthLong(lastKpi.month)}${lastKpi.toDate ? " to date" : ""}` : "Overall KPI"],
-    ];
-    const spans: [number, number][] = [[1, 2], [3, 4], [5, 6], [7, 8]];
-    tiles.forEach(([big, label], i) => {
-      const [c0, c1] = spans[i];
-      ws.mergeCells(r, c0, r, c1);
-      ws.mergeCells(r + 1, c0, r + 1, c1);
-      const b = ws.getCell(r, c0);
-      b.value = big;
-      font(b, { bold: true, size: 20, color: i === 0 ? AMBER : NAVY });
-      b.alignment = CENTRE;
-      const l = ws.getCell(r + 1, c0);
-      l.value = label.toUpperCase();
-      font(l, { bold: true, size: 8, color: MUTED });
-      l.alignment = CENTRE;
-      for (let c = c0; c <= c1; c += 1) {
-        ws.getCell(r, c).border = { top: { style: "medium", color: argb(i === 0 ? AMBER : NAVY) }, left: thin, right: thin };
-        ws.getCell(r + 1, c).border = { bottom: thin, left: thin, right: thin };
-      }
-    });
-    ws.getRow(r).height = 34;
-    ws.getRow(r + 1).height = 30;
-    r += 3;
-    r = section(ws, r, "What the managers asked, and what the record shows", W);
-    head(ws, r, 1, "Question");
-    ws.mergeCells(r, 2, r, 7);
-    head(ws, r, 2, "What the record shows");
-    head(ws, r, 8, "See sheet");
-    r += 1;
-    report.answers.forEach((a, i) => {
-      const bg = i % 2 ? ZEBRA : null;
-      put(ws, r, 1, a.question, { align: TOP_LEFT, bold: true, color: NAVY, bg });
-      ws.mergeCells(r, 2, r, 7);
-      put(ws, r, 2, a.answer, { align: TOP_LEFT, bg });
-      put(ws, r, 8, a.sheet, { size: 9, color: BLUE, bg });
-      ws.getRow(r).height = Math.max(32, Math.ceil(a.answer.length / 95) * 15);
+    const grid = (title: string, rows: EffScoreRow[], months: string[], targetHead: string) => {
       r += 1;
-    });
-    widths(ws, [26, 13, 13, 13, 13, 13, 13, 18]);
+      r = section(ws, r, title, W);
+      head(ws, r, 1, "");
+      months.forEach((m, i) => head(ws, r, i + 2, monthShort(m), monthHead(report, m)));
+      head(ws, r, months.length + 2, targetHead);
+      r += 1;
+      rows.forEach((row, i) => {
+        put(ws, r, 1, row.label, { align: LEFT, bold: row.strong, color: row.strong ? NAVY : INK, bg: i % 2 ? ZEBRA : null });
+        months.forEach((m, j) => {
+          const v = row.values[m] ?? null;
+          const bg = monthBg(report, m, i % 2 === 1);
+          if (row.kind === "pct") pct(ws, r, j + 2, v, { bg });
+          else put(ws, r, j + 2, v, { fmt: row.kind === "rate" ? "0.0" : MONEY, bold: row.strong, bg });
+        });
+        const t = row.target ?? null;
+        put(ws, r, months.length + 2, t == null ? "" : row.kind === "pct" ? t / 100 : t, { fmt: row.kind === "pct" ? "0%" : row.kind === "rate" ? "0.0" : MONEY, color: MUTED, size: 9 });
+        r += 1;
+      });
+    };
+    grid("The area, month by month", sc.closing, sc.months, "On the map");
+    grid("KPIs", sc.kpi, sc.kpiMonths, "Target");
+    widths(ws, [34, ...Array.from({ length: W - 1 }, () => 14)]);
     print(ws);
   }
 
@@ -224,7 +201,7 @@ export async function buildRepEffectivenessWorkbook(report: RepEffectivenessRepo
   {
     const ws = wb.addWorksheet("KPIs vs target");
     const W = 9;
-    let r = banner(ws, report, "KPIs against their targets", "The KPIs board's own figures, month by month. Coverage against the 95% floor; frequency against the plan; account (AM) visits against 2 a working day; doctor (PM) visits against 10. Overall is the board's mean of the four, each capped at 100%. A running month is to date.", W);
+    let r = banner(ws, report, "KPIs against their targets", span, W);
     const heads = ["Month", "Who", "Coverage", "Frequency", "Account visits a day", "Account visits vs 2", "Doctor visits a day", "Doctor visits vs 10", "Overall"];
     heads.forEach((h, i) => head(ws, r, i + 1, h));
     ws.getRow(r).height = 30;
@@ -258,7 +235,7 @@ export async function buildRepEffectivenessWorkbook(report: RepEffectivenessRepo
   {
     const ws = wb.addWorksheet("Sales vs target");
     const W = 9;
-    let r = banner(ws, report, "Sales against target, product by product", "Every published month of the area, from the monthly closing. Units are per product; the month's total is value only.", W);
+    let r = banner(ws, report, "Sales against target, product by product", span, W);
     ["Month", "Product", "Units sold", "Units target", "Units", "Value sold (EGP)", "Value target (EGP)", "Value", "Seat held by"].forEach((h, i) => head(ws, r, i + 1, h));
     ws.getRow(r).height = 28;
     r += 1;
@@ -298,7 +275,7 @@ export async function buildRepEffectivenessWorkbook(report: RepEffectivenessRepo
   {
     const ws = wb.addWorksheet("Area history");
     const W = 11;
-    let r = banner(ws, report, "The area, month by month", "Who held the seat, what the area sold against its target, and where the sales came from. Value in EGP. A month with no target says so.", W);
+    let r = banner(ws, report, "The area, month by month", span, W);
     ["Month", "Seat held by", "Sales", "Target", "Achievement", "Direct orders", "Without direct orders", "Pharmacy sales", "Wholesaler share", "Other", "Pharmacies buying"].forEach((h, i) => head(ws, r, i + 1, h));
     ws.getRow(r).height = 30;
     r += 1;
@@ -331,7 +308,7 @@ export async function buildRepEffectivenessWorkbook(report: RepEffectivenessRepo
       ws,
       report,
       "Customers per product per month",
-      `One pharmacy is one distributor customer, and it bought when its net units that month were above zero — the rule of the Closing Matrix's Pharmacies column. Direct orders, Main Stores and a wholesaler's share are not pharmacies.${report.universe.total != null ? ` The area's bricks hold ${report.universe.total.toLocaleString("en-US")} distributor customers on the customer map.` : ""}`,
+      report.universe.total != null ? `${span} · ${report.universe.total.toLocaleString("en-US")} customers on the map` : span,
       W,
     );
     head(ws, r, 1, "Product");
@@ -376,7 +353,7 @@ export async function buildRepEffectivenessWorkbook(report: RepEffectivenessRepo
     const n = report.months.length;
     const W = n + 4;
     const legend = report.products.map((p) => `${p.tag} ${p.name}`).join(" · ");
-    let r = banner(ws, report, "Every pharmacy that bought, month by month", `Each cell names what the pharmacy bought that month: ${legend}. The rep's months are shaded. Newest buyers first.`, W);
+    let r = banner(ws, report, "Every pharmacy that bought, month by month", legend, W);
     head(ws, r, 1, "Pharmacy");
     head(ws, r, 2, "Brick");
     report.months.forEach((m, j) => head(ws, r, 3 + j, monthShort(m), monthHead(report, m)));
@@ -411,7 +388,7 @@ export async function buildRepEffectivenessWorkbook(report: RepEffectivenessRepo
   {
     const ws = wb.addWorksheet("Where the growth came from");
     const W = 4;
-    let r = banner(ws, report, "Where the growth came from", "The change between the last two published months, split by where the sales came from. A direct order is one order placed with the company, not pharmacies buying more.", W);
+    let r = banner(ws, report, "Where the growth came from", span, W);
     const g = report.growth;
     if (!g) {
       ws.mergeCells(r, 1, r, W);

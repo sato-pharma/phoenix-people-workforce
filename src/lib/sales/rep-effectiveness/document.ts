@@ -15,7 +15,7 @@ import {
   premiumPageChrome,
   premiumSheetCss,
 } from "@/lib/hiring-pack/premium-identity";
-import { monthLong, monthShort, pctOf, type EffKpiFigures, type RepEffectivenessReport } from "@/lib/sales/rep-effectiveness/model";
+import { monthLong, monthShort, pctOf, type EffKpiFigures, type EffScoreRow, type RepEffectivenessReport } from "@/lib/sales/rep-effectiveness/model";
 
 function esc(value: unknown): string {
   return String(value ?? "")
@@ -39,6 +39,9 @@ const DASH = "&ndash;";
 const money = (v: number | null | undefined) => (v == null ? DASH : Math.round(v).toLocaleString("en-US"));
 const units = money;
 const pc = (v: number | null | undefined) => (v == null ? DASH : `${v}%`);
+
+const scoreValue = (row: EffScoreRow, v: number | null | undefined) =>
+  v == null ? DASH : row.kind === "pct" ? `${v}%` : row.kind === "rate" ? v.toFixed(1) : money(v);
 
 function generatedOn(iso: string): string {
   return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Africa/Cairo" }).format(new Date(iso));
@@ -87,15 +90,6 @@ export function buildRepEffectivenessDocument(report: RepEffectivenessReport): s
     orientation: "landscape",
   });
 
-  const last = report.sales[report.sales.length - 1];
-  const lastKpi = [...report.kpis].reverse().find((k) => k.rep && !k.unread) ?? null;
-  const tiles = [
-    [last ? `${last.pharmaciesBuying}${report.universe.total != null ? ` <small>of ${report.universe.total.toLocaleString("en-US")}</small>` : ""}` : DASH, last ? `Pharmacies buying in ${esc(monthLong(last.month))}` : "Pharmacies buying"],
-    [report.repAveragePerProduct != null ? String(report.repAveragePerProduct) : DASH, `Pharmacies per product a month in ${esc(rep.name.split(" ")[0])}'s months${report.beforeAveragePerProduct != null ? ` (${report.beforeAveragePerProduct} before)` : ""}`],
-    [last ? pc(last.achievementPct) : DASH, last ? `Sales vs target, ${esc(monthLong(last.month))}${last.achievementWithoutDirectPct != null ? ` &middot; ${last.achievementWithoutDirectPct}% without direct orders` : ""}` : "Sales vs target"],
-    [lastKpi?.rep ? (lastKpi.rep.justStarted ? "New" : pc(lastKpi.rep.overallPct)) : DASH, lastKpi ? `Overall KPI, ${esc(monthLong(lastKpi.month))}${lastKpi.toDate ? " to date" : ""}` : "Overall KPI"],
-  ];
-
   const facts = [
     ["Area", `${esc(rep.areaName)}${rep.regionName ? ` &middot; ${esc(rep.regionName)}` : ""}`],
     ["Line", esc(rep.line)],
@@ -104,17 +98,24 @@ export function buildRepEffectivenessDocument(report: RepEffectivenessReport): s
     ["Rep's months in the seat", esc(report.repMonths.length ? report.repMonths.map(monthShort).join(", ") : "None of the published months")],
   ];
 
+  const sc = report.scorecard;
+  const scoreTable = (rows: EffScoreRow[], months: string[], targetHead: string) => `
+  <table class="tbl grid">
+    <colgroup><col style="width:30%">${months.map(() => "<col>").join("")}<col style="width:11%"></colgroup>
+    <thead><tr><th></th>${months.map(mh).join("")}<th class="num">${targetHead}</th></tr></thead>
+    <tbody>${rows
+      .map((row) => `<tr><td class="${row.strong ? "strong deep" : ""}">${esc(row.label)}</td>${months.map((m) => md(m, scoreValue(row, row.values[m]), row.strong)).join("")}<td class="num thin">${row.target == null ? "" : scoreValue(row, row.target)}</td></tr>`)
+      .join("")}</tbody>
+  </table>`;
+
   const cover = `
 <section class="page">
   ${masthead(false)}
   <div class="facts">${facts.map(([k, v]) => `<div class="fact"><p class="fact__k">${k}</p><p class="fact__v">${v}</p></div>`).join("")}</div>
-  <div class="tiles">${tiles.map(([big, label], i) => `<div class="tile${i === 0 ? " tile--lead" : ""}"><p class="tile__v">${big}</p><p class="tile__k">${label}</p></div>`).join("")}</div>
-  <h2 class="h2">What the managers asked, and what the record shows</h2>
-  <table class="tbl">
-    <colgroup><col style="width:24%"><col style="width:62%"><col style="width:14%"></colgroup>
-    <thead><tr><th>Question</th><th>What the record shows</th><th>Section</th></tr></thead>
-    <tbody>${report.answers.map((a) => `<tr><td class="strong deep">${esc(a.question)}</td><td>${esc(a.answer)}</td><td class="thin">${esc(a.sheet)}</td></tr>`).join("")}</tbody>
-  </table>
+  <h2 class="h2">The area, month by month</h2>
+  ${scoreTable(sc.closing, sc.months, "On the map")}
+  <h2 class="h2">KPIs</h2>
+  ${scoreTable(sc.kpi, sc.kpiMonths, "Target")}
   ${chrome}
 </section>`;
 
@@ -129,7 +130,6 @@ export function buildRepEffectivenessDocument(report: RepEffectivenessReport): s
 <section class="page">
   ${masthead(true)}
   <h1 class="title">KPIs against their targets</h1>
-  <p class="lede">The KPIs board's own figures. Coverage against the 95% floor, frequency against the plan, account (AM) visits against 2 a working day and doctor (PM) visits against 10. Overall is the board's mean of the four, each capped at 100%. The colleagues are the reps under the same manager.</p>
   <table class="tbl">
     <colgroup><col style="width:15%"><col style="width:27%"><col><col><col><col><col><col><col></colgroup>
     <thead><tr><th>Month</th><th>Rep</th><th class="num">Coverage</th><th class="num">Frequency</th><th class="num">Account visits a day</th><th class="num">vs 2</th><th class="num">Doctor visits a day</th><th class="num">vs 10</th><th class="num">Overall</th></tr></thead>
@@ -152,7 +152,6 @@ export function buildRepEffectivenessDocument(report: RepEffectivenessReport): s
 <section class="page">
   ${masthead(true)}
   <h1 class="title">The area, month by month</h1>
-  <p class="lede">Every published month of the area's monthly closing: who held the seat, sales against target, and where the sales came from. Value in EGP.</p>
   <table class="tbl">
     <colgroup><col style="width:11%"><col style="width:17%"><col><col><col><col><col><col><col><col></colgroup>
     <thead><tr><th>Month</th><th>Seat held by</th><th class="num">Sales</th><th class="num">Target</th><th class="num">Achievement</th><th class="num">Direct orders</th><th class="num">Without direct</th><th class="num">Pharmacy sales</th><th class="num">Wholesaler share</th><th class="num">Pharmacies buying</th></tr></thead>
@@ -170,7 +169,6 @@ export function buildRepEffectivenessDocument(report: RepEffectivenessReport): s
 <section class="page">
   ${masthead(true)}
   <h1 class="title">Customers per product per month</h1>
-  <p class="lede">One pharmacy is one distributor customer, and it bought when its net units that month were above zero. Direct orders, Main Stores and a wholesaler's share are not pharmacies.${report.universe.total != null ? ` The area's bricks hold ${report.universe.total.toLocaleString("en-US")} distributor customers on the customer map.` : ""} The rep's months are ruled over their column.</p>
   <table class="tbl grid">
     <colgroup><col style="width:20%">${report.months.map(() => "<col>").join("")}</colgroup>
     <thead><tr><th>Product</th>${report.months.map(mh).join("")}</tr></thead>
@@ -202,7 +200,6 @@ export function buildRepEffectivenessDocument(report: RepEffectivenessReport): s
 <section class="page">
   ${masthead(true)}
   <h1 class="title">Sales against target, product by product</h1>
-  <p class="lede">Units are per product; the month's total across products is value only. Newest month first.</p>
   <table class="tbl">
     <colgroup><col style="width:13%"><col style="width:21%"><col><col><col><col><col><col></colgroup>
     <thead><tr><th>Month</th><th>Product</th><th class="num">Units sold</th><th class="num">Units target</th><th class="num">Units</th><th class="num">Value sold (EGP)</th><th class="num">Value target (EGP)</th><th class="num">Value</th></tr></thead>
@@ -215,7 +212,7 @@ export function buildRepEffectivenessDocument(report: RepEffectivenessReport): s
 <section class="page">
   ${masthead(true)}
   <h1 class="title">Every pharmacy that bought, month by month</h1>
-  <p class="lede">Each cell names what the pharmacy bought that month: ${legend}. Newest buyers first. &ldquo;New&rdquo; marks a pharmacy whose first purchase on this report fell in the rep's months.</p>
+  <p class="lede">${legend}</p>
   <table class="tbl grid">
     <colgroup><col style="width:21%"><col style="width:11%">${report.months.map(() => "<col>").join("")}<col style="width:6%"><col style="width:5%"></colgroup>
     <thead><tr><th>Pharmacy</th><th>Brick</th>${report.months.map(mh).join("")}<th class="num">Months</th><th class="num">New</th></tr></thead>
@@ -254,12 +251,6 @@ body { font-family: "Segoe UI", "Noto Sans", "Helvetica Neue", Arial, sans-serif
 .fact:last-child { border-right: 0; }
 .fact__k { margin: 0 0 .6mm; font-size: 6.4pt; font-weight: 700; text-transform: uppercase; letter-spacing: .12em; color: ${c.blue}; }
 .fact__v { margin: 0; font-size: 8.6pt; font-weight: 600; }
-.tiles { display: grid; grid-template-columns: 1.3fr 1fr 1fr 1fr; gap: 4mm; margin: 1mm 0 2mm; }
-.tile { border-top: .7pt solid ${c.deep}; padding-top: 1.6mm; }
-.tile--lead { border-top: 1.4pt solid ${c.blue}; }
-.tile__v { margin: 0; font-size: 22pt; font-weight: 700; color: ${c.deep}; letter-spacing: -.02em; line-height: 1.05; }
-.tile__v small { font-size: 10pt; font-weight: 400; color: ${c.muted}; letter-spacing: 0; }
-.tile__k { margin: .8mm 0 0; font-size: 6.6pt; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: ${c.blue}; }
 .tbl { width: 100%; table-layout: fixed; border-collapse: collapse; }
 .tbl--narrow { width: 60%; }
 .tbl th { text-align: left; font-size: 6.6pt; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: ${c.deep}; border-top: .7pt solid ${c.deep}; border-bottom: .5pt solid ${c.hair}; padding: 1.4mm 1.2mm; vertical-align: bottom; }

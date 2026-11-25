@@ -183,11 +183,17 @@ function theNumbers(): void {
   assert.equal(report.bricks.find((b) => b.name === "دسوق")?.onMap, 691);
   assert.equal(report.repAveragePerProduct, 1, "Guamusin 1 and 2, Lacto Advanced 0 and 1, over two months");
   assert.equal(report.beforeAveragePerProduct, 2, "only the products sold before her are averaged in the months before");
-  // The answers: the customer count comes first, and every answer names its sheet.
-  assert.equal(report.answers[0].question, "How many customers does the area reach?");
-  assert.match(report.answers[0].answer, /2 pharmacies bought any product in October 2026, out of 1,650/);
-  for (const a of report.answers) assert.ok(REP_EFFECTIVENESS_SHEETS.includes(a.sheet as (typeof REP_EFFECTIVENESS_SHEETS)[number]), `${a.sheet} is a sheet`);
-  for (const a of report.answers) assert.ok(!/\bher\b|\bhis\b/.test(a.answer), "the rep is named, never her or his");
+  // The scorecard: numbers only, the customer count first, then sales against target, then the KPIs.
+  const sc = report.scorecard;
+  assert.equal(sc.closing[0].label, "Pharmacies buying, any product", "the customer count comes first");
+  assert.deepEqual(sc.closing[0].values, { "2026-08": 2, "2026-09": 1, "2026-10": 2 });
+  assert.equal(sc.closing[0].target, 1650, "beside it, the customers on the map");
+  assert.equal(sc.closing.find((row) => row.label === "Achievement without direct orders")?.values["2026-10"], 40);
+  assert.equal(sc.kpi[0].label, "Overall KPI");
+  assert.equal(sc.kpi[0].values["2026-11"], 40);
+  for (const row of [...sc.closing, ...sc.kpi]) {
+    for (const v of Object.values(row.values)) assert.ok(v == null || typeof v === "number", `${row.label} holds numbers only`);
+  }
   assert.deepEqual([...productTags([{ code: "A", name: "Lacto Advanced 1" }, { code: "B", name: "Lacto Advanced 1" }]).values()], ["LA1", "LA12"], "tags never collide");
   assert.equal(reviewFileName("Ebtissam Alaa", report.months, "pdf"), "Ebtissam-Alaa-Effectiveness-Review-2026-08-to-2026-10.pdf");
 }

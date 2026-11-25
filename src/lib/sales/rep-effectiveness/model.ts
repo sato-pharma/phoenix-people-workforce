@@ -152,7 +152,12 @@ export type EffPharmacy = {
 
 export type EffGrowthStep = { label: string; change: number };
 
-export type EffAnswer = { question: string; answer: string; sheet: string };
+/**
+ * One line of the scorecard — numbers only (owner, 25 Nov 2026: "I don't need all this text. I need numbers").
+ * `values` is keyed by month; null is "no figure", never a zero.
+ */
+export type EffScoreRow = { label: string; kind: "count" | "money" | "pct" | "rate"; values: Record<string, number | null>; target?: number | null; strong?: boolean };
+export type EffScorecard = { months: string[]; closing: EffScoreRow[]; kpiMonths: string[]; kpi: EffScoreRow[] };
 
 export type RepEffectivenessReport = {
   rep: EffRep;
@@ -176,7 +181,7 @@ export type RepEffectivenessReport = {
   /** From the second-last to the last published month: the change, split by where the sales came from. */
   growth: { from: string; to: string; start: number; steps: EffGrowthStep[]; end: number } | null;
   kpis: EffKpiMonth[];
-  answers: EffAnswer[];
+  scorecard: EffScorecard;
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────────────────────────
@@ -287,10 +292,6 @@ export function kpiFiguresOf(row: KpiRepRow): EffKpiFigures {
 }
 
 const sumSources = (s: EffSources) => s.direct + s.wholesalerShare + s.pharmacy + s.other;
-
-function fmtMoney(value: number): string {
-  return `EGP ${Math.round(value).toLocaleString("en-US")}`;
-}
 
 // ── The report ───────────────────────────────────────────────────────────────────────────────────
 
@@ -449,105 +450,41 @@ export function buildRepEffectiveness(input: {
     sources,
     growth,
     kpis: [...input.kpis].sort((x, y) => x.month.localeCompare(y.month)),
-    answers: [],
+    scorecard: { months: [], closing: [], kpiMonths: [], kpi: [] },
   };
-  report.answers = buildAnswers(report);
+  report.scorecard = buildScorecard(report);
   return report;
 }
 
-/** The managers' questions, each with the figure that answers it — facts only, no verdict. */
-export function buildAnswers(report: RepEffectivenessReport): EffAnswer[] {
-  const out: EffAnswer[] = [];
-  const first = report.rep.name.split(/\s+/)[0] || report.rep.name;
-  const last = report.sales[report.sales.length - 1] ?? null;
-  const repSales = report.sales.filter((s) => s.isRepMonth);
-
-  if (last) {
-    const universe = report.universe.total;
-    out.push({
-      question: "How many customers does the area reach?",
-      answer:
-        `${last.pharmaciesBuying} pharmacies bought any product in ${monthLong(last.month)}` +
-        (universe != null ? `, out of ${universe.toLocaleString("en-US")} distributor customers on the customer map in the area's bricks.` : ".") +
-        ` By month: ${report.sales.map((s) => `${monthShort(s.month)} ${s.pharmaciesBuying}`).join(" · ")}.`,
-      sheet: "Customers per product",
-    });
-  }
-  if (report.repAveragePerProduct != null) {
-    out.push({
-      question: "How many customers buy each product a month?",
-      answer:
-        `${report.repAveragePerProduct} pharmacies per product a month in ${first}'s months` +
-        (report.beforeAveragePerProduct != null ? `, against ${report.beforeAveragePerProduct} in the months before.` : ".") +
-        ` ${report.products.map((p) => `${p.name}: ${report.repMonths.map((k) => report.customers[p.code][k] ?? 0).join(", ")}`).join(" · ")}.`,
-      sheet: "Customers per product",
-    });
-  }
-  if (repSales.length > 0) {
-    out.push({
-      question: "Sales performance and target achievement",
-      answer: repSales
-        .map((s) =>
-          `${monthLong(s.month)}: ${fmtMoney(s.actualValue)} against ${s.targetValue != null ? fmtMoney(s.targetValue) : "no target set"}` +
-          (s.achievementPct != null ? ` (${s.achievementPct}%` + (s.achievementWithoutDirectPct != null ? `, ${s.achievementWithoutDirectPct}% without direct orders)` : ")") : ""),
-        )
-        .join(" · "),
-      sheet: "Sales vs target",
-    });
-  }
-  const history = report.sales.filter((s) => s.achievementPct != null && !s.isRepMonth);
-  if (history.length > 0) {
-    out.push({
-      question: "Achievement against the history of the same area",
-      answer: report.sales
-        .map((s) => `${monthShort(s.month)} ${s.achievementPct != null ? `${s.achievementPct}%` : "no target"} (${s.isRepMonth ? first : s.holder ?? "seat not recorded"})`)
-        .join(" · "),
-      sheet: "Area history",
-    });
-  }
-  const directMonths = report.sales.filter((s) => s.directValue > 0);
-  if (report.growth || directMonths.length > 0) {
-    const g = report.growth;
-    out.push({
-      question: "Where did the sales come from — can one order make the growth?",
-      answer:
-        (g
-          ? `${monthLong(g.from)} to ${monthLong(g.to)}: ${fmtMoney(g.start)} to ${fmtMoney(g.end)}. ` +
-            g.steps.map((s) => `${s.label} ${s.change >= 0 ? "+" : "−"}${fmtMoney(Math.abs(s.change))}`).join(" · ") + ". "
-          : "") +
-        (directMonths.length > 0
-          ? `Direct orders: ${directMonths.map((s) => `${monthShort(s.month)} ${fmtMoney(s.directValue)} (${s.actualValue > 0 ? Math.round((s.directValue / s.actualValue) * 100) : 0}% of the month)`).join(" · ")}.`
-          : "No direct order in any published month."),
-      sheet: "Where the growth came from",
-    });
-  }
-  const newCount = report.pharmacies.filter((p) => p.newInRepTime).length;
-  const repBuyers = report.pharmacies.filter((p) => report.repMonths.some((k) => p.months[k]));
-  if (report.repMonths.length > 0) {
-    const repeat = repBuyers.filter((p) => report.repMonths.filter((k) => p.months[k]).length >= 2).length;
-    out.push({
-      question: "Are the customers new, and do they buy again?",
-      answer:
-        `${repBuyers.length} pharmacies bought in ${first}'s months; ${newCount} of them had not bought in any earlier month on this report` +
-        (report.repMonths.length >= 2 ? `, and ${repeat} bought in two or more of ${first}'s months.` : "."),
-      sheet: "Pharmacy by month",
-    });
-  }
-  const kpiMonths = report.kpis.filter((k) => !k.unread && k.rep);
-  if (kpiMonths.length > 0) {
-    const pc = (v: number | null) => (v == null ? "not scored" : `${v}%`);
-    out.push({
-      question: "KPI achievement versus assigned targets",
-      answer: kpiMonths
-        .map((k) => {
-          const f = k.rep as EffKpiFigures;
-          return `${monthLong(k.month)}${k.toDate ? " to date" : ""}: overall ${f.justStarted ? "just started, not judged" : pc(f.overallPct)} · coverage ${pc(f.coveragePct)} (95% floor) · frequency ${pc(f.frequencyPct)} · account visits ${pc(f.amAttainmentPct)} of 2 a day · doctor visits ${pc(f.pmAttainmentPct)} of 10 a day`;
-        })
-        .join(". "),
-      sheet: "KPIs vs target",
-    });
-  }
-  return out;
+/**
+ * The scorecard on the first page: what the managers asked, as numbers by month and nothing else — the
+ * customer count first, then sales against target and where they came from, then the KPIs.
+ */
+export function buildScorecard(report: RepEffectivenessReport): EffScorecard {
+  const months = report.months;
+  const by = (pick: (s: EffSalesMonth) => number | null) => Object.fromEntries(report.sales.map((s) => [s.month, pick(s)]));
+  const closing: EffScoreRow[] = [
+    { label: "Pharmacies buying, any product", kind: "count", values: by((s) => s.pharmaciesBuying), target: report.universe.total, strong: true },
+    ...report.products.map((p) => ({ label: `Pharmacies buying ${p.name}`, kind: "count" as const, values: Object.fromEntries(months.map((m) => [m, report.customers[p.code]?.[m] ?? 0])) })),
+    { label: "Sales (EGP)", kind: "money", values: by((s) => s.actualValue), strong: true },
+    { label: "Target (EGP)", kind: "money", values: by((s) => s.targetValue) },
+    { label: "Achievement", kind: "pct", values: by((s) => s.achievementPct), strong: true },
+    { label: "Direct orders (EGP)", kind: "money", values: by((s) => s.directValue) },
+    { label: "Achievement without direct orders", kind: "pct", values: by((s) => (s.directValue > EPSILON ? s.achievementWithoutDirectPct : s.achievementPct)) },
+    { label: "Pharmacy sales (EGP)", kind: "money", values: Object.fromEntries(months.map((m) => [m, report.sources[m]?.pharmacy ?? null])) },
+    { label: "Wholesaler and store share (EGP)", kind: "money", values: Object.fromEntries(months.map((m) => [m, report.sources[m]?.wholesalerShare ?? null])) },
+  ];
+  const kpiMonths = report.kpis.map((k) => k.month);
+  const kv = (pick: (f: EffKpiFigures) => number | null) =>
+    Object.fromEntries(report.kpis.map((k) => [k.month, k.unread || !k.rep ? null : pick(k.rep)]));
+  const kpi: EffScoreRow[] = [
+    { label: "Overall KPI", kind: "pct", values: kv((f) => (f.justStarted ? null : f.overallPct)), target: 100, strong: true },
+    { label: "Coverage", kind: "pct", values: kv((f) => f.coveragePct), target: 95 },
+    { label: "Frequency", kind: "pct", values: kv((f) => f.frequencyPct), target: 100 },
+    { label: "Account visits a day", kind: "rate", values: kv((f) => f.amPerDay), target: 2 },
+    { label: "Doctor visits a day", kind: "rate", values: kv((f) => f.pmPerDay), target: 10 },
+  ];
+  return { months, closing, kpiMonths, kpi };
 }
 
 export function reviewFileName(repName: string, months: readonly string[], ext: "xlsx" | "pdf"): string {
