@@ -7,6 +7,7 @@ import {
   GeminiTranscriptionError,
   geminiTranscriptionInstruction,
   geminiVerbatimFrom,
+  transcribeWithGemini,
 } from "../src/lib/ai/gemini-transcription.ts";
 import {
   GROQ_TRANSCRIPTION_LANGUAGE,
@@ -510,6 +511,47 @@ export async function runPhoenixCrmVoiceGeminiTests() {
   assert.match(gemini, /temperature: 0/, `${GEMINI_CLIENT} does not sample`);
   assert.doesNotMatch(gemini, /openai|api\.groq\.com/i, `${GEMINI_CLIENT} reaches Google and nothing else`);
   assert.doesNotMatch(gemini, /logError\([^)]*\b(text|body)\b/, `${GEMINI_CLIENT} never logs the response body — a refused key's answer can quote the key`);
+
+  // ── 8b. A leg Whisper answers never reaches the System Audit as an error (25 Nov 2026) ──
+  // Two Gemini timeouts at 20:07 and 20:08 Cairo sent the owner "New error in Phoenix — Gemini transcription
+  // failed: timeout" for notes Whisper wrote out in full. An ERROR line is a System Audit row; the rescued leg
+  // already has its own failed-over row from recordAiCall, so its log line is a WARNING.
+  {
+    const saved = { fetch: globalThis.fetch, error: console.error, log: console.log, key: process.env.GEMINI_API_KEY, env: process.env.NODE_ENV };
+    const errors: string[] = [];
+    const lines: string[] = [];
+    try {
+      process.env.GEMINI_API_KEY = "test-gemini-key";
+      // Never "production" here: an ERROR would then be written to the live error table.
+      (process.env as Record<string, string>).NODE_ENV = "test";
+      globalThis.fetch = (async () => {
+        throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+      }) as typeof fetch;
+      console.error = (...args: unknown[]) => void errors.push(args.map(String).join(" "));
+      console.log = (...args: unknown[]) => void lines.push(args.map(String).join(" "));
+      const refusal = await refusalOf(
+        transcribeWithGemini({ ...RECORDING, productNames: [], purpose: "crm_visit_comment", fallback: "groq" }),
+      );
+      assert.ok(refusal instanceof GeminiTranscriptionError && refusal.code === "timeout", "a Gemini timeout is refused as a timeout, so Whisper is asked");
+    } finally {
+      globalThis.fetch = saved.fetch;
+      console.error = saved.error;
+      console.log = saved.log;
+      if (saved.key === undefined) delete process.env.GEMINI_API_KEY;
+      else process.env.GEMINI_API_KEY = saved.key;
+      (process.env as Record<string, string | undefined>).NODE_ENV = saved.env;
+    }
+    assert.equal(
+      errors.filter((line) => line.includes("gemini_transcription_failed")).length,
+      0,
+      "a Gemini timeout Whisper answers writes no ERROR line — that line is what sent him a false \"New error in Phoenix\"",
+    );
+    assert.ok(
+      lines.some((line) => line.includes("gemini_transcription_failed") && line.includes('"severity":"WARNING"')),
+      "the rescued leg still leaves a WARNING in the server log",
+    );
+  }
+  assert.match(gemini, /\(rescued \? logWarning : logError\)\(`Gemini transcription failed: \$\{code\}`/, `${GEMINI_CLIENT} still logs an ERROR when no one stands behind Gemini`);
 
   // ── 9. The key's shape ─────────────────────────────────────────────────────────
   const syntheticNew = `AQ.${"Ab8RN6".repeat(8)}x`;
