@@ -105,6 +105,12 @@ export type PhoenixCrmScheduleCheck = {
    * 2026-11-02). It wears the same stamp, so this record is the only thing that tells them apart.
    */
   uploaded?: boolean;
+  /**
+   * A timetable photographed in several photos (owner, 25 Nov 2026): the page this verdict was read on,
+   * 1 being the building's first photo, and how many pages there were. Absent on a one-photo board.
+   */
+  page?: number;
+  pages?: number;
   /** What the timetable reads, verbatim, in its own script. Arabic stays Arabic. */
   scheduleText: string | null;
   /** The names read on it as the names of PEOPLE. */

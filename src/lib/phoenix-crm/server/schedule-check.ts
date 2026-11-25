@@ -12,6 +12,8 @@ import {
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
 import { downloadIssuedPlacePhoto, downloadVenueTimetablePhoto } from "@/lib/phoenix-crm/server/photos";
 import { cropStampBand } from "@/lib/phoenix-crm/server/signboard-check";
+import { storedPageReading, timetablePagesOf } from "@/lib/phoenix-crm/server/timetable-pages";
+import { bestTimetablePageCheck } from "@/lib/phoenix-crm/timetable-pages-rules";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -376,4 +378,57 @@ export async function recordPlaceSchedule(placeId: string, check: PhoenixCrmSche
   } catch {
     // Deliberately silent — see the doc above.
   }
+}
+
+// ── A timetable in several photos (owner, 25 Nov 2026) ──────────────────────────────────────────
+
+/**
+ * Read every photo of one timetable at once: the first through `readScheduleBoard`, exactly as a
+ * one-photo board, and each extra page beside it, in parallel, so the rep waits no longer for five
+ * photos than for one. A reused board's extra pages are judged against the reading the pages table
+ * already keeps (`storedPageReading`); a page nobody could read is read again. Never throws.
+ */
+export async function readTimetableBoards(input: {
+  photoPath: string;
+  extraPhotoPaths: ReadonlyArray<string>;
+  seatId: string;
+  repHrId: string;
+  isTest: boolean;
+  reusedTimetable?: boolean;
+  timeoutMs?: number;
+}): Promise<ScheduleBoardReading[]> {
+  const first = readScheduleBoard(input);
+  if (input.extraPhotoPaths.length === 0) return [await first];
+  const stored = input.reusedTimetable ? await storedExtraReadings(input.photoPath, input.isTest) : new Map<string, ScheduleBoardReading>();
+  const extras = input.extraPhotoPaths.map(async (path): Promise<ScheduleBoardReading> => {
+    const kept = stored.get(path);
+    if (kept) return kept;
+    if (!hasAiApiKey()) return { kind: "unread", check: unjudged("no_api_key") };
+    const bytes = await (input.reusedTimetable
+      ? downloadVenueTimetablePhoto({ isTest: input.isTest, path, seatId: input.seatId })
+      : downloadIssuedPlacePhoto({ hrId: input.repHrId, isTest: input.isTest, path, seatId: input.seatId })
+    ).catch(() => null);
+    if (!bytes) return { kind: "unread", check: unjudged("no_bytes") };
+    return readScheduleBytes(bytes, input.timeoutMs ? { timeoutMs: input.timeoutMs } : {});
+  });
+  return Promise.all([first, ...extras]);
+}
+
+/** One customer's verdict on every photo of the board: the page that says the most for him. */
+export function judgeTimetableBoards(boards: ReadonlyArray<ScheduleBoardReading>, customerName: string): PhoenixCrmScheduleCheck {
+  const best = bestTimetablePageCheck(boards.map((board) => judgeScheduleBoard(board, customerName)));
+  return best ?? unjudged("no_bytes");
+}
+
+async function storedExtraReadings(firstPath: string, isTest: boolean): Promise<Map<string, ScheduleBoardReading>> {
+  const out = new Map<string, ScheduleBoardReading>();
+  try {
+    for (const page of (await timetablePagesOf([firstPath], isTest)).get(firstPath) ?? []) {
+      const reading = storedPageReading(page.reading);
+      if (reading && reading.kind === "read" && reading.legibility !== "unreadable") out.set(page.path, reading);
+    }
+  } catch {
+    // A page whose stored reading cannot be fetched is simply read again.
+  }
+  return out;
 }

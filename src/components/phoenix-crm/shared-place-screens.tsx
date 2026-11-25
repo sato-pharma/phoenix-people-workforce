@@ -44,6 +44,7 @@ import { crmPost, crmUrl, messageOf, useCrmGet } from "@/components/phoenix-crm/
 import { releaseCapturedPhoto } from "@/components/phoenix-crm/captured-photo";
 import { CaptureLocation, type CapturedPin } from "@/components/phoenix-crm/capture-location";
 import { LivePhotoCapture, type CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
+import { TimetableExtraPhotos, timetableExtraPaths, type TimetableExtraSlots } from "@/components/phoenix-crm/timetable-extra-photos";
 import { TimingsEditor, timingsToDrafts } from "@/components/phoenix-crm/timings-editor";
 import {
   CrmBlock,
@@ -106,6 +107,11 @@ export type SeatedDraftState = {
    * customer is being seated against it, which is the ordinary case from the second doctor onwards.
    */
   photo: CapturedPhoto | null;
+  /**
+   * Pages 2 to 5 of the timetable, when it does not fit one photo (owner, 25 Nov 2026). Sent only with a
+   * fresh first photo; a null slot is a camera open with nothing taken yet.
+   */
+  extraPhotos: TimetableExtraSlots;
   /** Whether the chosen building already has its timetable on file. Set from the picker's own rows. */
   timetableOnFile: boolean;
   /** He pressed "the timetable changed", so a fresh photograph is required even though one is on file. */
@@ -124,7 +130,7 @@ export function seatedSessionOf(listType: string | null | undefined): "AM" | "PM
 }
 
 export function emptySeatedDraft(timings: ReadonlyArray<PhoenixCrmTiming> = [], session: "AM" | "PM" | null = null): SeatedDraftState {
-  return { sharedPlaceId: null, photo: null, timetableOnFile: false, replacingTimetable: false, timings: [...timings], label: "", session, timetableRetakes: 0 };
+  return { sharedPlaceId: null, photo: null, extraPhotos: [], timetableOnFile: false, replacingTimetable: false, timings: [...timings], label: "", session, timetableRetakes: 0 };
 }
 
 /**
@@ -162,6 +168,8 @@ export function seatedPayload(photo: CapturedPhoto | null, draft: SeatedDraftSta
     // photograph, and a photo sent here is always a REPLACEMENT of the board on the wall.
     photoPath: photo?.path ?? null,
     photoUploaded: photo?.uploaded === true,
+    // Every other photo of the same board. Without a fresh first photo the server takes none of them.
+    extraPhotoPaths: photo ? timetableExtraPaths(draft.extraPhotos) : [],
     label: draft.label.trim() || null,
     timings: timingsToDrafts(draft.timings),
     session: draft.session,
@@ -606,6 +614,16 @@ export function SharedPlaceEditor({
                 uploadOffer={scheduleUploadAllowed(chosen.timetableRefusedToday ?? 0) ? { note: SCHEDULE_UPLOAD_NOTE } : undefined}
                 value={value.photo}
               />
+              {value.photo ? (
+                <TimetableExtraPhotos
+                  disabled={disabled}
+                  onChange={(update) => onChange((current) => ({ ...current, extraPhotos: update(current.extraPhotos) }))}
+                  seatId={seatId}
+                  test={test}
+                  title={`Phoenix CRM ${SHARED_PLACE_TITLE.toLowerCase()}: ${chosen.name}`}
+                  value={value.extraPhotos}
+                />
+              ) : null}
             </>
           )}
         </CrmBlock>

@@ -36,7 +36,9 @@ import {
 } from "@/lib/phoenix-crm/schedule-rules";
 import { readTestFlag, territoryForValidation, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
-import { judgeScheduleBoard, readScheduleBoard, recordPlaceSchedule, type ScheduleBoardReading } from "@/lib/phoenix-crm/server/schedule-check";
+import { judgeTimetableBoards, readTimetableBoards, recordPlaceSchedule, type ScheduleBoardReading } from "@/lib/phoenix-crm/server/schedule-check";
+import { addTimetablePages, timetableExtraPathsOf } from "@/lib/phoenix-crm/server/timetable-pages";
+import { extraPageRefusal, parseExtraPhotoPaths } from "@/lib/phoenix-crm/timetable-pages-rules";
 import { signboardNameIsUsable } from "@/lib/phoenix-crm/signboard-rules";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { quotedInList } from "@/lib/supabase/search-filter";
@@ -57,8 +59,11 @@ export async function settleVenueTimetable(input: {
   isTest: boolean;
   sharedPlaceId: string;
   schedulePhotoPath: string | null;
-  /** The reading of this same photograph the caller already holds, so it is not read a second time. */
-  board?: ScheduleBoardReading;
+  /**
+   * The readings of this same timetable the caller already holds — every photo of it, the first one
+   * first — so none is read a second time.
+   */
+  boards?: ScheduleBoardReading[];
 }): Promise<SettledVenue> {
   const { viewer, seatId, isTest, sharedPlaceId, schedulePhotoPath } = input;
   if (schedulePhotoPath) {
@@ -87,9 +92,11 @@ export async function settleVenueTimetable(input: {
       .map((place) => ({ place, name: names.get(String(place.customer_id)) ?? "" }))
       .filter(({ name }) => signboardNameIsUsable(name));
     if (judged.length > 0) {
-      const board =
-        input.board ??
-        (await readScheduleBoard({
+      // Every photo of the board (owner, 25 Nov 2026): a doctor named on any one of them is named on it.
+      const boards =
+        input.boards ??
+        (await readTimetableBoards({
+          extraPhotoPaths: await timetableExtraPathsOf(schedulePhotoPath, isTest),
           isTest,
           photoPath: schedulePhotoPath,
           repHrId: viewer.hrId,
@@ -97,7 +104,7 @@ export async function settleVenueTimetable(input: {
           seatId,
         }));
       // Each write is its own row and never throws (`recordPlaceSchedule`), so they go a few at a time.
-      await mapWithConcurrency(judged, 4, ({ place, name }) => recordPlaceSchedule(String(place.id), judgeScheduleBoard(board, name)));
+      await mapWithConcurrency(judged, 4, ({ place, name }) => recordPlaceSchedule(String(place.id), judgeTimetableBoards(boards, name)));
     }
   }
   const result = await callPhoenixCrm<Row>("phoenix_crm_settle_venue_timetable", {
@@ -120,9 +127,16 @@ export async function addVenueTimetable(viewer: PhoenixCrmViewer, raw: unknown):
   if (!photoPath) throw validationError("Take a photo of the timetable first.");
   // Read BEFORE anything is written, through the door that reads a photo this person has just taken. A
   // reader that never answered refuses nobody: the photo is stored and `unjudged` never holds.
-  const board = await readScheduleBoard({ isTest, photoPath, repHrId: viewer.hrId, seatId: seat.seatId });
-  const refusal = board.kind === "read" ? venueTimetableRefusal(board) : null;
-  if (refusal) throw validationError(refusal, SCHEDULE_RETAKE_CODE);
+  // A timetable may be several photos (owner, 25 Nov 2026); every one is read side by side, and any one
+  // the reader is sure shows no timetable is refused, naming which, before anything is written.
+  const extras = parseExtraPhotoPaths(body.extraPhotoPaths, photoPath);
+  if (!extras.ok) throw validationError(extras.error);
+  const boards = await readTimetableBoards({ extraPhotoPaths: extras.paths, isTest, photoPath, repHrId: viewer.hrId, seatId: seat.seatId });
+  for (let index = 0; index < boards.length; index += 1) {
+    const board = boards[index];
+    const refusal = board.kind === "read" ? venueTimetableRefusal(board) : null;
+    if (refusal) throw validationError(index === 0 && boards.length === 1 ? refusal : extraPageRefusal(index + 1, refusal), SCHEDULE_RETAKE_CODE);
+  }
   const result = await callPhoenixCrm<Row>("phoenix_crm_set_venue_timetable", {
     p: {
       seat_id: seat.seatId,
@@ -133,6 +147,15 @@ export async function addVenueTimetable(viewer: PhoenixCrmViewer, raw: unknown):
     },
   });
   const sharedPlaceId = String(result.shared_place_id);
+  // Its pages 2 to 5, once the first photo is the building's board. Never throws.
+  await addTimetablePages({
+    seatId: seat.seatId,
+    actorHrId: viewer.hrId,
+    isTest,
+    sharedPlaceId,
+    firstPhotoPath: String(result.schedule_photo_path ?? photoPath),
+    pages: extras.paths.map((path, index) => ({ path, board: boards[index + 1] ?? null })),
+  });
   // 🔴 THE BOARD IS SAVED BY NOW, SO NOTHING BELOW MAY ANSWER AN ERROR FOR IT (Phoenix CRM validation
   // audit, 14 Nov 2026). A failed read or settle used to reach the rep as a failure of a photograph that
   // was stored, and his retry was then refused as a photo already used. It is logged, and the customers
@@ -154,7 +177,7 @@ export async function addVenueTimetable(viewer: PhoenixCrmViewer, raw: unknown):
       isTest,
       sharedPlaceId,
       schedulePhotoPath: String(result.schedule_photo_path),
-      board,
+      boards,
     });
   } catch (error) {
     logError("Phoenix CRM venue timetable was saved but not settled", { error, labels: { event: "phoenix_crm_venue_timetable_settle_failed" } });
@@ -278,8 +301,10 @@ export async function runLostTimetableRereads(
       // of the customer seated behind it. One row by its own path; a miss falls back to his seat.
       const upload = await getSupabaseAdmin().from("phoenix_crm_photo_uploads").select("seat_id").eq("path", photoPath).maybeSingle();
       const uploadSeatId = upload.data?.seat_id ? String(upload.data.seat_id) : String(first.seat_id);
+      const extraPhotoPaths = await timetableExtraPathsOf(photoPath, false);
       const ask = () =>
-        readScheduleBoard({
+        readTimetableBoards({
+          extraPhotoPaths,
           isTest: false,
           photoPath,
           repHrId: String(first.created_by_hr_id ?? ""),
@@ -287,11 +312,11 @@ export async function runLostTimetableRereads(
           seatId: uploadSeatId,
           timeoutMs: LOST_TIMETABLE_REREAD_TIMEOUT_MS,
         });
-      let board = await ask();
+      let boards = await ask();
       // A call lost again is tried once more at once, as the signboard night does; nothing else is.
-      if (board.kind === "unread" && board.check.reason === "call_failed") board = await ask();
+      if (boards.some((board) => board.kind === "unread" && board.check.reason === "call_failed")) boards = await ask();
       await mapWithConcurrency(seated, 4, async ({ row, name }) => {
-        const judged = judgeScheduleBoard(board, name);
+        const judged = judgeTimetableBoards(boards, name);
         await recordPlaceSchedule(String(row.id), scheduleRereadToKeep(judged, row.schedule_check ?? null));
         if (judged.verdict === "unjudged" && (SCHEDULE_REREAD_REASONS as readonly unknown[]).includes(judged.reason)) {
           result.unanswered += 1;

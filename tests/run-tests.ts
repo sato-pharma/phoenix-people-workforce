@@ -2332,6 +2332,7 @@ import { runPhoenixCrmUnvalidatedVisitCapTests } from "./phoenix-crm-unvalidated
 import { runPhoenixCrmPhotoReadingTests } from "./phoenix-crm-photo-reading.test.ts";
 import { runPhoenixCrmTimetableScannerTests } from "./phoenix-crm-timetable-scanner.test.ts";
 import { runPhoenixCrmTimetableUploadTests } from "./phoenix-crm-timetable-upload.test.ts";
+import { runPhoenixCrmTimetablePagesTests } from "./phoenix-crm-timetable-pages.test.ts";
 import { runPhoenixCrmHeldSignboardTests } from "./phoenix-crm-held-signboard.test.ts";
 import { runPhoenixCrmPlaceCheckAdviceTests } from "./phoenix-crm-place-check-advice.test.ts";
 import { runPhoenixCrmBuildingSignTests } from "./phoenix-crm-building-sign.test.ts";
@@ -8390,6 +8391,11 @@ await runTest(
 await runTest(
   "the Phoenix CRM timetable's LAST TRY MAY BE AN UPLOAD (owner, 2026-11-02: after two refused live photos the third may be a file, with the same place and time stamped; a file naming the customer validates; the timetable only). Pinned: it opens at two refusals on the server's count and a sooner claim is refused; a file nobody read is held while a live photo on a lost call still saves; the stamp goes under the picture so the reader's crop takes none of it, against the real crop on ten shapes; no reading means no photo; the one uploadOffer in the code is the timetable's camera; and the mark reaches the review row, the validated place, the next customer on the same board and the advice",
   runPhoenixCrmTimetableUploadTests,
+);
+
+await runTest(
+  "the Phoenix CRM timetable MAY BE SEVERAL PHOTOS, and a doctor named on ANY of them is named on it (owner, 25 Nov 2026: \"make the rep able to upload multiple photos for a timetable … and every photo appear … he can validate 1, 2, 3 doctors in one timetable if it has their name\"). Pinned: the doctor on the second photo saves where the first alone would hold him, with which photo and how many on the record and every page's names kept; one photo keeps its old record; a lost read outranks a clear board without him, a screen never validates by itself, no timetable on any photo is still refused; the phone's extra photos are unique, never the first, at most four, and none without a fresh first photo; both seating doors, the building's settle and the night judge on every photo; only a fresh board's pages are written; and every screen that shows the timetable draws the others",
+  runPhoenixCrmTimetablePagesTests,
 );
 
 await runTest(

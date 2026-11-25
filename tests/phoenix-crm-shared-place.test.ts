@@ -250,8 +250,8 @@ export function runPhoenixCrmSharedPlaceTests(): void {
   if (seated.ok) {
     assert.deepEqual(
       Object.keys(seated.value).sort(),
-      ["label", "photoPath", "photoUploaded", "session", "sharedPlaceId", "standingAt", "timings"],
-      "🔴 SEVEN KEYS, AND NONE OF THEM A POINT — the one reading is `standingAt`, which asks whether he is in the building and is never stored (tests/phoenix-crm-seat-at-building.test.ts)",
+      ["extraPhotoPaths", "label", "photoPath", "photoUploaded", "session", "sharedPlaceId", "standingAt", "timings"],
+      "🔴 EIGHT KEYS (the timetable's other photos since 25 Nov 2026), AND NONE OF THEM A POINT — the one reading is `standingAt`, which asks whether he is in the building and is never stored (tests/phoenix-crm-seat-at-building.test.ts)",
     );
     assert.equal(seated.value.standingAt, null, "and a body naming no `standingAt` is not measured");
     assert.equal(seated.value.session, null, "a build that names no session leaves it null, and the database seats him in his own list");
@@ -280,11 +280,11 @@ export function runPhoenixCrmSharedPlaceTests(): void {
   // 1 ─ The server decides reuse, from the VENUE's stored path. A body cannot ask for it.
   assert.ok(service.includes("export function effectiveSeatedPhoto("), "one function decides which photo a seating is saved against");
   assert.ok(
-    service.includes("if (seated.photoPath) return { path: seated.photoPath, reused: false };"),
+    service.includes("if (seated.photoPath) return { path: seated.photoPath, reused: false, extraPaths: seated.extraPhotoPaths };"),
     "a photo sent from the phone is a REPLACEMENT of the board on the wall",
   );
   assert.ok(
-    service.includes("return { path: venue.schedulePhotoPath, reused: true };"),
+    service.includes("return { path: venue.schedulePhotoPath, reused: true, extraPaths: venue.scheduleExtraPhotoPaths };"),
     "🔴 and reuse resolves from the VENUE's own column — never from a flag on the body, which is why the seated draft still has exactly four keys",
   );
   assert.ok(

@@ -7273,6 +7273,101 @@ $$;
 ALTER FUNCTION public.phoenix_crm_add_place(p jsonb) OWNER TO postgres;
 
 --
+-- Name: phoenix_crm_add_timetable_pages(jsonb); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phoenix_crm_add_timetable_pages(p jsonb) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_seat text := nullif(trim(coalesce(p ->> 'seat_id', '')), '');
+  v_actor text := upper(nullif(trim(coalesce(p ->> 'actor_hr_id', '')), ''));
+  v_is_test boolean := coalesce((p ->> 'is_test')::boolean, false);
+  v_first text := nullif(trim(coalesce(p ->> 'first_photo_path', '')), '');
+  v_pages jsonb := coalesce(p -> 'pages', '[]'::jsonb);
+  v_venue public.phoenix_crm_shared_places%rowtype;
+  v_page jsonb;
+  v_path text;
+  v_seen text[] := array[]::text[];
+  v_number smallint := 1;
+  v_existing integer;
+begin
+  if v_seat is null or v_actor is null or v_first is null or nullif(p ->> 'shared_place_id', '') is null
+     or jsonb_typeof(v_pages) <> 'array' then
+    raise exception 'phoenix_crm:bad_input';
+  end if;
+  if jsonb_array_length(v_pages) = 0 then
+    return jsonb_build_object('pages', 0, 'already', false);
+  end if;
+  if jsonb_array_length(v_pages) > 4 then
+    raise exception 'phoenix_crm:too_many_timetable_pages';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtext('phoenix_crm:seat:' || v_seat));
+
+  select sp.* into v_venue
+  from public.phoenix_crm_shared_places sp
+  where sp.id = (p ->> 'shared_place_id')::uuid
+    and sp.seat_id = v_seat
+    and sp.is_test = v_is_test
+  for update;
+  if not found then
+    raise exception 'phoenix_crm:shared_place_not_found';
+  end if;
+  if v_venue.status = 'retired' then
+    raise exception 'phoenix_crm:shared_place_retired';
+  end if;
+  -- The pages belong to the board on the wall NOW; a board replaced meanwhile takes none of them.
+  if v_venue.schedule_photo_path is distinct from v_first then
+    raise exception 'phoenix_crm:timetable_changed';
+  end if;
+
+  -- Written once per board: a retry of the same save finds its pages already there.
+  select count(*) into v_existing from public.phoenix_crm_timetable_pages tp where tp.first_photo_path = v_first;
+  if v_existing > 0 then
+    return jsonb_build_object('pages', v_existing, 'already', true);
+  end if;
+
+  for v_page in select value from jsonb_array_elements(v_pages)
+  loop
+    v_path := nullif(trim(coalesce(v_page ->> 'photo_path', '')), '');
+    if v_path is null or v_path = v_first or v_path = any (v_seen) then
+      raise exception 'phoenix_crm:bad_input';
+    end if;
+    -- A slot the server issued to this person, on this seat, for a place photo.
+    if not exists (
+      select 1 from public.phoenix_crm_photo_uploads u
+      where u.path = v_path
+        and upper(u.issued_to_hr_id) = v_actor
+        and u.seat_id = v_seat
+        and u.purpose = 'place'
+        and u.is_test = v_is_test
+    ) then
+      raise exception 'phoenix_crm:photo_not_issued';
+    end if;
+    -- Never another building's board, a customer's own door photo or another board's page.
+    if exists (select 1 from public.phoenix_crm_shared_places sp where sp.schedule_photo_path = v_path or sp.photo_path = v_path)
+       or exists (select 1 from public.phoenix_crm_places pl where pl.photo_path = v_path)
+       or exists (select 1 from public.phoenix_crm_timetable_pages tp where tp.photo_path = v_path) then
+      raise exception 'phoenix_crm:photo_used';
+    end if;
+    v_seen := v_seen || v_path;
+    v_number := v_number + 1;
+    insert into public.phoenix_crm_timetable_pages
+      (photo_path, first_photo_path, page_number, shared_place_id, seat_id, added_by_hr_id, is_test, reading)
+    values
+      (v_path, v_first, v_number, v_venue.id, v_seat, v_actor, v_is_test,
+       case when jsonb_typeof(v_page -> 'reading') = 'object' then v_page -> 'reading' else null end);
+  end loop;
+
+  return jsonb_build_object('pages', v_number - 1, 'already', false);
+end;
+$$;
+
+ALTER FUNCTION public.phoenix_crm_add_timetable_pages(p jsonb) OWNER TO postgres;
+
+--
 -- Name: phoenix_crm_admin_delete(jsonb); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -69457,6 +69552,32 @@ COMMENT ON TABLE public.phoenix_crm_time_anchors IS 'A server-minted time anchor
 COMMENT ON COLUMN public.phoenix_crm_time_anchors.issued_at IS 'The server''s own clock. Never supplied by a request. Every offline capture time is this plus an elapsed duration.';
 
 --
+-- Name: phoenix_crm_timetable_pages; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.phoenix_crm_timetable_pages (
+    photo_path text NOT NULL,
+    first_photo_path text NOT NULL,
+    page_number smallint NOT NULL,
+    shared_place_id uuid NOT NULL,
+    seat_id text NOT NULL,
+    added_by_hr_id text NOT NULL,
+    is_test boolean DEFAULT false NOT NULL,
+    reading jsonb,
+    added_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT phoenix_crm_timetable_pages_not_first CHECK ((photo_path <> first_photo_path)),
+    CONSTRAINT phoenix_crm_timetable_pages_number CHECK (((page_number >= 2) AND (page_number <= 5)))
+);
+
+ALTER TABLE public.phoenix_crm_timetable_pages OWNER TO postgres;
+
+--
+-- Name: TABLE phoenix_crm_timetable_pages; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.phoenix_crm_timetable_pages IS 'Pages 2-5 of a polyclinic timetable photographed in several photos (owner, 25 Nov 2026). Page 1 is phoenix_crm_shared_places.schedule_photo_path; rows are keyed on it. Written only by phoenix_crm_add_timetable_pages.';
+
+--
 -- Name: phoenix_crm_unplanned_visit_events; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -79181,6 +79302,20 @@ ALTER TABLE ONLY public.phoenix_crm_time_anchors
     ADD CONSTRAINT phoenix_crm_time_anchors_pkey PRIMARY KEY (id);
 
 --
+-- Name: phoenix_crm_timetable_pages phoenix_crm_timetable_pages_one_number; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.phoenix_crm_timetable_pages
+    ADD CONSTRAINT phoenix_crm_timetable_pages_one_number UNIQUE (first_photo_path, page_number);
+
+--
+-- Name: phoenix_crm_timetable_pages phoenix_crm_timetable_pages_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.phoenix_crm_timetable_pages
+    ADD CONSTRAINT phoenix_crm_timetable_pages_pkey PRIMARY KEY (photo_path);
+
+--
 -- Name: phoenix_crm_unplanned_visit_events phoenix_crm_unplanned_visit_events_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -87043,6 +87178,12 @@ CREATE UNIQUE INDEX phoenix_crm_team_starts_one_running ON public.phoenix_crm_te
 CREATE INDEX phoenix_crm_time_anchors_person_idx ON public.phoenix_crm_time_anchors USING btree (hr_id, issued_at DESC);
 
 --
+-- Name: phoenix_crm_timetable_pages_shared_place_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX phoenix_crm_timetable_pages_shared_place_idx ON public.phoenix_crm_timetable_pages USING btree (shared_place_id);
+
+--
 -- Name: phoenix_crm_unplanned_visit_events_visit_idx; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -93182,6 +93323,27 @@ ALTER TABLE ONLY public.phoenix_crm_shared_place_timetable_marks
     ADD CONSTRAINT phoenix_crm_shared_place_timetable_marks_shared_place_id_fkey FOREIGN KEY (shared_place_id) REFERENCES public.phoenix_crm_shared_places(id) ON DELETE CASCADE;
 
 --
+-- Name: phoenix_crm_timetable_pages phoenix_crm_timetable_pages_first_photo_path_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.phoenix_crm_timetable_pages
+    ADD CONSTRAINT phoenix_crm_timetable_pages_first_photo_path_fkey FOREIGN KEY (first_photo_path) REFERENCES public.phoenix_crm_photo_uploads(path);
+
+--
+-- Name: phoenix_crm_timetable_pages phoenix_crm_timetable_pages_photo_path_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.phoenix_crm_timetable_pages
+    ADD CONSTRAINT phoenix_crm_timetable_pages_photo_path_fkey FOREIGN KEY (photo_path) REFERENCES public.phoenix_crm_photo_uploads(path);
+
+--
+-- Name: phoenix_crm_timetable_pages phoenix_crm_timetable_pages_shared_place_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.phoenix_crm_timetable_pages
+    ADD CONSTRAINT phoenix_crm_timetable_pages_shared_place_id_fkey FOREIGN KEY (shared_place_id) REFERENCES public.phoenix_crm_shared_places(id);
+
+--
 -- Name: phoenix_crm_unplanned_visit_events phoenix_crm_unplanned_visit_events_visit_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -98594,6 +98756,12 @@ ALTER TABLE public.phoenix_crm_time_anchors ENABLE ROW LEVEL SECURITY;
 CREATE POLICY phoenix_crm_time_anchors_service_role ON public.phoenix_crm_time_anchors TO service_role USING (true) WITH CHECK (true);
 
 --
+-- Name: phoenix_crm_timetable_pages; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.phoenix_crm_timetable_pages ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: phoenix_crm_unplanned_visit_events; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
@@ -101842,6 +102010,13 @@ GRANT ALL ON FUNCTION public.phoenix_crm_add_pharmacy(p jsonb) TO service_role;
 
 REVOKE ALL ON FUNCTION public.phoenix_crm_add_place(p jsonb) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.phoenix_crm_add_place(p jsonb) TO service_role;
+
+--
+-- Name: FUNCTION phoenix_crm_add_timetable_pages(p jsonb); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phoenix_crm_add_timetable_pages(p jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phoenix_crm_add_timetable_pages(p jsonb) TO service_role;
 
 --
 -- Name: FUNCTION phoenix_crm_admin_delete(p jsonb); Type: ACL; Schema: public; Owner: postgres
@@ -109228,6 +109403,12 @@ GRANT ALL ON TABLE public.phoenix_crm_territory_readiness TO service_role;
 --
 
 GRANT ALL ON TABLE public.phoenix_crm_time_anchors TO service_role;
+
+--
+-- Name: TABLE phoenix_crm_timetable_pages; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.phoenix_crm_timetable_pages TO service_role;
 
 --
 -- Name: TABLE phoenix_crm_unplanned_visit_events; Type: ACL; Schema: public; Owner: postgres
