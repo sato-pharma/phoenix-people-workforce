@@ -269,7 +269,6 @@ body { font-family: "Segoe UI", "Noto Sans", "Helvetica Neue", Arial, sans-serif
 .tbl thead { display: table-header-group; }
 .tbl .num, .tbl th.num { text-align: right; }
 .tbl tfoot td { padding: 1.4mm 1.2mm; border-top: .7pt solid ${c.deep}; border-bottom: none; font-weight: 700; color: ${c.deep}; }
-.tbl tr.own td { font-weight: 600; }
 .tbl tr.own td:first-child { border-left: 1.2pt solid ${c.blue}; }
 .tbl tr.target td { color: ${c.muted}; font-size: 7pt; }
 .tbl tr.sum td { border-top: .6pt solid ${c.deep}; }
