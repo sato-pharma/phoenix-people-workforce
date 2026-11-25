@@ -98762,6 +98762,12 @@ CREATE POLICY phoenix_crm_time_anchors_service_role ON public.phoenix_crm_time_a
 ALTER TABLE public.phoenix_crm_timetable_pages ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: phoenix_crm_timetable_pages phoenix_crm_timetable_pages_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY phoenix_crm_timetable_pages_service_role ON public.phoenix_crm_timetable_pages TO service_role USING (true) WITH CHECK (true);
+
+--
 -- Name: phoenix_crm_unplanned_visit_events; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 

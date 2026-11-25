@@ -473,6 +473,9 @@ const ROUTE_GATES: RouteGate[] = [
   post("photos/upload", "create"),
   // A read sent as a POST (a batch of photo paths does not belong in a URL), audited as a read.
   { route: "photos/sign", method: "POST", action: "read", audit: "access-read", auditRequired: true },
+  // The other photos of each timetable (owner, 25 Nov 2026: "every photo appear"): a read sent as a POST for the
+  // same reason as photos/sign, audited as a read; a timetable outside the viewer's reach answers no pages.
+  { route: "photos/timetable-pages", method: "POST", action: "read", audit: "access-read", auditRequired: true },
   // The voice note's slot: the same create gate as the photo's, because whoever may enter this
   // territory's visits is exactly who may attach a recording to one. It is a SEPARATE route rather
   // than a purpose argument on photos/upload-slot for the reason the table is separate — a recording
@@ -1214,6 +1217,9 @@ const LATER_MIGRATIONS = [
   // The Field CRM board's plan reviews in one request (owner, 23 Nov 2026: "fix the slow Field CRM board"): one NEW
   // read-only function, phoenix_crm_plan_review_items, the items of many plans as one jsonb value. It replaces nothing.
   "supabase/migrations/20261123204236_phoenix_crm_plan_review_items.sql",
+  // A timetable in several photos (owner, 25 Nov 2026: "make the rep able to upload multiple photos for a timetable"):
+  // one NEW table, phoenix_crm_timetable_pages, and one NEW function, phoenix_crm_add_timetable_pages. It replaces nothing.
+  "supabase/migrations/20261125221853_phoenix_crm_timetable_pages.sql",
 ];
 
 /**

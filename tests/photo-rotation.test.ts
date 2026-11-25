@@ -112,7 +112,7 @@ function checkViewer() {
 }
 
 /** Forwards the caller's own `rotatable` and decides nothing itself. */
-const PASS_THROUGH = new Set(["src/components/phoenix-crm/photo.tsx"]);
+const PASS_THROUGH = new Set(["src/components/phoenix-crm/photo.tsx", "src/components/phoenix-crm/timetable-pages.tsx"]);
 
 function checkWhereItIsOffered() {
   const offered = new Set<string>();

@@ -28,6 +28,8 @@
 
 begin;
 
+set local lock_timeout = '5s';
+
 create table if not exists public.phoenix_crm_timetable_pages (
   photo_path text primary key references public.phoenix_crm_photo_uploads (path),
   first_photo_path text not null references public.phoenix_crm_photo_uploads (path),
@@ -52,8 +54,10 @@ create index if not exists phoenix_crm_timetable_pages_shared_place_idx
   on public.phoenix_crm_timetable_pages (shared_place_id);
 
 alter table public.phoenix_crm_timetable_pages enable row level security;
+create policy phoenix_crm_timetable_pages_service_role
+  on public.phoenix_crm_timetable_pages for all to service_role using (true) with check (true);
 revoke all on table public.phoenix_crm_timetable_pages from public, anon, authenticated;
-grant select, insert on table public.phoenix_crm_timetable_pages to service_role;
+grant all on table public.phoenix_crm_timetable_pages to service_role;
 
 create or replace function public.phoenix_crm_add_timetable_pages(p jsonb)
 returns jsonb
@@ -148,5 +152,7 @@ $$;
 
 revoke execute on function public.phoenix_crm_add_timetable_pages(jsonb) from public, anon, authenticated;
 grant execute on function public.phoenix_crm_add_timetable_pages(jsonb) to service_role;
+
+notify pgrst, 'reload schema';
 
 commit;

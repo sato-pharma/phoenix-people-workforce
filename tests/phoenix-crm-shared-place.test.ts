@@ -267,7 +267,7 @@ export function runPhoenixCrmSharedPlaceTests(): void {
   assert.ok(list.includes("seatedDraftOf(body)"), "validateCustomer reads a seating before anything else");
   assert.ok(list.includes("seatedPlacePayload(venue, seated)"), "and saves it through the one payload builder");
   assert.ok(list.includes("recordPlaceSchedule("), "the timetable read is kept on the row");
-  assert.ok(list.includes("readPlaceSchedule("), "and read on the server, never on the phone");
+  assert.ok(list.includes("readTimetableBoards("), "and read on the server, never on the phone");
   const places = stripComments(readFileSync("src/lib/phoenix-crm/server/place-location.ts", "utf8"));
   assert.ok(places.length > 0, "the shared resolver still exists");
 
