@@ -113,6 +113,27 @@ Never store credentials in this file or in Git. Never assume a pasted preview UR
 
 His decisions, not suggestions. Account of each: `docs/agents-owner-rules.md`.
 
+### 🥇 THE GOLDEN RULES — every one, loaded on every request, never missed (owner, 2026-11-25)
+
+His words: "put it among the golden rules and load all the golden rules … never miss the golden rule." Each line names one; its full text lives where it says, so OPEN that file before touching what the rule guards. A new golden rule gets a line here in the PR that creates it.
+
+- 🥇 **THE DO-IT-YOURSELF-FROM-THE-CODE GOLDEN RULE** — "validate X", "link X", "merge the copies", "fix that record": Claude does it ITSELF, from the app's own `src/lib` code, on production. Never in his Chrome, never by clicking through a screen, never click-by-click steps unless HIS message asks for steps (then he saves it, never Claude too). Start from `docs/owner-operations-recipes.md` and add the recipe after. `when-he-says-do-it-claude-does-it-from-the-code`
+- 🔒 **Monthly Closing is the only sales and target truth** — §4 below; `.claude/rules/sales-closing.md`.
+- 🔒 **The Office allocation golden rule** (password-locked) — CLAUDE.md, Protected Files.
+- 🔒 **Fits the screen: no horizontal scroll, mobile and desktop** — §4 below.
+- 🔒 **Square edges: no round corners anywhere** — §4 below.
+- 🔒 **Routing: route by what a task needs, default to cloud** — §5 below.
+- 🔒 **Local dev always points to production, never staging** — `~/.claude/CLAUDE.md`.
+- 🔒 **Phoenix CRM #1: the rep's app is easy and blind; it never lets him feel checked** (four named exceptions) — `.claude/rules/phoenix-crm.md`.
+- 🔒 **AM · PM · Pharmacies are three counts apart; a pharmacy is never inside PM or AM** — `.claude/rules/crm.md`.
+- 🔒 **A rep tablet never shows its user any sign it is tracked** — `.claude/rules/devices.md`.
+- 🔒 **A direct order counts in the month Finance books it, at its pharmacy's own brick and area** — `.claude/rules/direct-orders.md`.
+- 🔒 **Never release a closing during the month it covers** — `.claude/rules/sales-closing.md`.
+- 🔒 **August never contains Delta (3), the Upper Egypt split or the Kafr El-Sheikh move** — `.claude/rules/sales-closing.md`.
+- 🔒 **Head Office products are in neither weekly nor monthly sales; their missing mapping is correct** — `.claude/rules/sales-closing.md`.
+- 🔒 **Fayoum and Beni Suef merge per line as a display fold** — `.claude/rules/sales-attribution.md`.
+- 🔒 **Product and medical knowledge belong to the Product Manager, never the Training Manager** — `.claude/rules/coaching.md`.
+
 - 🛑 **THE MOBILE APP IS FROZEN — DO NOT WORK IN IT, TOUCH IT, PLAN IT, MENTION IT OR ASK HIM ABOUT IT, UNTIL HE LIFTS THIS IN HIS OWN WORDS** (owner, 2026-09-29). The web app is the whole scope: no edit under `mobile/`, no Expo/EAS build or dispatch, no mobile PR, and no words — not in a `Next step:` line, a plan, a summary or a question. A mobile defect you notice is left alone. Only HE lifts it; if you cannot tell, it is still frozen; every other mobile rule is DORMANT. Refused by `.claude/hooks/mobile-freeze-guard.mjs`. Account: `docs/agents-owner-rules.md`, "The mobile-app freeze". `the-mobile-app-is-frozen-until-he-lifts-it`
 
 **How to answer**
