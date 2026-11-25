@@ -73,6 +73,11 @@ node --env-file-if-exists=.env.local --experimental-strip-types --experimental-s
   minted again by the app, so the runner refuses that body. Send it with `existingCustomerId` instead.
   This is how Dr Othman El Shewehy was saved twice for Sahar ElGallad on 25 Nov 2026 (22:49 and 23:12
   Cairo). The 23:12 copy is merged into the original since then (below).
+- **`existingCustomerId` with no capture of the doctor only adds pharmacies** (`isDeskAttachEntry`,
+  since 26 Nov 2026): his row, validation and contacts are left as they stand. Before that fix it
+  "completed" him instead: it re-stamped his validation and added one more copy of his contact on
+  every save. That is how Dr Othman got a third identical contact when Salah El Hol was linked at
+  00:06; the two copies were switched off (audit rows), and one contact stands.
 - **Distributor ids:** read `marketing_distributors` (25 Nov 2026: Ibn Sina 17, Overseas 19, Sofico 21).
 - **Refusal "that pharmacy is not one you can attach":** the `existingPharmacyId` belongs to another
   seat. Send it as a new venue with its codes, then merge the old copy into it (below).
