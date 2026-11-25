@@ -129,6 +129,48 @@ node --env-file-if-exists=.env.local --experimental-strip-types --experimental-s
   printed pin row.
 - **Proof:** the pin row, then the linked employees' workspaces.
 
+## Phoenix CRM
+
+### Put doctors on a rep's list for her to validate (and their hours)
+
+- **Run:** `owner-ops.ts load-crm-list --seat <territory seat id> --body <file.json>`
+- **What it calls:** the SFE's own list-template path. `buildListTemplateFor` builds the territory's
+  template (the download, seat marker included), the runner writes the body's rows into it, and
+  `importListTemplate` uploads it. That is the function behind `POST /api/phoenix-crm/list/template/import`.
+  The route's gate (`assertPermission(…, "phoenix_crm", "approve")`) and its audit line run as well.
+  Every check of the upload applies: the seat marker, the row rules, and the database's skip for a name
+  already on the list.
+- **Body file:** rows in the template's own column keys.
+
+  ```json
+  {
+    "customers": [
+      { "listType": "PM", "name": "<doctor, Arabic as he is known>", "speciality": "Chest",
+        "daysAndHours": "Tue 6:00 PM - 7:00 PM", "whereToFind": "<hospital — town, clinic, day>",
+        "note": "<a line for the rep>" }
+    ],
+    "hours": [
+      { "listType": "PM", "name": "<a customer already waiting to be validated>", "daysAndHours": "Tue 7:30 PM - 8:30 PM" }
+    ]
+  }
+  ```
+
+- **What lands:** each `customers` row is a `pending` customer (origin `new`) under the rep's
+  **To validate**. That is how she is asked: no notice goes to a rep from here, and Phoenix CRM sends
+  no email. She validates him at the door, seating him in the building within 300 m. The place is
+  never a column. `hours` sets the days and hours on a customer still pending and placeless, and
+  nothing else about him.
+- **The seat:** the rep's territory seat (`SEAT-…`), read from `au_v_org_tree` by her name. It is never her HR id.
+- **AM or PM at a hospital follows the seating** (the place's `session`), never the list. No app door
+  moves an existing customer between AM and PM.
+- **Proof:** the runner reads the territory's rows for every name in the body (status, origin, hours, where to find them).
+- 🔴 **Until 26 Nov 2026 the first sheet's hours never landed**: the payload sent `intake_timings`
+  and the loader reads `timings`. That affected 1,667 customers, 6 Oct to 26 Nov. After the fix a new
+  customer's hours land with him. For the 26 Nov rows they were set afterwards through `hours`.
+- First done for Nora Kamal (Pedia, Menoufia 1, `SEAT-PED-REP-D12`), 26 Nov 2026. The owner sent the
+  Tuesday timetable of مستشفى الشروق الخاصة. Three doctors were added: محمد محروس (Chest), محمد أنور (ENT)
+  and احمد الجوهري (Chest). احمد توفيق was already waiting and got his hours.
+
 ### How these were run before the runner
 
 On 25 Nov these routes were called on the SPARE laptop's dev server with dev-auth headers
