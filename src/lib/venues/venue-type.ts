@@ -75,6 +75,25 @@ export type VenueTypeChoice = VenueType | null;
 /** One sentence, so all three capture points refuse in the same words. */
 export const VENUE_TYPE_UNANSWERED_MESSAGE = "Say what this venue is — pharmacy or nursery — before saving it.";
 
+/**
+ * Customer Validation registers PHARMACIES ONLY, so it no longer asks "What is this?" (owner,
+ * 26 Nov 2026: "drop the What is this? question"). Its one other answer, Nursery, had been shown
+ * switched off since 21 Oct 2026 (a venue with no distributor account cannot be validated in
+ * Marketing; it goes to Direct Orders), so the question had one answer and cost a tap. This is the
+ * screen stating what it registers — NOT a silent default: the Direct Orders form and registry, where
+ * Nursery IS an answer, still open unanswered, and the marketing save still parses strictly.
+ */
+export const CUSTOMER_VALIDATION_VENUE_TYPE: VenueType = "pharmacy";
+
+/**
+ * A Customer Validation venue's type, for a line that may come from a draft saved while the question
+ * was still asked: unanswered becomes a pharmacy (the only answer it could have had); a nursery from
+ * an older draft stays a nursery, so the save still refuses it instead of filing it as a pharmacy.
+ */
+export function customerValidationVenueType(choice: VenueTypeChoice | undefined): VenueTypeChoice {
+  return choice === "nursery" ? "nursery" : CUSTOMER_VALIDATION_VENUE_TYPE;
+}
+
 export function venueTypeIsAnswered(choice: VenueTypeChoice): choice is VenueType {
   return choice !== null;
 }

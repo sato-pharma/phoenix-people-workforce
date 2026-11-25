@@ -5362,8 +5362,8 @@ await runTest(
 );
 await runTest(
   "venue type must be asked (an unanswered type reads as a pharmacy from the database but is "
-  + "refused at capture, nothing is demanded of a venue nobody has named, all three screens refuse "
-  + "in the same sentence, none of them pre-selects an answer, all three server create sites refuse "
+  + "refused at capture, nothing is demanded of a venue nobody has named, the two screens that ask refuse "
+  + "in the same sentence, neither pre-selects an answer, Customer Validation registers pharmacies only and still refuses an old nursery, all three server create sites refuse "
   + "an unanswered type, and normalizeVenueType survives only on the read path)",
   runVenueTypeMustBeAskedTests,
 );

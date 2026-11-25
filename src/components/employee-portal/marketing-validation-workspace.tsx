@@ -100,8 +100,8 @@ import {
 } from "@/lib/marketing-requests/validation-save-gate";
 import {
   choiceRequiresDistributorCode,
-  VENUE_TYPE_UNANSWERED_MESSAGE,
-  VENUE_TYPES,
+  CUSTOMER_VALIDATION_VENUE_TYPE,
+  customerValidationVenueType,
   venueRequiresDistributorCode,
   venueTypeIsAnswered,
   venueTypeLabel,
@@ -572,7 +572,8 @@ function newPharmacyLine(distributorId = ""): PharmacyLine {
     source: "new",
     vendorCodes: [newVendorCodeLine(distributorId)],
     license: null,
-    venueType: null,
+    // Customer Validation registers pharmacies only — it does not ask (owner, 26 Nov 2026).
+    venueType: CUSTOMER_VALIDATION_VENUE_TYPE,
   };
 }
 
@@ -603,6 +604,8 @@ function withDoctorPickDefaults(line: CustomerLine): CustomerLine {
     crmAreaSeatId: typeof line.crmAreaSeatId === "string" ? line.crmAreaSeatId : "",
     crmCustomerId: typeof line.crmCustomerId === "string" ? line.crmCustomerId : "",
     notOnCrmList: line.notOnCrmList === true,
+    // A draft saved while "What is this?" was still asked may hold an unanswered venue.
+    pharmacies: line.pharmacies.map((pharmacy) => ({ ...pharmacy, venueType: customerValidationVenueType(pharmacy.venueType) })),
   };
 }
 
@@ -4079,54 +4082,19 @@ export function MarketingValidationWorkspace() {
                             </div>
                             <div className="md:col-span-6">
                               <div className="space-y-2.5">
-                                {/* Same box and same padding in both states — only the border and
-                                    fill change, so answering the question does not shift the row
-                                    under the rep's thumb. */}
-                                <div
-                                  className={
-                                    venueTypeIsAnswered(pharmacy.venueType)
-                                      ? "rounded-none border border-transparent p-2"
-                                      : "rounded-none border border-orange-300 bg-orange-50/60 p-2"
-                                  }
-                                >
-                                  <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">
-                                    What is this? *
-                                  </p>
-                                  <div className="mt-1.5 flex items-center gap-2">
-                                    {/* A venue with no distributor account (a nursery) cannot be validated in
-                                        Marketing (owner, 2026-10-21), so its answer is shown but disabled — the
-                                        sentence below says where it goes instead. */}
-                                    {VENUE_TYPES.map((venueType) => (
-                                      <Button
-                                        aria-pressed={pharmacy.venueType === venueType}
-                                        className={
-                                          pharmacy.venueType === venueType
-                                            ? `${CAPTURE_BUTTON_SIZE} rounded-none border border-orange-300 bg-orange-50 px-2.5 text-phx-xs font-bold text-orange-700`
-                                            : `${CAPTURE_BUTTON_SIZE} rounded-none border border-slate-200 bg-white px-2.5 text-phx-xs font-bold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none ${adminControlDepthClassName}`
-                                        }
-                                        disabled={!venueRequiresDistributorCode(venueType)}
-                                        key={venueType}
-                                        onClick={() => updatePharmacy(customer.key, pharmacy.key, { venueType })}
-                                        type="button"
-                                      >
-                                        {venueTypeLabel(venueType)}
-                                      </Button>
-                                    ))}
+                                {/* No "What is this?" — Customer Validation registers pharmacies only (owner,
+                                    26 Nov 2026). Only a nursery restored from an older draft is refused
+                                    here. Where a venue with no code goes is said once, by the licence
+                                    panel below, while no code is typed. */}
+                                {venueRequiresDistributorCode(pharmacy.venueType ?? CUSTOMER_VALIDATION_VENUE_TYPE) ? null : (
+                                  <div className="space-y-1.5 rounded-none p-2">
+                                    <p className="text-phx-xs font-bold text-orange-700">
+                                      A {venueTypeLabel(pharmacy.venueType ?? CUSTOMER_VALIDATION_VENUE_TYPE).toLowerCase()} has no distributor code, so it
+                                      cannot be validated here. Remove it from this customer.
+                                    </p>
+                                    <p className="text-phx-xs text-slate-600">{CODELESS_VENUES_GO_TO_DIRECT_ORDERS}</p>
                                   </div>
-                                  {/* Unanswered says so; a nursery (only reachable from an old draft) is refused
-                                      in the shared sentence; a pharmacy is told only where codeless venues go. */}
-                                  {!venueTypeIsAnswered(pharmacy.venueType) ? (
-                                    <p className="mt-1.5 text-phx-xs font-bold text-orange-700">
-                                      {VENUE_TYPE_UNANSWERED_MESSAGE}
-                                    </p>
-                                  ) : venueRequiresDistributorCode(pharmacy.venueType) ? null : (
-                                    <p className="mt-1.5 text-phx-xs font-bold text-orange-700">
-                                      A {venueTypeLabel(pharmacy.venueType).toLowerCase()} has no distributor code, so it
-                                      cannot be validated here.
-                                    </p>
-                                  )}
-                                  <p className="mt-1.5 text-phx-xs text-slate-600">{CODELESS_VENUES_GO_TO_DIRECT_ORDERS}</p>
-                                </div>
+                                )}
                                 {/* The licence stands in for the codes typed at the top of the card.
                                     `vendorCodes` here are the rows ON SCREEN, so a rep who has not
                                     typed a code yet sees the prompt — which is the moment it is
