@@ -55,7 +55,7 @@ import {
   withinAccuracy,
 } from "@/lib/phoenix-crm/entry-rules";
 import { isUsableFix } from "@/lib/phoenix-crm/geo";
-import { parseExtraPhotoPaths } from "@/lib/phoenix-crm/timetable-pages-rules";
+import { parseAddedPhotoPaths, parseExtraPhotoPaths } from "@/lib/phoenix-crm/timetable-pages-rules";
 import { parseTimings } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
 
@@ -246,6 +246,12 @@ export type SeatedPlaceDraft = {
    * a fresh first photo: a seating that reuses the board on file reuses its pages too, from the server.
    */
   extraPhotoPaths: string[];
+  /**
+   * Photos ADDED to the board on file, after its own (owner, 25 Nov 2026: "replace the current timetable
+   * or ... add to what exists"). Taken only with NO fresh first photo; the server appends them after the
+   * board's pages and judges this customer against every photo.
+   */
+  addedPhotoPaths: string[];
   timings: PhoenixCrmTiming[];
   label: string | null;
   /**
@@ -316,8 +322,8 @@ export const SEATED_PLACE_PHOTO_HINT =
   "Photograph the schedule on the wall. One photo covers everybody who receives in this building — you will not be asked for it again.";
 /** The note that stands in place of the camera once the building's board is on file. */
 export const SEATED_PLACE_PHOTO_ON_FILE = "The timetable of this building is already on file.";
-/** The way back to the camera when the board on the wall has been replaced. */
-export const SEATED_PLACE_PHOTO_REPLACE = "The timetable changed — photograph it again";
+/** The way back to the camera when the board on the wall has been replaced: the old photos stop counting. */
+export const SEATED_PLACE_PHOTO_REPLACE = "Replace the timetable — photograph it again";
 
 export function parseSeatedPlaceDraft(raw: unknown): EntryRuleResult<SeatedPlaceDraft> {
   const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
@@ -331,6 +337,8 @@ export function parseSeatedPlaceDraft(raw: unknown): EntryRuleResult<SeatedPlace
   const photoPath = String(body.photoPath ?? "").trim() || null;
   const extraPhotos = parseExtraPhotoPaths(body.extraPhotoPaths, photoPath);
   if (!extraPhotos.ok) return { ok: false, error: extraPhotos.error };
+  const addedPhotos = parseAddedPhotoPaths(body.addedPhotoPaths, photoPath);
+  if (!addedPhotos.ok) return { ok: false, error: addedPhotos.error };
   // His "at least one day and one starting time" is `parseTimings`' own rule — one normal window with
   // a start minute — so it is asked here rather than restated. The end of a window stays optional.
   const timings = parseTimings(body.timings);
@@ -345,6 +353,7 @@ export function parseSeatedPlaceDraft(raw: unknown): EntryRuleResult<SeatedPlace
       photoPath,
       photoUploaded: photoPath !== null && body.photoUploaded === true,
       extraPhotoPaths: extraPhotos.paths,
+      addedPhotoPaths: addedPhotos.paths,
       timings: timings.timings,
       label: cleanText(body.label, 80),
       session: rawSession === "" ? null : (rawSession as "AM" | "PM"),

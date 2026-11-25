@@ -96,10 +96,16 @@ export async function addTimetablePages(input: {
   sharedPlaceId: string;
   firstPhotoPath: string;
   pages: ReadonlyArray<{ path: string; board: ScheduleBoardReading | null }>;
+  /**
+   * The photos are ADDED to a board already on file, after its own pages (owner, 25 Nov 2026: "replace
+   * the current timetable or ... add to what exists"), through `phoenix_crm_append_timetable_pages`.
+   * Without it they are a fresh board's pages, written once.
+   */
+  append?: boolean;
 }): Promise<void> {
   if (input.pages.length === 0) return;
   try {
-    const { error } = await getSupabaseAdmin().rpc("phoenix_crm_add_timetable_pages", {
+    const { error } = await getSupabaseAdmin().rpc(input.append ? "phoenix_crm_append_timetable_pages" : "phoenix_crm_add_timetable_pages", {
       p: {
         seat_id: input.seatId,
         actor_hr_id: input.actorHrId,
@@ -112,6 +118,7 @@ export async function addTimetablePages(input: {
     throwIfError(error);
   } catch (error) {
     console.error("[phoenix-crm] timetable pages were not saved", {
+      append: input.append === true,
       firstPhotoPath: input.firstPhotoPath,
       message: error instanceof Error ? error.message : String(error),
       pages: input.pages.length,

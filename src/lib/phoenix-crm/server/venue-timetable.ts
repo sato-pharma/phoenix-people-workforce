@@ -37,8 +37,14 @@ import {
 import { readTestFlag, territoryForValidation, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { judgeTimetableBoards, readTimetableBoards, recordPlaceSchedule, type ScheduleBoardReading } from "@/lib/phoenix-crm/server/schedule-check";
-import { addTimetablePages, timetableExtraPathsOf } from "@/lib/phoenix-crm/server/timetable-pages";
-import { extraPageRefusal, parseExtraPhotoPaths } from "@/lib/phoenix-crm/timetable-pages-rules";
+import { addTimetablePages, pageReadingToStore, timetableExtraPathsOf } from "@/lib/phoenix-crm/server/timetable-pages";
+import {
+  addedPagesRefusal,
+  extraPageRefusal,
+  parseAddedPhotoPaths,
+  parseExtraPhotoPaths,
+  TIMETABLE_ADD_NO_PHOTO,
+} from "@/lib/phoenix-crm/timetable-pages-rules";
 import { signboardNameIsUsable } from "@/lib/phoenix-crm/signboard-rules";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { quotedInList } from "@/lib/supabase/search-filter";
@@ -183,6 +189,92 @@ export async function addVenueTimetable(viewer: PhoenixCrmViewer, raw: unknown):
     logError("Phoenix CRM venue timetable was saved but not settled", { error, labels: { event: "phoenix_crm_venue_timetable_settle_failed" } });
   }
   return { sharedPlaceId, replaced: result.replaced === true, ...settled };
+}
+
+export type AddedVenueTimetablePages = { sharedPlaceId: string; added: number; photos: number } & SettledVenue;
+
+/**
+ * 🔴 ADD TO THE TIMETABLE ON FILE, NEVER REPLACE IT (owner, 25 Nov 2026: "The timetable uploaded is
+ * already correct. I don't want to replace it ... replace the current timetable or ... add to what
+ * exists"). The rep photographs the rest of a big board, or another day's board of the same building;
+ * the board on file and its pages stay, and the new photos become its next pages (five photos in all).
+ *
+ * Every verdict that was a match stays a match. Every other customer seated there is read again
+ * against the whole timetable, so a doctor named only on the new photo is now found on it.
+ */
+export async function addVenueTimetablePages(viewer: PhoenixCrmViewer, raw: unknown): Promise<AddedVenueTimetablePages> {
+  const body = (raw && typeof raw === "object" ? raw : {}) as Row;
+  const { seat, isTest } = territoryForValidation(viewer, body.seatId, readTestFlag(body.test));
+  if (!isUuid(body.sharedPlaceId)) throw validationError("Choose the polyclinic or centre the timetable belongs to.");
+  const sharedPlaceId = String(body.sharedPlaceId).toLowerCase();
+  const parsed = parseAddedPhotoPaths(body.addedPhotoPaths, null);
+  if (!parsed.ok) throw validationError(parsed.error);
+  if (parsed.paths.length === 0) throw validationError(TIMETABLE_ADD_NO_PHOTO);
+  const { data: venue, error } = await getSupabaseAdmin()
+    .from("phoenix_crm_shared_places")
+    .select("id, schedule_photo_path, status")
+    .eq("id", sharedPlaceId)
+    .eq("seat_id", seat.seatId)
+    .eq("is_test", isTest)
+    .maybeSingle();
+  throwIfError(error);
+  const firstPhotoPath = typeof venue?.schedule_photo_path === "string" ? venue.schedule_photo_path : "";
+  if (!venue || venue.status === "retired") throw validationError("This polyclinic or centre is no longer in your list.");
+  if (!firstPhotoPath) throw validationError("This polyclinic or centre has no timetable on file yet. Photograph the timetable first.");
+  const onFile = await timetableExtraPathsOf(firstPhotoPath, isTest);
+  const full = addedPagesRefusal(onFile.length, parsed.paths.length);
+  if (full) throw validationError(full);
+  // Read BEFORE anything is written: a new photo the reader is sure shows no timetable is refused,
+  // naming its number on the timetable, and nothing is added.
+  const boards = await readTimetableBoards({
+    addedPhotoPaths: parsed.paths,
+    extraPhotoPaths: onFile,
+    isTest,
+    photoPath: firstPhotoPath,
+    repHrId: viewer.hrId,
+    reusedTimetable: true,
+    seatId: seat.seatId,
+  });
+  const firstNew = 1 + onFile.length;
+  for (let index = firstNew; index < boards.length; index += 1) {
+    const board = boards[index];
+    const refusal = board.kind === "read" ? venueTimetableRefusal(board) : null;
+    if (refusal) throw validationError(extraPageRefusal(index + 1, refusal), SCHEDULE_RETAKE_CODE);
+  }
+  // This write answers its own refusals (a board replaced meanwhile, a photo already used), so the rep
+  // reads them; the seating's own add never fails the seating.
+  const written = await callPhoenixCrm<Row>("phoenix_crm_append_timetable_pages", {
+    p: {
+      seat_id: seat.seatId,
+      actor_hr_id: viewer.hrId,
+      is_test: isTest,
+      shared_place_id: sharedPlaceId,
+      first_photo_path: firstPhotoPath,
+      pages: parsed.paths.map((path, index) => {
+        const board = boards[firstNew + index];
+        return { photo_path: path, reading: board ? pageReadingToStore(board) : null };
+      }),
+    },
+  });
+  const added = Number(written.added ?? 0);
+  // The pages are saved by now, so nothing below may answer an error for them (as `addVenueTimetable`).
+  let settled: SettledVenue = { validated: 0, held: 0 };
+  try {
+    const { error: resetError } = await getSupabaseAdmin()
+      .from("phoenix_crm_places")
+      .update({ schedule_check: null })
+      .eq("shared_place_id", sharedPlaceId)
+      .eq("status", "active")
+      .neq("schedule_check->>verdict", "match");
+    throwIfError(resetError);
+    settled = await settleVenueTimetable({ viewer, seatId: seat.seatId, isTest, sharedPlaceId, schedulePhotoPath: firstPhotoPath, boards });
+  } catch (settleError) {
+    logError("Phoenix CRM timetable photos were added but not settled", {
+      error: settleError,
+      labels: { event: "phoenix_crm_venue_timetable_pages_settle_failed" },
+    });
+  }
+  return { sharedPlaceId, added, photos: 1 + Number(written.pages ?? onFile.length + added), ...settled };
 }
 
 // ── A timetable the door got no answer about, read again at night ───────────────────────────────

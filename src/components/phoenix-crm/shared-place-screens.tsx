@@ -37,14 +37,19 @@
  * kinds carry the owner's own words.
  */
 
-import { Building2, CalendarClock } from "lucide-react";
+import { Building2, CalendarClock, ImagePlus } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { crmPost, crmUrl, messageOf, useCrmGet } from "@/components/phoenix-crm/api";
 import { releaseCapturedPhoto } from "@/components/phoenix-crm/captured-photo";
 import { CaptureLocation, type CapturedPin } from "@/components/phoenix-crm/capture-location";
 import { LivePhotoCapture, type CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
-import { TimetableExtraPhotos, timetableExtraPaths, type TimetableExtraSlots } from "@/components/phoenix-crm/timetable-extra-photos";
+import {
+  releaseTimetableExtras,
+  TimetableExtraPhotos,
+  timetableExtraPaths,
+  type TimetableExtraSlots,
+} from "@/components/phoenix-crm/timetable-extra-photos";
 import { TimingsEditor, timingsToDrafts } from "@/components/phoenix-crm/timings-editor";
 import {
   CrmBlock,
@@ -77,6 +82,15 @@ import {
   sharedPlaceNameIsJunk,
   type SharedPlaceKind,
 } from "@/lib/phoenix-crm/shared-place-rules";
+import {
+  TIMETABLE_ADD_CANCEL,
+  TIMETABLE_ADD_NO_PHOTO,
+  TIMETABLE_ADD_TO_ON_FILE,
+  TIMETABLE_ADD_TO_ON_FILE_NOTE,
+  TIMETABLE_ADD_TO_ON_FILE_TITLE,
+  TIMETABLE_FULL,
+  timetablePhotosLeft,
+} from "@/lib/phoenix-crm/timetable-pages-rules";
 import { parseTimings } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
 
@@ -95,6 +109,8 @@ export type SharedPlaceChoice = {
   /** Set once the building's timetable has been photographed — then the rep is not asked again. */
   schedulePhotoPath: string | null;
   schedulePhotoCapturedAtText: string | null;
+  /** Photos of the timetable on file, the first one included; 0 with none. */
+  timetablePhotos?: number;
   /** This rep's refused photographs of this board today: two open the upload on the last try. */
   timetableRefusedToday?: number;
 };
@@ -116,6 +132,12 @@ export type SeatedDraftState = {
   timetableOnFile: boolean;
   /** He pressed "the timetable changed", so a fresh photograph is required even though one is on file. */
   replacingTimetable: boolean;
+  /**
+   * He pressed "Add a photo to this timetable" (owner, 25 Nov 2026: "replace the current timetable or ...
+   * add to what exists"): the board on file stays and these photos become its next pages.
+   */
+  addingToTimetable: boolean;
+  addedPhotos: TimetableExtraSlots;
   timings: PhoenixCrmTiming[];
   label: string;
   /** AM or PM: the session he receives in at this building (owner, 2026-10-10). Null until chosen. */
@@ -130,7 +152,7 @@ export function seatedSessionOf(listType: string | null | undefined): "AM" | "PM
 }
 
 export function emptySeatedDraft(timings: ReadonlyArray<PhoenixCrmTiming> = [], session: "AM" | "PM" | null = null): SeatedDraftState {
-  return { sharedPlaceId: null, photo: null, extraPhotos: [], timetableOnFile: false, replacingTimetable: false, timings: [...timings], label: "", session, timetableRetakes: 0 };
+  return { sharedPlaceId: null, photo: null, extraPhotos: [], timetableOnFile: false, replacingTimetable: false, addingToTimetable: false, addedPhotos: [], timings: [...timings], label: "", session, timetableRetakes: 0 };
 }
 
 /**
@@ -147,6 +169,7 @@ export function seatedDraftProblem(draft: SeatedDraftState): string | null {
   // whose timetable is already on file. The server re-decides it from the venue's own stored path, so
   // a stale `timetableOnFile` here can only ask for one photo too many, never let one too few through.
   if (!draft.photo && (draft.replacingTimetable || !draft.timetableOnFile)) return SEATED_PLACE_NO_PHOTO;
+  if (!draft.photo && draft.addingToTimetable && timetableExtraPaths(draft.addedPhotos).length === 0) return TIMETABLE_ADD_NO_PHOTO;
   const checked = parseTimings(timingsToDrafts(draft.timings));
   return checked.ok ? null : checked.error;
 }
@@ -170,10 +193,19 @@ export function seatedPayload(photo: CapturedPhoto | null, draft: SeatedDraftSta
     photoUploaded: photo?.uploaded === true,
     // Every other photo of the same board. Without a fresh first photo the server takes none of them.
     extraPhotoPaths: photo ? timetableExtraPaths(draft.extraPhotos) : [],
+    // Photos ADDED to the board on file, which stays. Never beside a fresh first photo (a replacement).
+    addedPhotoPaths: !photo && draft.addingToTimetable ? timetableExtraPaths(draft.addedPhotos) : [],
     label: draft.label.trim() || null,
     timings: timingsToDrafts(draft.timings),
     session: draft.session,
   };
+}
+
+/** Leaves the timetable on file as it is: any photo being added to it is let go. */
+export function withoutTimetableAdds(current: SeatedDraftState): SeatedDraftState {
+  if (!current.addingToTimetable && current.addedPhotos.length === 0) return current;
+  releaseTimetableExtras(current.addedPhotos);
+  return { ...current, addingToTimetable: false, addedPhotos: [] };
 }
 
 /** The venue's own capture state: the name on the building, which of the four, the photo, the pin. */
@@ -452,6 +484,9 @@ export function SharedPlaceEditor({
   // The picker's own answer, which is the live one: `value.timetableOnFile` was written when the
   // choice was made and a reload can have brought a board in since.
   const timetableOnFile = Boolean(chosen?.schedulePhotoPath) || value.timetableOnFile;
+  // Photos of the board on file, the first one included, and how many it can still take.
+  const photosOnFile = Math.max(1, chosen?.timetablePhotos ?? 1);
+  const photosLeft = timetablePhotosLeft(photosOnFile);
   const photoStep = firstStep + 1;
   const timingsStep = firstStep + 2;
   const detailsStep = firstStep + 3;
@@ -468,7 +503,7 @@ export function SharedPlaceEditor({
           // choose him even if the system is still checking"): leaving it unchosen is what sent the rep
           // to "Choose the polyclinic or centre this customer receives in." on Save.
           // A building nobody has been seated in yet has no timetable on file, so the camera opens.
-          onChange((current) => ({ ...current, sharedPlaceId, timetableOnFile: false, replacingTimetable: false }));
+          onChange((current) => ({ ...withoutTimetableAdds(current), sharedPlaceId, timetableOnFile: false, replacingTimetable: false }));
           venues.reload();
         }}
         seatId={seatId}
@@ -505,7 +540,7 @@ export function SharedPlaceEditor({
                   label={SHARED_PLACE_TITLE}
                   onChange={(sharedPlaceId: string) =>
                     onChange((current) => ({
-                      ...current,
+                      ...withoutTimetableAdds(current),
                       sharedPlaceId,
                       // Whether this building's board is already on file travels with the choice, so
                       // `seatedDraftProblem` can ask for a photo without reading the picker's rows.
@@ -576,18 +611,54 @@ export function SharedPlaceEditor({
             // The stamp burned into the photo is the BUILDING's name, so the venue has to be chosen
             // before the camera can open. It replaces the old "write the customer's name first" gate.
             <p className="text-sm font-semibold text-slate-500">Choose the polyclinic or centre first. Its name is printed on the photo.</p>
+          ) : timetableOnFile && !value.replacingTimetable && !value.photo && value.addingToTimetable ? (
+            // 🔴 ADD, NEVER REPLACE (owner, 25 Nov 2026: "replace the current timetable or ... add to what
+            // exists"). The board on file and its photos stay; these become its next photos.
+            <>
+              <CrmNote title={TIMETABLE_ADD_TO_ON_FILE_TITLE} tone="info">
+                {TIMETABLE_ADD_TO_ON_FILE_NOTE}
+              </CrmNote>
+              <TimetableExtraPhotos
+                disabled={disabled}
+                max={photosLeft}
+                onChange={(update) => onChange((current) => ({ ...current, addedPhotos: update(current.addedPhotos) }))}
+                seatId={seatId}
+                startAt={photosOnFile + 1}
+                test={test}
+                title={`Phoenix CRM ${SHARED_PLACE_TITLE.toLowerCase()}: ${chosen.name}`}
+                value={value.addedPhotos}
+              />
+              <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
+                <CrmButton disabled={disabled} onClick={() => onChange(withoutTimetableAdds)} size="sm" variant="secondary">
+                  {TIMETABLE_ADD_CANCEL}
+                </CrmButton>
+              </div>
+            </>
           ) : timetableOnFile && !value.replacingTimetable && !value.photo ? (
             // 🔴 ONE TIMETABLE PER BUILDING (owner, 2026-10-10). The board is already photographed, so
-            // this customer is seated against it and the rep is not asked again.
+            // this customer is seated against it and the rep is not asked again. Two ways on from here
+            // (owner, 25 Nov 2026): add a photo to it, or replace it.
             <>
               <CrmNote title={SEATED_PLACE_PHOTO_ON_FILE} tone="info">
                 It was photographed on {chosen.schedulePhotoCapturedAtText ?? chosen.capturedAtText}, and it covers everybody who receives here. This
                 customer is saved against it — enter the hours below.
               </CrmNote>
+              {photosLeft === 0 ? <p className="mt-2 break-words text-xs font-semibold text-slate-500">{TIMETABLE_FULL}</p> : null}
               <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
+                {photosLeft > 0 ? (
+                  <CrmButton
+                    disabled={disabled}
+                    onClick={() => onChange((current) => ({ ...current, addingToTimetable: true, addedPhotos: [null] }))}
+                    size="sm"
+                    variant="secondary"
+                  >
+                    <ImagePlus aria-hidden className="h-4 w-4" />
+                    {TIMETABLE_ADD_TO_ON_FILE}
+                  </CrmButton>
+                ) : null}
                 <CrmButton
                   disabled={disabled}
-                  onClick={() => onChange((current) => ({ ...current, replacingTimetable: true }))}
+                  onClick={() => onChange((current) => ({ ...withoutTimetableAdds(current), replacingTimetable: true }))}
                   size="sm"
                   variant="secondary"
                 >
