@@ -26,7 +26,7 @@ That means no hand `insert`/`update` for anything a route can do.
   {
     "onBehalfOfHrId": "<the employee, e.g. PD-0028 Sahar ElGallad>",
     "customers": [{
-      "customerType": "doctor",
+      "customerType": "clinic",
       "displayName": "<doctor, Arabic as on the CRM list>",
       "speciality": "Paediatrics",
       "crmAreaSeatId": "<seat, e.g. SEAT-PED-REP-D26>",
@@ -73,6 +73,11 @@ That means no hand `insert`/`update` for anything a route can do.
   `active` is false; the survivor's live links are unchanged.
 - First needed for Dr Othman El Shewehy / Sahar ElGallad, 25 Nov 2026: the four pharmacy copies merged
   from the spare (HTTP 200 each); the doctor merge was refused (403) and left for the owner.
+- 🔴 **Two customers of different kinds never merge** ("These two are different kinds of customer"):
+  the screen's OK box appears, then the database refuses. Read both `customer_type`s first. The
+  25 Nov desk entry was typed `doctor` (legacy, no new customer gets it) and the form's copy `clinic`,
+  so the original was set to `clinic` (audit row) before the merge. A desk entry uses one of the
+  form's four kinds: `hospital`, `clinic`, `account`, `other`.
 
 ### Put a map pin on a pharmacy already saved
 
