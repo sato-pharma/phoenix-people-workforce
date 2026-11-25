@@ -480,6 +480,8 @@ export function MobileOutstationWizard({
   const [selectedAreaCode, setSelectedAreaCode] = useState("");
   const [captured, setCaptured] = useState<OutstationCaptureResult | null>(null);
   const [carEvidence, setCarEvidence] = useState<CarEvidenceState | null>(null);
+  /** Arrival photos the server refused for their odometer on this claim: from 1 the next one is kept (owner, 2026-11-25). */
+  const odometerRefusalsRef = useRef(0);
   const [carEvidenceDraftId, setCarEvidenceDraftId] = useState(() => buildDraftId());
   const [isCarEvidenceCameraOpen, setIsCarEvidenceCameraOpen] = useState(false);
   const [calculation, setCalculation] = useState<OutstationCalculationResult | null>(null);
@@ -677,6 +679,7 @@ export function MobileOutstationWizard({
     setCalculation(null);
     setCaptured(null);
     setCarEvidence(null);
+    odometerRefusalsRef.current = 0;
     setCarEvidenceDraftId(buildDraftId());
     setExpenseType("traveling");
     setGoTicketAmount("");
@@ -1622,12 +1625,16 @@ export function MobileOutstationWizard({
         body: JSON.stringify({
           ...requestPayload,
           carEvidenceImageDataUrl: isNonTravel ? undefined : carEvidence?.imageDataUrl,
+          odometerRefusedTries: odometerRefusalsRef.current,
           ticketAttachments,
         }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
       const payload = await response.json();
+      // Counted, so the next arrival photo after an odometer refusal is kept for the approver instead of
+      // refused again (owner, 2026-11-25; odometer-scan-rules.ts).
+      if (payload?.error === "odometer_refused") odometerRefusalsRef.current += 1;
       if (!response.ok) {
         setMessage(payload.message ?? payload.error ?? "Unable to submit the request.");
         return;

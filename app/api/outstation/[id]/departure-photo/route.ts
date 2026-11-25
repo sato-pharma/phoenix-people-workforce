@@ -7,7 +7,8 @@ import { readDeparturePhotoPosition } from "@/lib/outstation/departure-evidence"
 import { captureOutstationDeparturePhoto } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
-import { OutstationPhotoRefusedError } from "@/lib/outstation/blank-frame";
+import { OutstationPhotoRefusedError, photoRefusalCode } from "@/lib/outstation/blank-frame";
+import { odometerRefusedTriesOf } from "@/lib/outstation/odometer-scan-rules";
 import { parseJsonBody } from "@/lib/http/request-body";
 import { parseOutstationRequestId } from "@/lib/outstation/request-id";
 
@@ -35,6 +36,8 @@ const DeparturePhotoBodySchema = z.object({
   latitude: departureCoordinateField,
   locationLabel: z.string().nullable().optional(),
   longitude: departureCoordinateField,
+  /** Departure photos this card already had refused for their odometer: from 1 the photo is kept (owner, 2026-11-25). */
+  odometerRefusedTries: z.union([z.number(), z.string()]).nullable().optional(),
 });
 
 function departurePhotoStatus(error: unknown) {
@@ -104,6 +107,7 @@ export async function POST(
       latitude,
       locationLabel: typeof body.locationLabel === "string" ? body.locationLabel : null,
       longitude,
+      odometerRefusedTries: odometerRefusedTriesOf(body.odometerRefusedTries),
       requestId: id,
     });
 
@@ -116,7 +120,7 @@ export async function POST(
     const message = clientSafeErrorMessage(error, "Unable to save the departure photo.");
     return NextResponse.json(
       {
-        error: isForbiddenError(error) ? "forbidden" : "outstation_departure_photo_failed",
+        error: isForbiddenError(error) ? "forbidden" : (photoRefusalCode(error) ?? "outstation_departure_photo_failed"),
         message,
       },
       { status: departurePhotoStatus(error) },

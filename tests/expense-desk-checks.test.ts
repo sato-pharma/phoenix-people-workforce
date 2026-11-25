@@ -272,6 +272,11 @@ export function runExpenseDeskChecksTests() {
   assert.equal(answerOf(odo({ anchor, paidKmSinceAnchor: null }), "odometer")?.sentence, "7 km on the odometer since the trip of 10 Nov.", "a distance unknown is not a shortfall");
   assert.equal(answerOf(odo({ arrival: { km: null, status: "unreadable" } }), "odometer")?.answer, "fail");
   assert.equal(answerOf(odo({ arrival: { km: null, status: "not_read" } }), "odometer")?.answer, "unknown", "the reader down is not the employee's fault");
+  // A departure photo kept after an odometer refusal (owner, 2026-11-25) fails for the approver to read it.
+  const unreadableDeparture = answerOf(odo({ departure: { km: null, status: "unreadable" } }), "odometer");
+  assert.equal(unreadableDeparture?.answer, "fail", "HEADLINE: an unreadable departure photo is never a silent pass");
+  assert.equal(unreadableDeparture?.sentence, "The departure photo does not show a readable odometer.");
+  assert.equal(answerOf(odo({ departure: { km: null, status: "not_read" } }), "odometer")?.answer, "pass", "the reader down at departure stays the system's own fault");
   assert.equal(judgeClaim(odo({ arrival: { km: null, status: "not_read" } })).lane, "your_call");
   // The odometer outranks a photo finding; an idle day outranks the odometer.
   assert.match(judgeClaim({ ...chained, departure: { ...chained.departure, onFile: false } }).reason ?? "", /^The odometer moved 7 km/);

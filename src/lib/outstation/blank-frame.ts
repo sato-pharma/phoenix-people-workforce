@@ -111,8 +111,20 @@ export function frameOfMetadata(metadata: unknown): FrameReading | null {
  * refused ticket).
  */
 export class OutstationPhotoRefusedError extends Error {
-  constructor(message: string) {
+  /**
+   * "odometer" when the photo was refused for its kilometres. The routes answer it as `odometer_refused`, and
+   * the phone counts those refusals so the next photo is kept instead (odometer-scan-rules.ts, owner 2026-11-25).
+   */
+  readonly reason: "blank" | "odometer";
+
+  constructor(message: string, reason: "blank" | "odometer" = "blank") {
     super(message);
     this.name = "OutstationPhotoRefusedError";
+    this.reason = reason;
   }
+}
+
+/** The `error` code a route answers for a refused photo: `odometer_refused` is the one the phone counts. */
+export function photoRefusalCode(error: unknown): "odometer_refused" | null {
+  return error instanceof OutstationPhotoRefusedError && error.reason === "odometer" ? "odometer_refused" : null;
 }

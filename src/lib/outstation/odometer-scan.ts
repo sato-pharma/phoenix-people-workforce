@@ -10,7 +10,12 @@
 
 import { createOpenAiResponseText, hasAiApiKey, OPENAI_ROUTE_BUDGET_MS } from "@/lib/ai/openai-client";
 import { parseAiJson } from "@/lib/ai/parse-ai-json";
-import { normalizeOdometerScan, ODOMETER_PROBLEMS, type OdometerRead } from "@/lib/outstation/odometer-scan-rules";
+import {
+  normalizeOdometerScan,
+  ODOMETER_PROBLEMS,
+  ODOMETER_SCAN_MAX_OUTPUT_TOKENS,
+  type OdometerRead,
+} from "@/lib/outstation/odometer-scan-rules";
 
 const INSTRUCTIONS = [
   "You read a car's dashboard from a photo taken by an employee on a business trip in Egypt.",
@@ -54,7 +59,10 @@ export async function readCarOdometer(bytes: Buffer): Promise<OdometerRead> {
     const response = await createOpenAiResponseText({
       input: [{ content: [{ text: "Read this car's odometer.", type: "input_text" as const }, image], role: "user" as const }],
       instructions: INSTRUCTIONS,
-      maxOutputTokens: 600,
+      // 600 was too little for the second provider: its thinking spends the same budget, and on 24 and
+      // 25 Nov 2026 it stopped mid-answer ("ran out of room… max_tokens") on two of the first three
+      // arrival photos, so neither was read. The answer itself is four short fields.
+      maxOutputTokens: ODOMETER_SCAN_MAX_OUTPUT_TOKENS,
       purpose: "outstation-car-odometer-scan",
       reasoning: { effort: "low" },
       text: TEXT_FORMAT,

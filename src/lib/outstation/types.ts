@@ -259,6 +259,11 @@ export type OutstationCalculationInput = {
   goTicketAmount?: number;
   hasTicketAttachments?: boolean;
   kilometerReading?: number;
+  /**
+   * How many arrival photos of this claim the system already refused for their odometer, as the phone counted
+   * (odometer-scan-rules.ts): from 1 the photo is kept and the approver reads it (owner, 2026-11-25).
+   */
+  odometerRefusedTries?: number;
   medicalTripHrId?: string | null;
   medicalTripName?: string | null;
   meetingAmount?: number;
