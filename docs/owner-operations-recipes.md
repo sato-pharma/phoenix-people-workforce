@@ -57,6 +57,23 @@ That means no hand `insert`/`update` for anything a route can do.
   one call per copy, as B-10. It moves links and requests to the survivor, switches the copy off and
   records the reason.
 
+### Merge a duplicate customer (a doctor saved twice)
+
+- **Order:** merge the duplicate PHARMACY copies first (above), so both customers point at the same
+  venues; then merge the customer.
+- **Function:** `mergeMarketingCustomers` in `src/lib/marketing-requests/customer-merge.ts` (route
+  `POST /api/marketing-requests/customer-merge`, body
+  `{ "survivorId": "<kept>", "retiredId": "<copy>", "carryEvidence": false, "reason": "<why>" }`).
+- 🔴 **It refuses a dev-preview session** (`assertRealSessionForDecision`: "A dev-preview session
+  cannot merge two customers"). The spare's dev-auth headers are a preview session, so the spare route
+  answers 403. Never work around that guard. The owner presses it himself, signed in as himself, on
+  Marketing Requests → Customer Database → "Merge duplicate customers": the customer that stays, the
+  customer to retire, the reason, then **Merge customers**.
+- **Proof:** the copy's `marketing_customers.merged_into_customer_id` names the survivor and its
+  `active` is false; the survivor's live links are unchanged.
+- First needed for Dr Othman El Shewehy / Sahar ElGallad, 25 Nov 2026: the four pharmacy copies merged
+  from the spare (HTTP 200 each); the doctor merge was refused (403) and left for the owner.
+
 ### Put a map pin on a pharmacy already saved
 
 - Set `marketing_pharmacies.captured_latitude` / `captured_longitude` / `captured_at` with
