@@ -23,6 +23,7 @@ import {
   type CrmDoctorAreaChoice,
   type CrmDoctorAreasPayload,
   type CrmDoctorListPayload,
+  type CrmDoctorOnFile,
   type CrmDoctorOption,
   type CrmPharmacyOption,
   type CrmPlaceCandidate,
@@ -107,6 +108,40 @@ async function loadLivePlaces(customerIds: ReadonlyArray<string>): Promise<Map<s
   return byCustomer;
 }
 
+/**
+ * The validated customers on file that already carry each CRM doctor (live, not merged away), with
+ * the employee who holds each — what the picker marks a doctor with. Read in chunks of ids.
+ */
+async function loadDoctorsOnFile(crmCustomerIds: ReadonlyArray<string>): Promise<Map<string, CrmDoctorOnFile[]>> {
+  const rows: Row[] = [];
+  for (const part of chunk(dedupeIds(crmCustomerIds), 150)) {
+    rows.push(
+      ...(await fetchAllRowsKeyset<Row>(
+        () =>
+          getSupabaseAdmin()
+            .from("marketing_customers")
+            .select("id, customer_code, owner_hr_id, phoenix_crm_customer_id")
+            .in("phoenix_crm_customer_id", part)
+            .eq("active", true)
+            .is("merged_into_customer_id", null),
+        { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+      )),
+    );
+  }
+  const names = await loadPeopleNames(rows.map((row) => textOrNull(row.owner_hr_id)));
+  const byDoctor = new Map<string, CrmDoctorOnFile[]>();
+  for (const row of rows) {
+    const crmCustomerId = textOrNull(row.phoenix_crm_customer_id);
+    const customerId = textOrNull(row.id);
+    const ownerHrId = textOrNull(row.owner_hr_id);
+    if (!crmCustomerId || !customerId || !ownerHrId) continue;
+    const list = byDoctor.get(crmCustomerId) ?? [];
+    list.push({ customerId, customerCode: textOrNull(row.customer_code), ownerHrId, ownerName: nameOf(names, ownerHrId, "") || null });
+    byDoctor.set(crmCustomerId, list);
+  }
+  return byDoctor;
+}
+
 function areaOf(seats: ReadonlyArray<OrgSeat>): CrmDoctorAreaChoice {
   const first = seats[0];
   return { seatId: first.seatId, areaName: first.areaName ?? first.seatLabel ?? first.seatId };
@@ -124,9 +159,12 @@ export async function loadCrmDoctorsForArea(access: AccessContext, areaSeatId: u
     loadPeopleNames(seats.map((seat) => seat.occupantHrId)),
   ]);
   // Only a validated doctor copies a place, so only theirs are read; every listed pharmacy may.
-  const places = await loadLivePlaces([
-    ...rows.filter((row) => row.status === "active").map((row) => String(row.id)),
-    ...pharmacyRows.map((row) => String(row.id)),
+  const [places, onFile] = await Promise.all([
+    loadLivePlaces([
+      ...rows.filter((row) => row.status === "active").map((row) => String(row.id)),
+      ...pharmacyRows.map((row) => String(row.id)),
+    ]),
+    loadDoctorsOnFile(rows.map((row) => String(row.id))),
   ]);
   const seatById = new Map(seats.map((seat) => [seat.seatId, seat]));
   const doctors = rows
@@ -145,6 +183,7 @@ export async function loadCrmDoctorsForArea(access: AccessContext, areaSeatId: u
           repName: seat.occupantHrId ? nameOf(names, seat.occupantHrId) : null,
           lineName: seat.lineName,
           place: crmCopiedPlace({ kind: "doctor", status: row.status, places: places.get(crmCustomerId) ?? [] }),
+          onFile: onFile.get(crmCustomerId) ?? [],
         },
       ];
     })

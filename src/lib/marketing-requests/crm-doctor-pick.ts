@@ -20,6 +20,7 @@
  * Pure: no database, no React. The server read is `crm-doctor-pick-service.ts`.
  */
 
+import { hrIdsMatch } from "@/lib/hr-id";
 import type { OrgSeat } from "@/lib/phoenix-crm/scope";
 
 /** The roles that choose from every area in the company — none of them holds a team of reps. */
@@ -116,7 +117,77 @@ export type CrmDoctorOption = {
   lineName: string | null;
   /** His validated place, copied into the desk-mode form when he is picked; null when he has none. */
   place: CrmCopiedPlace | null;
+  /**
+   * The validated customers on file that already carry this CRM doctor — one per employee who
+   * validated him (live, not merged away). Empty when nobody has validated him yet. The picker marks
+   * him with it (owner, 26 Nov 2026), so a second capture of a doctor on file is seen before it is made.
+   */
+  onFile: CrmDoctorOnFile[];
 };
+
+export type CrmDoctorOnFile = {
+  customerId: string;
+  customerCode: string | null;
+  ownerHrId: string;
+  ownerName: string | null;
+};
+
+/**
+ * The copy of this doctor that the given employee already holds, or null. The employee is the one
+ * the save writes for: the rep himself, or the person the Super Admin validates on behalf of.
+ */
+export function doctorOnFileFor(
+  doctor: Pick<CrmDoctorOption, "onFile">,
+  ownerHrId: string | null | undefined,
+): CrmDoctorOnFile | null {
+  if (!ownerHrId) return null;
+  return doctor.onFile.find((entry) => hrIdsMatch(entry.ownerHrId, ownerHrId)) ?? null;
+}
+
+/**
+ * The picker's short mark for a doctor already on file: "already validated" when the employee the
+ * save writes for holds him, "on file for <name>" when only someone else does, nothing otherwise.
+ */
+export function doctorOnFileMark(
+  doctor: Pick<CrmDoctorOption, "onFile">,
+  ownerHrId: string | null | undefined,
+): string | null {
+  if (doctorOnFileFor(doctor, ownerHrId)) return "already validated";
+  const other = doctor.onFile[0];
+  if (!other) return null;
+  return `on file for ${other.ownerName ?? "another employee"}`;
+}
+
+/**
+ * The box under the Doctor picker once a doctor on file is chosen. `warn` when the save would make
+ * the employee a SECOND copy of a doctor he already holds — a rep saving for himself (only the desk
+ * joins the copy on file; a rep's own save mints a new customer). `ok` when the desk joins his copy,
+ * so only the pharmacies are written. `info` when someone else validated him: a doctor on two reps'
+ * lists is normal, and the employee gets his own copy.
+ */
+export function doctorOnFileNotice(
+  doctor: Pick<CrmDoctorOption, "onFile">,
+  input: { ownerHrId: string | null | undefined; ownerName: string | null | undefined; isDeskMode: boolean },
+): { tone: "ok" | "warn" | "info"; text: string } | null {
+  const own = doctorOnFileFor(doctor, input.ownerHrId);
+  const code = (entry: CrmDoctorOnFile) => (entry.customerCode ? ` (${entry.customerCode})` : "");
+  if (own && input.isDeskMode) {
+    return {
+      tone: "ok",
+      text: `Already on file for ${input.ownerName ?? "this employee"}${code(own)}. Saving adds only the pharmacies below; the doctor on file is left as it is.`,
+    };
+  }
+  if (own) {
+    return {
+      tone: "warn",
+      text: `You validated this doctor already${code(own)}. Saving again here makes a second copy. Find the doctor in the Validated tab instead.`,
+    };
+  }
+  const others = doctor.onFile;
+  if (others.length === 0) return null;
+  const names = [...new Set(others.map((entry) => entry.ownerName ?? "another employee"))].join(", ");
+  return { tone: "info", text: `Already on file for ${names}. Saving makes ${input.isDeskMode ? `${input.ownerName ?? "this employee"}'s` : "your"} own copy.` };
+}
 
 /** A pharmacy on a rep's Phoenix CRM pharmacy list of the chosen area — the desk-mode venue pick. */
 export type CrmPharmacyOption = {
