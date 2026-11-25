@@ -1016,6 +1016,7 @@ import { runVenueValidationRuleTests } from "./venue-validation-rule.test.ts";
 import { runMarketingVenueMergeTests } from "./marketing-venue-merge.test.ts";
 import { runMarketingVenueMergeCodeCollisionTests } from "./marketing-venue-merge-code-collision.test.ts";
 import { runMarketingVenueMergeRouteTests } from "./marketing-venue-merge-route.test.ts";
+import { runOwnerOpsRunnerTests } from "./owner-ops-runner.test.ts";
 import { runMarketingRoiTrackerTests } from "./marketing-roi-tracker.test.ts";
 import { runMarketingRoiFastAwaitingDataTests } from "./marketing-roi-fast-awaiting-data.test.ts";
 import { runMarketingRoiRefreshScheduleTests } from "./marketing-roi-refresh-schedule.test.ts";
@@ -5381,6 +5382,10 @@ await runTest(
 await runTest(
   "marketing venue merge route + admin action (the merge is reachable at all, the route delegates authorization instead of re-deciding it, it is registered as its own audited CSRF mutation rather than falling through the /api/marketing-requests/** blanket, the picker reads the venue table so an unlinked duplicate is still offerable, and the Customer Database gate still matches the service's)",
   runMarketingVenueMergeRouteTests,
+);
+await runTest(
+  "owner-ops (the owner's desk jobs run from the app's own code) is a DRY RUN unless the literal token --apply is on the command line: --apply=yes, --apply=false and a bare apply are refused, as are a flag of another job, a flag given twice, a non-uuid id, a self-merge and a swapped pin; the dry-run fence hands no table write, Telegram or e-mail to the network while a read passes and every write is listed; and the runner installs that fence before it imports any app module, skipping it only under --apply after the tree-is-current check",
+  runOwnerOpsRunnerTests,
 );
 await runTest("marketing request overlap detection (double-count guard)", runMarketingRequestOverlapTests);
 await runTest("marketing request twin guard (double-payment refusal)", runMarketingRequestTwinGuardTests);
