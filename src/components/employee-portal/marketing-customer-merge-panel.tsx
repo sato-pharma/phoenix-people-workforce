@@ -29,6 +29,7 @@ import {
 type Outcome = {
   contactsMoved: number;
   evidenceCarried: boolean;
+  linksFoldedByCode?: number;
   linksLeftOnRetired: number;
   linksMoved: number;
   linksStatusCarried: number;
@@ -254,6 +255,7 @@ export function MarketingCustomerMergePanel({ onMerged }: { onMerged: () => void
           <div className="border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold leading-6 text-emerald-900">
             {`Merged. Moved ${outcome.requestsMoved} request(s), ${outcome.contactsMoved} contact(s), ${outcome.linksMoved} pharmacy link(s) and ${outcome.transfersMoved} transfer(s). `}
             {outcome.linksLeftOnRetired > 0 ? `${outcome.linksLeftOnRetired} link(s) were already on the customer that stays, so the retired copies were switched off. ` : ""}
+            {(outcome.linksFoldedByCode ?? 0) > 0 ? `${outcome.linksFoldedByCode} of them were the same pharmacy captured twice under one distributor code, so the customer that stays lists it once. ` : ""}
             {outcome.linksStatusCarried > 0 ? `${outcome.linksStatusCarried} link(s) took the retired row's higher validation. ` : ""}
             {outcome.validationCarried ? `Validation carried: ${humanizeCode(outcome.validationCarried)}. ` : ""}
             {outcome.evidenceCarried ? "Field evidence carried. " : ""}
