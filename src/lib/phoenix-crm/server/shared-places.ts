@@ -135,9 +135,10 @@ export type SharedPlaceRow = {
   timetableRefusedToday: number;
   /**
    * How many photos that timetable holds, the first one included — 0 with no board on file. The rep's
-   * "Add a photo to this timetable" offers only what is left of five (owner, 25 Nov 2026).
+   * "Add a photo to this timetable" offers only what is left of five (owner, 25 Nov 2026). Optional only so
+   * a row built by hand (a test) reads as one photo; the loader always sets it.
    */
-  timetablePhotos: number;
+  timetablePhotos?: number;
 };
 
 export function kindOf(value: unknown): SharedPlaceKind {
