@@ -2699,6 +2699,14 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // refused, the door deleted 1 row and left phx.owner_request_delete empty, and a plain delete after it was refused
   // again; rows unchanged (68 staging, 364 production). Re-applying is a no-op (`create or replace`, same grants).
   "20261124011438_outstation_request_delete_owner_only.sql",
+  // The Super Admin seats waiting customers in a building its timetable names (owner, 26 Nov 2026: "We validate them
+  // with this timetable photo if it carries their name"). One NEW function, nothing else. Applied 2026-11-26 through
+  // scripts/apply-sql-file.mjs, production then staging, which writes NO ledger row. Read back on
+  // ozucdzovmcqvepbozvqf (project name Phoenix HR) and on cifwmndunmlxjhyjugxa straight after:
+  // md5(prosrc) f12f2d0f9d9c22ee7ed94d1c086d6297 on both, equal to the file's own body (LF); security definer,
+  // search_path public; executable by service_role, not by anon or authenticated. Re-applying is a no-op
+  // (`create or replace`, same grants).
+  "20261126003900_phoenix_crm_seat_waiting_customers_in_venue.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
