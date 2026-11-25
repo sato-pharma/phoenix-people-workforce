@@ -161,9 +161,13 @@ export type EffScoreRow = { label: string; kind: "count" | "money" | "pct" | "ra
 /** `kpiToDate` names the running KPI month, read to date. Every KPI month is the rep's own (none falls before the hire month). */
 export type EffScorecard = { months: string[]; closing: EffScoreRow[]; kpiMonths: string[]; kpiToDate: string | null; kpi: EffScoreRow[] };
 
+/** The months the viewer chose, first and last (YYYY-MM). The published months inside it are `months`. */
+export type EffPeriod = { from: string; to: string };
+
 export type RepEffectivenessReport = {
   rep: EffRep;
   generatedAt: string;
+  period: EffPeriod;
   months: string[];
   repMonths: string[];
   products: { code: string; name: string; tag: string }[];
@@ -300,6 +304,8 @@ const sumSources = (s: EffSources) => s.direct + s.wholesalerShare + s.pharmacy 
 export function buildRepEffectiveness(input: {
   rep: EffRep;
   generatedAt: string;
+  /** The chosen period; absent, the published months' own span. */
+  period?: EffPeriod;
   months: readonly EffMonth[];
   kpis: readonly EffKpiMonth[];
   universe: EffUniverse;
@@ -438,6 +444,7 @@ export function buildRepEffectiveness(input: {
   const report: RepEffectivenessReport = {
     rep: input.rep,
     generatedAt: input.generatedAt,
+    period: input.period ?? { from: monthKeys[0] ?? "", to: monthKeys[monthKeys.length - 1] ?? "" },
     months: monthKeys,
     repMonths,
     products,
@@ -489,10 +496,65 @@ export function buildScorecard(report: RepEffectivenessReport): EffScorecard {
   return { months, closing, kpiMonths, kpiToDate: report.kpis.find((k) => k.toDate)?.month ?? null, kpi };
 }
 
-export function reviewFileName(repName: string, months: readonly string[], ext: "xlsx" | "pdf"): string {
+export function reviewFileName(repName: string, period: EffPeriod, ext: "xlsx" | "pdf"): string {
   const slug = repName.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "") || "Rep";
-  const span = months.length > 0 ? `${months[0]}-to-${months[months.length - 1]}` : "no-published-month";
+  const span = period.from && period.to ? (period.from === period.to ? period.from : `${period.from}-to-${period.to}`) : "no-period";
   return `${slug}-Effectiveness-Review-${span}.${ext}`;
+}
+
+/** "July to October 2026" — the chosen period in words; one month is just that month. */
+export function periodLabel(period: EffPeriod): string {
+  if (!period.from || !period.to) return "No month chosen";
+  if (period.from === period.to) return monthLong(period.from);
+  const [fy] = period.from.split("-");
+  const [ty] = period.to.split("-");
+  const first = monthLong(period.from);
+  return `${fy === ty ? first.replace(` ${fy}`, "") : first} to ${monthLong(period.to)}`;
+}
+
+// ── The period ───────────────────────────────────────────────────────────────────────────────────
+
+/** The longest period one review covers: each month is a full closing read of the line. */
+export const REVIEW_MAX_PERIOD_MONTHS = 12;
+/** The most KPI months one review reads — the period's latest, never before the hire month. */
+export const REVIEW_MAX_KPI_MONTHS = 6;
+
+const MONTH_RE = /^(\d{4})-(0[1-9]|1[0-2])$/;
+
+export function addMonths(month: string, delta: number): string {
+  const [y, m] = month.split("-").map(Number);
+  const index = y * 12 + (m - 1) + delta;
+  return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, "0")}`;
+}
+
+/** Every month from `from` to `to`, both included; empty when `from` is after `to`. */
+export function monthsBetween(from: string, to: string): string[] {
+  const out: string[] = [];
+  for (let m = from; m <= to && out.length <= 1200; m = addMonths(m, 1)) out.push(m);
+  return out;
+}
+
+/**
+ * The period the viewer asked for (owner, 25 Nov 2026: "i want to be able to export per rep in the chosen
+ * period"). A month picker sends YYYY-MM; a date is cut to its month. Nothing chosen is the twelve months
+ * ending this month. Never after this month, never backwards, never longer than twelve months.
+ */
+export function resolveReviewPeriod(raw: { from?: unknown; to?: unknown }, todayIso: string): EffPeriod | { error: string } {
+  const current = todayIso.slice(0, 7);
+  const month = (value: unknown): string | null | undefined => {
+    const text = typeof value === "string" ? value.trim().slice(0, 7) : "";
+    if (!text) return undefined;
+    return MONTH_RE.test(text) ? text : null;
+  };
+  const to = month(raw.to);
+  const from = month(raw.from);
+  if (to === null || from === null) return { error: "Choose the months as year and month." };
+  const end = to ?? current;
+  const start = from ?? addMonths(end, -(REVIEW_MAX_PERIOD_MONTHS - 1));
+  if (end > current) return { error: "The period cannot end after this month." };
+  if (start > end) return { error: "The first month comes after the last." };
+  if (monthsBetween(start, end).length > REVIEW_MAX_PERIOD_MONTHS) return { error: `Choose at most ${REVIEW_MAX_PERIOD_MONTHS} months.` };
+  return { from: start, to: end };
 }
 
 export { sumSources };

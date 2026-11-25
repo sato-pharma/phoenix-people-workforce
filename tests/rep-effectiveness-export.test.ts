@@ -7,7 +7,10 @@ import type { PharmacyCountRow } from "../src/lib/sales/closing-pharmacy-counts.
 import { buildRepEffectivenessDocument } from "../src/lib/sales/rep-effectiveness/document.ts";
 import {
   buildRepEffectiveness,
+  monthsBetween,
+  periodLabel,
   productTags,
+  resolveReviewPeriod,
   reviewFileName,
   summariseClosingMonth,
   type EffMonth,
@@ -195,7 +198,34 @@ function theNumbers(): void {
     for (const v of Object.values(row.values)) assert.ok(v == null || typeof v === "number", `${row.label} holds numbers only`);
   }
   assert.deepEqual([...productTags([{ code: "A", name: "Lacto Advanced 1" }, { code: "B", name: "Lacto Advanced 1" }]).values()], ["LA1", "LA12"], "tags never collide");
-  assert.equal(reviewFileName("Ebtissam Alaa", report.months, "pdf"), "Ebtissam-Alaa-Effectiveness-Review-2026-08-to-2026-10.pdf");
+  assert.deepEqual(report.period, { from: "2026-08", to: "2026-10" }, "nothing chosen, the period is the published months' span");
+  assert.equal(reviewFileName("Ebtissam Alaa", report.period, "pdf"), "Ebtissam-Alaa-Effectiveness-Review-2026-08-to-2026-10.pdf");
+}
+
+/** The chosen period (owner, 25 Nov 2026: "i want to be able to export per rep in the chosen period"). */
+function theChosenPeriod(): void {
+  const today = "2026-11-25";
+  assert.deepEqual(resolveReviewPeriod({ from: "2026-07", to: "2026-11" }, today), { from: "2026-07", to: "2026-11" });
+  assert.deepEqual(resolveReviewPeriod({ from: "2026-07-14", to: "2026-10-02" }, today), { from: "2026-07", to: "2026-10" }, "a date is cut to its month");
+  assert.deepEqual(resolveReviewPeriod({}, today), { from: "2025-12", to: "2026-11" }, "nothing chosen: the twelve months ending this month");
+  assert.deepEqual(resolveReviewPeriod({ from: "2026-07", to: "2026-12" }, today), { error: "The period cannot end after this month." });
+  assert.deepEqual(resolveReviewPeriod({ from: "2026-10", to: "2026-07" }, today), { error: "The first month comes after the last." });
+  assert.deepEqual(resolveReviewPeriod({ from: "2025-10", to: "2026-10" }, today), { error: "Choose at most 12 months." }, "thirteen months is one too many");
+  assert.deepEqual(resolveReviewPeriod({ from: "2025-11", to: "2026-10" }, today), { from: "2025-11", to: "2026-10" }, "twelve months is allowed");
+  assert.deepEqual(resolveReviewPeriod({ from: "2026-13", to: "2026-11" }, today), { error: "Choose the months as year and month." });
+  assert.deepEqual(monthsBetween("2025-11", "2026-02"), ["2025-11", "2025-12", "2026-01", "2026-02"], "the months run across the year end");
+  assert.equal(periodLabel({ from: "2026-07", to: "2026-11" }), "July to November 2026");
+  assert.equal(periodLabel({ from: "2025-11", to: "2026-02" }), "November 2025 to February 2026");
+  assert.equal(periodLabel({ from: "2026-10", to: "2026-10" }), "October 2026");
+  assert.equal(reviewFileName("Ebtissam Alaa", { from: "2026-07", to: "2026-11" }, "xlsx"), "Ebtissam-Alaa-Effectiveness-Review-2026-07-to-2026-11.xlsx");
+  const server = stripComments(readFileSync("src/lib/sales/rep-effectiveness/server.ts", "utf8"));
+  assert.match(server, /m >= period\.from && m <= period\.to/, "only the published months inside the period are read");
+  assert.match(server, /resolveReviewPeriod\(raw, today\)/, "the loader resolves the period it was asked for");
+  const route = stripComments(readFileSync("app/api/admin/rep-effectiveness-export/route.ts", "utf8"));
+  assert.match(route, /from: params\.get\("from"\), to: params\.get\("to"\)/, "the route passes the chosen months on");
+  const page = stripComments(readFileSync("app/(admin)/admin/rep-visits-export/page.tsx", "utf8"));
+  assert.match(page, /type="month" name="from"/);
+  assert.match(page, /type="month" name="to"/);
 }
 
 async function theWorkbook(): Promise<void> {
@@ -217,6 +247,9 @@ async function theWorkbook(): Promise<void> {
 function theDocument(): void {
   const html = buildRepEffectivenessDocument(theReport());
   assert.match(html, /Customers per product per month/);
+  assert.match(html, /<span class="h1__light">August to October 2026<\/span>/, "the cover names the chosen period");
+  assert.equal((html.match(/class="route__m /g) ?? []).length, 3, "the route draws one mark per month of the period");
+  assert.doesNotMatch(html, /<svg[^>]*class="dia"[^>]*transform|<polygon[^>]*transform/, "a diamond is a polygon, never a turned square");
   assert.match(html, /Effectiveness Review/);
   assert.match(html, /<span dir="rtl" lang="ar">/, "an Arabic name keeps its own direction");
   const fills = [...html.matchAll(/background:\s*([^;]+);/g)].map((m) => m[1].trim());
@@ -246,6 +279,7 @@ function theSuperAdminsAlone(): void {
 export async function runRepEffectivenessExportTests() {
   oneMonthOfRows();
   theNumbers();
+  theChosenPeriod();
   await theWorkbook();
   theDocument();
   theSuperAdminsAlone();

@@ -20,9 +20,13 @@ import { lineName, loadMonthlyAchievement, loadProductNameMap, resolveTargetLine
 import {
   buildRepEffectiveness,
   kpiFiguresOf,
+  monthsBetween,
+  resolveReviewPeriod,
+  REVIEW_MAX_KPI_MONTHS,
   summariseClosingMonth,
   type EffKpiMonth,
   type EffMonth,
+  type EffPeriod,
   type EffRep,
   type EffUniverse,
   type RepEffectivenessReport,
@@ -42,10 +46,6 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
  * invoice rows (`loadMonthlyClosingDetails`, which applies the El Qema mask for this viewer).
  */
 
-/** The most published months one review holds — each is a full closing read of the line. */
-export const REVIEW_MAX_MONTHS = 12;
-/** KPI months: the running month and the two before it, never before the rep's hire month. */
-export const REVIEW_KPI_MONTHS = 3;
 const CONCURRENCY = 2;
 
 export function canExportRepEffectiveness(access: Pick<AccessContext, "role">): boolean {
@@ -58,12 +58,6 @@ const text = (value: unknown): string | null => {
   return out ? out : null;
 };
 const nameKey = (value: string | null | undefined) => tidyAllCapitalsName(String(value ?? "")).toLowerCase().replace(/\s+/g, " ").trim();
-
-function addMonths(month: string, delta: number): string {
-  const [y, m] = month.split("-").map(Number);
-  const index = y * 12 + (m - 1) + delta;
-  return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, "0")}`;
-}
 
 async function inBatches<T, R>(items: readonly T[], size: number, run: (item: T) => Promise<R>): Promise<R[]> {
   const out: R[] = [];
@@ -114,14 +108,18 @@ async function loadUniverse(areaCode: string): Promise<EffUniverse> {
   }
 }
 
-async function loadKpis(access: AccessContext, rep: EffRep, today: string): Promise<EffKpiMonth[]> {
+/** KPI months: the period's months, never before the hire month, never after this month — the latest six. */
+export function kpiMonthsFor(period: EffPeriod, hireDate: string | null, today: string): string[] {
   const current = today.slice(0, 7);
-  const hireMonth = rep.hireDate?.slice(0, 7) ?? null;
-  const months: string[] = [];
-  for (let back = REVIEW_KPI_MONTHS - 1; back >= 0; back -= 1) {
-    const month = addMonths(current, -back);
-    if (!hireMonth || month >= hireMonth) months.push(month);
-  }
+  const hireMonth = hireDate?.slice(0, 7) ?? null;
+  const start = hireMonth && hireMonth > period.from ? hireMonth : period.from;
+  const end = period.to < current ? period.to : current;
+  return monthsBetween(start, end).slice(-REVIEW_MAX_KPI_MONTHS);
+}
+
+async function loadKpis(access: AccessContext, rep: EffRep, period: EffPeriod, today: string): Promise<EffKpiMonth[]> {
+  const current = today.slice(0, 7);
+  const months = kpiMonthsFor(period, rep.hireDate, today);
   const wanted = canonicalHrIdKey(rep.hrId);
   const out: EffKpiMonth[] = [];
   // ONE MONTH AT A TIME: a company-wide board holds a whole month of visits and plans in memory.
@@ -144,11 +142,16 @@ async function loadKpis(access: AccessContext, rep: EffRep, today: string): Prom
   return out;
 }
 
-export async function loadRepEffectiveness(access: AccessContext, raw: { hrId?: unknown }): Promise<RepEffectivenessReport> {
+export async function loadRepEffectiveness(
+  access: AccessContext,
+  raw: { hrId?: unknown; from?: unknown; to?: unknown },
+): Promise<RepEffectivenessReport> {
   if (!canExportRepEffectiveness(access)) throw forbiddenError("The effectiveness review is for the Super Admin.");
   const hrId = personKey(text(raw.hrId));
   if (!hrId) throw validationError("Choose a rep.");
   const today = cairoTodayIso();
+  const period = resolveReviewPeriod(raw, today);
+  if ("error" in period) throw validationError(period.error);
   const supabase = getSupabaseAdmin();
 
   const [{ data: employee, error: employeeError }, org] = await Promise.all([
@@ -163,8 +166,8 @@ export async function loadRepEffectiveness(access: AccessContext, raw: { hrId?: 
   const line = await closingLineOf(seat);
   if (!line) throw validationError("This rep's line has no monthly closing.");
 
-  const published = (await listPublishedPeriodsForLine(line)).filter((m) => /^\d{4}-\d{2}$/.test(m)).sort();
-  const months = published.slice(-REVIEW_MAX_MONTHS);
+  // The published months inside the chosen period; a month not published is absent, never a zero.
+  const months = (await listPublishedPeriodsForLine(line)).filter((m) => /^\d{4}-\d{2}$/.test(m) && m >= period.from && m <= period.to).sort();
   const lineCode = resolveTargetLineCode(line);
   const [productNames, universe] = await Promise.all([loadProductNameMap().catch(() => new Map<string, string>()), loadUniverse(areaCode)]);
   const repName = text(employee.full_name) ?? hrId;
@@ -220,10 +223,11 @@ export async function loadRepEffectiveness(access: AccessContext, raw: { hrId?: 
     managerName: [...loaded].reverse().find((m) => m.managerName)?.managerName ?? null,
     hireDate: text(employee.hire_date)?.slice(0, 10) ?? null,
   };
-  const kpis = await loadKpis(access, rep, today);
+  const kpis = await loadKpis(access, rep, period, today);
   return buildRepEffectiveness({
     rep,
     generatedAt: new Date().toISOString(),
+    period,
     months: loaded.map((m) => ({ month: m.month, holder: m.holder, isRepMonth: m.isRepMonth, products: m.products, sources: m.sources, buyers: m.buyers })),
     kpis,
     universe,

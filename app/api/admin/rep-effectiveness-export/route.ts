@@ -16,17 +16,18 @@ import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-// Up to twelve closing reads and three KPIs boards, one after another.
+// Up to twelve closing reads and six KPIs boards, one after another.
 export const maxDuration = 300;
 
 const FORBIDDEN = "The effectiveness review is for the Super Admin.";
 
 /**
- * GET /api/admin/rep-effectiveness-export?rep=&format=xlsx|pdf — one rep's effectiveness review (owner,
+ * GET /api/admin/rep-effectiveness-export?rep=&from=YYYY-MM&to=YYYY-MM&format=xlsx|pdf — one rep's effectiveness review (owner,
  * 25 Nov 2026: "i want to be able to export from system xlsx and pdf"): the managers' questions answered,
  * KPIs against target, sales against target, the area's history, customers per product per month, every
  * pharmacy by month, and where the growth came from. One report, two renderings — the PDF never runs a
- * second query. The Super Admin's alone: asked here before any read, and again in the loader.
+ * second query. The period is the viewer's (owner, 25 Nov 2026: "i want to be able to export per rep in the
+ * chosen period"): at most twelve months, never past this month. The Super Admin's alone: asked here before any read, and again in the loader.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -41,8 +42,8 @@ export async function GET(request: NextRequest) {
     const format = params.get("format") === "pdf" ? "pdf" : "xlsx";
     await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:rep-effectiveness" });
 
-    const report = await loadRepEffectiveness(access, { hrId: params.get("rep") });
-    const fileName = reviewFileName(report.rep.name, report.months, format);
+    const report = await loadRepEffectiveness(access, { hrId: params.get("rep"), from: params.get("from"), to: params.get("to") });
+    const fileName = reviewFileName(report.rep.name, report.period, format);
 
     let body: Uint8Array;
     if (format === "pdf") {
@@ -92,7 +93,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "forbidden", message: clientSafeErrorMessage(error, FORBIDDEN) }, { status: 403 });
     }
     if (error instanceof ApiError && error.status === 400) {
-      return NextResponse.json({ error: error.code, message: clientSafeErrorMessage(error, "Check the rep.") }, { status: 400 });
+      return NextResponse.json({ error: error.code, message: clientSafeErrorMessage(error, "Check the rep and the months.") }, { status: 400 });
     }
     if (error instanceof ChromiumUnavailableError) {
       return NextResponse.json(

@@ -17,6 +17,7 @@ import ExcelJS from "exceljs";
 
 import {
   monthLong,
+  periodLabel,
   monthShort,
   pctOf,
   type EffKpiFigures,
@@ -159,7 +160,7 @@ export async function buildRepEffectivenessWorkbook(report: RepEffectivenessRepo
   wb.creator = "Phoenix Workforce";
   wb.created = new Date(report.generatedAt);
   const generated = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Africa/Cairo" }).format(new Date(report.generatedAt));
-  const span = report.months.length ? `${monthLong(report.months[0])} to ${monthLong(report.months[report.months.length - 1])}` : "no published month";
+  const span = periodLabel(report.period);
 
   // ── 1. Scorecard — numbers only (owner, 25 Nov 2026: "I don't need all this text. I need numbers") ──
   {
