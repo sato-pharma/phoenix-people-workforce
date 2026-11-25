@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  CUSTOMER_VALIDATION_VENUE_TYPE,
   DEFAULT_VENUE_TYPE,
+  customerValidationVenueType,
   VENUE_TYPE_UNANSWERED_MESSAGE,
   VENUE_TYPES,
   choiceRequiresDistributorCode,
@@ -40,8 +42,13 @@ const SUBMIT_FORM = "src/components/direct-orders/direct-order-submit-form.tsx";
 const REGISTRY_MANAGER = "src/components/direct-orders/pharmacy-registry-manager.tsx";
 const VALIDATION_WORKSPACE = "src/components/employee-portal/marketing-validation-workspace.tsx";
 
-/** The three screens a venue can be registered from. */
-const CAPTURE_SCREENS = [SUBMIT_FORM, REGISTRY_MANAGER, VALIDATION_WORKSPACE];
+/**
+ * The screens that ASK what a venue is. Customer Validation is not one any more: it registers
+ * pharmacies only, and its question was dropped on the owner's word (26 Nov 2026, "drop the What is
+ * this? question") — its one other answer, Nursery, had been switched off there since 21 Oct 2026.
+ * `testCustomerValidationRegistersPharmaciesOnly` pins that exception so it cannot spread.
+ */
+const CAPTURE_SCREENS = [SUBMIT_FORM, REGISTRY_MANAGER];
 
 /** Source with comments stripped — a comment naming a call is not a call. */
 function code(path: string): string {
@@ -146,14 +153,6 @@ function testEveryCapturePointStartsUnanswered() {
     );
   }
 
-  assert.match(
-    code(VALIDATION_WORKSPACE).slice(
-      code(VALIDATION_WORKSPACE).indexOf("function newPharmacyLine"),
-    ),
-    /venueType: null,/,
-    "a fresh marketing pharmacy line must open with no venue type selected",
-  );
-
   for (const screen of CAPTURE_SCREENS) {
     const source = code(screen);
     assert.doesNotMatch(
@@ -230,11 +229,41 @@ function testNormalizeVenueTypeSurvivesOnlyOnTheReadPath() {
   }
 }
 
+/**
+ * The one screen that does not ask, and why that is not the 2026-08-23 bug coming back: it is the
+ * screen saying what it registers (pharmacies, which need a distributor code), the server still
+ * parses strictly, and a nursery from an older draft is still refused rather than filed as a pharmacy.
+ */
+function testCustomerValidationRegistersPharmaciesOnly() {
+  assert.equal(CUSTOMER_VALIDATION_VENUE_TYPE, "pharmacy");
+  assert.equal(customerValidationVenueType(null), "pharmacy", "an unanswered line from an older draft can only have been a pharmacy");
+  assert.equal(customerValidationVenueType(undefined), "pharmacy");
+  assert.equal(customerValidationVenueType("pharmacy"), "pharmacy");
+  assert.equal(customerValidationVenueType("nursery"), "nursery", "a nursery from an older draft stays a nursery, so the save refuses it");
+
+  const workspace = code(VALIDATION_WORKSPACE);
+  assert.match(
+    workspace.slice(workspace.indexOf("function newPharmacyLine")),
+    /venueType: CUSTOMER_VALIDATION_VENUE_TYPE,/,
+    "a fresh Customer Validation venue is a pharmacy, by the screen's own constant",
+  );
+  assert.ok(!workspace.includes("What is this?"), "Customer Validation no longer asks what the venue is");
+  assert.ok(!workspace.includes("normalizeVenueType("), "the screen must not read capture input as a stored row");
+  assert.ok(
+    workspace.includes("CODELESS_VENUES_GO_TO_DIRECT_ORDERS"),
+    "every rep is still told where a venue with no distributor code goes",
+  );
+  for (const screen of CAPTURE_SCREENS) {
+    assert.ok(!code(screen).includes("CUSTOMER_VALIDATION_VENUE_TYPE"), `${screen} asks the question; it must not borrow Customer Validation's answer`);
+  }
+}
+
 export function runVenueTypeMustBeAskedTests() {
   testAnUnansweredVenueTypeIsNotAPharmacy();
   testNothingIsDemandedOfAVenueNobodyHasNamed();
   testTheRefusalIsOneSentenceInOneVoice();
   testEveryCapturePointStartsUnanswered();
+  testCustomerValidationRegistersPharmaciesOnly();
   testEveryServerCreateSiteRefusesAnUnansweredType();
   testNormalizeVenueTypeSurvivesOnlyOnTheReadPath();
 }
