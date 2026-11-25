@@ -1,0 +1,560 @@
+/**
+ * The rep effectiveness review — one rep's area, read the way the managers asked for it on Ebtissam
+ * Alaa's case (owner, 25 Nov 2026: "audit the conversation of the managers and their requirements and
+ * tailor the export to show exactly the data needed", then "the customer count is very important",
+ * then "i want to be able to export from system xlsx and pdf").
+ *
+ * What the managers asked, and the part of this report that answers each:
+ *
+ *   • "her KPIs" / "KPI achievement versus assigned targets"        → kpis
+ *   • "sales performance and target achievement"                     → sales, products
+ *   • "her achievement month by month against the history of the same area" → sales (every published month)
+ *   • "the number of customers per product per month"                → customers, bricks, pharmacies
+ *   • "one order may make sales growth" / "look at the source of sales" → sources, growth
+ *
+ * PURE. Nothing here reads a database: `server.ts` loads, this file only counts and arranges, so every
+ * figure can be pinned by a test with a hand-built month.
+ *
+ * 🔴 EVERY SALES AND TARGET FIGURE IS THE CLOSING ENGINE'S (the monthly-closing source-of-truth golden
+ * rule) — read only for months the rep's line has PUBLISHED. A month that is not published is absent,
+ * never a zero.
+ *
+ * 🔴 ONE PHARMACY IS ONE DISTRIBUTOR CUSTOMER, AND IT BOUGHT WHEN ITS NET UNITS ARE ABOVE ZERO — the rule
+ * the Closing Matrix's Pharmacies column and the Customer Count dashboard share
+ * (`closing-pharmacy-counts.ts`). This file never counts a buyer any other way.
+ *
+ * 🔴 UNITS OF DIFFERENT PRODUCTS ARE NEVER ADDED. A product's units stay on its own row; every total
+ * across products is VALUE.
+ */
+
+import { kpiIndexOf } from "@/lib/crm/kpi-index";
+import type { KpiRepRow } from "@/lib/crm/kpis-board";
+import { closingAreaOf } from "@/lib/sales/closing-row-area";
+import { monthBuyingEntries, type PharmacyCountRow } from "@/lib/sales/closing-pharmacy-counts";
+import { classifyRowKind, findSharedCustomerKeys } from "@/lib/sales/sos-pharmacy-actions";
+
+// ── Inputs ───────────────────────────────────────────────────────────────────────────────────────
+
+export type EffRep = {
+  hrId: string;
+  name: string;
+  jobTitle: string;
+  line: string;
+  areaCode: string;
+  areaName: string;
+  regionName: string | null;
+  managerName: string | null;
+  hireDate: string | null;
+};
+
+/** One product's closing figures in the rep's area for one month. */
+export type EffProductMonth = {
+  code: string;
+  name: string;
+  actualUnits: number;
+  actualValue: number;
+  targetUnits: number | null;
+  targetValue: number | null;
+};
+
+/** Where one month's sales in the area came from, by value. */
+export type EffSources = {
+  /** Orders placed directly with the company (`isDirect` rows). */
+  direct: number;
+  /** A wholesaler's share booked to the area: a customer the closing shares across areas, or the EPDA books. */
+  wholesalerShare: number;
+  /** Real pharmacies buying through a distributor. */
+  pharmacy: number;
+  /** Main Stores and rows that carry no customer code. */
+  other: number;
+};
+
+/** One pharmacy that bought one product in the area in one month. */
+export type EffBuyer = {
+  /** distributor|client — server-side identity only; never printed. */
+  key: string;
+  name: string;
+  brickName: string;
+  product: string;
+};
+
+export type EffMonth = {
+  month: string;
+  /** Who held the seat at the month's end: a name, "Vacant seat", or null when the seat model could not say. */
+  holder: string | null;
+  /** True when the rep under review held the seat that month. */
+  isRepMonth: boolean;
+  products: EffProductMonth[];
+  sources: EffSources;
+  buyers: EffBuyer[];
+};
+
+export type EffKpiFigures = {
+  /** Null when nothing was planned — no denominator, never a 0%. */
+  coveragePct: number | null;
+  frequencyPct: number | null;
+  /** Account (AM) visits a working day, against 2. */
+  amPerDay: number | null;
+  /** Doctor (PM) visits a working day, against 10. */
+  pmPerDay: number | null;
+  amAttainmentPct: number | null;
+  pmAttainmentPct: number | null;
+  /** The KPIs board's own overall score. */
+  overallPct: number | null;
+  /** Hired inside the month and worked too little of it to be judged — the board's own rule. */
+  justStarted: boolean;
+};
+
+export type EffKpiMonth = {
+  month: string;
+  /** True for the month still running: its figures are to date. */
+  toDate: boolean;
+  /** True when that month's board could not be read — said, never drawn as zeros. */
+  unread: boolean;
+  rep: EffKpiFigures | null;
+  /** The reps under the same manager, each with the same four measures and the overall score. */
+  colleagues: { name: string; area: string | null; figures: EffKpiFigures }[];
+};
+
+export type EffUniverse = {
+  /** Distributor customers on the Source of Sales customer map in the area's bricks. Null when unread. */
+  total: number | null;
+  /** brick name → customers on the map there. */
+  byBrick: Record<string, number>;
+};
+
+// ── Output ───────────────────────────────────────────────────────────────────────────────────────
+
+export type EffSalesMonth = {
+  month: string;
+  holder: string | null;
+  isRepMonth: boolean;
+  actualValue: number;
+  targetValue: number | null;
+  achievementPct: number | null;
+  directValue: number;
+  /** Achievement with the month's direct orders taken out. Null when there were none or no target. */
+  achievementWithoutDirectPct: number | null;
+  /** Pharmacies that bought any product that month. */
+  pharmaciesBuying: number;
+};
+
+export type EffPharmacy = {
+  name: string;
+  brickName: string;
+  /** month → the products' short tags it bought that month. */
+  months: Record<string, string[]>;
+  monthsBought: number;
+  lastMonth: string;
+  /** First bought in one of the rep's months, and never in an earlier month on this report. */
+  newInRepTime: boolean;
+};
+
+export type EffGrowthStep = { label: string; change: number };
+
+/**
+ * One line of the scorecard — numbers only (owner, 25 Nov 2026: "I don't need all this text. I need numbers").
+ * `values` is keyed by month; null is "no figure", never a zero.
+ */
+/** `group` opens a new block of the grid (a rule above it). */
+export type EffScoreRow = { label: string; kind: "count" | "money" | "pct" | "rate"; values: Record<string, number | null>; target?: number | null; strong?: boolean; group?: boolean };
+/** `kpiToDate` names the running KPI month, read to date. Every KPI month is the rep's own (none falls before the hire month). */
+export type EffScorecard = { months: string[]; closing: EffScoreRow[]; kpiMonths: string[]; kpiToDate: string | null; kpi: EffScoreRow[] };
+
+/** The months the viewer chose, first and last (YYYY-MM). The published months inside it are `months`. */
+export type EffPeriod = { from: string; to: string };
+
+export type RepEffectivenessReport = {
+  rep: EffRep;
+  generatedAt: string;
+  period: EffPeriod;
+  months: string[];
+  repMonths: string[];
+  products: { code: string; name: string; tag: string }[];
+  sales: EffSalesMonth[];
+  /** product code → month → the product's closing figures. */
+  productSales: Record<string, Record<string, EffProductMonth>>;
+  /** product code → month → pharmacies that bought it. */
+  customers: Record<string, Record<string, number>>;
+  /** Average pharmacies per product a month, over the rep's months. Null when she held no published month. */
+  repAveragePerProduct: number | null;
+  /** The same average over the months before hers, for the comparison the managers asked for. */
+  beforeAveragePerProduct: number | null;
+  bricks: { name: string; months: Record<string, number>; onMap: number | null }[];
+  pharmacies: EffPharmacy[];
+  universe: EffUniverse;
+  sources: Record<string, EffSources>;
+  /** From the second-last to the last published month: the change, split by where the sales came from. */
+  growth: { from: string; to: string; start: number; steps: EffGrowthStep[]; end: number } | null;
+  kpis: EffKpiMonth[];
+  scorecard: EffScorecard;
+};
+
+// ── Helpers ──────────────────────────────────────────────────────────────────────────────────────
+
+const EPSILON = 1e-9;
+const upper = (value: unknown) => String(value ?? "").trim().toUpperCase();
+const NO_BRICK = "No brick on record";
+const NO_NAME = "Name not on the invoice";
+
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+export function monthLong(month: string): string {
+  const [year, m] = month.split("-").map(Number);
+  return `${MONTH_NAMES[(m || 1) - 1]} ${year}`;
+}
+
+export function monthShort(month: string): string {
+  const [year, m] = month.split("-").map(Number);
+  return `${MONTH_NAMES[(m || 1) - 1].slice(0, 3)} ${String(year).slice(2)}`;
+}
+
+export function pctOf(numerator: number, denominator: number | null | undefined): number | null {
+  if (!denominator || Math.abs(denominator) < EPSILON) return null;
+  return Math.round((numerator / denominator) * 100);
+}
+
+/** "Lacto Advanced 1" → "LA1", "Guamusin" → "G". Unique across the report's products. */
+export function productTags(products: readonly { code: string; name: string }[]): Map<string, string> {
+  const out = new Map<string, string>();
+  const used = new Set<string>();
+  for (const product of products) {
+    const words = product.name.replace(/[^A-Za-z0-9 ]+/g, " ").split(/\s+/).filter(Boolean);
+    const letters = words.filter((word) => !/^\d+$/.test(word)).map((word) => word[0].toUpperCase()).join("");
+    const digits = words.filter((word) => /^\d+$/.test(word)).join("");
+    let tag = `${letters || product.code.slice(0, 2).toUpperCase()}${digits}`;
+    for (let n = 2; used.has(tag); n += 1) tag = `${letters}${digits}${n}`;
+    used.add(tag);
+    out.set(product.code, tag);
+  }
+  return out;
+}
+
+/**
+ * One month of closing rows → what the report needs from them, for ONE area.
+ *
+ * The rows are the WHOLE line's for the month: who counts as a wholesaler is decided across every area
+ * (a customer the closing books in two areas is a wholesaler's share in both), exactly as the Closing
+ * Matrix decides it, so the rows must not be cut to the area before they are classified.
+ */
+export function summariseClosingMonth(rows: readonly PharmacyCountRow[], areaCode: string): { sources: EffSources; buyers: EffBuyer[] } {
+  const area = upper(areaCode);
+  const shared = findSharedCustomerKeys([{ period: "", rows }]);
+  const sources: EffSources = { direct: 0, wholesalerShare: 0, pharmacy: 0, other: 0 };
+  const names = new Map<string, string>();
+  for (const row of rows) {
+    if (closingAreaOf(row) !== area) continue;
+    const value = Number(row.salesValue) || 0;
+    // A direct order is LEFT OUT of the invoice totals (exclusion "direct") and still counts in the
+    // closing's achievement, so it is asked before `includedInClosing` — asked after, it never counted.
+    if (row.isDirect) {
+      sources.direct += value;
+      continue;
+    }
+    if (row.includedInClosing !== true) continue;
+    const kind = classifyRowKind(row, shared);
+    if (kind === "pharmacy") sources.pharmacy += value;
+    else if (kind === "wholesalerShare") sources.wholesalerShare += value;
+    else sources.other += value;
+    const key = `${upper(row.distributorCode)}|${upper(row.clientCode)}`;
+    if (!names.has(key) && String(row.clientName ?? "").trim()) names.set(key, String(row.clientName).trim());
+  }
+  const buyers = monthBuyingEntries(rows)
+    .filter((entry) => entry.area === area)
+    .map((entry) => ({
+      key: entry.key,
+      name: names.get(entry.key) ?? NO_NAME,
+      brickName: entry.brickName || NO_BRICK,
+      product: entry.product,
+    }));
+  return { sources, buyers };
+}
+
+/** A KPIs-board row → the five figures the review prints. */
+export function kpiFiguresOf(row: KpiRepRow): EffKpiFigures {
+  const planned = row.hasMeasurablePlan;
+  return {
+    coveragePct: planned ? row.coveragePct : null,
+    frequencyPct: planned ? row.frequencyPct : null,
+    amPerDay: row.noGpsFeed ? null : row.amRate,
+    pmPerDay: row.noGpsFeed ? null : row.pmRate,
+    amAttainmentPct: row.amAttainmentPct,
+    pmAttainmentPct: row.pmAttainmentPct,
+    // Scored exactly as the KPIs board's own export scores a rep row (`overallPct` in kpis-board-workbook.ts).
+    overallPct: row.justStarted
+      ? null
+      : kpiIndexOf({
+          coveragePct: row.coveragePct,
+          frequencyPct: row.frequencyPct,
+          hasMeasurablePlan: row.hasMeasurablePlan,
+          amAttainmentPct: row.amAttainmentPct,
+          pmAttainmentPct: row.pmAttainmentPct,
+          hasCallRate: row.hasCallRate,
+          noGpsFeed: row.noGpsFeed,
+          justStarted: false,
+        }).overallPct,
+    justStarted: Boolean(row.justStarted),
+  };
+}
+
+const sumSources = (s: EffSources) => s.direct + s.wholesalerShare + s.pharmacy + s.other;
+
+// ── The report ───────────────────────────────────────────────────────────────────────────────────
+
+export function buildRepEffectiveness(input: {
+  rep: EffRep;
+  generatedAt: string;
+  /** The chosen period; absent, the published months' own span. */
+  period?: EffPeriod;
+  months: readonly EffMonth[];
+  kpis: readonly EffKpiMonth[];
+  universe: EffUniverse;
+}): RepEffectivenessReport {
+  const months = [...input.months].sort((a, b) => a.month.localeCompare(b.month));
+  const monthKeys = months.map((m) => m.month);
+  const repMonths = months.filter((m) => m.isRepMonth).map((m) => m.month);
+
+  // Products: every product that sold, had a target, or was bought in any month — ordered by name.
+  const productNames = new Map<string, string>();
+  for (const m of months) {
+    for (const p of m.products) if (!productNames.has(p.code)) productNames.set(p.code, p.name || p.code);
+    for (const b of m.buyers) if (!productNames.has(b.product)) productNames.set(b.product, b.product);
+  }
+  const productList = [...productNames.entries()].map(([code, name]) => ({ code, name })).sort((a, b) => a.name.localeCompare(b.name));
+  const tags = productTags(productList);
+  const products = productList.map((p) => ({ ...p, tag: tags.get(p.code) ?? p.code }));
+
+  // Sales against target, every published month.
+  const productSales: Record<string, Record<string, EffProductMonth>> = {};
+  const customers: Record<string, Record<string, number>> = {};
+  for (const p of products) {
+    productSales[p.code] = {};
+    customers[p.code] = {};
+  }
+  const sources: Record<string, EffSources> = {};
+  const sales: EffSalesMonth[] = months.map((m) => {
+    for (const p of m.products) productSales[p.code][m.month] = p;
+    const perProduct = new Map<string, Set<string>>();
+    for (const b of m.buyers) {
+      const set = perProduct.get(b.product) ?? new Set<string>();
+      set.add(b.key);
+      perProduct.set(b.product, set);
+    }
+    for (const p of products) customers[p.code][m.month] = perProduct.get(p.code)?.size ?? 0;
+    const actualValue = m.products.reduce((sum, p) => sum + p.actualValue, 0);
+    // The closing spreads the wholesalers' and stores' sales to every area by formula; that share is on
+    // no invoice row of the area, so it is what the achievement holds beyond the area's own rows.
+    const spread = actualValue - sumSources(m.sources);
+    sources[m.month] = { ...m.sources, wholesalerShare: m.sources.wholesalerShare + (Math.abs(spread) >= 1 ? spread : 0) };
+    const targets = m.products.map((p) => p.targetValue).filter((v): v is number => v != null);
+    const targetValue = targets.length > 0 ? targets.reduce((sum, v) => sum + v, 0) : null;
+    const directValue = m.sources.direct;
+    return {
+      month: m.month,
+      holder: m.holder,
+      isRepMonth: m.isRepMonth,
+      actualValue,
+      targetValue,
+      achievementPct: pctOf(actualValue, targetValue),
+      directValue,
+      achievementWithoutDirectPct: directValue > EPSILON ? pctOf(actualValue - directValue, targetValue) : null,
+      pharmaciesBuying: new Set(m.buyers.map((b) => b.key)).size,
+    };
+  });
+
+  const averagePerProduct = (keys: readonly string[]): number | null => {
+    if (keys.length === 0 || products.length === 0) return null;
+    const sold = products.filter((p) => keys.some((k) => (customers[p.code][k] ?? 0) > 0 || productSales[p.code][k]));
+    const base = sold.length > 0 ? sold : products;
+    let total = 0;
+    for (const p of base) for (const k of keys) total += customers[p.code][k] ?? 0;
+    return Math.round((total / (base.length * keys.length)) * 10) / 10;
+  };
+  const firstRepMonth = repMonths[0] ?? null;
+  const beforeMonths = firstRepMonth ? monthKeys.filter((k) => k < firstRepMonth) : [];
+
+  // Bricks: pharmacies buying any product, per brick and month; bricks on the map with no buyer too.
+  const brickMonths = new Map<string, Record<string, Set<string>>>();
+  for (const m of months) {
+    for (const b of m.buyers) {
+      const byMonth = brickMonths.get(b.brickName) ?? {};
+      (byMonth[m.month] ??= new Set<string>()).add(b.key);
+      brickMonths.set(b.brickName, byMonth);
+    }
+  }
+  const brickNames = new Set<string>([...brickMonths.keys(), ...Object.keys(input.universe.byBrick)]);
+  const bricks = [...brickNames]
+    .map((name) => ({
+      name,
+      months: Object.fromEntries(monthKeys.map((k) => [k, brickMonths.get(name)?.[k]?.size ?? 0])),
+      onMap: input.universe.byBrick[name] ?? null,
+    }))
+    .sort((a, b) => (b.onMap ?? -1) - (a.onMap ?? -1) || a.name.localeCompare(b.name));
+
+  // Every pharmacy that bought, month by month.
+  const pharmacyMap = new Map<string, { name: string; brickName: string; months: Record<string, Set<string>> }>();
+  for (const m of months) {
+    for (const b of m.buyers) {
+      const entry = pharmacyMap.get(b.key) ?? { name: b.name, brickName: b.brickName, months: {} };
+      if (entry.name === NO_NAME && b.name !== NO_NAME) entry.name = b.name;
+      (entry.months[m.month] ??= new Set<string>()).add(tags.get(b.product) ?? b.product);
+      pharmacyMap.set(b.key, entry);
+    }
+  }
+  const tagOrder = products.map((p) => p.tag);
+  const repMonthSet = new Set(repMonths);
+  const pharmacies: EffPharmacy[] = [...pharmacyMap.values()]
+    .map((entry) => {
+      const bought = Object.keys(entry.months).sort();
+      return {
+        name: entry.name,
+        brickName: entry.brickName,
+        months: Object.fromEntries(
+          bought.map((k) => [k, [...entry.months[k]].sort((a, b) => tagOrder.indexOf(a) - tagOrder.indexOf(b))]),
+        ),
+        monthsBought: bought.length,
+        lastMonth: bought[bought.length - 1],
+        newInRepTime: bought.length > 0 && repMonthSet.has(bought[0]) && bought[0] !== monthKeys[0],
+      };
+    })
+    .sort((a, b) => b.lastMonth.localeCompare(a.lastMonth) || b.monthsBought - a.monthsBought || a.name.localeCompare(b.name));
+
+  // Growth: second-last to last published month, by source.
+  let growth: RepEffectivenessReport["growth"] = null;
+  if (months.length >= 2) {
+    const prev = months[months.length - 2];
+    const last = months[months.length - 1];
+    const a = sources[prev.month];
+    const b = sources[last.month];
+    const start = sales[sales.length - 2].actualValue;
+    const end = sales[sales.length - 1].actualValue;
+    const steps: EffGrowthStep[] = [
+      { label: "Direct orders", change: b.direct - a.direct },
+      { label: "Wholesaler and store share, spread to the area by formula", change: b.wholesalerShare - a.wholesalerShare },
+      { label: "Pharmacies buying through distributors", change: b.pharmacy - a.pharmacy },
+      { label: "Main Stores and rows with no customer code", change: b.other - a.other },
+    ];
+    // The closing total and the rows' own sum can differ by the closing's allocations; that gap is named, never hidden.
+    const explained = steps.reduce((sum, s) => sum + s.change, 0);
+    const gap = end - start - explained;
+    if (Math.abs(gap) >= 1) steps.push({ label: "Closing allocations not on an invoice row", change: gap });
+    growth = { from: prev.month, to: last.month, start, steps, end };
+  }
+
+  const report: RepEffectivenessReport = {
+    rep: input.rep,
+    generatedAt: input.generatedAt,
+    period: input.period ?? { from: monthKeys[0] ?? "", to: monthKeys[monthKeys.length - 1] ?? "" },
+    months: monthKeys,
+    repMonths,
+    products,
+    sales,
+    productSales,
+    customers,
+    repAveragePerProduct: averagePerProduct(repMonths),
+    beforeAveragePerProduct: averagePerProduct(beforeMonths),
+    bricks,
+    pharmacies,
+    universe: input.universe,
+    sources,
+    growth,
+    kpis: [...input.kpis].sort((x, y) => x.month.localeCompare(y.month)),
+    scorecard: { months: [], closing: [], kpiMonths: [], kpiToDate: null, kpi: [] },
+  };
+  report.scorecard = buildScorecard(report);
+  return report;
+}
+
+/**
+ * The scorecard on the first page: what the managers asked, as numbers by month and nothing else — the
+ * customer count first, then sales against target and where they came from, then the KPIs.
+ */
+export function buildScorecard(report: RepEffectivenessReport): EffScorecard {
+  const months = report.months;
+  const by = (pick: (s: EffSalesMonth) => number | null) => Object.fromEntries(report.sales.map((s) => [s.month, pick(s)]));
+  const closing: EffScoreRow[] = [
+    { label: "Pharmacies buying, any product", kind: "count", values: by((s) => s.pharmaciesBuying), target: report.universe.total, strong: true },
+    ...report.products.map((p) => ({ label: `Pharmacies buying ${p.name}`, kind: "count" as const, values: Object.fromEntries(months.map((m) => [m, report.customers[p.code]?.[m] ?? 0])) })),
+    { label: "Sales (EGP)", kind: "money", values: by((s) => s.actualValue), strong: true, group: true },
+    { label: "Target (EGP)", kind: "money", values: by((s) => s.targetValue) },
+    { label: "Achievement", kind: "pct", values: by((s) => s.achievementPct), strong: true },
+    { label: "Direct orders (EGP)", kind: "money", values: by((s) => s.directValue) },
+    { label: "Achievement without direct orders", kind: "pct", values: by((s) => (s.directValue > EPSILON ? s.achievementWithoutDirectPct : s.achievementPct)) },
+    { label: "Pharmacy sales (EGP)", group: true, kind: "money", values: Object.fromEntries(months.map((m) => [m, report.sources[m]?.pharmacy ?? null])) },
+    { label: "Wholesaler and store share (EGP)", kind: "money", values: Object.fromEntries(months.map((m) => [m, report.sources[m]?.wholesalerShare ?? null])) },
+  ];
+  const kpiMonths = report.kpis.map((k) => k.month);
+  const kv = (pick: (f: EffKpiFigures) => number | null) =>
+    Object.fromEntries(report.kpis.map((k) => [k.month, k.unread || !k.rep ? null : pick(k.rep)]));
+  const kpi: EffScoreRow[] = [
+    { label: "Overall KPI", kind: "pct", values: kv((f) => (f.justStarted ? null : f.overallPct)), target: 100, strong: true },
+    { label: "Coverage", kind: "pct", values: kv((f) => f.coveragePct), target: 95 },
+    { label: "Frequency", kind: "pct", values: kv((f) => f.frequencyPct), target: 100 },
+    { label: "Account visits a day", kind: "rate", values: kv((f) => f.amPerDay), target: 2 },
+    { label: "Doctor visits a day", kind: "rate", values: kv((f) => f.pmPerDay), target: 10 },
+  ];
+  return { months, closing, kpiMonths, kpiToDate: report.kpis.find((k) => k.toDate)?.month ?? null, kpi };
+}
+
+export function reviewFileName(repName: string, period: EffPeriod, ext: "xlsx" | "pdf"): string {
+  const slug = repName.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "") || "Rep";
+  const span = period.from && period.to ? (period.from === period.to ? period.from : `${period.from}-to-${period.to}`) : "no-period";
+  return `${slug}-Effectiveness-Review-${span}.${ext}`;
+}
+
+/** "July to October 2026" — the chosen period in words; one month is just that month. */
+export function periodLabel(period: EffPeriod): string {
+  if (!period.from || !period.to) return "No month chosen";
+  if (period.from === period.to) return monthLong(period.from);
+  const [fy] = period.from.split("-");
+  const [ty] = period.to.split("-");
+  const first = monthLong(period.from);
+  return `${fy === ty ? first.replace(` ${fy}`, "") : first} to ${monthLong(period.to)}`;
+}
+
+// ── The period ───────────────────────────────────────────────────────────────────────────────────
+
+/** The longest period one review covers: each month is a full closing read of the line. */
+export const REVIEW_MAX_PERIOD_MONTHS = 12;
+/** The most KPI months one review reads — the period's latest, never before the hire month. */
+export const REVIEW_MAX_KPI_MONTHS = 6;
+
+const MONTH_RE = /^(\d{4})-(0[1-9]|1[0-2])$/;
+
+export function addMonths(month: string, delta: number): string {
+  const [y, m] = month.split("-").map(Number);
+  const index = y * 12 + (m - 1) + delta;
+  return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, "0")}`;
+}
+
+/** Every month from `from` to `to`, both included; empty when `from` is after `to`. */
+export function monthsBetween(from: string, to: string): string[] {
+  const out: string[] = [];
+  for (let m = from; m <= to && out.length <= 1200; m = addMonths(m, 1)) out.push(m);
+  return out;
+}
+
+/**
+ * The period the viewer asked for (owner, 25 Nov 2026: "i want to be able to export per rep in the chosen
+ * period"). A month picker sends YYYY-MM; a date is cut to its month. Nothing chosen is the twelve months
+ * ending this month. Never after this month, never backwards, never longer than twelve months.
+ */
+export function resolveReviewPeriod(raw: { from?: unknown; to?: unknown }, todayIso: string): EffPeriod | { error: string } {
+  const current = todayIso.slice(0, 7);
+  const month = (value: unknown): string | null | undefined => {
+    const text = typeof value === "string" ? value.trim().slice(0, 7) : "";
+    if (!text) return undefined;
+    return MONTH_RE.test(text) ? text : null;
+  };
+  const to = month(raw.to);
+  const from = month(raw.from);
+  if (to === null || from === null) return { error: "Choose the months as year and month." };
+  const end = to ?? current;
+  const start = from ?? addMonths(end, -(REVIEW_MAX_PERIOD_MONTHS - 1));
+  if (end > current) return { error: "The period cannot end after this month." };
+  if (start > end) return { error: "The first month comes after the last." };
+  if (monthsBetween(start, end).length > REVIEW_MAX_PERIOD_MONTHS) return { error: `Choose at most ${REVIEW_MAX_PERIOD_MONTHS} months.` };
+  return { from: start, to: end };
+}
+
+export { sumSources };
