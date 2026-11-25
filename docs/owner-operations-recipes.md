@@ -26,7 +26,7 @@ That means no hand `insert`/`update` for anything a route can do.
   {
     "onBehalfOfHrId": "<the employee, e.g. PD-0028 Sahar ElGallad>",
     "customers": [{
-      "customerType": "doctor",
+      "customerType": "clinic",
       "displayName": "<doctor, Arabic as on the CRM list>",
       "speciality": "Paediatrics",
       "crmAreaSeatId": "<seat, e.g. SEAT-PED-REP-D26>",
@@ -56,6 +56,28 @@ That means no hand `insert`/`update` for anything a route can do.
   `{ "survivorId": "<kept>", "loserId": "<copy>", "reason": "<why: same shop, same codes>" }`. Make
   one call per copy, as B-10. It moves links and requests to the survivor, switches the copy off and
   records the reason.
+
+### Merge a duplicate customer (a doctor saved twice)
+
+- **Order:** merge the duplicate PHARMACY copies first (above), so both customers point at the same
+  venues; then merge the customer.
+- **Function:** `mergeMarketingCustomers` in `src/lib/marketing-requests/customer-merge.ts` (route
+  `POST /api/marketing-requests/customer-merge`, body
+  `{ "survivorId": "<kept>", "retiredId": "<copy>", "carryEvidence": false, "reason": "<why>" }`).
+- 🔴 **It refuses a dev-preview session** (`assertRealSessionForDecision`: "A dev-preview session
+  cannot merge two customers"). The spare's dev-auth headers are a preview session, so the spare route
+  answers 403. Never work around that guard. The owner presses it himself, signed in as himself, on
+  Marketing Requests → Customer Database → "Merge duplicate customers": the customer that stays, the
+  customer to retire, the reason, then **Merge customers**.
+- **Proof:** the copy's `marketing_customers.merged_into_customer_id` names the survivor and its
+  `active` is false; the survivor's live links are unchanged.
+- First needed for Dr Othman El Shewehy / Sahar ElGallad, 25 Nov 2026: the four pharmacy copies merged
+  from the spare (HTTP 200 each); the doctor merge was refused (403) and left for the owner.
+- 🔴 **Two customers of different kinds never merge** ("These two are different kinds of customer"):
+  the screen's OK box appears, then the database refuses. Read both `customer_type`s first. The
+  25 Nov desk entry was typed `doctor` (legacy, no new customer gets it) and the form's copy `clinic`,
+  so the original was set to `clinic` (audit row) before the merge. A desk entry uses one of the
+  form's four kinds: `hospital`, `clinic`, `account`, `other`.
 
 ### Put a map pin on a pharmacy already saved
 

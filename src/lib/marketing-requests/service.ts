@@ -1129,6 +1129,13 @@ type CreateValidationOptions = {
   actorRows?: EmployeeDirectoryRow[];
   employeeRows?: EmployeeDirectoryRow[];
   supabase?: SupabaseClient;
+  /**
+   * Server-only, never read from a request body: the Super Admin's "Add pharmacy" on the Customer
+   * Check page (`customer-edit.ts`). Every customer named by `existingCustomerId` is treated as
+   * venue-only — its own row is never written, whatever its evidence state — and a link the Super
+   * Admin removed earlier is switched back on instead of refused. Honoured for the Super Admin only.
+   */
+  attachPharmaciesOnly?: boolean;
 };
 
 type CreateDraftOptions = {
@@ -2215,6 +2222,15 @@ function definedColumns<T extends Record<string, unknown>>(columns: T): Partial<
  * supplied every field lands null and the status falls to "missing" / "pending", which is what
  * this function returned unconditionally before, so the attach-only path is unchanged.
  */
+/**
+ * The key two distributor codes are the SAME pharmacy under, for the find-before-create on Save
+ * Validation: the distributor, and the code with spacing, case and leading zeros dropped — Overseas
+ * prints "0001513103" where a rep types "1513103". A lone "0" stays "0".
+ */
+export function distributorCodeMatchKey(distributorId: unknown, code: unknown): string {
+  return `${Number(distributorId)}::${normalizeLookupKey(code).replace(/^0+(?=.)/, "")}`;
+}
+
 function normalizeReusedValidationPharmacy(
   existingPharmacyId: string,
   inputEntry: MarketingValidationExistingPharmacyInput,
@@ -6828,6 +6844,7 @@ export async function createMarketingValidationRecord(
   });
 
   const supabase = options.supabase ?? getSupabaseAdmin();
+  const attachPharmaciesOnly = options.attachPharmaciesOnly === true && access.role === "Super Admin";
   const employeeRows = options.employeeRows ?? await loadEmployeeDirectoryRows();
   // Only the desk path needs the unfiltered directory, and only to name the admin — so the extra
   // load never runs for a field rep. Injected rows (tests) serve both roles.
@@ -6885,6 +6902,95 @@ export async function createMarketingValidationRecord(
       entry.normalizedName = normalizeLookupKey(pick.displayName);
     }
     doctorPicks.set(entry, pick);
+  }
+
+  // --- Find before create (owner, 2026-11-25) -------------------------------------------------
+  // Until this, every Save minted a new customer AND a new pharmacy for every shop on the form, so
+  // saving the same doctor twice (25 Nov 2026 23:12, Dr Othman El Shewehy) copied him and all four
+  // of his pharmacies. Two lookups now run before anything is written:
+  //  - a DESK save (the Super Admin, on behalf of an employee) for a CRM doctor that employee
+  //    already holds joins that customer instead of minting a second one — only his pharmacies
+  //    are written, exactly as "Add pharmacy" on the Customer Check page writes them;
+  //  - a pharmacy typed as new whose every distributor code is already held by ONE live venue the
+  //    actor may reuse is attached through that venue instead of copied. A code the actor may not
+  //    reuse, or codes split over several venues, are left exactly as before.
+  const deskAttachCustomerIds = new Set<string>();
+  if (isOnBehalf) {
+    for (const [entry, pick] of doctorPicks) {
+      if (!pick.phoenixCrmCustomerId) continue;
+      const onFile = await supabase
+        .from("marketing_customers")
+        .select("id")
+        .eq("phoenix_crm_customer_id", pick.phoenixCrmCustomerId)
+        .eq("owner_hr_id", ownerHrId)
+        .eq("active", true)
+        .is("merged_into_customer_id", null)
+        .order("created_at", { ascending: true })
+        .limit(1);
+      if (onFile.error) throw onFile.error;
+      const existingId = ((onFile.data ?? [])[0] as { id?: string } | undefined)?.id;
+      if (!existingId) continue;
+      entry.existingCustomerId = existingId;
+      deskAttachCustomerIds.add(existingId);
+      doctorPicks.delete(entry);
+    }
+  }
+  {
+    const typedCodes = normalized.customers.flatMap((entry) =>
+      entry.pharmacies.filter((pharmacy) => !pharmacy.existingPharmacyId).flatMap((pharmacy) => pharmacy.vendorCodes));
+    if (typedCodes.length > 0) {
+      const codeKey = distributorCodeMatchKey;
+      const lookupCodes = [...new Set(typedCodes.flatMap((code) => [
+        code.normalizedPharmacyCode,
+        code.normalizedPharmacyCode.replace(/^0+(?=.)/, ""),
+      ]))];
+      const held = await supabase
+        .from("marketing_pharmacy_distributor_codes")
+        .select("pharmacy_id, distributor_id, normalized_pharmacy_code")
+        .in("distributor_id", [...new Set(typedCodes.map((code) => code.distributorId))])
+        .in("normalized_pharmacy_code", lookupCodes)
+        .eq("active", true);
+      if (held.error) throw held.error;
+      const venuesByCode = new Map<string, Set<string>>();
+      for (const row of (held.data ?? []) as Array<{ distributor_id: number; normalized_pharmacy_code: string; pharmacy_id: string }>) {
+        const key = codeKey(row.distributor_id, row.normalized_pharmacy_code);
+        venuesByCode.set(key, (venuesByCode.get(key) ?? new Set()).add(row.pharmacy_id));
+      }
+      const candidateIds = [...new Set([...venuesByCode.values()].flatMap((ids) => [...ids]))];
+      const candidates = candidateIds.length > 0
+        ? await fetchRowsByIds<MarketingPharmacyDbRow>(supabase, "marketing_pharmacies", candidateIds)
+        : [];
+      const reusable = new Map(candidates
+        .filter((row) => row.active !== false && !(row as { merged_into_pharmacy_id?: string | null }).merged_into_pharmacy_id)
+        .map((row) => [row.id, row]));
+      const viewerArea = employeeRowByHrId(employeeRows).get(normalizeHrId(access.hrId) ?? "")?.areaId ?? null;
+      for (const entry of normalized.customers) {
+        entry.pharmacies = entry.pharmacies.map((pharmacy, index) => {
+          if (pharmacy.existingPharmacyId || pharmacy.vendorCodes.length === 0) return pharmacy;
+          const venueSets = pharmacy.vendorCodes.map((code) => venuesByCode.get(codeKey(code.distributorId, code.normalizedPharmacyCode)));
+          if (venueSets.some((ids) => !ids || ids.size !== 1)) return pharmacy;
+          const venueIds = new Set(venueSets.map((ids) => [...(ids as Set<string>)][0]));
+          if (venueIds.size !== 1) return pharmacy;
+          const venue = reusable.get([...venueIds][0]);
+          if (!venue?.owner_hr_id || !canReuseMarketingPharmacy(access, venue, employeeRows, viewerArea)) return pharmacy;
+          // The capture the form carried still completes the venue if it is short of proof.
+          return normalizeReusedValidationPharmacy(
+            venue.id,
+            pharmacy as unknown as MarketingValidationExistingPharmacyInput,
+            `Pharmacy ${index + 1}`,
+          );
+        });
+        // Two shops on one form that turn out to be the same venue are one attachment, or the
+        // second would collide with the first link's (customer, code) unique index.
+        const seenVenueIds = new Set<string>();
+        entry.pharmacies = entry.pharmacies.filter((pharmacy) => {
+          if (!pharmacy.existingPharmacyId) return true;
+          if (seenVenueIds.has(pharmacy.existingPharmacyId)) return false;
+          seenVenueIds.add(pharmacy.existingPharmacyId);
+          return true;
+        });
+      }
+    }
   }
 
   // --- "My Pharmacies" picks, resolved once for the whole submission -------------------------
@@ -7069,7 +7175,11 @@ export async function createMarketingValidationRecord(
       // complete customer capture of its own (so nothing on the customer can be replaced) and names
       // at least one venue already on file (so there is something to complete). The customer row is
       // then left exactly as it is and only the venue's evidence is written.
-      if (row.evidence_status === "complete") {
+      if (attachPharmaciesOnly || deskAttachCustomerIds.has(existingCustomerId)) {
+        // The Super Admin adding a pharmacy to a customer already on file: the customer row is left
+        // exactly as it stands, whatever its evidence, and only the links are written.
+        venueOnlyCustomerIds.add(existingCustomerId);
+      } else if (row.evidence_status === "complete") {
         const submitted = normalized.customers.find((entry) => entry.existingCustomerId === existingCustomerId);
         const isVenueOnly = Boolean(
           submitted
@@ -7472,7 +7582,11 @@ export async function createMarketingValidationRecord(
               "link_already_rejected",
             );
           }
-          if (existingLinkRow && existingLinkRow.active === false) {
+          // The Super Admin putting back a pharmacy he removed from this customer: the link is
+          // switched on again below. Everyone else is still sent to a person who can restore it.
+          const putsBackRemovedLink = access.role === "Super Admin"
+            && (attachPharmaciesOnly || deskAttachCustomerIds.has(customer.id));
+          if (existingLinkRow && existingLinkRow.active === false && !putsBackRemovedLink) {
             throw validationError(
               `"${pharmacy.displayName}" was retired from this customer. Ask a Super Admin or the CEO to restore it from Customer Pharmacy Mapping.`,
               "link_retired",
@@ -7490,6 +7604,7 @@ export async function createMarketingValidationRecord(
               .update(linkVerdictStands
                 ? { updated_at: new Date().toISOString() }
                 : {
+                  ...(putsBackRemovedLink ? { active: true } : {}),
                   updated_at: new Date().toISOString(),
                   updated_by_hr_id: hrIdForStorage(actorHrId),
                   validation_notes: linkValidationNotes,
