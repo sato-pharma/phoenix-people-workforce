@@ -153,6 +153,7 @@ const PINNED = [
   "scripts/outstation/backfill-photo-frames.ts",
   "scripts/outstation/build-train-fares.mjs",
   "scripts/outstation/price-dm-claims-on-double-visit.ts",
+  "scripts/owner-ops.ts",
   "scripts/phase19-fixture-cleanup-smoke.ts",
   "scripts/phoenix-camera-publish-release.ts",
   "scripts/phoenix-inspect/make-persona-secrets.mjs",
