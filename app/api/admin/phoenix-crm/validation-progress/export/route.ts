@@ -34,21 +34,21 @@ export async function GET(request: NextRequest) {
     await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:phoenix-crm:validation-progress" });
 
     const generatedAt = new Date().toISOString();
-    const report = await loadValidationProgress(viewer);
+    const report = await loadValidationProgress(viewer, { line: request.nextUrl.searchParams.get("line") });
     const buffer = await buildValidationProgressWorkbook(report, generatedAt);
 
     await writeAuditLog({
       actorLoginId: access.loginId ?? null,
       entityType: "phoenix_crm_validation_progress_export",
       entityId: null,
-      summary: `Exported Doctor List Validation (${report.totals.reps} reps, ${report.totals.total} doctors, ${report.totals.notValidated} not validated)`,
+      summary: `Exported Doctor List Validation, ${report.line ?? "every line"} (${report.totals.reps} reps, ${report.totals.total} doctors, ${report.totals.notValidated} not validated)`,
     });
 
     return new NextResponse(new Uint8Array(buffer), {
       status: 200,
       headers: {
         "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "content-disposition": `attachment; filename="${validationProgressFileName(generatedAt)}"`,
+        "content-disposition": `attachment; filename="${validationProgressFileName(generatedAt, report.line)}"`,
         "cache-control": "no-store",
       },
     });

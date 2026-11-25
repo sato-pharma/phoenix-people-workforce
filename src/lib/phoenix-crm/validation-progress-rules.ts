@@ -12,6 +12,10 @@
  *     camera switch the browser blocked, a brand-new capture) cannot be filed against a doctor and is counted on the
  *     rep's row apart, never guessed onto one.
  *   - "Days blocked" counts each visit day once, however many tries were refused on it.
+ *   - "Days since hire" counts to the Cairo day of the read; under ${NEW_STARTER_DAYS} days is a new starter, so a slow
+ *     list in a rep's first weeks is read as such (owner's pick, 26 Nov 2026, with the last validation date, the district
+ *     manager summary and the line filter).
+ *   - "Last validation" is the latest Cairo day a doctor on the seat was validated (phoenix_crm_customers.validated_at).
  *
  * Nothing here reads the database; the loader hands it rows. The screen and the workbook read the same rows, so
  * they cannot disagree.
@@ -27,6 +31,8 @@ export type ValidationCustomerRow = {
   speciality: string | null;
   grade: string | null;
   validated: boolean;
+  /** The Cairo day it was validated, YYYY-MM-DD; null while it waits. */
+  validatedDay: string | null;
 };
 
 export type ValidationRefusalRow = {
@@ -50,9 +56,14 @@ export type ValidationRepRow = {
   repName: string;
   vacant: boolean;
   hireDate: string | null;
+  /** Whole days from the hiring date to the day of the read; null with no hiring date. */
+  daysSinceHire: number | null;
+  newStarter: boolean;
   lineName: string;
   areaName: string;
   managerName: string;
+  /** The latest Cairo day a doctor on this seat was validated; null if none yet. */
+  lastValidatedDay: string | null;
   total: number;
   am: number;
   pm: number;
@@ -84,8 +95,30 @@ export type ValidationDoctorRow = {
   triedBy: string;
 };
 
+/** One district manager's reps together. Keyed by line and manager, so "No district manager" splits by line. */
+export type ValidationManagerRow = {
+  managerName: string;
+  lineName: string;
+  reps: number;
+  vacantSeats: number;
+  newStarters: number;
+  total: number;
+  validated: number;
+  notValidated: number;
+  triedBlocked: number;
+  neverTried: number;
+  lastValidatedDay: string | null;
+};
+
 export type ValidationProgressReport = {
+  /** The Cairo day the figures were read on, YYYY-MM-DD. */
+  asOfDay: string;
+  /** Every line that has a list, whatever the filter — the page's line choices. */
+  lines: string[];
+  /** The line the report was narrowed to; null for every line. */
+  line: string | null;
   reps: ValidationRepRow[];
+  managers: ValidationManagerRow[];
   doctors: ValidationDoctorRow[];
   totals: { total: number; validated: number; notValidated: number; triedBlocked: number; neverTried: number; reps: number; vacantSeats: number };
 };
@@ -111,6 +144,26 @@ export function validationRefusalLabel(reason: string): string {
 
 export const VACANT_SEAT_NAME = "Vacant seat";
 
+/** Under this many days since the hiring date, a rep is a new starter. */
+export const NEW_STARTER_DAYS = 90;
+
+/** Whole days from one YYYY-MM-DD day to another; null if either is missing or malformed. */
+export function daysBetween(fromDay: string | null, toDay: string | null): number | null {
+  const parse = (day: string | null) => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(day ?? "");
+    return match ? Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : null;
+  };
+  const from = parse(fromDay);
+  const to = parse(toDay);
+  return from === null || to === null ? null : Math.round((to - from) / 86_400_000);
+}
+
+export function isNewStarter(daysSinceHire: number | null): boolean {
+  return daysSinceHire !== null && daysSinceHire >= 0 && daysSinceHire < NEW_STARTER_DAYS;
+}
+
+const laterDay = (left: string | null, right: string | null): string | null => (!left ? right : !right ? left : left > right ? left : right);
+
 function seatName(seat: ValidationSeat | undefined): string {
   if (!seat || seat.people.length === 0) return VACANT_SEAT_NAME;
   return [...new Set(seat.people.map((person) => person.name))].join(" / ");
@@ -131,7 +184,15 @@ export function buildValidationProgress(input: {
   refusals: ReadonlyArray<ValidationRefusalRow>;
   seats: ReadonlyMap<string, ValidationSeat>;
   peopleNames: ReadonlyMap<string, string>;
+  /** The Cairo day of the read, YYYY-MM-DD. */
+  asOfDay: string;
+  /** Narrow to one line; a value naming no line with a list is ignored, never an empty report. */
+  line?: string | null;
 }): ValidationProgressReport {
+  const lines = [...new Set(input.customers.map((customer) => input.seats.get(customer.seatId)?.lineName ?? "").filter(Boolean))].sort((left, right) =>
+    left.localeCompare(right),
+  );
+  const line = input.line && lines.includes(input.line) ? input.line : null;
   const byCustomer = new Map<string, ValidationRefusalRow[]>();
   const unlinkedDaysByPerson = new Map<string, Set<string>>();
   for (const refusal of input.refusals) {
@@ -154,14 +215,20 @@ export function buildValidationProgress(input: {
     const seat = input.seats.get(seatId);
     const unlinked = new Set<string>();
     for (const person of seat?.people ?? []) for (const day of unlinkedDaysByPerson.get(person.hrId.toUpperCase()) ?? []) unlinked.add(day);
+    const vacant = !seat || seat.people.length === 0;
+    const hireDate = vacant ? null : seatHireDate(seat);
+    const daysSinceHire = daysBetween(hireDate, input.asOfDay);
     const row: ValidationRepRow = {
       seatId,
       repName: seatName(seat),
-      vacant: !seat || seat.people.length === 0,
-      hireDate: seatHireDate(seat),
+      vacant,
+      hireDate,
+      daysSinceHire,
+      newStarter: isNewStarter(daysSinceHire),
       lineName: seat?.lineName ?? "",
       areaName: seat?.areaName ?? "",
       managerName: seat?.managerName ?? "",
+      lastValidatedDay: null,
       total: 0,
       am: 0,
       pm: 0,
@@ -177,12 +244,14 @@ export function buildValidationProgress(input: {
 
   const doctors: ValidationDoctorRow[] = [];
   for (const customer of input.customers) {
+    if (line && (input.seats.get(customer.seatId)?.lineName ?? "") !== line) continue;
     const row = repRow(customer.seatId);
     row.total += 1;
     if (customer.listType === "AM") row.am += 1;
     else row.pm += 1;
     if (customer.validated) {
       row.validated += 1;
+      row.lastValidatedDay = laterDay(row.lastValidatedDay, customer.validatedDay);
       continue;
     }
     row.notValidated += 1;
@@ -226,6 +295,37 @@ export function buildValidationProgress(input: {
   const reps = [...repRows.values()].sort(order);
   doctors.sort((left, right) => order(left, right) || right.blockedDays - left.blockedDays || left.doctor.localeCompare(right.doctor));
 
+  const managerRows = new Map<string, ValidationManagerRow>();
+  for (const rep of reps) {
+    const key = `${rep.lineName}|${rep.managerName}`;
+    const manager = managerRows.get(key) ?? {
+      managerName: rep.managerName,
+      lineName: rep.lineName,
+      reps: 0,
+      vacantSeats: 0,
+      newStarters: 0,
+      total: 0,
+      validated: 0,
+      notValidated: 0,
+      triedBlocked: 0,
+      neverTried: 0,
+      lastValidatedDay: null,
+    };
+    if (rep.vacant) manager.vacantSeats += 1;
+    else manager.reps += 1;
+    if (rep.newStarter) manager.newStarters += 1;
+    manager.total += rep.total;
+    manager.validated += rep.validated;
+    manager.notValidated += rep.notValidated;
+    manager.triedBlocked += rep.triedBlocked;
+    manager.neverTried += rep.neverTried;
+    manager.lastValidatedDay = laterDay(manager.lastValidatedDay, rep.lastValidatedDay);
+    managerRows.set(key, manager);
+  }
+  const managers = [...managerRows.values()].sort(
+    (left, right) => left.lineName.localeCompare(right.lineName) || left.managerName.localeCompare(right.managerName),
+  );
+
   const totals = reps.reduce(
     (sum, row) => ({
       total: sum.total + row.total,
@@ -238,5 +338,5 @@ export function buildValidationProgress(input: {
     }),
     { total: 0, validated: 0, notValidated: 0, triedBlocked: 0, neverTried: 0, reps: 0, vacantSeats: 0 },
   );
-  return { reps, doctors, totals };
+  return { asOfDay: input.asOfDay, lines, line, reps, managers, doctors, totals };
 }

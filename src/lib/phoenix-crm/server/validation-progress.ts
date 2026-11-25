@@ -9,6 +9,7 @@
  * The figures are computed by `buildValidationProgress` (validation-progress-rules.ts); this file only gathers rows.
  */
 
+import { todayInCairo } from "@/lib/date-only";
 import { notFoundError } from "@/lib/http/api-errors";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import {
@@ -56,7 +57,15 @@ async function loadHireDates(hrIds: readonly string[]): Promise<Map<string, stri
   return dates;
 }
 
-export async function loadValidationProgress(viewer: PhoenixCrmViewer): Promise<ValidationProgressReport> {
+/** The Cairo day of a timestamp, YYYY-MM-DD; null for none. */
+function cairoDayOf(value: unknown): string | null {
+  const iso = text(value);
+  if (!iso) return null;
+  const at = new Date(iso);
+  return Number.isNaN(at.getTime()) ? null : todayInCairo(at);
+}
+
+export async function loadValidationProgress(viewer: PhoenixCrmViewer, options: { line?: string | null } = {}): Promise<ValidationProgressReport> {
   if (!canReadValidationProgress(viewer)) throw notFoundError("Not found.");
   const supabase = getSupabaseAdmin();
 
@@ -65,7 +74,7 @@ export async function loadValidationProgress(viewer: PhoenixCrmViewer): Promise<
       () =>
         supabase
           .from("phoenix_crm_customers")
-          .select("id, seat_id, list_type, name, speciality, grade, status")
+          .select("id, seat_id, list_type, name, speciality, grade, status, validated_at")
           .eq("is_test", false)
           .in("list_type", ["AM", "PM"])
           .in("status", ["active", "pending"]),
@@ -100,6 +109,7 @@ export async function loadValidationProgress(viewer: PhoenixCrmViewer): Promise<
         speciality: text(row.speciality),
         grade: text(row.grade),
         validated: row.status === "active",
+        validatedDay: row.status === "active" ? cairoDayOf(row.validated_at) : null,
       },
     ];
   });
@@ -134,5 +144,5 @@ export async function loadValidationProgress(viewer: PhoenixCrmViewer): Promise<
     });
   }
 
-  return buildValidationProgress({ customers, refusals, seats, peopleNames: names });
+  return buildValidationProgress({ customers, refusals, seats, peopleNames: names, asOfDay: todayInCairo(), line: options.line ?? null });
 }
