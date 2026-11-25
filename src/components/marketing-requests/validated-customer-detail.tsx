@@ -24,6 +24,7 @@ import {
 } from "@/components/employee-portal/portal-primitives";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
+import { CustomerEditPanel, RemovePharmacyControl } from "@/components/marketing-requests/customer-edit-panel";
 import { cairoDateTime } from "@/components/marketing-requests/validated-customer-register";
 import { adminControlDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 import {
@@ -178,6 +179,11 @@ export function ValidatedCustomerDetailView({
     }
   }
 
+  // A Super Admin edit reloads the record, then says what changed (load() clears the message first).
+  function afterEdit(note: string) {
+    void load().then(() => setMessage(note));
+  }
+
   if (isLoading) {
     return (
       <div className="flex justify-center py-16">
@@ -206,7 +212,7 @@ export function ValidatedCustomerDetailView({
     );
   }
 
-  const { completeness, contacts, customer, geography, pharmacies, transfer, viewerCanTransfer } = detail;
+  const { completeness, contacts, customer, geography, pharmacies, transfer, viewerCanEdit, viewerCanTransfer } = detail;
   // The SFE Manager opens this page VIEW ONLY (owner, 2026-09-21): no transfer, no revert. The
   // service refuses both for him anyway; hiding them here keeps a button he cannot use off his screen.
   const canTransfer = viewerCanTransfer && (!transfer || transfer.status === "reverted");
@@ -620,11 +626,31 @@ export function ValidatedCustomerDetailView({
                     />
                   </div>
                 ) : null}
+                {viewerCanEdit ? (
+                  <div className="mt-3">
+                    <RemovePharmacyControl
+                      customerId={customer.id}
+                      onChanged={afterEdit}
+                      pharmacyId={pharmacy.id}
+                      pharmacyName={pharmacy.displayName || "this pharmacy"}
+                    />
+                  </div>
+                ) : null}
               </li>
             ))}
           </ul>
         )}
       </PortalSection>
+
+      {viewerCanEdit ? (
+        <CustomerEditPanel
+          customerId={customer.id}
+          displayName={customer.displayName || ""}
+          mobileNumber={contacts[0]?.mobileNumber ?? null}
+          onChanged={afterEdit}
+          speciality={contacts[0]?.specialty ?? null}
+        />
+      ) : null}
     </div>
   );
 }
