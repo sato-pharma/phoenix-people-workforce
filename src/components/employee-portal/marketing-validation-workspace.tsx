@@ -3836,10 +3836,6 @@ export function MarketingValidationWorkspace() {
                                         onChange={(event) => {
                                           const nextCode = event.target.value;
                                           updateVendorCode(customer.key, pharmacy.key, line.key, { distributorCode: nextCode });
-                                          // A distributor code answers "What is this?": only a pharmacy has one.
-                                          if (pharmacy.venueType === null && nextCode.trim()) {
-                                            updatePharmacy(customer.key, pharmacy.key, { venueType: "pharmacy" });
-                                          }
                                           checkVendorCode(line.key, line.distributorId, nextCode, {
                                             area: pharmacy.area,
                                             governorate: pharmacy.governorate,
@@ -3887,7 +3883,6 @@ export function MarketingValidationWorkspace() {
                                               // The distributor's own shop name fills an empty name box.
                                               updatePharmacy(customer.key, pharmacy.key, {
                                                 name: pharmacyNameAfterSuggestion(pharmacy.name, suggestion.name),
-                                                ...(pharmacy.venueType === null ? { venueType: "pharmacy" as const } : {}),
                                               });
                                               checkVendorCode(line.key, line.distributorId, suggestion.code, {
                                                 area: pharmacy.area,
