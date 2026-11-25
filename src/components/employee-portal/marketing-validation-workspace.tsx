@@ -4084,16 +4084,17 @@ export function MarketingValidationWorkspace() {
                               <div className="space-y-2.5">
                                 {/* No "What is this?" — Customer Validation registers pharmacies only (owner,
                                     26 Nov 2026). Only a nursery restored from an older draft is refused
-                                    here; every rep is told where a venue with no code goes. */}
-                                <div className="space-y-1.5 rounded-none p-2">
-                                  {venueRequiresDistributorCode(pharmacy.venueType ?? CUSTOMER_VALIDATION_VENUE_TYPE) ? null : (
+                                    here. Where a venue with no code goes is said once, by the licence
+                                    panel below, while no code is typed. */}
+                                {venueRequiresDistributorCode(pharmacy.venueType ?? CUSTOMER_VALIDATION_VENUE_TYPE) ? null : (
+                                  <div className="space-y-1.5 rounded-none p-2">
                                     <p className="text-phx-xs font-bold text-orange-700">
                                       A {venueTypeLabel(pharmacy.venueType ?? CUSTOMER_VALIDATION_VENUE_TYPE).toLowerCase()} has no distributor code, so it
                                       cannot be validated here. Remove it from this customer.
                                     </p>
-                                  )}
-                                  <p className="text-phx-xs text-slate-600">{CODELESS_VENUES_GO_TO_DIRECT_ORDERS}</p>
-                                </div>
+                                    <p className="text-phx-xs text-slate-600">{CODELESS_VENUES_GO_TO_DIRECT_ORDERS}</p>
+                                  </div>
+                                )}
                                 {/* The licence stands in for the codes typed at the top of the card.
                                     `vendorCodes` here are the rows ON SCREEN, so a rep who has not
                                     typed a code yet sees the prompt — which is the moment it is

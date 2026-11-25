@@ -250,8 +250,8 @@ function testCustomerValidationRegistersPharmaciesOnly() {
   assert.ok(!workspace.includes("What is this?"), "Customer Validation no longer asks what the venue is");
   assert.ok(!workspace.includes("normalizeVenueType("), "the screen must not read capture input as a stored row");
   assert.ok(
-    workspace.includes("CODELESS_VENUES_GO_TO_DIRECT_ORDERS"),
-    "every rep is still told where a venue with no distributor code goes",
+    workspace.includes("`The licence does not replace a distributor code. ${CODELESS_VENUES_GO_TO_DIRECT_ORDERS}`"),
+    "a rep with no code typed is still told where a venue with no distributor code goes",
   );
   for (const screen of CAPTURE_SCREENS) {
     assert.ok(!code(screen).includes("CUSTOMER_VALIDATION_VENUE_TYPE"), `${screen} asks the question; it must not borrow Customer Validation's answer`);
