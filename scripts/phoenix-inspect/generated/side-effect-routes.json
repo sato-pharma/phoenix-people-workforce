@@ -66,6 +66,7 @@
     {"pattern":"/api/admin/pharmacy-search/profile","file":null,"reasons":["registry:access-read"]},
     {"pattern":"/api/admin/phoenix-crm/case-map-basemap","file":"app/api/admin/phoenix-crm/case-map-basemap/route.ts","reasons":["file:image"]},
     {"pattern":"/api/admin/phoenix-crm/integrity/export","file":"app/api/admin/phoenix-crm/integrity/export/route.ts","reasons":["file:content-disposition","file:spreadsheet","registry:export","writes:audit-write"]},
+    {"pattern":"/api/admin/phoenix-crm/validation-progress/export","file":"app/api/admin/phoenix-crm/validation-progress/export/route.ts","reasons":["file:content-disposition","file:spreadsheet","registry:export","writes:audit-write"]},
     {"pattern":"/api/admin/pm-products","file":null,"reasons":["registry:mutation"]},
     {"pattern":"/api/admin/profile","file":null,"reasons":["registry:access-read"]},
     {"pattern":"/api/admin/question-prompts","file":null,"reasons":["registry:mutation"]},

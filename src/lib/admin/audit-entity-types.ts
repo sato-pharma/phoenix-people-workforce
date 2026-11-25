@@ -151,6 +151,7 @@ const AUDIT_ENTITY_TYPE_PRESENT: Record<AuditEntityType, true> = {
   pharmacy_search_discovery: true,
   phoenix_crm_day_interview_cv: true,
   phoenix_crm_integrity_export: true,
+  phoenix_crm_validation_progress_export: true,
   phoenix_crm_list_template: true,
   phoenix_crm_list_template_import: true,
   phoenix_crm_line_customer_list: true,
