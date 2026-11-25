@@ -83,6 +83,8 @@ import {
 } from "@/lib/marketing-requests/validation-report";
 import {
   NOT_ON_CRM_LIST_FLAG,
+  doctorOnFileMark,
+  doctorOnFileNotice,
   readTypedCrmDoctorName,
   typedCrmDoctorValue,
   type CrmCopiedPlace,
@@ -607,10 +609,13 @@ function withDoctorPickDefaults(line: CustomerLine): CustomerLine {
 /** The drop-list's value for "Not on the list — type the name". Never a CRM id. */
 const NOT_ON_CRM_LIST_VALUE = "__not_on_crm_list__";
 
-/** One doctor in the drop-list: name, then what tells two namesakes apart — speciality, list, rep. */
-function crmDoctorOptionLabel(doctor: CrmDoctorOption): string {
+/**
+ * One doctor in the drop-list: name, then what tells two namesakes apart — speciality, list, rep —
+ * then whether he is already on file for the employee the save writes for (owner, 26 Nov 2026).
+ */
+function crmDoctorOptionLabel(doctor: CrmDoctorOption, ownerHrId: string | null): string {
   const rep = doctor.repName ? `${doctor.repName}${doctor.lineName ? ` (${doctor.lineName})` : ""}` : "Vacant territory";
-  return [doctor.name, doctor.speciality, doctor.listType, rep].filter(Boolean).join(" · ");
+  return [doctor.name, doctor.speciality, doctor.listType, rep, doctorOnFileMark(doctor, ownerHrId)].filter(Boolean).join(" · ");
 }
 
 /** A CRM pharmacy row says whose list it is on and whether picking it brings a location. */
@@ -2335,6 +2340,8 @@ export function MarketingValidationWorkspace() {
   // Desk mode is driven purely by whether an employee is selected. The server re-checks the role on
   // every submit, so this only controls what the form asks for, never what it is allowed to do.
   const isDeskMode = workspace.canValidateOnBehalf && Boolean(onBehalfHrId);
+  /** The employee the save writes for — the person on whose behalf, else the viewer himself. */
+  const saveOwnerHrId = isDeskMode ? onBehalfHrId : workspace.viewerHrId || null;
   const onBehalfEmployee = useMemo(
     () => workspace.onBehalfEmployees.find((employee) => employee.hrId === onBehalfHrId) ?? null,
     [onBehalfHrId, workspace.onBehalfEmployees],
@@ -3509,7 +3516,7 @@ export function MarketingValidationWorkspace() {
                               return Array.isArray(list)
                                 ? list.map((doctor) => (
                                     <option key={doctor.crmCustomerId} value={doctor.crmCustomerId}>
-                                      {crmDoctorOptionLabel(doctor)}
+                                      {crmDoctorOptionLabel(doctor, saveOwnerHrId)}
                                     </option>
                                   ))
                                 : null;
@@ -3520,6 +3527,27 @@ export function MarketingValidationWorkspace() {
                             <option value={NOT_ON_CRM_LIST_VALUE}>Not on the list — type the name</option>
                           </SelectField>
                         </Field>
+                        {(() => {
+                          const list = crmDoctors[customer.crmAreaSeatId];
+                          const picked = Array.isArray(list) && customer.crmCustomerId && !customer.notOnCrmList
+                            ? list.find((doctor) => doctor.crmCustomerId === customer.crmCustomerId) ?? null
+                            : null;
+                          const notice = picked
+                            ? doctorOnFileNotice(picked, { ownerHrId: saveOwnerHrId, ownerName: onBehalfEmployee?.name ?? null, isDeskMode })
+                            : null;
+                          if (!notice) return null;
+                          const tone = notice.tone === "ok"
+                            ? "border-emerald-200 bg-emerald-50/60 text-emerald-800"
+                            : notice.tone === "warn"
+                              ? "border-amber-200 bg-amber-50/60 text-amber-800"
+                              : "border-slate-200 bg-slate-50/60 text-slate-700";
+                          return (
+                            <p className={`mt-1.5 flex items-start gap-1.5 rounded-none border p-2.5 text-phx-xs font-bold ${tone}`} data-testid="doctor-on-file-notice">
+                              {notice.tone === "warn" ? <AlertTriangle aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" /> : null}
+                              <span>{notice.text}</span>
+                            </p>
+                          );
+                        })()}
                         {crmDoctors[customer.crmAreaSeatId] === "failed" ? (
                           <p className="mt-1.5 text-phx-sm font-bold text-amber-800">
                             The doctor list could not load. Choose &quot;Not on the list&quot; to type the name.

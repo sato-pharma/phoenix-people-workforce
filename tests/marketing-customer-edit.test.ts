@@ -7,6 +7,7 @@ import {
   canEditMarketingCustomer,
   normalizeCustomerDetailsEdit,
 } from "../src/lib/marketing-requests/customer-edit.ts";
+import { doctorOnFileFor, doctorOnFileMark, doctorOnFileNotice } from "../src/lib/marketing-requests/crm-doctor-pick.ts";
 import { findVenueOnFileByCode, pharmacyNameAfterSuggestion } from "../src/lib/marketing-requests/pharmacy-code-first.ts";
 import { distributorCodeMatchKey, isDeskAttachEntry } from "../src/lib/marketing-requests/service.ts";
 
@@ -136,6 +137,41 @@ export function runMarketingCustomerEditTests() {
     assert.ok(newTab.length > 0, "the new-venue card opens with the code section");
     assert.ok(newTab.indexOf("Distributor code — start here") < newTab.indexOf('label="Pharmacy Name"'), "the code comes before the name");
     assert.ok(newTab.includes("Use this pharmacy") && newTab.includes("findVenueOnFileByCode("), "a venue on file is offered from the code");
+  }
+
+  // The Doctor picker marks a doctor already on file (owner, 26 Nov 2026), so a second capture of
+  // him is seen before it is made. Whose copy counts is the employee the save writes for.
+  {
+    const othman = {
+      onFile: [
+        { customerId: "c-1", customerCode: "MKT-CUS-1", ownerHrId: "B-10", ownerName: "Omar Gawish" },
+        { customerId: "c-2", customerCode: "MKT-CUS-2", ownerHrId: "S-5", ownerName: "Sahar ElGallad" },
+      ],
+    };
+    const nobody = { onFile: [] };
+    assert.equal(doctorOnFileFor(othman, "b-10")?.customerId, "c-1", "HR ids match whatever their case");
+    assert.equal(doctorOnFileFor(othman, "X-1"), null);
+    assert.equal(doctorOnFileFor(othman, null), null);
+    assert.equal(doctorOnFileMark(othman, "S-5"), "already validated", "the employee's own copy reads as already validated");
+    assert.equal(doctorOnFileMark(othman, "X-1"), "on file for Omar Gawish", "someone else's copy names who holds him");
+    assert.equal(doctorOnFileMark(nobody, "S-5"), null, "a doctor nobody validated carries no mark");
+    assert.equal(doctorOnFileNotice(othman, { ownerHrId: "S-5", ownerName: "Sahar ElGallad", isDeskMode: true })?.tone, "ok",
+      "the desk joins the copy on file: only his pharmacies are written");
+    assert.equal(doctorOnFileNotice(othman, { ownerHrId: "S-5", ownerName: null, isDeskMode: false })?.tone, "warn",
+      "a rep saving a doctor he already holds is warned: his own save makes a second copy");
+    assert.equal(doctorOnFileNotice(othman, { ownerHrId: "X-1", ownerName: null, isDeskMode: false })?.tone, "info",
+      "a doctor on another rep's file is normal: the rep gets his own copy");
+    assert.equal(doctorOnFileNotice(nobody, { ownerHrId: "S-5", ownerName: null, isDeskMode: true }), null);
+    for (const isDeskMode of [true, false]) {
+      const text = doctorOnFileNotice(othman, { ownerHrId: "S-5", ownerName: "Sahar ElGallad", isDeskMode })?.text ?? "";
+      assert.ok(!text.includes("MKT-CUS-"), "the notice names people, never a customer code");
+    }
+    const card = readFileSync(new URL("../src/components/employee-portal/marketing-validation-workspace.tsx", import.meta.url), "utf8");
+    assert.ok(card.includes("crmDoctorOptionLabel(doctor, saveOwnerHrId)") && card.includes("doctorOnFileNotice("), "the picker shows the mark and the notice");
+    const service = readFileSync(new URL("../src/lib/marketing-requests/crm-doctor-pick-service.ts", import.meta.url), "utf8");
+    const onFileRead = service.slice(service.indexOf('.from("marketing_customers")'), service.indexOf("const names = await loadPeopleNames(rows"));
+    assert.ok(onFileRead.includes('.eq("active", true)') && onFileRead.includes('.is("merged_into_customer_id", null)'),
+      "only a live copy that was not merged away counts as on file");
   }
 
   // The "attach only" switch skips the customer write and revives removed links, so it may come
