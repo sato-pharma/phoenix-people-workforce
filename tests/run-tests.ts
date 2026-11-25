@@ -2709,6 +2709,7 @@ import { runDmPlanSecondApproverTests } from "./dm-plan-second-approver.test.ts"
 import { runEmailIdentityGuardCallersTests } from "./email-identity-guard-callers.test.ts";
 import { runMarketingRequestVenueRequiredTests } from "./marketing-request-venue-required.test.ts";
 import { runMarketingCustomerMergeTombstoneTests } from "./marketing-customer-merge-tombstone.test.ts";
+import { runMarketingCustomerEditTests } from "./marketing-customer-edit.test.ts";
 import { runPushOptInNudgeTests } from "./push-opt-in-nudge.test.ts";
 import { runTelegramHomeCardTests } from "./telegram-home-card.test.ts";
 import { runPlansAwaitingApprovalAvailabilityTests } from "./plans-awaiting-approval-availability.test.ts";
@@ -10456,6 +10457,10 @@ await runTest(
 await runTest(
   "a retired marketing customer names its successor in a column, and the migration backfills nothing",
   runMarketingCustomerMergeTombstoneTests,
+);
+await runTest(
+  "the Super Admin edits a customer on file, and Save Validation attaches a pharmacy whose code is already on file instead of copying it",
+  runMarketingCustomerEditTests,
 );
 await runTest(
   "push opt-in nudge (never shown with a device receiving, an answer stands until a device drops, additive)",

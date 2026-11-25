@@ -59,8 +59,8 @@ export function runMarketingApproverCustomerDossierTests() {
   // ── The register detail still gates, and both paths now share one assembler ─────────────────
   assert.match(
     transfer,
-    /assertValidatedCustomerRegisterAccess\(access\);\s*\n\s*return assembleValidatedMarketingCustomerDetail\(customerId, canTransferValidatedCustomers\(access\)\);/,
-    "the register detail keeps its Super-Admin/SFE gate and delegates to the shared assembler",
+    /assertValidatedCustomerRegisterAccess\(access\);\s*\n\s*return assembleValidatedMarketingCustomerDetail\(\s*customerId,\s*canTransferValidatedCustomers\(access\),\s*canEditMarketingCustomer\(access\),?\s*\);/,
+    "the register detail keeps its Super-Admin/SFE gate and delegates to the shared assembler (Edit only where canEditMarketingCustomer says so — the Super Admin)",
   );
   assert.match(
     transfer,

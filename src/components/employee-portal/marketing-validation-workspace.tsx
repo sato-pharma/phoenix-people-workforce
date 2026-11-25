@@ -2054,6 +2054,8 @@ export function MarketingValidationWorkspace() {
   const [selectedValidatedCustomerKey, setSelectedValidatedCustomerKey] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  /** Set synchronously at the first press, so a second press before the re-render sends nothing. */
+  const savingRef = useRef(false);
   const [captureTarget, setCaptureTarget] = useState<string | null>(null);
   const [cameraTarget, setCameraTarget] = useState<LocationTarget | null>(null);
   /**
@@ -3064,6 +3066,10 @@ export function MarketingValidationWorkspace() {
       return;
     }
 
+    // One save at a time. `isSaving` greys the button only after React re-renders, so a quick second
+    // press used to send the form twice — and every send mints a customer.
+    if (savingRef.current) return;
+    savingRef.current = true;
     setIsSaving(true);
     try {
       const response = await fetch("/api/marketing-requests/validation", {
@@ -3071,7 +3077,16 @@ export function MarketingValidationWorkspace() {
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
-      const payload = await response.json();
+      // The server ANSWERED, so the save may well have landed. Queueing it for an automatic retry
+      // here (what the catch below used to do for an unreadable answer) saved it a second time.
+      const payload = await response.json().catch(() => null) as { message?: string; rows?: unknown[] } | null;
+      if (!payload) {
+        setMessage(
+          "The server answered but its reply could not be read. Open the Validated tab before saving again — the customer may already be saved.",
+          "warning",
+        );
+        return;
+      }
       if (!response.ok) {
         setMessage(payload.message ?? "Unable to save validation row.");
         return;
@@ -3138,6 +3153,7 @@ export function MarketingValidationWorkspace() {
       resetForm();
       setMessage("Network error. Submission queued for automatic retry.");
     } finally {
+      savingRef.current = false;
       setIsSaving(false);
     }
   }

@@ -49,7 +49,7 @@ node --env-file-if-exists=.env.local --experimental-strip-types --experimental-s
   {
     "onBehalfOfHrId": "<the employee, e.g. PD-0028 Sahar ElGallad>",
     "customers": [{
-      "customerType": "doctor",
+      "customerType": "clinic",
       "existingCustomerId": "<the doctor's marketing customer id, when the employee already holds them>",
       "displayName": "<doctor, Arabic as on the CRM list>",
       "speciality": "Paediatrics",
@@ -67,12 +67,12 @@ node --env-file-if-exists=.env.local --experimental-strip-types --experimental-s
   }
   ```
 
-- 🔴 **A doctor the employee ALREADY holds needs `existingCustomerId`, or the app saves a second
-  copy of the doctor.** `createMarketingValidationRecord` does not look for one, so the runner
-  refuses such a body itself. It checks for the same CRM id or the same name, with no
-  `existingCustomerId`. Found 25 Nov 2026: Dr Othman El Shewehy is held TWICE by Sahar ElGallad
-  (`2911d0e4-9a97-4017-ae48-415ccca258a9` at 22:49 Cairo, `6fcee6cf-5d95-4188-99fb-64e17a16dbd0` at
-  23:12), both active. The app gap is still open, and folding the two doctors is a separate job.
+- 🔴 **A doctor the employee ALREADY holds is never saved twice.** Since #784 the desk save joins a
+  doctor she holds under the same `crmCustomerId`, and only his pharmacies are written. The runner
+  announces that join. A doctor of the same NAME held under no CRM id, or under another one, is still
+  minted again by the app, so the runner refuses that body. Send it with `existingCustomerId` instead.
+  This is how Dr Othman El Shewehy was saved twice for Sahar ElGallad on 25 Nov 2026 (22:49 and 23:12
+  Cairo). The 23:12 copy is merged into the original since then (below).
 - **Distributor ids:** read `marketing_distributors` (25 Nov 2026: Ibn Sina 17, Overseas 19, Sofico 21).
 - **Refusal "that pharmacy is not one you can attach":** the `existingPharmacyId` belongs to another
   seat. Send it as a new venue with its codes, then merge the old copy into it (below).
@@ -89,6 +89,28 @@ node --env-file-if-exists=.env.local --experimental-strip-types --experimental-s
 - **Refusal `[conflict]`:** the copy is already merged or inactive. Nothing is left to do.
 - **Proof:** the workspace of every employee holding a doctor linked to either pharmacy, or of
   `--employee` if given.
+
+### Merge a duplicate customer (a doctor saved twice)
+
+- **Order:** merge the duplicate PHARMACY copies first (above), so both customers point at the same
+  venues; then merge the customer.
+- **Function:** `mergeMarketingCustomers` in `src/lib/marketing-requests/customer-merge.ts` (route
+  `POST /api/marketing-requests/customer-merge`, body
+  `{ "survivorId": "<kept>", "retiredId": "<copy>", "carryEvidence": false, "reason": "<why>" }`).
+- 🔴 **It refuses a dev-preview session** (`assertRealSessionForDecision`: "A dev-preview session
+  cannot merge two customers"). The spare's dev-auth headers are a preview session, so the spare route
+  answers 403. Never work around that guard. The owner presses it himself, signed in as himself, on
+  Marketing Requests → Customer Database → "Merge duplicate customers": the customer that stays, the
+  customer to retire, the reason, then **Merge customers**.
+- **Proof:** the copy's `marketing_customers.merged_into_customer_id` names the survivor and its
+  `active` is false; the survivor's live links are unchanged.
+- First needed for Dr Othman El Shewehy / Sahar ElGallad, 25 Nov 2026: the four pharmacy copies merged
+  from the spare (HTTP 200 each); the doctor merge was refused (403) and left for the owner.
+- 🔴 **Two customers of different kinds never merge** ("These two are different kinds of customer"):
+  the screen's OK box appears, then the database refuses. Read both `customer_type`s first. The
+  25 Nov desk entry was typed `doctor` (legacy, no new customer gets it) and the form's copy `clinic`,
+  so the original was set to `clinic` (audit row) before the merge. A desk entry uses one of the
+  form's four kinds: `hospital`, `clinic`, `account`, `other`.
 
 ### Put a map pin on a pharmacy already saved
 

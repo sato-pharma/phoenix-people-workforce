@@ -176,9 +176,11 @@ async function proofRead(hrId: string, focus: { doctorNames?: string[]; pharmacy
 }
 
 /**
- * Refuse a new-doctor entry when the employee already holds an active doctor with the same Phoenix CRM
- * customer or the same name. The fix is to send that entry with "existingCustomerId", which adds the
- * pharmacies to the doctor on file instead of creating another one.
+ * Refuse a new-doctor entry when the employee already holds an active doctor of the same NAME that the
+ * app will not join. Since #784 the desk save itself joins a doctor held under the same Phoenix CRM
+ * customer (only his pharmacies are written), so a CRM-id match is left to the app and only announced;
+ * a same-name doctor held under no or another CRM id is still minted again, so that one is refused here.
+ * The fix is to send that entry with "existingCustomerId", which adds the pharmacies to the doctor on file.
  */
 async function refuseDoctorAlreadyHeld(onBehalfOf: string, customers: Array<Record<string, unknown>>): Promise<void> {
   const { getSupabaseAdmin } = await import("@/lib/supabase/server");
@@ -197,7 +199,12 @@ async function refuseDoctorAlreadyHeld(onBehalfOf: string, customers: Array<Reco
     if (String(entry.existingCustomerId ?? "").trim()) continue;
     const crmId = String(entry.crmCustomerId ?? "").trim();
     const name = String(entry.displayName ?? "").trim();
-    const same = rows.filter((row) => (crmId && row.phoenix_crm_customer_id === crmId) || (name && row.display_name.trim() === name));
+    const joined = crmId ? rows.find((row) => row.phoenix_crm_customer_id === crmId) : undefined;
+    if (joined) {
+      console.log(`  ${name || crmId}: already held as ${joined.id} (${joined.customer_code ?? "no code"}) — the app joins it, only the pharmacies are written`);
+      continue;
+    }
+    const same = rows.filter((row) => name && row.display_name.trim() === name);
     if (same.length > 0) {
       clashes.push(`${name || crmId}: already held as ${same.map((row) => `${row.id} (${row.customer_code ?? "no code"})`).join(", ")}`);
     }
@@ -224,10 +231,10 @@ async function runLinkDoctor(plan: Extract<OwnerOpsPlan, { job: "link-doctor" }>
   const doctorNames = customers.map((customer) => String(customer.displayName ?? "")).filter(Boolean);
   console.log(`For: ${onBehalfOf} — ${customers.length} doctor(s): ${doctorNames.join(", ") || "(none named)"}`);
 
-  // 🔴 A DOCTOR SHE ALREADY HOLDS IS NAMED, NEVER SAVED AGAIN. The save mints a new doctor row for every
-  // entry without existingCustomerId, even one already on her list — that is how Dr Othman El Shewehy
-  // and his four pharmacies were saved twice for Sahar ElGallad on 25 Nov 2026 23:12, and this
-  // runner's first dry run of that same body would have made a third copy.
+  // 🔴 A DOCTOR SHE ALREADY HOLDS IS NAMED, NEVER SAVED AGAIN. Before #784 the save minted a new doctor
+  // row for every entry without existingCustomerId — that is how Dr Othman El Shewehy and his four
+  // pharmacies were saved twice for Sahar ElGallad on 25 Nov 2026 23:12. The app now joins a doctor held
+  // under the same CRM customer; a same-name doctor under no or another CRM id is still refused here.
   await refuseDoctorAlreadyHeld(onBehalfOf, customers);
 
   const { createMarketingValidationRecord } = await import("@/lib/marketing-requests/service");
