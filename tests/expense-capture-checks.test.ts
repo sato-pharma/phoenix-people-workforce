@@ -29,6 +29,7 @@ import {
   greyFromRgba,
   isBlankFrame,
   OutstationPhotoRefusedError,
+  photoRefusalCode,
   readFrame,
   type FrameReading,
 } from "@/lib/outstation/blank-frame";
@@ -39,15 +40,20 @@ import {
   returnTicketAskIsDue,
 } from "@/lib/outstation/missing-ticket";
 import {
+  departureBelowArrivalMessage,
   kmLabel,
   normalizeOdometerScan,
   ODOMETER_GUIDANCE,
   ODOMETER_NEEDS,
+  ODOMETER_NEXT_PHOTO_KEPT,
   ODOMETER_PROBLEMS,
+  ODOMETER_REFUSALS_BEFORE_KEEPING,
+  ODOMETER_SCAN_MAX_OUTPUT_TOKENS,
   odometerFromValue,
   odometerOfMetadata,
   odometerRecordOf,
   odometerRefusalMessage,
+  odometerRefusedTriesOf,
   type OdometerRead,
 } from "@/lib/outstation/odometer-scan-rules";
 import { returnFareLabel, returnTicketState } from "@/lib/outstation/return-ticket";
@@ -124,7 +130,7 @@ export async function runExpenseCaptureChecksTests() {
   const refused = odometerRefusalMessage("departure", { problems: ["too_far", "glare"], status: "unreadable" });
   assert.equal(
     refused,
-    `Not accepted: the system could not read the kilometres on this departure photo. ${ODOMETER_GUIDANCE.too_far} ${ODOMETER_GUIDANCE.glare} ${ODOMETER_NEEDS}`,
+    `Not accepted: the system could not read the kilometres on this departure photo. ${ODOMETER_GUIDANCE.too_far} ${ODOMETER_GUIDANCE.glare} ${ODOMETER_NEEDS} ${ODOMETER_NEXT_PHOTO_KEPT}`,
   );
   assert.match(odometerRefusalMessage("arrival", { problems: ["not_a_dashboard"], status: "unreadable" }), /^Not accepted: this arrival photo does not show the car's odometer\./);
   assert.deepEqual(odometerRecordOf({ km: 52612, status: "read", tripKm: null }, "T"), { km: 52612, readAt: "T", status: "read", tripKm: null });
@@ -184,6 +190,57 @@ export async function runExpenseCaptureChecksTests() {
   assert.deepEqual(kept.frame, BLANK, "kept, and the approver reads it is blank");
   assert.equal(kept.odometer?.status, "unreadable");
   assert.equal((await inspect({ mayRefuse: false, readOdometer: reader({ problems: ["dark"], status: "unreadable" }) })).odometer?.status, "unreadable");
+  // Refused for its odometer ONCE, never twice (owner, 2026-11-25, after Dina Hamdy retook a sharp night
+  // photo of 481,456 km for half an hour): the refusal is coded, so the phone can count it.
+  const unreadable = reader({ problems: ["dark"], status: "unreadable" });
+  let coded: unknown = null;
+  try {
+    await inspect({ photo: "departure", readOdometer: unreadable });
+  } catch (error) {
+    coded = error;
+  }
+  assert.equal(photoRefusalCode(coded), "odometer_refused", "an odometer refusal is answered as odometer_refused");
+  assert.equal(photoRefusalCode(new OutstationPhotoRefusedError("blank")), null, "a blank-frame refusal is not counted as one");
+  assert.match(odometerRefusalMessage("departure", { problems: ["dark"], status: "unreadable" }), new RegExp(`${ODOMETER_NEXT_PHOTO_KEPT}$`), "the refusal says the next photo is kept");
+  const secondTry = await inspect({ odometerRefusedTries: 1, photo: "departure", readOdometer: unreadable });
+  assert.deepEqual(
+    secondTry.odometer,
+    { km: null, readAt: "2026-11-23T08:00:00.000Z", refusedTries: 1, status: "unreadable", tripKm: null },
+    "HEADLINE: after one odometer refusal the next photo is KEPT, marked, for the approver",
+  );
+  assert.equal(ODOMETER_REFUSALS_BEFORE_KEEPING, 1);
+  assert.ok(await refusal(() => inspect({ measure: async () => BLANK, odometerRefusedTries: 3 })), "a blank frame is still refused every time");
+  assert.equal(odometerOfMetadata({ odometer: secondTry.odometer })?.refusedTries, 1, "the count travels with the stored reading");
+  assert.equal(odometerRefusedTriesOf("2"), 2);
+  assert.equal(odometerRefusedTriesOf(-1), 0);
+  assert.equal(odometerRefusedTriesOf(1.5), 0);
+  assert.equal(odometerRefusedTriesOf(99), 20);
+  assert.equal(odometerRefusedTriesOf(null), 0);
+  // A departure reading below the same trip's arrival is a misread (claim 423: 57,108 then 51,109).
+  const arrivalRead = { km: 57108, readAt: "T", status: "read" as const, tripKm: null };
+  assert.match(
+    (await refusal(() => inspect({ arrivalOdometer: arrivalRead, photo: "departure", readOdometer: reader({ km: 51109, status: "read", tripKm: null }) }))) ?? "",
+    /^Not accepted: this departure photo reads 51,109 km, less than the 57,108 km on your arrival photo/,
+    "HEADLINE: a departure reading below the arrival is refused as a misread",
+  );
+  assert.equal(
+    (await inspect({ arrivalOdometer: arrivalRead, odometerRefusedTries: 1, photo: "departure", readOdometer: reader({ km: 51109, status: "read", tripKm: null }) })).odometer?.km,
+    51109,
+    "kept on the second photo — the desk then fails 'went down during the trip'",
+  );
+  assert.equal(
+    (await inspect({ arrivalOdometer: arrivalRead, photo: "departure", readOdometer: reader({ km: 57290, status: "read", tripKm: null }) })).odometer?.km,
+    57290,
+    "a departure above the arrival is accepted",
+  );
+  assert.equal(
+    (await inspect({ arrivalOdometer: { ...arrivalRead, km: null, status: "not_read" }, photo: "departure", readOdometer: reader({ km: 100, status: "read", tripKm: null }) })).odometer?.km,
+    100,
+    "an arrival never read cannot make a departure a misread",
+  );
+  assert.equal(departureBelowArrivalMessage(arrivalRead, { status: "unavailable" }), null);
+  // The reader gets room to finish: 600 stopped the second provider mid-answer on 24 and 25 Nov 2026.
+  assert.ok(ODOMETER_SCAN_MAX_OUTPUT_TOKENS >= 2_000, "the odometer reader's answer room");
   // A train or bus photo is measured, never read for an odometer.
   readerCalls.length = 0;
   assert.deepEqual(await inspect({ car: false }), { frame: REAL, odometer: null });

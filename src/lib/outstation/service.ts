@@ -75,6 +75,7 @@ import { checkTrainTicketsOnServer, TrainTicketRefusedError } from "@/lib/outsta
 import { readCarOdometer } from "@/lib/outstation/odometer-scan";
 import { measureEvidencePhoto } from "@/lib/outstation/blank-frame-server";
 import { inspectEvidencePhoto } from "@/lib/outstation/evidence-photo-inspection";
+import { odometerOfMetadata } from "@/lib/outstation/odometer-scan-rules";
 import { ticketScanApplies } from "@/lib/outstation/ticket-scan-rules";
 import {
   NoTicketFareUnavailableError,
@@ -2431,6 +2432,7 @@ export async function submitOutstationRequest(
       mayRefuse: !input.offlineCaptured && !evidencePhotoWaived,
       measure: measureEvidencePhoto,
       now: new Date().toISOString(),
+      odometerRefusedTries: input.odometerRefusedTries ?? 0,
       photo: "arrival",
       readOdometer: readCarOdometer,
     });
@@ -6117,7 +6119,15 @@ export async function recordOutstationDepartureLocationRefusal(
 // distance, the gap and a late capture visible to whoever approves the request.
 export async function captureOutstationDeparturePhoto(
   access: AccessContext,
-  input: { imageDataUrl: string; latitude?: number | null; locationLabel?: string | null; longitude?: number | null; requestId: number },
+  input: {
+    imageDataUrl: string;
+    latitude?: number | null;
+    locationLabel?: string | null;
+    longitude?: number | null;
+    /** Departure photos of this capture already refused for their odometer, as the phone counted. */
+    odometerRefusedTries?: number;
+    requestId: number;
+  },
 ): Promise<{ gateStatus: OutstationEvidenceGateStatus; review: DepartureEvidenceReview }> {
   const request = await getOutstationRequestById(input.requestId);
   if (!request) throw new Error("That outstation request is not available.");
@@ -6176,12 +6186,16 @@ export async function captureOutstationDeparturePhoto(
   // Measured and, on a car trip, its odometer read before anything is stored (owner, 2026-11-23;
   // evidence-photo-inspection.ts): a blank frame and an odometer the system cannot read are refused
   // with what to do. A role that owes no photo keeps it, marked.
+  // A departure reading below the same trip's arrival reading is a misread, refused once (claim 423);
+  // after one odometer refusal the next photo is kept for the approver (owner, 2026-11-25).
   const { frame: departureFrame, odometer: departureOdometer } = await inspectEvidencePhoto({
+    arrivalOdometer: odometerOfMetadata(request.carEvidenceMetadata),
     bytes: parseOutstationCarEvidenceImageDataUrl(input.imageDataUrl).bytes,
     car: request.transportationType === "car",
     mayRefuse: !isOutstationEvidenceWaivedRole(request.employeeRole),
     measure: measureEvidencePhoto,
     now: new Date().toISOString(),
+    odometerRefusedTries: input.odometerRefusedTries ?? 0,
     photo: "departure",
     readOdometer: readCarOdometer,
   });

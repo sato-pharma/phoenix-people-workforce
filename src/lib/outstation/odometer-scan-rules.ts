@@ -13,6 +13,14 @@
  *    exactly as a ticket is — the employee takes it again.
  *  - When the reader itself cannot be reached the photo is KEPT, marked `not_read` — an employee is never
  *    refused for the system's own outage. The desk then says it could not check.
+ *  - 🔴 A PHOTO IS REFUSED FOR ITS ODOMETER ONCE, NEVER TWICE (owner, 2026-11-25: "Fix the odometer reader",
+ *    after Dina Hamdy retook a sharp, lit night photo of 481,456 km for about half an hour). The phone counts
+ *    the refusals it was given and sends the count; from the second photo on, the photo is KEPT, marked
+ *    `unreadable` with `refusedTries`, and Expense Approvals fails its Odometer check so the approver reads
+ *    the photo. A forged count only files the claim in Your call: it never passes the check.
+ *  - 🔴 A DEPARTURE READING BELOW THE SAME TRIP'S ARRIVAL READING IS A MISREAD, refused once like an unreadable
+ *    photo (claim 423, 25 Nov 2026: 57,108 km on arrival, 51,109 km at departure). Kept on the second photo,
+ *    and the desk then fails "The odometer went down during the trip".
  *  - A claim filed before this rule has no `odometer` on its photo at all, and the desk prints no line.
  */
 
@@ -48,13 +56,38 @@ export type OdometerRead =
   | { status: "unreadable"; problems: OdometerProblem[] }
   | { status: "unavailable" };
 
-/** What is kept on the photo's metadata. `unreadable` is kept only by an offline replay, which cannot refuse. */
+/**
+ * What is kept on the photo's metadata. `unreadable` is kept by an offline replay, a role that owes no photo,
+ * and a photo taken after the system had already refused one for its odometer (`refusedTries`).
+ */
 export type OutstationOdometerRecord = {
   km: number | null;
   readAt: string;
+  /** How many photos the system refused for their odometer before keeping this one; absent when none was. */
+  refusedTries?: number;
   status: "read" | "not_read" | "unreadable";
   tripKm: number | null;
 };
+
+/** Refused this many times for its odometer, the next photo is kept and the approver reads it (owner, 2026-11-25). */
+export const ODOMETER_REFUSALS_BEFORE_KEEPING = 1;
+
+/** The count of earlier odometer refusals a phone sends: a whole number from 0 to 20, anything else 0. */
+export function odometerRefusedTriesOf(value: unknown): number {
+  const number = typeof value === "number" ? value : typeof value === "string" && value.trim() !== "" ? Number(value) : 0;
+  return Number.isInteger(number) && number > 0 ? Math.min(number, 20) : 0;
+}
+
+/** True while the system may still refuse a photo for its odometer: only before its first such refusal. */
+export function odometerMayRefuse(refusedTries: number): boolean {
+  return refusedTries < ODOMETER_REFUSALS_BEFORE_KEEPING;
+}
+
+/**
+ * The room the reader gets for its answer, thinking included: the second provider counts both against it, and
+ * 600 stopped it mid-answer on two of the first three arrival photos (24 and 25 Nov 2026), so neither was read.
+ */
+export const ODOMETER_SCAN_MAX_OUTPUT_TOKENS = 2_000;
 
 /** No car on the road has driven a million kilometres; a longer number is a misread. */
 const MAX_ODOMETER_KM = 999_999;
@@ -81,10 +114,15 @@ export function normalizeOdometerScan(raw: Record<string, unknown>): OdometerRea
   return { problems: [...new Set(problems)], status: "unreadable" };
 }
 
-export function odometerRecordOf(read: OdometerRead, readAt: string): OutstationOdometerRecord {
-  if (read.status === "read") return { km: read.km, readAt, status: "read", tripKm: read.tripKm };
-  return { km: null, readAt, status: read.status === "unavailable" ? "not_read" : "unreadable", tripKm: null };
+export function odometerRecordOf(read: OdometerRead, readAt: string, refusedTries = 0): OutstationOdometerRecord {
+  const tries = refusedTries > 0 ? { refusedTries } : {};
+  if (read.status === "read") return { km: read.km, readAt, status: "read", tripKm: read.tripKm, ...tries };
+  return { km: null, readAt, status: read.status === "unavailable" ? "not_read" : "unreadable", tripKm: null, ...tries };
 }
+
+/** Said at the end of every odometer refusal: the next photo is not refused again. */
+export const ODOMETER_NEXT_PHOTO_KEPT =
+  "If the system still cannot read your next photo, that photo is kept and your approver reads the kilometres from it.";
 
 /** The one message a refused car photo raises: why, then what to do, then what the system needs. */
 export function odometerRefusalMessage(photo: "arrival" | "departure", read: Extract<OdometerRead, { status: "unreadable" }>): string {
@@ -93,7 +131,21 @@ export function odometerRefusalMessage(photo: "arrival" | "departure", read: Ext
     ? `Not accepted: this ${which} does not show the car's odometer.`
     : `Not accepted: the system could not read the kilometres on this ${which}.`;
   const guidance = read.problems.map((problem) => ODOMETER_GUIDANCE[problem]).join(" ");
-  return `${reason} ${guidance} ${ODOMETER_NEEDS}`.trim();
+  return `${reason} ${guidance} ${ODOMETER_NEEDS} ${ODOMETER_NEXT_PHOTO_KEPT}`.trim();
+}
+
+/**
+ * A departure reading below the same trip's arrival reading: one of the two is a misread (claim 423). Null when
+ * either was not read, or when the departure is not below.
+ */
+export function departureBelowArrivalMessage(arrival: OutstationOdometerRecord | null | undefined, departure: OdometerRead): string | null {
+  if (departure.status !== "read" || arrival?.status !== "read" || arrival.km === null || departure.km >= arrival.km) return null;
+  return [
+    `Not accepted: this departure photo reads ${kmLabel(departure.km)} km, less than the ${kmLabel(arrival.km)} km on your arrival photo, so a digit was misread.`,
+    ODOMETER_GUIDANCE.blurry,
+    ODOMETER_GUIDANCE.too_far,
+    ODOMETER_NEXT_PHOTO_KEPT,
+  ].join(" ");
 }
 
 /**
@@ -113,9 +165,11 @@ export function odometerFromValue(value: unknown): OutstationOdometerRecord | un
   if (!status) return undefined;
   const km = wholeKm(record.km);
   if (status === "read" && km === null) return undefined;
+  const refusedTries = odometerRefusedTriesOf(record.refusedTries);
   return {
     km: status === "read" ? km : null,
     readAt: typeof record.readAt === "string" ? record.readAt : "",
+    ...(refusedTries > 0 ? { refusedTries } : {}),
     status,
     tripKm: typeof record.tripKm === "number" && Number.isFinite(record.tripKm) ? record.tripKm : null,
   };

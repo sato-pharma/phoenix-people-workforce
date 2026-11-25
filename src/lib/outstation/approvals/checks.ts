@@ -371,6 +371,8 @@ function odometerCheck(facts: ClaimCheckFacts): ClaimCheck | null {
       ? check("odometer", "fail", "The arrival photo does not show a readable odometer.")
       : check("odometer", "unknown", "The odometer could not be read when the photo was taken, so it is not checked.");
   }
+  // Kept after one refusal (owner, 2026-11-25): the approver reads the kilometres from the photo.
+  if (departure?.status === "unreadable") return check("odometer", "fail", "The departure photo does not show a readable odometer.");
   if (departure?.status === "read" && departure.km !== null && departure.km < arrival.km) {
     return check(
       "odometer",
