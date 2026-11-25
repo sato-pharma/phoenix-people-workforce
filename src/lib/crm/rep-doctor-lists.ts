@@ -83,6 +83,8 @@ import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { getOrLoadShared } from "@/lib/cache/shared-read";
+import { CRM_PLAN_WINDOWS } from "@/lib/crm/shared-windows";
 
 const MONTH_KEY_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 const MONTH_NAMES = [
@@ -423,6 +425,28 @@ const PLAN_CHUNK_CONCURRENCY = 4;
  */
 export type PlanChunkMemo = Map<string, Promise<ScannedPlanRow[] | null>>;
 
+/**
+ * 🔴 THE COMPANY PLAN WINDOW IS SHARED FOR A MINUTE, BY DISPLAY BOARDS ONLY (25 Nov 2026). From 17:21 Cairo
+ * the Anti Infective team, twelve reps and their district manager, kept opening KPIs → Frequency and
+ * Coverage. Those two tabs read the whole company's plans on purpose (an off-plan doctor is named from
+ * another rep's plan row), and each open read the month TWICE — the doctor lists and the Phoenix half —
+ * at about 80 requests a read: 3,213 calls and 9,947 s of database time on the plan view in 18 minutes,
+ * against 221 calls and 176 s in the 18 minutes before, and the 2-core database ran at 87-96% CPU until
+ * it was resized at 17:33. The visits and check-ins beside it already came from the minute-old copy
+ * (`reads.ts`, "A dashboard may reuse a company window"); the plans did not. Now they do, for a caller
+ * that opts in with `reuseRecentWindow` — the same freshness the owner chose on 2026-10-16. The key is
+ * the window: the projection and the page size are fixed, and every viewer's scope is applied to the
+ * rows afterwards, so the copy holds company rows, never one viewer's board. A saved plan or visit drops
+ * it (`refreshSharedCrmPlanWindows`, `refreshSharedCrmWindows`), and the 60 s lifetime covers the rest.
+ * November 2026 held 19,310 plan rows on production, so the budget keeps a few months.
+ */
+const COMPANY_PLAN_WINDOW_LIMITS = { maxEntries: 6, maxRowsTotal: 150_000 };
+
+/** The shared copy's key: the window and the one projection a scan reads. Pure, exported for its test. */
+export function companyPlanWindowKey(from: string, to: string): string {
+  return `${from}|${to}|${PLAN_SCAN_COLUMNS}|${PLAN_PAGE_SIZE}`;
+}
+
 /** Reads every plan entry whose date falls inside the window. Returns [] before the migration
  * ships, so the page renders an honest empty state instead of a crash.
  *
@@ -446,7 +470,18 @@ export type PlanChunkMemo = Map<string, Promise<ScannedPlanRow[] | null>>;
 export async function scanPlanEntries(
   from: string,
   to: string,
-  options?: { agentCrmIds?: readonly number[]; agentHrIds?: readonly string[]; memo?: PlanChunkMemo },
+  options?: {
+    agentCrmIds?: readonly number[];
+    agentHrIds?: readonly string[];
+    memo?: PlanChunkMemo;
+    /**
+     * Opt-in, DISPLAY callers only: a whole-company window (no agents named) may come from a copy up to a
+     * minute old, shared by every viewer and every board of the same window (see COMPANY_PLAN_WINDOW_LIMITS).
+     * Never for a read that decides money, a deduction, an approval or a notification. A read that names
+     * agents always reads live.
+     */
+    reuseRecentWindow?: boolean;
+  },
 ): Promise<PlanRow[]> {
   const supabase = getSupabaseAdmin();
   type AgentChunk = { column: "agent_crm_id" | "agent_hr_id"; values: readonly (number | string)[] } | null;
@@ -501,7 +536,7 @@ export async function scanPlanEntries(
         cursor = last;
       }
     };
-    const windowRows = await readCompanyWindow<ScannedPlanRow>({
+    const readWindow = () => readCompanyWindow<ScannedPlanRow>({
       days,
       pageSize: PLAN_PAGE_SIZE,
       probe: async () => {
@@ -521,6 +556,9 @@ export async function scanPlanEntries(
       order: (left, right) => Number(left.crm_plan_entry_id) - Number(right.crm_plan_entry_id),
       sortDays: true,
     });
+    const windowRows = options?.reuseRecentWindow
+      ? (await getOrLoadShared(CRM_PLAN_WINDOWS, companyPlanWindowKey(from, to), readWindow, COMPANY_PLAN_WINDOW_LIMITS)).rows
+      : await readWindow();
     return windowRows ?? [];
   }
 
@@ -728,7 +766,7 @@ export async function getRepDoctorLists(input: {
         // back in entry-id order, and the builder takes a rep's identity from his FIRST plan row, so
         // the union is put back into that order.
         scanPlanEntries(from, to, { agentCrmIds: agents.crmIds, agentHrIds: agents.hrIds, memo: input.planChunks }).then(inPlanEntryOrder)
-      : scanPlanEntries(from, to),
+      : scanPlanEntries(from, to, { reuseRecentWindow: input.reuseRecentWindow === true }),
     queryVisits<VisitRow>({
       collapseDoubleVisits: true,
       columns:

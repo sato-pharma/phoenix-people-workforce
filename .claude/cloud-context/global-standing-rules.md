@@ -108,6 +108,9 @@ the primary by absolute path with no error. Never send parallel subagents into o
   `unarchive_session` then `archive_session` for exactly the ones it lists. Never stop or restart the app yourself
   (only the RAM meter's own automatic restart, whose conditions are never widened).
 - Never watch CI or a deploy in the foreground — background it and report the end.
+- 🔴 **EVERY NEW SCHEDULED TASK RUNS WINDOWLESS** (owner, 2026-11-25) — action `conhost.exe --headless <program> <args>`,
+  never `powershell.exe`/`node.exe` direct: Windows Terminal draws a window `-WindowStyle Hidden` cannot hide, and
+  closing it kills the job (exit 0xC000013A; the mesh watcher died 3× on 25 Nov). Model: `fix-task-windows-elevated.ps1`.
 - **Sessions compact at about 300k tokens** (owner, 2026-10-31): `CLAUDE_CODE_AUTO_COMPACT_WINDOW` and
   `autoCompactWindow` are both **333000** in `settings.json` — compaction lands ~33k below the window. Never change it unasked.
 - **Keep `CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=true`** in `settings.json` `env` AND as a Windows user variable —
