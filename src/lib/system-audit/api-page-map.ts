@@ -57,6 +57,7 @@ export const API_PAGE_MAP: Readonly<Record<string, ApiPageTargets>> = {
   "/api/admin/phoenix-crm": { admin: "/admin/field-crm" },
   "/api/admin/pm-products": { admin: "/admin/pm-products" },
   "/api/admin/question-prompts": { admin: "/admin/screening-questions", hr: "/hr/admin/screening-questions" },
+  "/api/admin/rep-effectiveness-export": { admin: "/admin/rep-visits-export" },
   "/api/admin/rep-visits-export": { admin: "/admin/rep-visits-export" },
   "/api/admin/salary-flags": { admin: "/admin/system-audit" },
   "/api/admin/sato-email": { admin: "/admin/sato-email" },
