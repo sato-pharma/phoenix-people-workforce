@@ -6,6 +6,7 @@ import {
   chooseSignToReadAgain,
   jsonbSafe,
   judgeSignboard,
+  personNameWords,
   SIGNBOARD_MAX_READ_ATTEMPTS,
   signboardNextAttempt,
   judgeSignboards,
@@ -587,6 +588,15 @@ function checkNameSpelling(): void {
   assert.equal(onSign("مي احمد", ["احمد سامي"], "د/ احمد سامي استشاري الباطنة"), false, "nor on the sign's whole text");
   assert.equal(pm("مي احمد علي", ["احمد علي حسن"]), false, "nor her father's and grandfather's names behind no given name");
   assert.equal(pm("مي احمد", ["د/ مي احمد"]), true, "her own plate still reads her");
+
+  // 8 · 🔴 ONE ALEF WHERE A NAME ENDING IN ا MEETS ITS TAIL (Hadeer Abdelnaser, 23 Nov 2026): El Kholafaa's
+  // board wrote "د. صبحي عطا الله", the list holds صبحي عطالله محمد, and both photos were refused.
+  assert.equal(pm("صبحي عطالله محمد", ["د. صبحي عطا الله"]), true, "🔴 عطا الله on the board is عطالله on the list");
+  assert.equal(pm("صبحي عطا الله محمد", ["د. صبحي عطالله"]), true, "and the other way round");
+  assert.equal(pm("صبحي عطاالله محمد", ["د. صبحي عطالله"]), true, "and a list row written with both alefs");
+  assert.deepEqual(personNameWords("صبحي عطا الله").map((word) => word.word), ["صبحي", "عطالله"], "the compound is one word, one alef");
+  assert.deepEqual(personNameWords("وسام عبد الله").map((word) => word.word), ["وسام", "عبدالله"], "a head's compound is unchanged");
+  assert.equal(pm("صبحي عطالله محمد", ["د. صبحي جاد الله"]), false, "another family's compound is still another man");
 
   // 5 · A facility name is untouched: its quorum is the stemmed distinctive words, as before.
   assert.equal(

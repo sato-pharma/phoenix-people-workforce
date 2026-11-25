@@ -336,6 +336,31 @@ export function scheduleDoorAction(check: PhoenixCrmScheduleCheck, earlierTries:
   };
 }
 
+/**
+ * The door's answer for the building's board ON FILE — the timetable the venue already holds, reused
+ * because this phone sent no photograph of its own.
+ *
+ * 🔴 A BOARD ON FILE IS NEVER THE THIRD PHOTOGRAPH (Hadeer Abdelnaser, Sobhy Atallah at El Kholafaa,
+ * 23 Nov 2026). Her two photos of the board were refused, and the save after them sent none, so it fell
+ * back to the board she had photographed on 1 Nov — a different sheet that never carried his name.
+ * `scheduleDoorAction` counted her two refusals, called that old picture the third try that "still
+ * fails", and saved and held him against it; the administrator refused him off a photograph of the
+ * wrong sheet while the two that named him sat unfiled. A board he did not take this time can never
+ * spend or end his tries, so a photo problem on it always asks for a photograph — the try named is his
+ * own next one — and only his own third photograph is ever held. A board on file that is clear and
+ * does not name him, or that is a screen, still holds exactly as before: no retake can change it.
+ */
+export function boardOnFileDoorAction(check: PhoenixCrmScheduleCheck, earlierTries: number): ScheduleDoorAction {
+  const tried = Math.max(0, Math.floor(Number.isFinite(earlierTries) ? earlierTries : 0));
+  const action = scheduleDoorAction(check, 0);
+  if (action.kind === "retake") {
+    const nextTry = Math.min(tried + 1, SCHEDULE_MAX_TRIES);
+    return { ...action, message: `${retakeAdvice(check)} Try ${nextTry} of ${SCHEDULE_MAX_TRIES}.`, nextTry };
+  }
+  if (action.kind === "hold") return { ...action, tries: tried + 1 };
+  return action;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // A read the door never got an answer to is read again at night (Phoenix CRM validation audit, 14 Nov 2026).
 // ─────────────────────────────────────────────────────────────────────────────────────────────────

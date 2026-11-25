@@ -12,9 +12,9 @@ repo so a cloud session can read them, giving it the same two-tier recall a loca
 
 **Local sessions ignore this mirror** — they have the live originals under `~/.claude/`.
 
-## What is here (generated 25 Nov 2026, 23:33 Cairo)
+## What is here (generated 26 Nov 2026, 00:11 Cairo)
 - Memory files: **1632** (6.53 MB)
-- Global standing rules: 15.4 KB
+- Global standing rules: 15.7 KB
 - Pinned laptop hooks: **7** in `laptop-hooks/` (213.9 KB) — scratchpad-guard.mjs, next-step-capture.mjs, risky-allow-guard.mjs, memory-guard.mjs, dev-server-reaper.mjs, weekly-review-readonly.mjs, spawn-probe.mjs
 
 `laptop-hooks/` is **not for a cloud session to read or run.** Those hooks guard every folder on the

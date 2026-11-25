@@ -156,7 +156,7 @@ import { judgeTimetableBoards, readTimetableBoards, recordPlaceSchedule, type Sc
 import { addTimetablePages } from "@/lib/phoenix-crm/server/timetable-pages";
 import { extraPageRefusal } from "@/lib/phoenix-crm/timetable-pages-rules";
 import {
-  SCHEDULE_MAX_TRIES,
+  boardOnFileDoorAction,
   SCHEDULE_RETAKE_CODE,
   SCHEDULE_UPLOAD_TOO_EARLY,
   scheduleUploadAllowed,
@@ -2191,19 +2191,6 @@ type SeatedSchedule = {
 };
 
 /**
- * The retake words for a board the rep did NOT photograph — the building's board on file, read again and
- * found unreadable or not a timetable.
- *
- * Phoenix CRM validation audit, 14 Nov 2026: that refusal was filed and counted like one of his own
- * photographs, so the building's stored board cost him try 1 of 3 before he had opened the camera. It is
- * no longer filed (`scanSeatedTimetable`), so the try the sentence names is one lower than
- * `scheduleDoorAction` wrote: with nothing refused today his next photograph is try 1, not try 2.
- */
-function timetableRetakeWordsForBoardOnFile(action: { message: string; nextTry: number }): string {
-  return action.message.replace(/ Try \d+ of \d+\.$/, ` Try ${Math.max(1, action.nextTry - 1)} of ${SCHEDULE_MAX_TRIES}.`);
-}
-
-/**
  * 🔴 THE TIMETABLE SCANNER AT THE DOOR (owner, 2026-10-17) — ONE HELPER FOR BOTH SEATING PATHS, so
  * Validate and Add another clinic can never disagree about a photograph. The board is read, the rep's
  * refused photographs of this building today are counted, and `scheduleDoorAction` decides:
@@ -2268,12 +2255,13 @@ async function scanSeatedTimetable(input: {
   const earlierTries = asksForAPhoto || uploaded
     ? await countTimetableRefusals({ sharedPlaceId: venue.sharedPlaceId, repHrId: input.repHrId, isTest: input.isTest })
     : 0;
-  const action = scheduleDoorAction(check, earlierTries);
+  // The building's board on file is never one of his tries, and never his third (`boardOnFileDoorAction`).
+  const action = seatedPhoto.reused ? boardOnFileDoorAction(check, earlierTries) : scheduleDoorAction(check, earlierTries);
   if (action.kind === "retake") {
     // Phoenix CRM validation audit, 14 Nov 2026: a board reused from file is still refused with the
     // retake code and words, so the camera opens — but it is not filed and spends no try. The rep did
     // not take that photograph; counting it cost him one of his three before he had taken any.
-    if (seatedPhoto.reused) throw validationError(timetableRetakeWordsForBoardOnFile(action), SCHEDULE_RETAKE_CODE);
+    if (seatedPhoto.reused) throw validationError(action.message, SCHEDULE_RETAKE_CODE);
     await recordTimetableRefusal({
       reason: action.reason,
       sharedPlaceId: venue.sharedPlaceId,
