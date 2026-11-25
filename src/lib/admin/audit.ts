@@ -424,6 +424,9 @@ export type AuditEntityType =
   // A whole line's customer list, by region and rep, with the line as the entity id (2026-11-18). It
   // carries every customer of the line and their grades out of the building. No migration.
   | "phoenix_crm_line_customer_list"
+  // The Super Admin seating customers still waiting to be validated in an approved building whose
+  // timetable names them (owner, 26 Nov 2026), with the building as the entity id. No migration.
+  | "phoenix_crm_seat_waiting_in_venue"
   // Who pulled the shared Planning Calendar to XLSX, for which month. Gated to SFE
   // Manager / Super Admin; the month is the entity id so a row says WHICH period
   // was handed over. audit_logs has no CHECK on entity_type, so this needs no migration.

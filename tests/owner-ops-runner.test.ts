@@ -35,8 +35,10 @@ function dryRunIsTheDefault() {
   const link = ["link-doctor", "--body", "body.json"];
   const merge = ["merge-venues", "--survivor", PHARMACY, "--loser", OTHER, "--reason", "same shop, same codes"];
   const pin = ["pin-pharmacy", "--pharmacy", PHARMACY, "--lat", "29.95", "--lng", "31.25"];
+  const crm = ["load-crm-list", "--seat", "SEAT-PED-REP-D12", "--body", "body.json"];
+  const seat = ["seat-in-building", "--seat", "SEAT-PED-REP-D12", "--building", PHARMACY, "--customers", `${OTHER},${PHARMACY}`, "--reason", "his timetable names them"];
 
-  for (const argv of [link, merge, pin]) {
+  for (const argv of [link, merge, pin, crm, seat]) {
     assert.equal(plan(argv).apply, false, `${argv[0]} with no --apply is a DRY RUN`);
     assert.equal(plan([...argv, "--apply"]).apply, true, `${argv[0]} --apply writes`);
     assert.equal(plan([argv[0]!, "--apply", ...argv.slice(1)]).apply, true, "--apply counts wherever it stands");
@@ -54,6 +56,19 @@ function dryRunIsTheDefault() {
   refused(["pin-pharmacy", "--pharmacy", PHARMACY, "--lat", "abc", "--lng", "31.25"], "a latitude that is not a number");
   refused(["--apply", "pin-pharmacy"], "a run that does not name its job first");
   refused(["fix-everything"], "a job the runner does not know");
+  const crmPlan = plan(["load-crm-list", "--seat", "seat-ped-rep-d12", "--body", "body.json"]);
+  assert.equal(crmPlan.job === "load-crm-list" && crmPlan.seatId, "SEAT-PED-REP-D12", "a territory seat id is read in capitals");
+  refused(["load-crm-list", "--seat", "PD-0030", "--body", "body.json"], "an HR id is not a territory seat id");
+  refused(["load-crm-list", "--body", "body.json"], "a list load names its territory");
+  refused(["load-crm-list", "--seat", "SEAT-PED-REP-D12"], "and its body");
+  refused(["load-crm-list", "--seat", "SEAT-PED-REP-D12", "--body", "b.json", "--lat", "31"], "a flag of another job");
+  const seatPlan = plan(seat);
+  assert.deepEqual(seatPlan.job === "seat-in-building" && seatPlan.customerIds, [OTHER, PHARMACY], "the customers are read from one comma-separated list, in order");
+  refused(["seat-in-building", "--seat", "SEAT-PED-REP-D12", "--building", PHARMACY, "--customers", `${OTHER},${OTHER}`, "--reason", "his timetable names them"], "a customer named twice");
+  refused(["seat-in-building", "--seat", "SEAT-PED-REP-D12", "--building", PHARMACY, "--customers", "not-a-uuid", "--reason", "his timetable names them"], "a customer id that is not a uuid");
+  refused(["seat-in-building", "--seat", "SEAT-PED-REP-D12", "--building", PHARMACY, "--customers", OTHER, "--reason", "short"], "a reason under 10 characters, which the database refuses");
+  refused(["seat-in-building", "--seat", "SEAT-PED-REP-D12", "--customers", OTHER, "--reason", "his timetable names them"], "a seating with no building");
+  refused(["seat-in-building", "--seat", "PD-0030", "--building", PHARMACY, "--customers", OTHER, "--reason", "his timetable names them"], "an HR id is not a territory seat id");
 }
 
 type Call = { url: string; method: string };
@@ -123,7 +138,7 @@ function theRunnerFencesBeforeItLoadsTheApp() {
   const body = source.slice(mainAt);
   const fence = body.indexOf("installOwnerOpsDryRunFence(fenced)");
   const firstAppUse = Math.min(
-    ...[/await import\(["']@\//, /await liveAccessContext\(/, /await run(?:LinkDoctor|MergeVenues|PinPharmacy)\(/]
+    ...[/await import\(["']@\//, /await liveAccessContext\(/, /await run(?:LinkDoctor|MergeVenues|PinPharmacy|LoadCrmList|SeatInBuilding)\(/]
       .map((pattern) => body.search(pattern))
       .filter((at) => at >= 0),
   );
@@ -137,6 +152,21 @@ function theRunnerFencesBeforeItLoadsTheApp() {
     "only --apply skips the fence, and --apply first refuses a tree behind origin/main",
   );
   assert.match(source, /refuseUnknownFlags\(/, "an unknown flag (--aply) is refused, never read as a dry run the caller thinks wrote");
+  // load-crm-list goes through the SFE's own upload — never a hand insert into the customer table.
+  const crmJob = source.slice(source.indexOf("async function runLoadCrmList("), source.indexOf("async function crmListProof("));
+  assert.ok(crmJob.length > 0, "the load-crm-list job is found");
+  assert.match(crmJob, /await assertPermission\(owner, "phoenix_crm", "approve"\)/, "the route's own gate");
+  assert.match(crmJob, /buildListTemplateFor\(viewer, plan\.seatId, false\)/, "the territory's own template, seat marker and all");
+  assert.match(crmJob, /importListTemplate\(viewer, form\)/, "handed to the upload's own function");
+  assert.doesNotMatch(crmJob, /\.from\("phoenix_crm_customers"\)/, "and never written to the customer table by hand");
+  // seat-in-building goes through the Super Admin's own door — never a hand insert of a place, and never
+  // a validation written by the runner: only the board's settle validates.
+  const seatJob = source.slice(source.indexOf("async function runSeatInBuilding("), source.indexOf("async function seatInBuildingRows("));
+  assert.ok(seatJob.length > 0, "the seat-in-building job is found");
+  assert.match(seatJob, /await assertPermission\(owner, "phoenix_crm", "approve"\)/, "the module's own gate");
+  assert.match(seatJob, /seatWaitingCustomersInVenue\(viewer, \{/, "handed to the door's own function");
+  assert.doesNotMatch(seatJob, /\.(?:insert|update|upsert|delete)\(/, "and the runner itself writes no row");
+  assert.doesNotMatch(seatJob, /validated_at\s*:/, "nor stamps a validation");
 }
 
 export async function runOwnerOpsRunnerTests() {

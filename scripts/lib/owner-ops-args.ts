@@ -12,13 +12,15 @@
 // refused rather than "last one wins".
 // ---------------------------------------------------------------------------
 
-export const OWNER_OPS_JOBS = ["link-doctor", "merge-venues", "pin-pharmacy"] as const;
+export const OWNER_OPS_JOBS = ["link-doctor", "merge-venues", "pin-pharmacy", "load-crm-list", "seat-in-building"] as const;
 export type OwnerOpsJob = (typeof OWNER_OPS_JOBS)[number];
 
 /** Every flag the runner knows, for refuseUnknownFlags. */
 export const OWNER_OPS_FLAGS = [
   "--apply",
   "--body",
+  "--building",
+  "--customers",
   "--employee",
   "--help",
   "--lat",
@@ -26,6 +28,7 @@ export const OWNER_OPS_FLAGS = [
   "--loser",
   "--pharmacy",
   "--reason",
+  "--seat",
   "--survivor",
   "-h",
 ] as const;
@@ -34,7 +37,12 @@ const VALUE_FLAGS_BY_JOB: Record<OwnerOpsJob, readonly string[]> = {
   "link-doctor": ["--body"],
   "merge-venues": ["--survivor", "--loser", "--reason", "--employee"],
   "pin-pharmacy": ["--pharmacy", "--lat", "--lng", "--employee"],
+  "load-crm-list": ["--seat", "--body"],
+  "seat-in-building": ["--seat", "--building", "--customers", "--reason"],
 };
+
+/** The database's own ceiling on one seating list (phoenix_crm_seat_waiting_customers_in_venue). */
+export const SEAT_IN_BUILDING_MAX_CUSTOMERS = 60;
 
 /**
  * Egypt's box, generously. A pin outside it is refused: usually latitude and longitude swapped. The two
@@ -50,7 +58,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export type OwnerOpsPlan =
   | { job: "link-doctor"; apply: boolean; bodyPath: string }
   | { job: "merge-venues"; apply: boolean; survivorId: string; loserId: string; reason: string; employeeHrId: string | null }
-  | { job: "pin-pharmacy"; apply: boolean; pharmacyId: string; latitude: number; longitude: number; employeeHrId: string | null };
+  | { job: "pin-pharmacy"; apply: boolean; pharmacyId: string; latitude: number; longitude: number; employeeHrId: string | null }
+  | { job: "load-crm-list"; apply: boolean; seatId: string; bodyPath: string }
+  | { job: "seat-in-building"; apply: boolean; seatId: string; buildingId: string; customerIds: string[]; reason: string };
 
 export type OwnerOpsParse = { ok: true; plan: OwnerOpsPlan } | { ok: false; error: string };
 
@@ -67,6 +77,12 @@ listed and none is sent. Only --apply writes. Every run ends with a proof read.
       Fold a duplicate pharmacy copy into the one that stays. One copy per run.
   pin-pharmacy --pharmacy <pharmacy id> --lat <latitude> --lng <longitude> [--employee <hr id>]
       Put a map pin on a saved pharmacy that has none (evidence stays pending: no shop photo).
+  load-crm-list --seat <seat id> --body <file.json>
+      Put customers on a rep's Phoenix CRM list as "to validate" (and hours on ones already waiting),
+      through the SFE's own list-template upload. The rep validates each at the door.
+  seat-in-building --seat <seat id> --building <building id> --customers <id,id,...> --reason "<why>"
+      Seat customers still waiting to be validated (no place yet, hours set) in an approved building
+      that has a timetable, at the building's point. The board then validates only the ones it names.
 
   --apply      write for real (refused from a tree behind origin/main)
   --employee   whose draft workspace the proof read opens; by default every employee holding a
@@ -132,6 +148,37 @@ export function parseOwnerOpsArgs(argv: readonly string[]): OwnerOpsParse {
     const bodyPath = need("--body");
     if (typeof bodyPath !== "string") return { ok: false, ...bodyPath };
     return { ok: true, plan: { job, apply, bodyPath } };
+  }
+
+  if (job === "load-crm-list") {
+    const bodyPath = need("--body");
+    if (typeof bodyPath !== "string") return { ok: false, ...bodyPath };
+    const seatId = need("--seat");
+    if (typeof seatId !== "string") return { ok: false, ...seatId };
+    if (!/^SEAT-[A-Z0-9-]+$/i.test(seatId)) return { ok: false, error: `--seat must be a territory seat id like SEAT-PED-REP-D12, got "${seatId}"` };
+    return { ok: true, plan: { job, apply, seatId: seatId.toUpperCase(), bodyPath } };
+  }
+
+  if (job === "seat-in-building") {
+    const seatId = need("--seat");
+    if (typeof seatId !== "string") return { ok: false, ...seatId };
+    if (!/^SEAT-[A-Z0-9-]+$/i.test(seatId)) return { ok: false, error: `--seat must be a territory seat id like SEAT-PED-REP-D12, got "${seatId}"` };
+    const buildingId = need("--building");
+    if (typeof buildingId !== "string") return { ok: false, ...buildingId };
+    if (!UUID.test(buildingId)) return { ok: false, error: `--building must be the building's id (a uuid), got "${buildingId}"` };
+    const list = need("--customers");
+    if (typeof list !== "string") return { ok: false, ...list };
+    const customerIds = list.split(",").map((part) => part.trim()).filter(Boolean);
+    if (customerIds.length === 0) return { ok: false, error: "--customers names no customer" };
+    const bad = customerIds.find((part) => !UUID.test(part));
+    if (bad) return { ok: false, error: `--customers takes customer ids (uuids) separated by commas, got "${bad}"` };
+    const unique = [...new Set(customerIds.map((part) => part.toLowerCase()))];
+    if (unique.length !== customerIds.length) return { ok: false, error: "--customers names a customer twice" };
+    if (unique.length > SEAT_IN_BUILDING_MAX_CUSTOMERS) return { ok: false, error: `--customers names more than ${SEAT_IN_BUILDING_MAX_CUSTOMERS} customers` };
+    const reason = need("--reason");
+    if (typeof reason !== "string") return { ok: false, ...reason };
+    if (reason.length < 10 || reason.length > 500) return { ok: false, error: "--reason must be 10 to 500 characters" };
+    return { ok: true, plan: { job, apply, seatId: seatId.toUpperCase(), buildingId: buildingId.toLowerCase(), customerIds: unique, reason } };
   }
 
   if (job === "merge-venues") {
