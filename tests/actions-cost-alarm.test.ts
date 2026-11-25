@@ -50,8 +50,15 @@ export function runActionsCostAlarmTests() {
   assert.equal(billingPage("sato-pharma", true), "github.com/organizations/sato-pharma/settings/billing");
   assert.equal(billingPage("someone", false), "github.com/settings/billing", "🔴 github.com/users/<login>/settings/billing is a 404");
   // 🔴 An organization's included minutes depend on its plan, so the Pro 3,000 is never assumed for one —
-  //    and an unset figure must NOT switch the alarm off (exit 2 is only a warning): it counts as 0 and says estimate.
-  assert.equal(includedMinutesFrom({}, true), 0, "🔴 an organization with no stated allowance still projects, on the API's own discount");
+  //    and an unset figure must NOT switch the alarm off (exit 2 is only a warning): it counts as the smallest any
+  //    organization plan includes (GitHub Free, 2,000) and says estimate. 🔴 It was 0 until 2026-11-25, and 0 read
+  //    120 free minutes on a private repository as "the $0 budget is ALREADY reached, GitHub has stopped Actions".
+  assert.equal(includedMinutesFrom({}, true), 2000, "🔴 an organization with no stated allowance still projects, on the smallest plan's allowance");
+  const fieldCamera = projectActionsCost(
+    [{ ...row("2026-11-20", 0.72, 0.72), repositoryName: "phoenix-field-camera" }],
+    { now: new Date("2026-11-25T17:00:00Z"), budget: 0, includedMinutes: includedMinutesFrom({}, true) ?? 0 },
+  );
+  assert.equal(fieldCamera.finding, false, "🔴 120 minutes discounted in full were read as the $0 budget reached");
   assert.equal(allowanceIsEstimated({}, true), true, "and the reading is labelled an estimate");
   assert.equal(allowanceIsEstimated({ ACTIONS_INCLUDED_MINUTES: "50000" }, true), false);
   assert.equal(allowanceIsEstimated({}, false), false, "a personal account's 3,000 is a stated default, not an estimate");
@@ -255,10 +262,24 @@ export function runActionsCostAlarmTests() {
   assert.doesNotMatch(alertOnly, /GitHub has stopped Actions/, "🔴 an alerting budget was described as stopping CI");
   //     Visibility is read, never guessed: an unreadable repository is neither free nor billed.
   const vis = publicRepositories(["a", "b", "c"], (name: string) => {
-    if (name === "c") throw new Error("HTTP 404");
+    if (name === "c") throw new Error("HTTP 500");
     return name === "a" ? "public" : "private";
   });
-  assert.deepEqual(vis, { free: ["a"], unread: ["c"] });
+  assert.deepEqual(vis, { free: ["a"], hidden: [], unread: ["c"] });
+  //     🔴 A 404 is a private repository the token was not given, never "cannot tell" (2026-11-25: the
+  //     alarm went blind for a day on phoenix-field-camera). Every token reads every public repository.
+  const notGiven = Object.assign(new Error("Command failed: gh api repos/sato-pharma/x"), { stderr: "gh: Not Found (HTTP 404)" });
+  const badToken = Object.assign(new Error("Command failed"), { stderr: "gh: Bad credentials (HTTP 401)" });
+  const forbidden = Object.assign(new Error("Command failed"), { stderr: "gh: Resource not accessible (HTTP 403)" });
+  const scoped = publicRepositories(["pub", "x", "y", "z"], (name: string) => {
+    if (name === "x") throw notGiven;
+    if (name === "y") throw badToken;
+    if (name === "z") throw forbidden;
+    return "public";
+  });
+  assert.deepEqual(scoped.hidden, ["x"], "🔴 a repository the token answers 404 for went back to blinding the alarm");
+  assert.deepEqual(scoped.unread, ["y", "z"], "🔴 a refused token (401) or a forbidden read (403) was read as a private repository");
+  assert.deepEqual(scoped.free, ["pub"]);
 
   // 12. 🔴 AN EXIT 2 IS A FINDING, NOT A WARNING. It was `::warning::` and `exit 0`: green, nothing sent,
   //     for every day the budget variable was unset. It still cannot fail the job (continue-on-error), but

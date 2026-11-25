@@ -230,12 +230,21 @@ export function billingPage(owner, isOrg = GITHUB_OWNER_IS_ORG) {
 /**
  * The plan's included minutes, or null when the variable holds something that is not a number. A personal
  * Pro account has 3,000; an organization's depends on its plan (Free, Team, an Enterprise trial), so
- * unset there counts as 0 and the billing API's own discount is the allowance (`projectActionsCost` takes
- * the larger of the two). The alarm stays live; `allowanceIsEstimated` says the reading is rougher.
+ * unset there counts as the SMALLEST any organization plan includes — GitHub Free's $12, 2,000 Linux
+ * minutes — and the billing API's own discount when that is larger (`projectActionsCost` takes the larger
+ * of the two). The alarm stays live; `allowanceIsEstimated` says the reading is rougher.
+ *
+ * 🔴 IT WAS 0 UNTIL 2026-11-25, AND 0 READ A FREE MINUTE AS A STOPPED CI. The first private repository
+ * (`phoenix-field-camera`, 120 minutes on 20 Nov, discounted in full, $0.00 billed) made the allowance
+ * exactly what had been discounted so far, so the next minute was projected as billed and the $0 budget
+ * as "ALREADY reached … GitHub has stopped Actions" while CI ran. 2,000 never overstates an organization's
+ * allowance (Enterprise Cloud includes $300, about 50,000 minutes), so it cannot hide a real stop.
  */
+export const SMALLEST_ORGANIZATION_INCLUDED_MINUTES = 2000;
+
 export function includedMinutesFrom(env, isOrg = GITHUB_OWNER_IS_ORG) {
   const raw = String(env.ACTIONS_INCLUDED_MINUTES ?? "").trim();
-  if (raw === "") return isOrg ? 0 : 3000;
+  if (raw === "") return isOrg ? SMALLEST_ORGANIZATION_INCLUDED_MINUTES : 3000;
   const minutes = Number(raw);
   return Number.isFinite(minutes) && minutes >= 0 ? minutes : null;
 }
@@ -280,18 +289,29 @@ export function resolveBudget({ readBudgets, env, owner = GITHUB_OWNER, isOrg = 
  * Which of `names` (repositories of the account) are public. `readVisibility(name)` returns the
  * repository's `visibility` and throws when it cannot be read; an unread one is returned in `unread`,
  * never guessed either way — guessed free hides spend, guessed billed raises a false alarm.
+ *
+ * 🔴 A 404 IS NOT AN UNREAD ONE (2026-11-25, the alarm went blind on `phoenix-field-camera`). Every
+ * GitHub token reads every PUBLIC repository, so a repository the usage report names and the token
+ * answers 404 for is private one the token was not given (the billing token is scoped to this
+ * repository; `phoenix-field-camera` was made private on 20 Nov). That is a reading, not a guess: it is
+ * billed, and is returned in `hidden` so the run names it. The one case it reads wrong is a PUBLIC
+ * repository deleted since it ran, and that errs loud (counted as spend), never quiet. A 401, a 403, a
+ * timeout or anything else is still `unread`.
  */
 export function publicRepositories(names, readVisibility) {
   const free = [];
+  const hidden = [];
   const unread = [];
   for (const name of names) {
     try {
       if (String(readVisibility(name) ?? "").trim().toLowerCase() === "public") free.push(name);
-    } catch {
-      unread.push(name);
+    } catch (error) {
+      const text = `${error?.stderr || ""} ${error?.message || ""}`;
+      if (/\bHTTP 404\b|\bNot Found\b/i.test(text) && !/\bHTTP 40[13]\b|Bad credentials/i.test(text)) hidden.push(name);
+      else unread.push(name);
     }
   }
-  return { free, unread };
+  return { free, hidden, unread };
 }
 
 /** Why a read failed, in words that say what to do. Never a token. */
@@ -360,6 +380,11 @@ async function main() {
     process.exitCode = 2;
     return;
   }
+  if (visibility.hidden.length) {
+    console.log(
+      `  Counted as billed: ${visibility.hidden.join(", ")} — the token cannot see ${visibility.hidden.length === 1 ? "it" : "them"}, and every token sees a public repository, so ${visibility.hidden.length === 1 ? "it is" : "they are"} private.`,
+    );
+  }
   const projection = projectActionsCost(items, {
     now,
     budget: budget.amount,
@@ -375,7 +400,7 @@ async function main() {
   for (const line of describeProjection(projection, { now })) console.log(`  ${line}`);
   if (allowanceIsEstimated(process.env) && projection.gross > 0) {
     console.log(
-      `  ESTIMATE: ACTIONS_INCLUDED_MINUTES is unset, so ${GITHUB_OWNER}'s included minutes count only as far as the billing API has discounted them. Set it to the plan's figure on ${billingPage(GITHUB_OWNER)} for an exact reading.`,
+      `  ESTIMATE: ACTIONS_INCLUDED_MINUTES is unset, so ${GITHUB_OWNER}'s included minutes count as ${SMALLEST_ORGANIZATION_INCLUDED_MINUTES.toLocaleString("en-US")}, the smallest any organization plan includes, or what the billing API has discounted if that is more. Set it to the plan's figure on ${billingPage(GITHUB_OWNER)} for an exact reading.`,
     );
   }
   if (projection.finding) {
