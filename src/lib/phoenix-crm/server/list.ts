@@ -2321,8 +2321,6 @@ export type ValidateResult = {
    * in the scanner's own words, by his ruling for this one photograph. Null for every other hold.
    */
   heldBecause: ScheduleHeldBecause | null;
-  /** Pages 2 to 5 of a FRESH timetable, with what the reader saw on each, to keep once the save succeeds. */
-  pages: Array<{ path: string; board: ScheduleBoardReading | null }>;
 };
 
 /**
