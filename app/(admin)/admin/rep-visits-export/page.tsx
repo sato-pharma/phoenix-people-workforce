@@ -2,7 +2,8 @@ import { redirect } from "next/navigation";
 import { FileSpreadsheet } from "lucide-react";
 
 import { AdminCallout, AdminPageHero } from "@/components/admin/admin-design-system";
-import { phxButtonPrimaryClassName, phxFieldClassName, phxLabelClassName, phxSelectClassName } from "@/components/ui/form-tokens";
+import { RepCombobox } from "@/components/rep-visits-export/rep-combobox";
+import { phxButtonPrimaryClassName, phxFieldClassName, phxLabelClassName } from "@/components/ui/form-tokens";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -60,16 +61,7 @@ export default async function RepVisitsExportPage() {
       <form action={EXPORT_ROUTE} method="get" className="grid grid-cols-1 gap-3 border border-slate-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-4">
         <label className="min-w-0 sm:col-span-2 lg:col-span-1">
           <span className={phxLabelClassName}>Rep</span>
-          <select name="rep" required defaultValue="" className={phxSelectClassName}>
-            <option value="" disabled>
-              Choose a rep
-            </option>
-            {options.map((option) => (
-              <option key={option.hrId} value={option.hrId}>
-                {option.name} · {option.territory}
-              </option>
-            ))}
-          </select>
+          <RepCombobox name="rep" options={options} />
         </label>
         <label className="min-w-0">
           <span className={phxLabelClassName}>From</span>
@@ -103,16 +95,7 @@ export default async function RepVisitsExportPage() {
         <form action={REVIEW_ROUTE} method="get" className="grid grid-cols-1 gap-3 border border-slate-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-6">
           <label className="min-w-0 sm:col-span-2">
             <span className={phxLabelClassName}>Rep</span>
-            <select name="rep" required defaultValue="" className={phxSelectClassName}>
-              <option value="" disabled>
-                Choose a rep
-              </option>
-              {options.map((option) => (
-                <option key={option.hrId} value={option.hrId}>
-                  {option.name} · {option.territory}
-                </option>
-              ))}
-            </select>
+            <RepCombobox name="rep" options={options} />
           </label>
           <label className="min-w-0">
             <span className={phxLabelClassName}>From month</span>
