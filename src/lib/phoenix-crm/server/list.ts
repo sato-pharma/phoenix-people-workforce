@@ -152,7 +152,9 @@ import { loadRepVisibleBuildingNotes, loadRepVisiblePlaceNotes, type RepPlaceNot
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { resolvePinGeography, resolvePlaceLocation, territoryOfSeat } from "@/lib/phoenix-crm/server/place-location";
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
-import { readPlaceSchedule, recordPlaceSchedule } from "@/lib/phoenix-crm/server/schedule-check";
+import { judgeTimetableBoards, readTimetableBoards, recordPlaceSchedule, type ScheduleBoardReading } from "@/lib/phoenix-crm/server/schedule-check";
+import { addTimetablePages } from "@/lib/phoenix-crm/server/timetable-pages";
+import { extraPageRefusal } from "@/lib/phoenix-crm/timetable-pages-rules";
 import {
   SCHEDULE_MAX_TRIES,
   SCHEDULE_RETAKE_CODE,
@@ -160,6 +162,7 @@ import {
   scheduleUploadAllowed,
   scheduleDoorAction,
   scheduleHoldRecord,
+  venueTimetableRefusal,
   type PhoenixCrmScheduleCheck,
   type ScheduleHeldBecause,
 } from "@/lib/phoenix-crm/schedule-rules";
@@ -2183,6 +2186,8 @@ type SeatedSchedule = {
   /** The review row's evidence when the scanner holds the seating; null when it saves. */
   hold: Record<string, unknown> | null;
   heldBecause: ScheduleHeldBecause | null;
+  /** Pages 2 to 5 of a FRESH timetable, with what the reader saw on each, to keep once the save succeeds. */
+  pages: Array<{ path: string; board: ScheduleBoardReading | null }>;
 };
 
 /**
@@ -2212,7 +2217,7 @@ function timetableRetakeWordsForBoardOnFile(action: { message: string; nextTry: 
 async function scanSeatedTimetable(input: {
   subject: ValidationSubject | null;
   venue: SeatingVenue;
-  seatedPhoto: { path: string; reused: boolean };
+  seatedPhoto: { path: string; reused: boolean; extraPaths: string[] };
   /** The phone says this photo was uploaded on the last try. Refused unless two were refused today. */
   uploaded: boolean;
   seatId: string;
@@ -2229,10 +2234,14 @@ async function scanSeatedTimetable(input: {
   // `signboardNameIsUsable` is the SAME guard the signboard read is given, deliberately: a name too
   // short or too generic to match ("Dr", a single initial) judged against a wall of forty names could
   // only produce noise — and a refusal the rep could never pass.
-  const reading =
+  //
+  // 🔴 EVERY PHOTO OF THE TIMETABLE IS READ, AND A CUSTOMER NAMED ON ANY ONE OF THEM IS NAMED ON IT (owner,
+  // 25 Nov 2026: "he can validate 1, 2, 3 doctors in one timetable if it has their name"). The pages are read
+  // side by side, each judged on its own, and the page that says the most for him is his verdict.
+  const boards =
     subject && signboardNameIsUsable(subject.name)
-      ? await readPlaceSchedule({
-          customerName: subject.name,
+      ? await readTimetableBoards({
+          extraPhotoPaths: seatedPhoto.extraPaths,
           isTest: input.isTest,
           photoPath: seatedPhoto.path,
           repHrId: input.repHrId,
@@ -2240,7 +2249,19 @@ async function scanSeatedTimetable(input: {
           seatId: input.seatId,
         })
       : null;
-  if (!reading) return { check: null, hold: null, heldBecause: null };
+  // Only a FRESH board's pages are kept: a reused board's pages are already on file.
+  const pages = seatedPhoto.reused ? [] : seatedPhoto.extraPaths.map((path, index) => ({ path, board: boards?.[index + 1] ?? null }));
+  if (!boards || !subject) return { check: null, hold: null, heldBecause: null, pages };
+  // A fresh extra photo the reader is SURE shows no timetable is refused, naming which photo, before
+  // anything is written and with no try spent — the "Photograph the timetable" door's own rule.
+  if (!seatedPhoto.reused) {
+    for (let index = 1; index < boards.length; index += 1) {
+      const board = boards[index];
+      const refusal = board.kind === "read" ? venueTimetableRefusal(board) : null;
+      if (refusal) throw validationError(extraPageRefusal(index + 1, refusal), SCHEDULE_RETAKE_CODE);
+    }
+  }
+  const reading = judgeTimetableBoards(boards, subject.name);
   const check = uploaded ? { ...reading, uploaded: true } : reading;
   // Counted only when the reading could ask for a retake — a match or a lost call never pays a read.
   const asksForAPhoto = check.verdict === "no_schedule" || (check.verdict === "unjudged" && check.reason === "unreadable");
@@ -2270,9 +2291,10 @@ async function scanSeatedTimetable(input: {
       check: held,
       hold: scheduleHoldRecord(held, { lat: venue.lat, lon: venue.lon, name: venue.name, sharedPlaceId: venue.sharedPlaceId }, action),
       heldBecause: action.heldBecause,
+      pages,
     };
   }
-  return { check, hold: null, heldBecause: null };
+  return { check, hold: null, heldBecause: null, pages };
 }
 
 export type ValidateResult = {
@@ -2716,6 +2738,7 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
   let signboard: { check: PhoenixCrmSignboardCheck; record: Record<string, unknown>; holds: boolean } | null = null;
   let schedule: PhoenixCrmScheduleCheck | null = null;
   let heldBecause: ScheduleHeldBecause | null = null;
+  let timetablePages: { firstPhotoPath: string; sharedPlaceId: string; pages: SeatedSchedule["pages"] } | null = null;
   // Held by the signboard ALONE — then the system re-reads it before the Super Admin is asked.
   let heldBySignboard = false;
   if (seated && venue) {
@@ -2746,6 +2769,7 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
     const scanned = await scanSeatedTimetable({ subject, venue, seatedPhoto, uploaded: seated.photoUploaded, seatId: seat.seatId, repHrId: viewer.hrId, isTest });
     schedule = scanned.check;
     heldBecause = scanned.heldBecause;
+    if (scanned.pages.length > 0) timetablePages = { firstPhotoPath: seatedPhoto.path, sharedPlaceId: venue.sharedPlaceId, pages: scanned.pages };
     if (scanned.hold) payload.hold_review = scanned.hold;
     payload.place = await seatedPlacePayload(venue, seated);
   } else if (place) {
@@ -2768,6 +2792,8 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
   }
 
   const result = await callPhoenixCrm<Row>("phoenix_crm_validate_customer", { p: payload });
+  // The pages of a fresh timetable, once the save made its first photo the building's board.
+  if (timetablePages) await addTimetablePages({ seatId: seat.seatId, actorHrId: viewer.hrId, isTest, ...timetablePages });
   // The RPC knows only the speciality; the type the rep picked is written beside it straight after.
   if (newKind) await saveCustomerKind(String(result.customer_id), newKind);
   const requestKind = text(result.request_kind);
@@ -3284,6 +3310,7 @@ export async function addPlace(
   let signboard: { check: PhoenixCrmSignboardCheck; record: Row; holds: boolean } | null = null;
   let schedule: PhoenixCrmScheduleCheck | null = null;
   let heldBecause: ScheduleHeldBecause | null = null;
+  let timetablePages: { firstPhotoPath: string; sharedPlaceId: string; pages: SeatedSchedule["pages"] } | null = null;
   let matched: Row | null = null;
   let holdRecord: Row | null = null;
   let heldBySignboard = false;
@@ -3297,6 +3324,7 @@ export async function addPlace(
     const scanned = await scanSeatedTimetable({ subject, venue, seatedPhoto, uploaded: seated.photoUploaded, seatId: seat.seatId, repHrId: viewer.hrId, isTest });
     schedule = scanned.check;
     heldBecause = scanned.heldBecause;
+    if (scanned.pages.length > 0) timetablePages = { firstPhotoPath: seatedPhoto.path, sharedPlaceId: venue.sharedPlaceId, pages: scanned.pages };
     holdRecord = scanned.hold;
   } else if (place) {
     // Another clinic is checked against Google exactly as the first one is (owner, 2026-10-03). Held, it
@@ -3322,6 +3350,8 @@ export async function addPlace(
       ...(holdRecord ? { hold_review: holdRecord } : {}),
     },
   });
+  // The pages of a fresh timetable, once the save made its first photo the building's board.
+  if (timetablePages) await addTimetablePages({ seatId: seat.seatId, actorHrId: viewer.hrId, isTest, ...timetablePages });
   const added = {
     placeId: String(result.place_id),
     customerId: String(result.customer_id),

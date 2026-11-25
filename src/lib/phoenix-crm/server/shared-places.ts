@@ -59,6 +59,7 @@ import { keepBuildingAdviceQuietly } from "@/lib/phoenix-crm/server/stored-advic
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
+import { timetableExtraPathsOf } from "@/lib/phoenix-crm/server/timetable-pages";
 import { tellDecisionComment } from "@/lib/phoenix-crm/server/place-notes";
 import { countTimetableRefusalsByVenue, recordRefusedReading } from "@/lib/phoenix-crm/server/refused-readings";
 import { readPlaceSignboard } from "@/lib/phoenix-crm/server/signboard-check";
@@ -485,6 +486,8 @@ export type SeatingVenue = {
   location: Row;
   /** The building's own timetable, or null while nobody has been seated here yet. */
   schedulePhotoPath: string | null;
+  /** Pages 2 to 5 of that timetable, in order; empty for a one-photo board or none on file. */
+  scheduleExtraPhotoPaths: string[];
   /** Its readings at the door, to ask whether a rep seating here is in it. Never copied onto the seated row. */
   readings: ValidatedPlaceReading;
 };
@@ -528,6 +531,7 @@ export async function sharedPlaceForSeating(input: {
     lon: numberOrNull(row.lon) ?? 0,
     accuracyMeters: numberOrNull(row.accuracy_meters),
     schedulePhotoPath: text(row.schedule_photo_path),
+    scheduleExtraPhotoPaths: await timetableExtraPathsOf(text(row.schedule_photo_path), input.isTest),
     readings: {
       id: String(row.id),
       lat: numberOrNull(row.lat) ?? 0,
@@ -580,14 +584,15 @@ export async function sharedPlaceForSeating(input: {
  * the path it is handed against the stored one: this function is the server's wording of the rule and
  * that comparison is its enforcement.
  */
-export type EffectiveSeatedPhoto = { path: string; reused: boolean };
+/** `extraPaths` are the timetable's pages 2 to 5: the ones sent with a fresh photo, or the board's own on a reuse. */
+export type EffectiveSeatedPhoto = { path: string; reused: boolean; extraPaths: string[] };
 
 export function effectiveSeatedPhoto(venue: SeatingVenue, seated: SeatedPlaceDraft): EffectiveSeatedPhoto {
-  if (seated.photoPath) return { path: seated.photoPath, reused: false };
+  if (seated.photoPath) return { path: seated.photoPath, reused: false, extraPaths: seated.extraPhotoPaths };
   // The first customer in a building: no board on file and the phone sent none, so this is the one
   // case where the refusal still belongs.
   if (!venue.schedulePhotoPath) throw validationError(SEATED_PLACE_NO_PHOTO);
-  return { path: venue.schedulePhotoPath, reused: true };
+  return { path: venue.schedulePhotoPath, reused: true, extraPaths: venue.scheduleExtraPhotoPaths };
 }
 
 export async function seatedPlacePayload(venue: SeatingVenue, seated: SeatedPlaceDraft): Promise<Row> {

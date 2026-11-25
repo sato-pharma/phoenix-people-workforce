@@ -94,13 +94,13 @@ export async function runPhoenixCrmValidationAuditTimetableTests(): Promise<void
 
   const venue = code("src/lib/phoenix-crm/server/venue-timetable.ts");
   const add = functionBody(venue, "export async function addVenueTimetable(");
-  assertBefore(add, "readScheduleBoard(", 'callPhoenixCrm<Row>("phoenix_crm_set_venue_timetable"', "the photograph is read BEFORE it is stored as the board");
+  assertBefore(add, "readTimetableBoards(", 'callPhoenixCrm<Row>("phoenix_crm_set_venue_timetable"', "the photograph is read BEFORE it is stored as the board");
   assertBefore(add, "venueTimetableRefusal(board)", 'callPhoenixCrm<Row>("phoenix_crm_set_venue_timetable"', "and refused before anything is written");
   assert.match(add, /board\.kind === "read" \? venueTimetableRefusal\(board\) : null/, "a reader that never answered refuses nobody");
-  assert.match(add, /throw validationError\(refusal, SCHEDULE_RETAKE_CODE\)/, "the refusal travels under the retake code");
-  assert.match(add, /settleVenueTimetable\(\{[\s\S]*?\bboard,\s*\}\)/, "the one reading is handed to the settle, so the board is still read once");
+  assert.match(add, /throw validationError\([^;]*\brefusal\b[^;]*, SCHEDULE_RETAKE_CODE\)/, "the refusal travels under the retake code");
+  assert.match(add, /settleVenueTimetable\(\{[\s\S]*?\bboards,\s*\}\)/, "the one reading is handed to the settle, so the board is still read once");
   const settle = functionBody(venue, "export async function settleVenueTimetable(");
-  assert.match(settle, /input\.board \?\?\s*\(await readScheduleBoard\(/, "the settle reads only when it was handed no reading");
+  assert.match(settle, /input\.boards \?\?\s*\(await readTimetableBoards\(/, "the settle reads only when it was handed no reading");
 
   // ── 3. A saved board, or a saved move, never answers an error ──────────────────────────────────
   const afterCommit = add.slice(add.indexOf('callPhoenixCrm<Row>("phoenix_crm_set_venue_timetable"'));
@@ -156,7 +156,7 @@ export async function runPhoenixCrmValidationAuditTimetableTests(): Promise<void
   assert.ok(pass.indexOf("if (queued >= limit) {") > pass.indexOf("signboardNameIsUsable(name)"), "🔴 the limit counts places it WILL read — a row it rules out never uses one up");
   assert.ok(pass.includes("result.moreWaiting = !backlogEnded;"), "and it says so when it stopped before the end");
   assert.ok(!pass.includes("result.moreWaiting = page.length >= limit"), "never the first page alone");
-  assert.equal((pass.match(/readScheduleBoard\(/g) ?? []).length, 1, "one photograph, one question, however many are seated behind it");
+  assert.equal((pass.match(/readTimetableBoards\(/g) ?? []).length, 1, "one photograph, one question, however many are seated behind it");
   assert.ok(pass.includes("recordPlaceSchedule(String(row.id), scheduleRereadToKeep(judged, row.schedule_check ?? null))"), "the answer is written on the place's own row");
   for (const forbidden of ["callPhoenixCrm", "settleVenueTimetable", "phoenix_crm_validation_reviews", "notify", "phoenix_crm_customers\")\n      .update"]) {
     assert.ok(!pass.includes(forbidden), `🔴 the night only writes the verdict — it never reaches ${forbidden}`);

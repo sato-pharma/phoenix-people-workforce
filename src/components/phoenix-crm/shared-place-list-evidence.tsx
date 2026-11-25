@@ -16,6 +16,7 @@
 import { usePlaceCheckDecides } from "@/components/phoenix-crm/place-check-decides";
 import type { PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
+import { TimetablePages } from "@/components/phoenix-crm/timetable-pages";
 import { CrmPill } from "@/components/phoenix-crm/ui";
 import { buildingStatusPill } from "@/lib/phoenix-crm/approved-place-words";
 import { sharedPlaceKindNoun } from "@/lib/phoenix-crm/shared-place-rules";
@@ -199,6 +200,7 @@ function TimetablePhoto({
       {row.schedulePhotoPath ? (
         <>
           <CrmPhotoThumb alt={`Timetable photo for ${row.name}`} className="h-64 w-full" lazy path={row.schedulePhotoPath} rotatable />
+          <TimetablePages firstPath={row.schedulePhotoPath} name={row.name} rotatable thumbClassName="h-40 w-full" />
           {row.schedulePhotoCapturedAtText ? <p className="break-words text-xs text-slate-500">Photographed {row.schedulePhotoCapturedAtText}</p> : null}
           {read ? (
             <p className="break-words text-xs text-slate-700" dir="auto">

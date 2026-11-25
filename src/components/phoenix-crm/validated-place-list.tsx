@@ -33,6 +33,7 @@ import type { PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-n
 import { useCanRestoreValidation } from "@/components/phoenix-crm/place-check-restore";
 import { usePlaceCheckLayout } from "@/components/phoenix-crm/place-checks/layout";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
+import { TimetablePages } from "@/components/phoenix-crm/timetable-pages";
 import {
   CrmCardsOnPhone,
   CrmEmpty,
@@ -174,6 +175,7 @@ export function ValidatedPlaceList({
                 {bulk ? <BulkPick picks={picks} row={row} /> : null}
                 {/* The photograph IS the question on this list, so on a phone it takes the card's whole width. */}
                 <CrmPhotoThumb alt={photoAlt(row)} className={PHOTO_CLASS} lazy missingText={row.trustedPoint ? TRUSTED_POINT_NO_PHOTO : undefined} path={row.photoPath} rotatable />
+                {row.photoKind === "schedule" ? <TimetablePages firstPath={row.photoPath} name={row.customerName} rotatable thumbClassName="h-40 w-full" /> : null}
                 <Who mode={mode} row={row} />
                 <Place row={row} />
                 <LastColumn mode={mode} noteIndex={noteIndex} row={row} scope="card-" />
@@ -197,6 +199,7 @@ export function ValidatedPlaceList({
                   <td className={crmTdClassName}>
                     <div className="min-w-0 space-y-2">
                       <CrmPhotoThumb alt={photoAlt(row)} className={PHOTO_CLASS} lazy missingText={row.trustedPoint ? TRUSTED_POINT_NO_PHOTO : undefined} path={row.photoPath} rotatable />
+                {row.photoKind === "schedule" ? <TimetablePages firstPath={row.photoPath} name={row.customerName} rotatable thumbClassName="h-40 w-full" /> : null}
                       {bulk ? <BulkPick picks={picks} row={row} /> : null}
                     </div>
                   </td>

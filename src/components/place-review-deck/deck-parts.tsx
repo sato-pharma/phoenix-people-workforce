@@ -23,7 +23,20 @@ import { cn } from "@/lib/utils";
  * short of the right edge, where the two turn arrows sit (70px), so in a half-width cell on a phone it
  * wraps instead of running under them.
  */
-export function DeckStagePhoto({ alt, caption, label, path }: { alt: string; caption: string | null; label: string; path: string | null }) {
+export function DeckStagePhoto({
+  alt,
+  below,
+  caption,
+  label,
+  path,
+}: {
+  alt: string;
+  /** Drawn under the caption: the timetable's other photos, on a polyclinic's stage (owner, 25 Nov 2026). */
+  below?: ReactNode;
+  caption: string | null;
+  label: string;
+  path: string | null;
+}) {
   return (
     <figure className="flex h-full min-h-0 w-full min-w-0 flex-col">
       <div className="relative min-h-0 flex-1">
@@ -41,6 +54,7 @@ export function DeckStagePhoto({ alt, caption, label, path }: { alt: string; cap
         <p className="break-words text-phx-2xs font-semibold uppercase tracking-[0.12em] text-slate-500">
           Tap the photo to zoom · turn it with the arrows on it
         </p>
+        {below}
       </figcaption>
     </figure>
   );
