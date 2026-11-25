@@ -16,6 +16,7 @@
 import { usePlaceCheckDecides } from "@/components/phoenix-crm/place-check-decides";
 import type { PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
+import { TimetablePages } from "@/components/phoenix-crm/timetable-pages";
 import { CrmPill } from "@/components/phoenix-crm/ui";
 import { seatedTimetablePill } from "@/lib/phoenix-crm/approved-place-words";
 import { decisionStamp } from "@/lib/phoenix-crm/decision-stamp";
@@ -164,6 +165,7 @@ function Timetable({
       ) : null}
       {customer.state === "rejected" && customer.reasonLabel ? <p className="break-words text-xs text-slate-600">The rep was told: {customer.reasonLabel}.</p> : null}
       {own ? <CrmPhotoThumb alt={`Timetable photo for ${customer.customerName}`} className="h-32 w-32" lazy path={own} rotatable /> : null}
+      {own ? <TimetablePages firstPath={own} name={customer.customerName} rotatable thumbClassName="h-32 w-32" /> : null}
       {sameAsBuilding ? <p className="break-words text-xs text-slate-500">The same photograph as the building&apos;s timetable.</p> : null}
     </div>
   );

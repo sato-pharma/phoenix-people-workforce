@@ -1366,6 +1366,8 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/photos/upload", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   // A read sent as a POST (a batch of photo paths does not belong in a URL); it writes nothing.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/photos/sign", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: true }),
+  // The other photos of a timetable (owner, 25 Nov 2026), on photos/sign's own pattern: a read sent as a POST, writing nothing.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/photos/timetable-pages", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: true }),
   // The voice note's upload slot: whoever may enter this territory's visits may attach a recording to
   // one, so the gate is the same "create" as the photo's. It is deliberately its own route rather than
   // a purpose on photos/upload-slot — a recording is not evidence of presence, and the photo path is

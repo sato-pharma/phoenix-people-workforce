@@ -55,6 +55,7 @@ import {
   withinAccuracy,
 } from "@/lib/phoenix-crm/entry-rules";
 import { isUsableFix } from "@/lib/phoenix-crm/geo";
+import { parseExtraPhotoPaths } from "@/lib/phoenix-crm/timetable-pages-rules";
 import { parseTimings } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
 
@@ -240,6 +241,11 @@ export type SeatedPlaceDraft = {
    * refused photographs (`scheduleUploadAllowed`), and it means nothing without a photo.
    */
   photoUploaded: boolean;
+  /**
+   * Pages 2 to 5 of the timetable, when it did not fit one photo (owner, 25 Nov 2026). Taken only with
+   * a fresh first photo: a seating that reuses the board on file reuses its pages too, from the server.
+   */
+  extraPhotoPaths: string[];
   timings: PhoenixCrmTiming[];
   label: string | null;
   /**
@@ -323,6 +329,8 @@ export function parseSeatedPlaceDraft(raw: unknown): EntryRuleResult<SeatedPlace
   // effectiveSeatedPhoto() in server/shared-places.ts raises SEATED_PLACE_NO_PHOTO when there is
   // neither a fresh photograph nor one on file.
   const photoPath = String(body.photoPath ?? "").trim() || null;
+  const extraPhotos = parseExtraPhotoPaths(body.extraPhotoPaths, photoPath);
+  if (!extraPhotos.ok) return { ok: false, error: extraPhotos.error };
   // His "at least one day and one starting time" is `parseTimings`' own rule — one normal window with
   // a start minute — so it is asked here rather than restated. The end of a window stays optional.
   const timings = parseTimings(body.timings);
@@ -336,6 +344,7 @@ export function parseSeatedPlaceDraft(raw: unknown): EntryRuleResult<SeatedPlace
       standingAt: parseSeatingReading(body.standingAt),
       photoPath,
       photoUploaded: photoPath !== null && body.photoUploaded === true,
+      extraPhotoPaths: extraPhotos.paths,
       timings: timings.timings,
       label: cleanText(body.label, 80),
       session: rawSession === "" ? null : (rawSession as "AM" | "PM"),

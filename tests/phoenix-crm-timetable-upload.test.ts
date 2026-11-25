@@ -53,7 +53,7 @@ export function runPhoenixCrmTimetableUploadTests() {
   const scanner = list.slice(list.indexOf("async function scanSeatedTimetable("), list.indexOf("export type ValidateResult"));
   const gate = scanner.indexOf("if (!scheduleUploadAllowed(refused)) throw validationError(SCHEDULE_UPLOAD_TOO_EARLY, SCHEDULE_RETAKE_CODE)");
   assert.ok(gate > -1, "🔴 a phone that claims an upload before two refusals is refused and sent back to the camera");
-  assert.ok(gate < scanner.indexOf("readPlaceSchedule("), "before the board is read, so a refused claim pays for no reading");
+  assert.ok(gate < scanner.indexOf("readTimetableBoards("), "before the board is read, so a refused claim pays for no reading");
   assert.ok(scanner.includes("const uploaded = input.uploaded && !seatedPhoto.reused;"), "a board reused from file was not uploaded by this phone");
   assert.equal(list.split("uploaded: seated.photoUploaded,").length - 1, 2, "both seating paths hand the claim to the one scanner");
 

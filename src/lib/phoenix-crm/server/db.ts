@@ -129,6 +129,10 @@ const REFUSALS: Record<string, Refusal> = {
   // building's, so a second move would overwrite the record of where it came from with a point that was
   // never its own.
   already_in_a_venue: { status: 409, message: "This clinic is already inside a polyclinic or centre. Reload the list." },
+  // A timetable in several photos (owner, 25 Nov 2026). `addTimetablePages` never throws, so a rep reads these
+  // only if a caller ever surfaces them: the board was replaced while he took the other photos, or more than five.
+  timetable_changed: { status: 409, message: "This timetable was replaced while you took the other photos. Reload the page and photograph it again." },
+  too_many_timetable_pages: { status: 400, message: "A timetable takes at most five photos. Remove one and save again." },
   pharmacy_cannot_be_seated: { status: 409, message: "A pharmacy cannot be moved into a polyclinic or centre." },
   no_places_chosen: { status: 400, message: "Tick at least one customer to move into the polyclinic." },
   note_required: { status: 400, message: "Write a note explaining why." },

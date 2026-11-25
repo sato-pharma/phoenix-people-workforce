@@ -298,10 +298,10 @@ export function runPortalRepNavigationSpeedTests(): void {
       "one doctor's read is the board's reading judged on his name — the same path, not a copy",
     );
     const settle = functionBody(source("src/lib/phoenix-crm/server/venue-timetable.ts"), "export async function settleVenueTimetable(");
-    assert.equal((settle.match(/readScheduleBoard\(/g) ?? []).length, 1, "the building's board is read once");
+    assert.equal((settle.match(/readTimetableBoards\(/g) ?? []).length, 1, "the building's board is read once — every photo of it, side by side");
     assert.doesNotMatch(settle, /readPlaceSchedule\(/, "never once per doctor");
-    assert.ok(settle.includes("judgeScheduleBoard(board, name)"), "and each doctor is judged on his own name");
-    assertBefore(settle, "if (judged.length > 0) {", "readScheduleBoard(", "nothing is read when no seated doctor has a usable name");
+    assert.ok(settle.includes("judgeTimetableBoards(boards, name)"), "and each doctor is judged on his own name");
+    assertBefore(settle, "if (judged.length > 0) {", "readTimetableBoards(", "nothing is read when no seated doctor has a usable name");
   }
 
   // ── Phoenix CRM · Reports and the shared chunk ─────────────────────────────────────────────────

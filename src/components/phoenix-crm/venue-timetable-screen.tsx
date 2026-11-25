@@ -17,6 +17,12 @@ import { releaseCapturedPhoto } from "@/components/phoenix-crm/captured-photo";
 import type { ListNotice, ListScreenBase } from "@/components/phoenix-crm/list-screens";
 import { LivePhotoCapture, type CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
 import type { SharedPlaceChoice } from "@/components/phoenix-crm/shared-place-screens";
+import {
+  releaseTimetableExtras,
+  TimetableExtraPhotos,
+  timetableExtraPaths,
+  type TimetableExtraSlots,
+} from "@/components/phoenix-crm/timetable-extra-photos";
 import { CrmBackBar, CrmBlock, CrmButton, CrmNote, CrmPanel } from "@/components/phoenix-crm/ui";
 import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
 import type { AddedVenueTimetable } from "@/lib/phoenix-crm/view-types";
@@ -36,6 +42,8 @@ export function VenueTimetableScreen({
   const venues = useCrmGet<SharedPlaceChoice[]>(crmUrl("/api/phoenix-crm/shared-places", { seatId, test }), "sharedPlaces");
   const venue = venues.data?.find((entry) => entry.sharedPlaceId === sharedPlaceId) ?? null;
   const [photo, setPhoto] = useState<CapturedPhoto | null>(null);
+  // Its other photos, when the board does not fit one (owner, 25 Nov 2026).
+  const [extras, setExtras] = useState<TimetableExtraSlots>([]);
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -46,10 +54,11 @@ export function VenueTimetableScreen({
     try {
       const result = await crmPost<AddedVenueTimetable>(
         "/api/phoenix-crm/shared-places",
-        { action: "timetable", seatId, test, sharedPlaceId, photoPath: photo.path },
+        { action: "timetable", seatId, test, sharedPlaceId, photoPath: photo.path, extraPhotoPaths: timetableExtraPaths(extras) },
         "timetable",
       );
       releaseCapturedPhoto(photo);
+      releaseTimetableExtras(extras);
       onDone({
         tone: "good",
         title: `Timetable saved: ${venue.name}`,
@@ -91,6 +100,16 @@ export function VenueTimetableScreen({
                 title={`Phoenix CRM polyclinic: ${venue.name}`}
                 value={photo}
               />
+              {photo ? (
+                <TimetableExtraPhotos
+                  disabled={saving}
+                  onChange={setExtras}
+                  seatId={seatId}
+                  test={test}
+                  title={`Phoenix CRM polyclinic: ${venue.name}`}
+                  value={extras}
+                />
+              ) : null}
             </div>
           </>
         )}

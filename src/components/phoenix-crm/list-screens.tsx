@@ -77,6 +77,7 @@ import {
   crmStepFinishClassName,
   type CrmStep,
 } from "@/components/phoenix-crm/step-form";
+import { releaseTimetableExtras } from "@/components/phoenix-crm/timetable-extra-photos";
 import { timingsToDrafts } from "@/components/phoenix-crm/timings-editor";
 import {
   CrmBackBar,
@@ -329,7 +330,11 @@ function withoutSeatedPhoto(photo: CapturedPhoto) {
  */
 function chooseTheBuildingAgain(photo: CapturedPhoto | null) {
   if (photo) releaseCapturedPhoto(photo);
-  return (current: SeatedDraftState): SeatedDraftState => ({ ...current, sharedPlaceId: null, photo: null, timetableOnFile: false, replacingTimetable: false });
+  return (current: SeatedDraftState): SeatedDraftState => {
+    // Every other photo of the timetable carries that building's name too, so it goes with the first.
+    releaseTimetableExtras(current.extraPhotos);
+    return { ...current, sharedPlaceId: null, photo: null, extraPhotos: [], timetableOnFile: false, replacingTimetable: false };
+  };
 }
 
 function normalizedName(value: string): string {
@@ -567,7 +572,11 @@ function savedFromResult(result: ValidateResult): SavedPlace {
  */
 function retakeTimetable(photo: CapturedPhoto | null) {
   if (photo) releaseCapturedPhoto(photo);
-  return (current: SeatedDraftState): SeatedDraftState => ({ ...current, photo: null, replacingTimetable: true, timetableRetakes: current.timetableRetakes + 1 });
+  return (current: SeatedDraftState): SeatedDraftState => {
+    // A refused timetable is photographed again whole, every photo of it (owner, 25 Nov 2026).
+    releaseTimetableExtras(current.extraPhotos);
+    return { ...current, photo: null, extraPhotos: [], replacingTimetable: true, timetableRetakes: current.timetableRetakes + 1 };
+  };
 }
 
 export function ValidateScreen({
@@ -666,6 +675,7 @@ export function ValidateScreen({
     if (saving) return;
     releaseCapturedPhoto(draft.photo);
     releaseCapturedPhoto(seated.photo);
+    releaseTimetableExtras(seated.extraPhotos);
     onBack();
   }
 
@@ -768,6 +778,7 @@ export function ValidateScreen({
     try {
       const standingAt = door === "shared" ? await readFix() : null;
       const result = await crmPost<ValidateResult>("/api/phoenix-crm/list/validate", payloadFor(photo, allowSameName, standingAt), "result");
+      if (door === "shared") releaseTimetableExtras(seated.extraPhotos);
       onSaved(savedFromResult(result), photo);
     } catch (error) {
       const code = errorCodeOf(error);
@@ -1378,6 +1389,7 @@ export function AddPlaceScreen({
     if (saving) return;
     releaseCapturedPhoto(draft.photo);
     releaseCapturedPhoto(seated.photo);
+    releaseTimetableExtras(seated.extraPhotos);
     onBack();
   }
 
@@ -1430,6 +1442,7 @@ export function AddPlaceScreen({
         "place",
       );
       // A clinic the Google check could not confirm is saved and waits — said as the system's doing.
+      if (door === "shared") releaseTimetableExtras(seated.extraPhotos);
       onSaved(added?.held === true ? { ...saved, kind: "checking", heldBecause: added.heldBecause ?? null } : saved, photo);
     } catch (error) {
       const code = errorCodeOf(error);

@@ -24,6 +24,7 @@ import { approvalOutcome } from "@/components/phoenix-crm/place-check-done";
 import type { PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { restoreRequest, useCanRestoreValidation } from "@/components/phoenix-crm/place-check-restore";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
+import { TimetablePages } from "@/components/phoenix-crm/timetable-pages";
 import { usePlaceCheckLayout } from "@/components/phoenix-crm/place-checks/layout";
 import { PhoneFold } from "@/components/phoenix-crm/place-checks/phone-fold";
 import { CrmCardsOnPhone, CrmPill, CrmTable, crmTdClassName, crmThClassName, type PillTone } from "@/components/phoenix-crm/ui";
@@ -163,6 +164,7 @@ export function ValidationReviewQueue({
               <Who part="rest" row={row} />
               {bulk && canPick(row) ? <BulkPick picks={picks} row={row} /> : null}
               <CrmPhotoThumb alt={photoAlt(row)} className={PHOTO_CLASS} lazy path={row.photoPath} rotatable />
+              {row.photoKind === "schedule" ? <TimetablePages firstPath={row.photoPath} name={row.customerName} rotatable thumbClassName="h-40 w-full" /> : null}
               <Evidence row={row} />
               <LastColumn mode={mode} noteIndex={noteIndex} row={row} scope="card-" />
             </div>
@@ -186,6 +188,7 @@ export function ValidationReviewQueue({
               <td className={crmTdClassName}>
                 <div className="min-w-0 space-y-2">
                   <CrmPhotoThumb alt={photoAlt(row)} className={PHOTO_CLASS} lazy path={row.photoPath} rotatable />
+              {row.photoKind === "schedule" ? <TimetablePages firstPath={row.photoPath} name={row.customerName} rotatable thumbClassName="h-40 w-full" /> : null}
                   {bulk && canPick(row) ? <BulkPick picks={picks} row={row} /> : null}
                 </div>
               </td>

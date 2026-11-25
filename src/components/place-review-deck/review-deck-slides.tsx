@@ -21,6 +21,7 @@ import { PlaceCheckNotes } from "@/components/phoenix-crm/place-check-notes";
 import { SeatedLastColumn, SeatedTimetableEvidence, SeatedWho } from "@/components/phoenix-crm/shared-place-customers";
 import { VenueDecision, VenueHeader, venueSignboardText, VenueWhere } from "@/components/phoenix-crm/shared-place-list";
 import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
+import { TimetablePages } from "@/components/phoenix-crm/timetable-pages";
 import { CrmPill, type PillTone } from "@/components/phoenix-crm/ui";
 import { PlaceInUseApprove, PlaceInUseEvidence, PlaceInUseReject, placeInUsePhotoAlt } from "@/components/phoenix-crm/validated-place-list";
 import { ReviewDecision, ReviewEvidence, reviewPhotoAlt } from "@/components/phoenix-crm/validation-review-queue";
@@ -209,6 +210,7 @@ function timetableStage(group: VenueGroup): ReactNode {
     <DeckStagePhoto
       alt={`Timetable photo for ${venue.name}`}
       caption={venue.schedulePhotoCapturedAtText ? `${venue.name} · photographed ${venue.schedulePhotoCapturedAtText}` : venue.name}
+      below={<TimetablePages firstPath={venue.schedulePhotoPath} name={venue.name} thumbClassName="h-16 w-16" tone="dark" />}
       label="The timetable inside"
       path={venue.schedulePhotoPath}
     />

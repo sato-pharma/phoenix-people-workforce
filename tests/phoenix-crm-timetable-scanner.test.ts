@@ -157,7 +157,7 @@ export function runPhoenixCrmTimetableScannerTests() {
   const list = stripComments(read("src/lib/phoenix-crm/server/list.ts"));
   assert.equal(list.split("await scanSeatedTimetable({").length - 1, 2, "Validate and Add another clinic both go through the one scanner");
   const scanner = list.slice(list.indexOf("async function scanSeatedTimetable("), list.indexOf("export type ValidateResult"));
-  assert.ok(scanner.includes("readPlaceSchedule("), "it reads the board through the one reader");
+  assert.ok(scanner.includes("readTimetableBoards("), "it reads the board through the one reader (every photo of it since 25 Nov 2026)");
   assert.ok(scanner.includes("scheduleDoorAction(check, earlierTries)"), "and asks the pure ruling");
   assert.ok(scanner.includes("countTimetableRefusals("), "with this rep's refused photos of this building today");
   const filed = scanner.indexOf("await recordTimetableRefusal(");
