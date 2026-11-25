@@ -85,6 +85,8 @@ export function DeparturePhotoCard({
   const isRetake = mode === "retake";
   const [state, setState] = useState<CaptureState>({ kind: "idle" });
   const streamRef = useRef<MediaStream | null>(null);
+  /** Departure photos the server refused for their odometer, per claim: from 1 the next one is kept (owner, 2026-11-25). */
+  const odometerRefusalsRef = useRef<Map<number, number>>(new Map());
   const videoRef = useRef<HTMLVideoElement | null>(null);
   /**
    * True only once the element is actually producing frames.
@@ -229,11 +231,17 @@ export function DeparturePhotoCard({
             latitude,
             locationLabel: capturedLocationLabel,
             longitude,
+            odometerRefusedTries: odometerRefusalsRef.current.get(request.id) ?? 0,
           }),
           headers: { "Content-Type": "application/json" },
           method: "POST",
         });
         const payload = await response.json();
+        // Counted per claim, so the next photo after an odometer refusal is kept for the approver
+        // instead of refused again (owner, 2026-11-25; odometer-scan-rules.ts).
+        if (payload?.error === "odometer_refused") {
+          odometerRefusalsRef.current.set(request.id, (odometerRefusalsRef.current.get(request.id) ?? 0) + 1);
+        }
         if (!response.ok) throw new Error(payload?.message || `Upload failed (${response.status})`);
 
         stopCamera();

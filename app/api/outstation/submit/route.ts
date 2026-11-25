@@ -6,7 +6,8 @@ import { readAccuracyInput } from "@/lib/geo/coordinate-input";
 import { readCapturedPosition } from "@/lib/outstation/captured-coordinates";
 import { isNonTravelExpenseType } from "@/lib/outstation/non-travel-expense";
 import { submitOutstationRequest } from "@/lib/outstation/service";
-import { OutstationPhotoRefusedError } from "@/lib/outstation/blank-frame";
+import { OutstationPhotoRefusedError, photoRefusalCode } from "@/lib/outstation/blank-frame";
+import { odometerRefusedTriesOf } from "@/lib/outstation/odometer-scan-rules";
 import { TrainTicketRefusedError } from "@/lib/outstation/ticket-scan";
 import { NoTicketFareUnavailableError } from "@/lib/outstation/train-fare";
 import { parseOutstationTicketAttachmentDataUrl } from "@/lib/outstation/car-evidence-storage";
@@ -61,6 +62,8 @@ const SubmitBodySchema = z.looseObject({
   medicalTripName: submitTextField,
   meetingAmount: submitNumberField,
   notes: submitTextField,
+  /** Arrival photos the form already had refused for their odometer: from 1 the photo is kept (owner, 2026-11-25). */
+  odometerRefusedTries: submitNumberField,
   otherAmount: submitNumberField,
   returnTicketAmount: submitNumberField,
   ticketAttachments: z.array(SubmitTicketAttachmentSchema).nullable().optional(),
@@ -164,6 +167,7 @@ export async function POST(request: Request) {
         typeof body.medicalTripName === "string" ? body.medicalTripName : undefined,
       meetingAmount: typeof body.meetingAmount === "number" ? body.meetingAmount : 0,
       notes: typeof body.notes === "string" ? body.notes : undefined,
+      odometerRefusedTries: odometerRefusedTriesOf(body.odometerRefusedTries),
       // Never taken from the request body. An offline capture is what exempts a
       // train/bus claim from carrying its ticket up front, so a client that could
       // set this flag could self-declare "offline" and land an evidence-free claim
@@ -204,7 +208,7 @@ export async function POST(request: Request) {
       });
     }
     return NextResponse.json(
-      { error: isForbiddenError(error) ? "forbidden" : "outstation_submit_failed", message },
+      { error: isForbiddenError(error) ? "forbidden" : (photoRefusalCode(error) ?? "outstation_submit_failed"), message },
       { status },
     );
   }
