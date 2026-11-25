@@ -25,6 +25,8 @@ export type MarketingCustomerMergeInput = {
 export type MarketingCustomerMergeResult = {
   contactsMoved: number;
   evidenceCarried: boolean;
+  /** Retired links left behind as the same pharmacy under another code row: the same code on a second venue copy. */
+  linksFoldedByCode: number;
   linksLeftOnRetired: number;
   linksMoved: number;
   linksReactivated: number;

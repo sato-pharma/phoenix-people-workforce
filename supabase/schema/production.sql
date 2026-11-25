@@ -34698,6 +34698,33 @@ ALTER FUNCTION public.phx_market_awareness_tracking(p_line_code text, p_from_per
 COMMENT ON FUNCTION public.phx_market_awareness_tracking(p_line_code text, p_from_period text, p_to_period text, p_area_code text, p_brick_ids text[], p_product_codes text[]) IS 'Market Awareness tracking series: brick, area, and area-counting-only-bricked-rows, per period, for one line and a product set. Reads source_of_sales_fact_rollup on validated batches, which reconciles exactly with phx_closing_distributor_product (verified 0 difference on all three tracked lines for 2026-08). Returns both halves of the closing separately so a caller can never quote one of them by accident.';
 
 --
+-- Name: phx_marketing_code_match_key(text); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phx_marketing_code_match_key(p_code text) RETURNS text
+    LANGUAGE sql IMMUTABLE
+    SET search_path TO 'public'
+    AS $$
+  -- distributorCodeMatchKey's code half: spacing collapsed, trimmed, lower case, leading zeros dropped
+  -- (a lone 0 stays 0). Null for a blank or all-zero code, which never names a real shop.
+  select nullif(
+    nullif(
+      regexp_replace(lower(btrim(regexp_replace(coalesce(p_code, ''), '\s+', ' ', 'g'))), '^0+(?=.)', ''),
+      ''
+    ),
+    '0'
+  );
+$$;
+
+ALTER FUNCTION public.phx_marketing_code_match_key(p_code text) OWNER TO postgres;
+
+--
+-- Name: FUNCTION phx_marketing_code_match_key(p_code text); Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON FUNCTION public.phx_marketing_code_match_key(p_code text) IS 'The code half of distributorCodeMatchKey (pharmacy-code-first.ts): spacing, case and leading zeros dropped. Null for a blank or all-zero code, so an invented code never matches another.';
+
+--
 -- Name: phx_marketing_coverage_export_sales_detail(uuid[], text[]); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -34845,6 +34872,41 @@ CREATE FUNCTION public.phx_marketing_customer_merge_options() RETURNS TABLE(id u
 $$;
 
 ALTER FUNCTION public.phx_marketing_customer_merge_options() OWNER TO postgres;
+
+--
+-- Name: phx_marketing_links_same_pharmacy(uuid, uuid); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phx_marketing_links_same_pharmacy(p_link_a uuid, p_link_b uuid) RETURNS boolean
+    LANGUAGE sql STABLE
+    SET search_path TO 'public'
+    AS $$
+  select exists (
+    select 1
+    from marketing_customer_pharmacies a
+    join marketing_customer_pharmacies b on b.id = p_link_b
+    left join marketing_pharmacy_distributor_codes ac on ac.id = a.distributor_code_id
+    left join marketing_pharmacy_distributor_codes bc on bc.id = b.distributor_code_id
+    where a.id = p_link_a
+      and (
+        a.distributor_code_id = b.distributor_code_id
+        or (a.distributor_code_id is null and b.distributor_code_id is null and a.pharmacy_id = b.pharmacy_id)
+        or (
+          ac.distributor_id = bc.distributor_id
+          and public.phx_marketing_code_match_key(coalesce(ac.normalized_pharmacy_code, ac.distributor_pharmacy_code))
+            = public.phx_marketing_code_match_key(coalesce(bc.normalized_pharmacy_code, bc.distributor_pharmacy_code))
+        )
+      )
+  );
+$$;
+
+ALTER FUNCTION public.phx_marketing_links_same_pharmacy(p_link_a uuid, p_link_b uuid) OWNER TO postgres;
+
+--
+-- Name: FUNCTION phx_marketing_links_same_pharmacy(p_link_a uuid, p_link_b uuid); Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON FUNCTION public.phx_marketing_links_same_pharmacy(p_link_a uuid, p_link_b uuid) IS 'True when two customer-pharmacy links are one pharmacy: the same code row, the same venue with no code, or the same distributor and code under phx_marketing_code_match_key. The customer merge''s one test.';
 
 --
 -- Name: phx_marketing_pharmacy_mapping_coverage(); Type: FUNCTION; Schema: public; Owner: postgres
@@ -37526,6 +37588,7 @@ declare
   v_links_reactivated uuid[];
   v_links_status_carried jsonb;
   v_links_switched_off uuid[];
+  v_links_folded_by_code uuid[];
   v_validation_carried text := null;
   v_note text;
   v_moved jsonb;
@@ -37592,8 +37655,10 @@ begin
     where customer_id = p_retired_id returning id
   ) select coalesce(array_agg(id), '{}') into v_contacts from moved;
 
-  -- A link the survivor already holds cannot move (two unique indexes). If the survivor's copy is
-  -- switched off and the retired row's is live, the live answer wins, before anything moves.
+  -- A pharmacy the survivor already holds does not move: the same code row cannot (two unique
+  -- indexes), and the same code on another venue copy must not (the survivor would hold the shop
+  -- twice). If the survivor's copy is switched off and a retired copy is live, the live answer wins,
+  -- before anything moves.
   with revived as (
     update marketing_customer_pharmacies kept
     set active = true, updated_at = now(), updated_by_hr_id = p_actor_hr_id
@@ -37602,18 +37667,16 @@ begin
       and gone.customer_id = p_retired_id
       and not kept.active
       and gone.active
-      and (
-        kept.distributor_code_id = gone.distributor_code_id
-        or (kept.distributor_code_id is null and gone.distributor_code_id is null and kept.pharmacy_id = gone.pharmacy_id)
-      )
+      and public.phx_marketing_links_same_pharmacy(kept.id, gone.id)
     returning kept.id
-  ) select coalesce(array_agg(id), '{}') into v_links_reactivated from revived;
+  ) select coalesce(array_agg(distinct id), '{}') into v_links_reactivated from revived;
 
-  -- The survivor's copy of a shared link takes the retired row's standing when that is higher, under the
-  -- customer's own rule: upward only, never over a rejection and never a rejection. The retired link's
-  -- notes come too, because they say where the standing came from (a desk validation, a backfill).
+  -- The survivor's copy of a shared pharmacy takes the retired row's standing when that is higher, under
+  -- the customer's own rule: upward only, never over a rejection and never a rejection. When several
+  -- retired copies are the same pharmacy, the highest one counts. The retired link's notes come too,
+  -- because they say where the standing came from (a desk validation, a backfill).
   with pairs as (
-    select
+    select distinct on (kept.id)
       kept.id as kept_id,
       kept.validation_status as from_status,
       gone.validation_status as to_status,
@@ -37621,13 +37684,15 @@ begin
       gone.validation_notes as gone_notes
     from marketing_customer_pharmacies kept
     join marketing_customer_pharmacies gone
-      on kept.distributor_code_id = gone.distributor_code_id
-      or (kept.distributor_code_id is null and gone.distributor_code_id is null and kept.pharmacy_id = gone.pharmacy_id)
+      on public.phx_marketing_links_same_pharmacy(kept.id, gone.id)
     where kept.customer_id = p_survivor_id
       and gone.customer_id = p_retired_id
       and gone.active
       and array_position(array['pending', 'system_validated', 'sfe_validated', 'admin_approved'], gone.validation_status)
         > array_position(array['pending', 'system_validated', 'sfe_validated', 'admin_approved'], kept.validation_status)
+    order by kept.id,
+      array_position(array['pending', 'system_validated', 'sfe_validated', 'admin_approved'], gone.validation_status) desc,
+      gone.created_at, gone.id
   ),
   carried as (
     update marketing_customer_pharmacies kept
@@ -37648,22 +37713,56 @@ begin
   into v_links_status_carried
   from carried;
 
-  with moved as (
-    update marketing_customer_pharmacies link
-    set customer_id = p_survivor_id, updated_at = now(), updated_by_hr_id = p_actor_hr_id
+  -- A retired link moves only when the survivor holds no copy of that pharmacy, and only ONE retired
+  -- copy per pharmacy: live first, then the highest standing, then the oldest.
+  with ranked as (
+    select
+      link.id,
+      row_number() over (
+        order by
+          link.active desc,
+          coalesce(array_position(array['pending', 'system_validated', 'sfe_validated', 'admin_approved'], link.validation_status), 0) desc,
+          link.created_at,
+          link.id
+      ) as ord
+    from marketing_customer_pharmacies link
     where link.customer_id = p_retired_id
-      and not exists (
+  ),
+  movers as (
+    select me.id
+    from ranked me
+    where not exists (
         select 1 from marketing_customer_pharmacies kept
         where kept.customer_id = p_survivor_id
-          and (
-            kept.distributor_code_id = link.distributor_code_id
-            or (kept.distributor_code_id is null and link.distributor_code_id is null and kept.pharmacy_id = link.pharmacy_id)
-          )
+          and public.phx_marketing_links_same_pharmacy(kept.id, me.id)
       )
+      and not exists (
+        select 1 from ranked earlier
+        where earlier.ord < me.ord
+          and public.phx_marketing_links_same_pharmacy(earlier.id, me.id)
+      )
+  ),
+  moved as (
+    update marketing_customer_pharmacies link
+    set customer_id = p_survivor_id, updated_at = now(), updated_by_hr_id = p_actor_hr_id
+    from movers
+    where link.id = movers.id
     returning link.id
   ) select coalesce(array_agg(id), '{}') into v_links from moved;
 
   select count(*) into v_links_left from marketing_customer_pharmacies where customer_id = p_retired_id;
+
+  -- Which of those were folded under ANOTHER code row (the same code on a second venue copy), so a
+  -- wrong fold can be found and undone from the record.
+  select coalesce(array_agg(gone.id), '{}') into v_links_folded_by_code
+  from marketing_customer_pharmacies gone
+  where gone.customer_id = p_retired_id
+    and exists (
+      select 1 from marketing_customer_pharmacies kept
+      where kept.customer_id = p_survivor_id
+        and kept.distributor_code_id is distinct from gone.distributor_code_id
+        and public.phx_marketing_links_same_pharmacy(kept.id, gone.id)
+    );
 
   -- What is left is what the survivor already holds. Live, it would keep the retired customer on the
   -- Customer Database, the validation report, the vendor count and the daily field-capture nudge.
@@ -37759,6 +37858,7 @@ begin
     'venues', to_jsonb(v_venues),
     'earlierMerges', to_jsonb(v_earlier),
     'linksLeftOnRetired', v_links_left,
+    'linksFoldedByCode', to_jsonb(v_links_folded_by_code),
     'linksReactivated', to_jsonb(v_links_reactivated),
     'linksStatusCarried', v_links_status_carried,
     'linksSwitchedOff', to_jsonb(v_links_switched_off),
@@ -37778,6 +37878,7 @@ begin
     'contactsMoved', coalesce(array_length(v_contacts, 1), 0),
     'linksMoved', coalesce(array_length(v_links, 1), 0),
     'linksLeftOnRetired', v_links_left,
+    'linksFoldedByCode', coalesce(array_length(v_links_folded_by_code, 1), 0),
     'linksReactivated', coalesce(array_length(v_links_reactivated, 1), 0),
     'linksStatusCarried', jsonb_array_length(v_links_status_carried),
     'transfersMoved', coalesce(array_length(v_transfers, 1), 0),
@@ -37794,7 +37895,7 @@ ALTER FUNCTION public.phx_merge_marketing_customers(p_survivor_id uuid, p_retire
 -- Name: FUNCTION phx_merge_marketing_customers(p_survivor_id uuid, p_retired_id uuid, p_reason text, p_actor_hr_id text, p_carry_evidence boolean); Type: COMMENT; Schema: public; Owner: postgres
 --
 
-COMMENT ON FUNCTION public.phx_merge_marketing_customers(p_survivor_id uuid, p_retired_id uuid, p_reason text, p_actor_hr_id text, p_carry_evidence boolean) IS 'Folds one marketing customer into another in one transaction. Refusals raise P0001 with a sentence a person can read. Identity is the caller''s judgement, never guessed from a name. Server-only.';
+COMMENT ON FUNCTION public.phx_merge_marketing_customers(p_survivor_id uuid, p_retired_id uuid, p_reason text, p_actor_hr_id text, p_carry_evidence boolean) IS 'Folds one marketing customer into another in one transaction, one link per pharmacy under phx_marketing_links_same_pharmacy. Refusals raise P0001 with a sentence a person can read. Identity is the caller''s judgement, never guessed from a name. Server-only.';
 
 --
 -- Name: phx_monthly_achievement(text); Type: FUNCTION; Schema: public; Owner: postgres
@@ -104665,6 +104766,13 @@ REVOKE ALL ON FUNCTION public.phx_market_awareness_tracking(p_line_code text, p_
 GRANT ALL ON FUNCTION public.phx_market_awareness_tracking(p_line_code text, p_from_period text, p_to_period text, p_area_code text, p_brick_ids text[], p_product_codes text[]) TO service_role;
 
 --
+-- Name: FUNCTION phx_marketing_code_match_key(p_code text); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phx_marketing_code_match_key(p_code text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phx_marketing_code_match_key(p_code text) TO service_role;
+
+--
 -- Name: FUNCTION phx_marketing_coverage_export_sales_detail(p_request_ids uuid[], p_exclude_product_codes text[]); Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -104677,6 +104785,13 @@ GRANT ALL ON FUNCTION public.phx_marketing_coverage_export_sales_detail(p_reques
 
 REVOKE ALL ON FUNCTION public.phx_marketing_customer_merge_options() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.phx_marketing_customer_merge_options() TO service_role;
+
+--
+-- Name: FUNCTION phx_marketing_links_same_pharmacy(p_link_a uuid, p_link_b uuid); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phx_marketing_links_same_pharmacy(p_link_a uuid, p_link_b uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phx_marketing_links_same_pharmacy(p_link_a uuid, p_link_b uuid) TO service_role;
 
 --
 -- Name: FUNCTION phx_marketing_pharmacy_mapping_coverage(); Type: ACL; Schema: public; Owner: postgres
