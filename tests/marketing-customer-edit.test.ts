@@ -7,6 +7,7 @@ import {
   canEditMarketingCustomer,
   normalizeCustomerDetailsEdit,
 } from "../src/lib/marketing-requests/customer-edit.ts";
+import { findVenueOnFileByCode, pharmacyNameAfterSuggestion } from "../src/lib/marketing-requests/pharmacy-code-first.ts";
 import { distributorCodeMatchKey, isDeskAttachEntry } from "../src/lib/marketing-requests/service.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -109,6 +110,32 @@ export function runMarketingCustomerEditTests() {
     const deskBlock = service.slice(service.indexOf("const deskAttachCustomerIds = new Set<string>();"));
     assert.ok(/isDeskAttachEntry\(\{[^}]*existingCustomerId: entry\.existingCustomerId/.test(deskBlock.slice(0, 1200)),
       "Save Validation asks isDeskAttachEntry of every named customer before the CRM-pick lookup");
+  }
+
+  // THE CODE-FIRST CARD (owner, 26 Nov 2026: "It must be easier"). The code finds the venue on file
+  // under the same key the save attaches by, and the distributor's name fills an empty name box.
+  const venues = [
+    { id: "el-hol", vendorCodes: [{ distributorId: 19, distributorPharmacyCode: "0001513103" }, { distributorId: 17, distributorPharmacyCode: "372045" }] },
+    { id: "zahraa", vendorCodes: [{ distributorId: 17, distributorPharmacyCode: "407529" }] },
+  ];
+  assert.equal(findVenueOnFileByCode(venues, "19", " 1513103 ")?.id, "el-hol", "the code a rep types finds the venue that holds it with Overseas' zeros");
+  assert.equal(findVenueOnFileByCode(venues, 17, "407529")?.id, "zahraa");
+  assert.equal(findVenueOnFileByCode(venues, 21, "407529"), null, "the same code at another distributor is another shop");
+  assert.equal(findVenueOnFileByCode(venues, "", "407529"), null, "no distributor chosen, nothing offered");
+  assert.equal(findVenueOnFileByCode(venues, 17, "  "), null);
+  assert.equal(
+    findVenueOnFileByCode([...venues, { id: "copy", vendorCodes: [{ distributorId: 17, distributorPharmacyCode: "407529" }] }], 17, "407529"),
+    null,
+    "two venues holding one code are for the Super Admin to merge — the card never picks one",
+  );
+  assert.equal(pharmacyNameAfterSuggestion("", "  صيدلية   الزهراء "), "صيدلية الزهراء", "an empty name box takes the distributor's name");
+  assert.equal(pharmacyNameAfterSuggestion("Al Zahraa", "صيدلية الزهراء"), "Al Zahraa", "a name the rep typed is never overwritten");
+  {
+    const card = readFileSync(new URL("../src/components/employee-portal/marketing-validation-workspace.tsx", import.meta.url), "utf8");
+    const newTab = card.slice(card.indexOf("CODE FIRST (owner, 26 Nov 2026"));
+    assert.ok(newTab.length > 0, "the new-venue card opens with the code section");
+    assert.ok(newTab.indexOf("Distributor code — start here") < newTab.indexOf('label="Pharmacy Name"'), "the code comes before the name");
+    assert.ok(newTab.includes("Use this pharmacy") && newTab.includes("findVenueOnFileByCode("), "a venue on file is offered from the code");
   }
 
   // The "attach only" switch skips the customer write and revives removed links, so it may come

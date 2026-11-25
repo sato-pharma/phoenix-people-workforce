@@ -220,6 +220,7 @@ import {
 } from "@/lib/conversations/comments";
 import { loadSamePharmacyFlagForMarketingRequest } from "@/lib/direct-orders/same-pharmacy-cross-use-loader";
 import type { SamePharmacyCrossUseFlag } from "@/lib/direct-orders/same-pharmacy-cross-use";
+import { distributorCodeMatchKey } from "@/lib/marketing-requests/pharmacy-code-first";
 
 type MarketingProductDbRow = {
   active?: boolean | null;
@@ -2237,14 +2238,9 @@ export function isDeskAttachEntry(entry: {
   return entry.isOnBehalf && Boolean(cleanText(entry.existingCustomerId)) && entry.evidenceStatus === "missing";
 }
 
-/**
- * The key two distributor codes are the SAME pharmacy under, for the find-before-create on Save
- * Validation: the distributor, and the code with spacing, case and leading zeros dropped — Overseas
- * prints "0001513103" where a rep types "1513103". A lone "0" stays "0".
- */
-export function distributorCodeMatchKey(distributorId: unknown, code: unknown): string {
-  return `${Number(distributorId)}::${normalizeLookupKey(code).replace(/^0+(?=.)/, "")}`;
-}
+// distributorCodeMatchKey moved to ./pharmacy-code-first.ts so the code-first card on Customer
+// Validation and this save match codes under one key. Re-exported for its existing callers.
+export { distributorCodeMatchKey };
 
 function normalizeReusedValidationPharmacy(
   existingPharmacyId: string,
