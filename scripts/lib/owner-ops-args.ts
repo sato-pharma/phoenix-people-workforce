@@ -12,7 +12,7 @@
 // refused rather than "last one wins".
 // ---------------------------------------------------------------------------
 
-export const OWNER_OPS_JOBS = ["link-doctor", "merge-venues", "pin-pharmacy"] as const;
+export const OWNER_OPS_JOBS = ["link-doctor", "merge-venues", "pin-pharmacy", "load-crm-list"] as const;
 export type OwnerOpsJob = (typeof OWNER_OPS_JOBS)[number];
 
 /** Every flag the runner knows, for refuseUnknownFlags. */
@@ -26,6 +26,7 @@ export const OWNER_OPS_FLAGS = [
   "--loser",
   "--pharmacy",
   "--reason",
+  "--seat",
   "--survivor",
   "-h",
 ] as const;
@@ -34,6 +35,7 @@ const VALUE_FLAGS_BY_JOB: Record<OwnerOpsJob, readonly string[]> = {
   "link-doctor": ["--body"],
   "merge-venues": ["--survivor", "--loser", "--reason", "--employee"],
   "pin-pharmacy": ["--pharmacy", "--lat", "--lng", "--employee"],
+  "load-crm-list": ["--seat", "--body"],
 };
 
 /**
@@ -50,7 +52,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export type OwnerOpsPlan =
   | { job: "link-doctor"; apply: boolean; bodyPath: string }
   | { job: "merge-venues"; apply: boolean; survivorId: string; loserId: string; reason: string; employeeHrId: string | null }
-  | { job: "pin-pharmacy"; apply: boolean; pharmacyId: string; latitude: number; longitude: number; employeeHrId: string | null };
+  | { job: "pin-pharmacy"; apply: boolean; pharmacyId: string; latitude: number; longitude: number; employeeHrId: string | null }
+  | { job: "load-crm-list"; apply: boolean; seatId: string; bodyPath: string };
 
 export type OwnerOpsParse = { ok: true; plan: OwnerOpsPlan } | { ok: false; error: string };
 
@@ -67,6 +70,9 @@ listed and none is sent. Only --apply writes. Every run ends with a proof read.
       Fold a duplicate pharmacy copy into the one that stays. One copy per run.
   pin-pharmacy --pharmacy <pharmacy id> --lat <latitude> --lng <longitude> [--employee <hr id>]
       Put a map pin on a saved pharmacy that has none (evidence stays pending: no shop photo).
+  load-crm-list --seat <seat id> --body <file.json>
+      Put customers on a rep's Phoenix CRM list as "to validate" (and hours on ones already waiting),
+      through the SFE's own list-template upload. The rep validates each at the door.
 
   --apply      write for real (refused from a tree behind origin/main)
   --employee   whose draft workspace the proof read opens; by default every employee holding a
@@ -132,6 +138,15 @@ export function parseOwnerOpsArgs(argv: readonly string[]): OwnerOpsParse {
     const bodyPath = need("--body");
     if (typeof bodyPath !== "string") return { ok: false, ...bodyPath };
     return { ok: true, plan: { job, apply, bodyPath } };
+  }
+
+  if (job === "load-crm-list") {
+    const bodyPath = need("--body");
+    if (typeof bodyPath !== "string") return { ok: false, ...bodyPath };
+    const seatId = need("--seat");
+    if (typeof seatId !== "string") return { ok: false, ...seatId };
+    if (!/^SEAT-[A-Z0-9-]+$/i.test(seatId)) return { ok: false, error: `--seat must be a territory seat id like SEAT-PED-REP-D12, got "${seatId}"` };
+    return { ok: true, plan: { job, apply, seatId: seatId.toUpperCase(), bodyPath } };
   }
 
   if (job === "merge-venues") {
