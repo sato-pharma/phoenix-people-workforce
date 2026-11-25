@@ -27,6 +27,55 @@ export const TIMETABLE_ADD_PAGE = "Add another photo of the timetable";
 export const TIMETABLE_PAGES_HINT =
   "If the timetable does not fit in one photo, or the building has more than one, add a photo for each part. A customer named on any of them counts.";
 
+// ── Adding to the timetable on file (owner, 25 Nov 2026) ────────────────────────────────────────
+//
+// "The timetable uploaded is already correct. I don't want to replace it. I want to have the two
+// options: replace the current timetable or ... add to what exists" — the rest of a big board, or
+// another day's timetable of the same building. Added photos hang off the board on file as its next
+// pages (`phoenix_crm_append_timetable_pages`); the photos already there are never touched, and the
+// customer being saved is judged against every photo, old and new.
+
+/** Beside "the timetable changed", once a building's board is on file. */
+export const TIMETABLE_ADD_TO_ON_FILE = "Add a photo to this timetable";
+export const TIMETABLE_ADD_TO_ON_FILE_TITLE = "Adding to the timetable on file";
+export const TIMETABLE_ADD_TO_ON_FILE_NOTE =
+  "The photos on file stay as they are. Photograph the part that is missing — the rest of the board, or another day's timetable of this building. A customer named on any photo counts.";
+/** Waiting for the new photo, on Save. */
+export const TIMETABLE_ADD_NO_PHOTO = "Take the new photo of the timetable, or press Keep the timetable as it is.";
+/** Leaves the timetable on file exactly as it was. */
+export const TIMETABLE_ADD_CANCEL = "Keep the timetable as it is";
+/** Five photos already: the only way on is to photograph it again whole. */
+export const TIMETABLE_FULL = `This timetable already has ${TIMETABLE_EXTRA_PAGES_MAX + 1} photos, the most it can hold. To change it, photograph it again.`;
+
+/** Photos a board on file can still take, given how many it already has (the first one included). */
+export function timetablePhotosLeft(photosOnFile: number): number {
+  const onFile = Number.isFinite(photosOnFile) && photosOnFile > 0 ? Math.floor(photosOnFile) : 1;
+  return Math.max(0, TIMETABLE_EXTRA_PAGES_MAX + 1 - onFile);
+}
+
+/**
+ * The photos the phone ADDS to the board on file, cleaned: unique, trimmed, at most four. 🔴 Only on a
+ * seating with NO fresh first photo — a fresh photo is a replacement, and its own pages are
+ * `extraPhotoPaths`, so the two never travel together.
+ */
+export function parseAddedPhotoPaths(raw: unknown, firstPath: string | null): { ok: true; paths: string[] } | { ok: false; error: string } {
+  if (firstPath || !Array.isArray(raw)) return { ok: true, paths: [] };
+  const paths: string[] = [];
+  for (const entry of raw) {
+    const path = typeof entry === "string" ? entry.trim() : "";
+    if (!path || paths.includes(path)) continue;
+    paths.push(path);
+  }
+  if (paths.length > TIMETABLE_EXTRA_PAGES_MAX) return { ok: false, error: TIMETABLE_TOO_MANY_PAGES };
+  return { ok: true, paths };
+}
+
+/** Refused when the board on file cannot take this many more; null when it can. */
+export function addedPagesRefusal(existingExtraPages: number, added: number): string | null {
+  if (added <= 0) return null;
+  return existingExtraPages + added > TIMETABLE_EXTRA_PAGES_MAX ? TIMETABLE_FULL : null;
+}
+
 /** The extra pages the phone sent, cleaned: unique, never the first photo, at most four. */
 export function parseExtraPhotoPaths(raw: unknown, firstPath: string | null): { ok: true; paths: string[] } | { ok: false; error: string } {
   if (raw === undefined || raw === null) return { ok: true, paths: [] };

@@ -68,6 +68,7 @@ import {
   seatedDraftProblem,
   seatedPayload,
   type SharedPlaceEditorPart,
+  withoutTimetableAdds,
 } from "@/components/phoenix-crm/shared-place-screens";
 import {
   CrmStepForm,
@@ -112,6 +113,7 @@ import { SCHEDULE_RETAKE_CODE, scheduleHeldText, type ScheduleHeldBecause } from
 import { awaitsValidation, listMovesFor, type ListMove } from "@/lib/phoenix-crm/list-request-rules";
 import { customerNameKey } from "@/lib/phoenix-crm/name-fold";
 import { SEATED_PLACE_NO_SESSION, SEATED_PLACE_NO_VENUE, SEATING_AWAY_CODE, SHARED_PLACE_TITLE } from "@/lib/phoenix-crm/shared-place-rules";
+import { TIMETABLE_ADD_NO_PHOTO } from "@/lib/phoenix-crm/timetable-pages-rules";
 import { receivingDaysLabel, weekTimingsText } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmRequestKind } from "@/lib/phoenix-crm/types";
 import type { ListCustomer, ListPlace, TerritoryListView, ValidateResult } from "@/lib/phoenix-crm/view-types";
@@ -220,7 +222,7 @@ export type ListScreen =
   | { name: "trusted-point"; customerId: string }
   | { name: "admin-photo"; customerId: string }
   /** A polyclinic's timetable photographed on its own, from the page of a customer waiting for it. */
-  | { name: "venue-timetable"; customerId: string; sharedPlaceId: string }
+  | { name: "venue-timetable"; customerId: string; sharedPlaceId: string; mode?: "add" | "replace" }
   | { name: "grade"; customerId: string }
   | { name: "edit-details"; customerId: string }
   | { name: "drop"; customerId: string | null; contactCrmId: number | null }
@@ -333,7 +335,8 @@ function chooseTheBuildingAgain(photo: CapturedPhoto | null) {
   return (current: SeatedDraftState): SeatedDraftState => {
     // Every other photo of the timetable carries that building's name too, so it goes with the first.
     releaseTimetableExtras(current.extraPhotos);
-    return { ...current, sharedPlaceId: null, photo: null, extraPhotos: [], timetableOnFile: false, replacingTimetable: false };
+    releaseTimetableExtras(current.addedPhotos);
+    return { ...current, sharedPlaceId: null, photo: null, extraPhotos: [], addedPhotos: [], addingToTimetable: false, timetableOnFile: false, replacingTimetable: false };
   };
 }
 
@@ -575,6 +578,10 @@ function retakeTimetable(photo: CapturedPhoto | null) {
   return (current: SeatedDraftState): SeatedDraftState => {
     // A refused timetable is photographed again whole, every photo of it (owner, 25 Nov 2026).
     releaseTimetableExtras(current.extraPhotos);
+    releaseTimetableExtras(current.addedPhotos);
+    // A photo he was ADDING to the board on file is taken again, and the board on file stays (owner,
+    // 25 Nov 2026: "I don't want to replace it"); the refusal names which photo it was.
+    if (current.addingToTimetable) return { ...current, photo: null, extraPhotos: [], addedPhotos: [null], timetableRetakes: current.timetableRetakes + 1 };
     return { ...current, photo: null, extraPhotos: [], replacingTimetable: true, timetableRetakes: current.timetableRetakes + 1 };
   };
 }
@@ -676,6 +683,7 @@ export function ValidateScreen({
     releaseCapturedPhoto(draft.photo);
     releaseCapturedPhoto(seated.photo);
     releaseTimetableExtras(seated.extraPhotos);
+    releaseTimetableExtras(seated.addedPhotos);
     onBack();
   }
 
@@ -778,7 +786,10 @@ export function ValidateScreen({
     try {
       const standingAt = door === "shared" ? await readFix() : null;
       const result = await crmPost<ValidateResult>("/api/phoenix-crm/list/validate", payloadFor(photo, allowSameName, standingAt), "result");
-      if (door === "shared") releaseTimetableExtras(seated.extraPhotos);
+      if (door === "shared") {
+        releaseTimetableExtras(seated.extraPhotos);
+        releaseTimetableExtras(seated.addedPhotos);
+      }
       onSaved(savedFromResult(result), photo);
     } catch (error) {
       const code = errorCodeOf(error);
@@ -832,7 +843,7 @@ export function ValidateScreen({
         // The venue went while he was filling this in. The timetable photo and the hours stay; only
         // the choice is cleared, so he picks again instead of pressing Save against a venue that is
         // no longer there. Whether the next building has a board on file is unknown until he picks.
-        setSeated((current) => ({ ...current, sharedPlaceId: null, timetableOnFile: false, replacingTimetable: false }));
+        setSeated((current) => ({ ...withoutTimetableAdds(current), sharedPlaceId: null, timetableOnFile: false, replacingTimetable: false }));
         goStep(3);
       } else if (code === "phoenix_crm_not_on_reference_list" || code === "phoenix_crm_customer_not_found" || code === "phoenix_crm_archived") {
         reload();
@@ -894,7 +905,7 @@ export function ValidateScreen({
       const owner =
         asked === SEATED_PLACE_NO_VENUE || asked === SEATED_PLACE_NO_SESSION
           ? 3
-          : !seated.photo && (seated.replacingTimetable || !seated.timetableOnFile)
+          : asked === TIMETABLE_ADD_NO_PHOTO || (!seated.photo && (seated.replacingTimetable || !seated.timetableOnFile))
             ? 4
             : 5;
       return owner === at ? asked : null;
@@ -1390,6 +1401,7 @@ export function AddPlaceScreen({
     releaseCapturedPhoto(draft.photo);
     releaseCapturedPhoto(seated.photo);
     releaseTimetableExtras(seated.extraPhotos);
+    releaseTimetableExtras(seated.addedPhotos);
     onBack();
   }
 
@@ -1442,7 +1454,10 @@ export function AddPlaceScreen({
         "place",
       );
       // A clinic the Google check could not confirm is saved and waits — said as the system's doing.
-      if (door === "shared") releaseTimetableExtras(seated.extraPhotos);
+      if (door === "shared") {
+        releaseTimetableExtras(seated.extraPhotos);
+        releaseTimetableExtras(seated.addedPhotos);
+      }
       onSaved(added?.held === true ? { ...saved, kind: "checking", heldBecause: added.heldBecause ?? null } : saved, photo);
     } catch (error) {
       const code = errorCodeOf(error);
@@ -1469,7 +1484,7 @@ export function AddPlaceScreen({
         if (door === "shared") setSeated(withoutSeatedPhoto(photo));
         else setDraft(withoutPhoto(photo));
       } else if (code === "phoenix_crm_shared_place_not_found" || code === "phoenix_crm_shared_place_retired") {
-        setSeated((current) => ({ ...current, sharedPlaceId: null, timetableOnFile: false, replacingTimetable: false }));
+        setSeated((current) => ({ ...withoutTimetableAdds(current), sharedPlaceId: null, timetableOnFile: false, replacingTimetable: false }));
       } else if (code === "phoenix_crm_customer_dropped" || code === "phoenix_crm_customer_not_found" || code === "phoenix_crm_too_many_places") {
         reload();
       }

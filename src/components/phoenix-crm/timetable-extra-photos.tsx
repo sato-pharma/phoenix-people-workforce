@@ -11,6 +11,9 @@
  * them counts (`bestTimetablePageCheck`).
  *
  * A slot is `null` while its camera is open and nothing is taken yet; only taken photos are sent.
+ *
+ * The same slots ADD photos to a timetable already on file (owner, 25 Nov 2026: "replace the current
+ * timetable or ... add to what exists"): `startAt` continues its numbering and `max` is what is left.
  */
 
 import { ImagePlus, Trash2 } from "lucide-react";
@@ -39,6 +42,8 @@ export function TimetableExtraPhotos({
   test,
   title,
   value,
+  startAt = 2,
+  max = TIMETABLE_EXTRA_PAGES_MAX,
 }: {
   disabled?: boolean;
   onChange: (update: (current: TimetableExtraSlots) => TimetableExtraSlots) => void;
@@ -47,14 +52,18 @@ export function TimetableExtraPhotos({
   /** The stamp burned into each photo — the building's, exactly as on the first. */
   title: string;
   value: TimetableExtraSlots;
+  /** The number the first slot shows: 2 under a fresh first photo, the next one after the photos on file. */
+  startAt?: number;
+  /** How many slots may be open: four under a fresh first photo, what is left when adding. */
+  max?: number;
 }) {
-  const canAdd = value.length < TIMETABLE_EXTRA_PAGES_MAX && value.every((slot) => slot !== null);
+  const canAdd = value.length < max && value.every((slot) => slot !== null);
   return (
     <div className="mt-3 grid gap-3">
       {value.map((slot, index) => (
         <div className="border-t border-slate-100 pt-3" key={index}>
           <div className="mb-2 flex min-w-0 flex-wrap items-center justify-between gap-2">
-            <p className="text-sm font-black text-slate-950">Timetable photo {index + 2}</p>
+            <p className="text-sm font-black text-slate-950">Timetable photo {index + startAt}</p>
             <CrmButton
               disabled={disabled}
               onClick={() =>

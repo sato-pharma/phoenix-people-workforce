@@ -82,6 +82,8 @@ import {
 } from "@/lib/phoenix-crm/google-place-rules";
 import { validationRefusalRepText } from "@/lib/phoenix-crm/validation-feedback";
 import { awaitsValidation, needsAddRequest, neverAdmitted, onTheList, requestKindLabel, type ListMove } from "@/lib/phoenix-crm/list-request-rules";
+import { SEATED_PLACE_PHOTO_REPLACE } from "@/lib/phoenix-crm/shared-place-rules";
+import { TIMETABLE_ADD_TO_ON_FILE } from "@/lib/phoenix-crm/timetable-pages-rules";
 import { isPharmacyListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import type { CustomerPharmacy, ListCustomer, ListPlace, TerritoryListView } from "@/lib/phoenix-crm/view-types";
 
@@ -322,15 +324,28 @@ export function CustomerScreen({
           </CrmNote>
         ) : null}
         {seatedPending && !seatedVenueHeld && (view.canEdit || view.canValidateReference) ? (
+          // A board on file is ADDED to or replaced, his choice (owner, 25 Nov 2026: "replace the current
+          // timetable or ... add to what exists") — the rest of the board, or another day's timetable.
           <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
+            {seatedBoardOnFile ? (
+              <CrmButton
+                onClick={() => {
+                  const seated = customer.places.find((place) => place.sharedPlaceId);
+                  if (seated?.sharedPlaceId) onOpen({ name: "venue-timetable", customerId: customer.customerId, sharedPlaceId: seated.sharedPlaceId, mode: "add" });
+                }}
+                variant="primary"
+              >
+                {TIMETABLE_ADD_TO_ON_FILE}
+              </CrmButton>
+            ) : null}
             <CrmButton
               onClick={() => {
                 const seated = customer.places.find((place) => place.sharedPlaceId);
-                if (seated?.sharedPlaceId) onOpen({ name: "venue-timetable", customerId: customer.customerId, sharedPlaceId: seated.sharedPlaceId });
+                if (seated?.sharedPlaceId) onOpen({ name: "venue-timetable", customerId: customer.customerId, sharedPlaceId: seated.sharedPlaceId, mode: "replace" });
               }}
-              variant="primary"
+              variant={seatedBoardOnFile ? "secondary" : "primary"}
             >
-              {seatedBoardOnFile ? "The timetable changed — photograph it again" : "Photograph the timetable"}
+              {seatedBoardOnFile ? SEATED_PLACE_PHOTO_REPLACE : "Photograph the timetable"}
             </CrmButton>
           </div>
         ) : null}
