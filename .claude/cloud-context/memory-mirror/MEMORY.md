@@ -19,6 +19,9 @@
 - 🔴 Email: [NEVER bulk/test sends](never-fire-bulk-emails-ever.md)·[both cuts LIVE](email-inventory-audit-2026-08-13.md) - probation email OFF **except Day 30/60/75 → B-10 ALONE, no CC (since 2026-10-20; `.claude/rules/probation.md`)**·[every automated email ALSO pings his Telegram](every-automated-email-also-mirrors-to-the-admin-telegram.md) - a test send reaches him.
 
 ## Owner's rules (don't "fix" back)
+- 🥇 [**"do X" = Claude does it ITSELF, from the code**](when-he-says-do-it-claude-does-it-from-the-code.md) - never his Chrome, never click-by-click unless he asks; the app's own `src/lib` function; LEAVE THE RECIPE in the module's rules so the next session doesn't rediscover it (25 Nov).
+- 🥇 [**a refusal is NAMED, never "can't find the cause"**](a-refusal-is-named-never-unexplained.md) - which of the 5 guards (Claude Code safety check · delete check · app archive bug · Supabase · his C-hooks), the action, the next move.
+- 🔴 [click-by-click asked = HE saves it, Claude never does](never-save-a-production-form-he-asked-steps-for.md) - read production first; never a second save under another name.
 - 🔴 [the Next step box is NOT a notepad](the-next-step-box-must-not-manufacture-the-next-task.md) - he SENDS what is in it. Never a task Claude invented; a shipped feature is DONE.
 - 🔴 [hand HIM PowerShell, never bash](commands-handed-to-the-owner-must-be-powershell.md) - his Terminal rejects `&&` before anything runs.
 - 🔴 [fix means fix - no unrequested work](fix-means-fix-no-unrequested-work.md)
@@ -29,6 +32,7 @@
 
 
 ## Inbox — new notes land here
+- 🔴 [a HIDDEN browser pane is not "where he can watch"](a-hidden-browser-pane-is-not-where-he-can-watch.md) - tabs_context first; hidden or no window → show_pane, else SendUserFile every screenshot; never click a decision he has not seen
 - [phoenix-field-camera is public since 25 Nov 2026](phoenix-field-camera-is-public-since-2026-11-25.md) — the camera app repo went public on his word for free Actions minutes; its keystore lives only in repo secrets
 - [a restart that was a compute RESIZE shows in the checkpoint %](checkpoint-percent-reveals-a-compute-resize.md) - "wrote N buffers (P%)" is N ÷ shared_buffers; 25 Nov 17:33 went 1 GB → 4 GB, 18:59 back. Compare it before blaming the platform.
 - [A database restart can be a compute resize](a-database-restart-can-be-a-compute-resize.md) - compare db_host cpuCount/memTotalMb either side first; both 25 Nov restarts were resizes.
