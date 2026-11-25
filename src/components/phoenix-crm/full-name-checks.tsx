@@ -73,7 +73,7 @@ export function FullNameChecks({ canCorrect = false, decides = true, rows }: { c
 
   return (
     <AdminTableShell
-      description="A rep wrote a PM customer's first, middle and last name, and it matched the signboard or timetable under 60%, or the customer is validated and nothing was read off the board. Approve renames the customer. Reject keeps the old name, and the customer stays out of the plan and Add visit until the rep writes it again."
+      description="A rep wrote a PM customer's full name, and it matched the signboard or timetable under 60%, or the customer is validated and nothing was read off the board. Approve renames the customer. Reject keeps the old name, and the customer stays out of the plan and Add visit until the rep writes it again."
       title={`PM full names to check (${shown.length})`}
     >
       <CrmCardsOnPhone>

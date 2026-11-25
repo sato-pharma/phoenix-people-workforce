@@ -170,8 +170,8 @@ export function RestoreAfterRejection({
       )}
       {shortName && !editing ? (
         <p className="break-words text-xs font-semibold text-slate-700">
-          This customer has only one or two names. You can approve as it stands, or use Edit name to write the first, middle and last name. Until
-          all three are written, the rep cannot save a visit to this customer.
+          This customer has only one name. You can approve as it stands, or use Edit name to write the first and last name. Until
+          both are written, the rep cannot save a visit to this customer.
         </p>
       ) : null}
       {explanation ? <p className="break-words text-xs text-slate-500">{explanation}</p> : null}

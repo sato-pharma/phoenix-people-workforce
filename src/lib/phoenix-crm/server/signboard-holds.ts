@@ -96,7 +96,7 @@ export type HeldSignboardSettlement = "approved" | "again" | "done" | "lost" | "
  * `phoenix_crm_decide_validation_review` approve the Super Admin's own button runs. False when it did not
  * land: he decided it first (`review_decided`), or the review is gone, and his decision stands. One
  * approve for the hourly re-read, the one-off read of the old places and the rep's new photo alike.
- * False too for a clinic customer still short of three names, who is left waiting (14 Nov 2026, below).
+ * False too for a clinic customer still short of a first and last name, who is left waiting (14 Nov 2026, below).
  *
  * `note` is the one sentence of why, which the board shows beside "the system". The sign-wins rule
  * (owner, 23 Nov 2026; `server/sign-wins.ts`) approves through here with its own sentence, because it

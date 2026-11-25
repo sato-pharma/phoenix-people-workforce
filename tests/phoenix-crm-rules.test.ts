@@ -662,7 +662,7 @@ function runEntryRuleTests() {
   );
 
   assert.equal(refusalOf(parseNewCustomer({})), "Choose AM or PM.");
-  assert.equal(refusalOf(parseNewCustomer({ listType: "pm", name: " Al " })), "Write the first, middle and last name.");
+  assert.equal(refusalOf(parseNewCustomer({ listType: "pm", name: " Al " })), "Write the first and last name. The middle name is optional.");
   assert.equal(refusalOf(parseNewCustomer({ listType: "am", name: " Al " })), "Write the customer's full name.");
   assert.equal(
     refusalOf(parseNewCustomer({ listType: "pm", name: "Dr Mona Adel Hassan" })),
