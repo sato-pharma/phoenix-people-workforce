@@ -2327,6 +2327,7 @@ import { runPhoenixCrmPharmacyVisitLoggedTests } from "./phoenix-crm-pharmacy-vi
 import { runPhoenixCrmRefusedReadingsTests } from "./phoenix-crm-refused-readings.test.ts";
 import { runPhoenixCrmSignedOutAnswers401Tests } from "./phoenix-crm-signed-out-answers-401.test.ts";
 import { runPhoenixCrmRefusedReadingsBoardTests } from "./phoenix-crm-refused-readings-board.test.ts";
+import { runPhoenixCrmValidationProgressTests } from "./phoenix-crm-validation-progress.test.ts";
 import { runPhoenixCrmVisitFarRefusalTests } from "./phoenix-crm-visit-far-refusal.test.ts";
 import { runPhoenixCrmFarVisitSafeguardsTests } from "./phoenix-crm-far-visit-safeguards.test.ts";
 import { runPhoenixCrmFarVisitHoldFiltersTests } from "./phoenix-crm-far-visit-hold-filters.test.ts";
@@ -8364,6 +8365,11 @@ await runTest(
 await runTest(
   "the Phoenix CRM refused-readings board, the SFE's view of who the location check turned away (owner, 2026-10-03: \"build the refused readings view for the SFE\", the night the table caught its first real case — nine refusals in 67 seconds from one rep whose phone was fine, and nothing but SQL could read them. Pinned: a refusal reads in plain English with BOTH a place's readings and the line it missed, a reading the phone never sent reads 'not reported' and never 0 m; 'got through afterwards' is strict — a save before the refusal proves nothing, another rep's, customer's or kind's does not count, ids compare upper-cased, and a refusal tied to no customer says so; one line per rep with the rep who cannot work before the one who got through, nine retries on one customer being one blocked customer and a later refusal never undoing a save; the audience is the Super Admin and the SFE Manager with a 404 before any database call; the phone's mock-location answer is named in the select only for the Super Admin; only the recorder and this reader name the table; the page asks gate one before the organogram, acts on nothing, fits the screen with a fixed-layout table and phone cards from shared components, uses Cairo time and no accusing words; and its card is in the CRM Data Quality band for exactly the two readers)",
   runPhoenixCrmRefusedReadingsBoardTests,
+);
+
+await runTest(
+  "List Validation, each rep's AM and PM list for the Super Admin and the SFE Manager with an Excel export read live (owner, 2026-11-26: \"build a page for administrator to be able to export the sheet … and any update happens in the system, the sheet is updated when I export it\"). Pinned: the list is the seat's AM and PM doctors on it; tried-and-blocked is a not-validated doctor with a refused place try, and with never-tried it adds up to the not validated; a day with several refused tries is one day; a try on a validated doctor never makes him blocked; a refusal with no doctor named is counted on the rep apart, each day once; a vacant seat is named so with no hiring date; the workbook has Cover, Reps (with the hiring date) and Not validated with every waiting doctor once, named by the Cairo day; the page and the route ask phoenix_crm:read then the reader, the route before any read, rate-limited and audited, and the loader refuses anyone else and reads live)",
+  runPhoenixCrmValidationProgressTests,
 );
 
 await runTest(
