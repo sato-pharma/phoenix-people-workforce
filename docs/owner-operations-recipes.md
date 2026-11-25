@@ -171,6 +171,23 @@ node --env-file-if-exists=.env.local --experimental-strip-types --experimental-s
   Tuesday timetable of مستشفى الشروق الخاصة. Three doctors were added: محمد محروس (Chest), محمد أنور (ENT)
   and احمد الجوهري (Chest). احمد توفيق was already waiting and got his hours.
 
+### Let a rep log one place as AM and as PM ("make it AM or PM")
+
+- **Run:** the same `load-crm-list` job, with **two `customers` rows of the same name, one `"listType": "AM"`
+  and one `"listType": "PM"`**. Dry run first, then `--apply`.
+- **Why two rows:** a customer holds exactly one list (`phoenix_crm_customers_list_type`: AM, PM or
+  Pharmacy), and no app door moves one between AM and PM. The loader's `already_on_the_list` skip
+  compares the folded name **within the same list type only**, so the AM and the PM row are both
+  accepted. A building seating cannot do it either: `phoenix_crm_insert_place` refuses a second seating
+  of one customer in one building (`already_seated`), so one customer gets one session there.
+- **What lands:** two `pending` customers under the rep's **To validate**. He validates each one at
+  the door, and then plans and logs the morning visit on the AM row and the evening visit on the PM
+  row. The AM and PM figures stay apart, as the golden rule requires.
+- **Proof:** the runner's own read, then `phoenix_crm_customers` by seat and name: two rows, `AM` and
+  `PM`, `pending`, `origin = new`.
+- First done for Ahmed Shaaban (Anti-Infective, Giza 5, `SEAT-AIF-REP-GZ5`), 26 Nov 2026:
+  مسجد الميدان الخيرى, AM `a8ff2daa-af40-4ed9-aea2-291e419d3e27` and PM `a518a129-1981-41e8-aa1c-0516e4ccf4a6`.
+
 ### Validate waiting doctors from a building's timetable
 
 - **Run:** `owner-ops.ts seat-in-building --seat <territory seat id> --building <shared place id> --customers <id,id,…> --reason "<why, 10 to 500 characters>"`
