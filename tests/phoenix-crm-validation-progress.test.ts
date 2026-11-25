@@ -1,0 +1,116 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+import ExcelJS from "exceljs";
+
+import {
+  buildValidationProgress,
+  VACANT_SEAT_NAME,
+  validationRefusalLabel,
+  type ValidationSeat,
+} from "../src/lib/phoenix-crm/validation-progress-rules.ts";
+import { buildValidationProgressWorkbook, excelDaySerial, VALIDATION_PROGRESS_SHEETS, validationProgressFileName } from "../src/lib/phoenix-crm/server/validation-progress-workbook.ts";
+
+const seats = new Map<string, ValidationSeat>([
+  ["SEAT-A", { seatId: "SEAT-A", people: [{ hrId: "B-1", name: "Rana Adel", hireDate: "2026-03-01" }], lineName: "CNS", areaName: "Assuit 2", managerName: "Weaam Mahmoud" }],
+  ["SEAT-B", { seatId: "SEAT-B", people: [], lineName: "Pedia", areaName: "Cairo", managerName: "No district manager" }],
+]);
+
+function report() {
+  return buildValidationProgress({
+    customers: [
+      { id: "c1", seatId: "SEAT-A", listType: "AM", name: "Dr. One", speciality: "Paediatrics", grade: "A", validated: true },
+      { id: "c2", seatId: "SEAT-A", listType: "PM", name: "Dr. Two", speciality: null, grade: "B", validated: false },
+      { id: "c3", seatId: "SEAT-A", listType: "PM", name: "Dr. Three", speciality: null, grade: null, validated: false },
+      { id: "c4", seatId: "SEAT-B", listType: "PM", name: "Dr. Four", speciality: null, grade: null, validated: false },
+    ],
+    refusals: [
+      // Three tries on Dr. Two over two days: two days, three tries.
+      { customerId: "c2", repHrId: "B-1", reason: "timetable_missing", visitDate: "2026-11-20" },
+      { customerId: "c2", repHrId: "B-1", reason: "timetable_missing", visitDate: "2026-11-20" },
+      { customerId: "c2", repHrId: "B-1", reason: "signboard_unreadable", visitDate: "2026-11-24" },
+      // A try on a doctor already validated never makes him "tried and blocked".
+      { customerId: "c1", repHrId: "B-1", reason: "rough", visitDate: "2026-11-01" },
+      // A refusal with no doctor named is the rep's, counted apart, each day once.
+      { customerId: null, repHrId: "b-1", reason: "blocked", visitDate: "2026-11-05" },
+      { customerId: null, repHrId: "B-1", reason: "rough", visitDate: "2026-11-05" },
+    ],
+    seats,
+    peopleNames: new Map([["B-1", "Rana Adel"]]),
+  });
+}
+
+export async function runPhoenixCrmValidationProgressTests(): Promise<void> {
+  const built = report();
+  const rana = built.reps.find((rep) => rep.seatId === "SEAT-A");
+  assert.ok(rana);
+  assert.equal(rana.total, 3, "the list is every AM and PM doctor on the seat");
+  assert.equal(rana.validated, 1);
+  assert.equal(rana.notValidated, 2);
+  assert.equal(rana.triedBlocked, 1, "only a not-validated doctor with a refused try is tried and blocked");
+  assert.equal(rana.neverTried, 1);
+  assert.equal(rana.triedBlocked + rana.neverTried, rana.notValidated, "the two halves add up to the not validated");
+  assert.equal(rana.unlinkedBlockedDays, 1, "refusals with no doctor named count each day once, whatever the HR id's case");
+  assert.equal(rana.hireDate, "2026-03-01");
+
+  const two = built.doctors.find((doctor) => doctor.doctor === "Dr. Two");
+  assert.ok(two);
+  assert.equal(two.blockedDays, 2, "a day with two refused tries is one day");
+  assert.equal(two.refusedTries, 3);
+  assert.equal(two.firstBlockedDay, "2026-11-20");
+  assert.equal(two.lastBlockedDay, "2026-11-24");
+  assert.equal(two.reasons, `${validationRefusalLabel("timetable_missing")} (2); ${validationRefusalLabel("signboard_unreadable")} (1)`);
+  assert.equal(two.triedBy, "Rana Adel");
+  assert.equal(built.doctors.length, 3, "the second sheet lists every doctor not validated, tried or not, and no validated one");
+  assert.ok(!built.doctors.some((doctor) => doctor.doctor === "Dr. One"));
+
+  const vacant = built.reps.find((rep) => rep.seatId === "SEAT-B");
+  assert.ok(vacant);
+  assert.equal(vacant.repName, VACANT_SEAT_NAME, "a vacant seat is named so, never a rep");
+  assert.equal(vacant.vacant, true);
+  assert.equal(vacant.hireDate, null);
+
+  assert.deepEqual(built.totals, { total: 4, validated: 1, notValidated: 3, triedBlocked: 1, neverTried: 2, reps: 1, vacantSeats: 1 });
+  assert.equal(validationRefusalLabel("something_new"), "Refused for another reason", "an unknown reason is never printed raw");
+
+  // The workbook: three sheets, the hiring date beside the rep, every not-validated doctor once.
+  const buffer = await buildValidationProgressWorkbook(built, "2026-11-25T22:30:00.000Z");
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
+  assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), [...VALIDATION_PROGRESS_SHEETS]);
+  const repsSheet = workbook.getWorksheet("Reps")!;
+  const cells = (sheet: ExcelJS.Worksheet) => {
+    const values: string[] = [];
+    sheet.eachRow((row) => row.eachCell((cell) => values.push(typeof cell.value === "object" && cell.value && "result" in cell.value ? String(cell.value.result) : String(cell.value ?? ""))));
+    return values;
+  };
+  const repCells = cells(repsSheet);
+  assert.ok(repCells.includes("Hiring date"), "the Reps sheet carries the hiring date");
+  assert.ok(repCells.includes("Rana Adel"));
+  let hiredCell: ExcelJS.Cell | null = null;
+  repsSheet.eachRow((row) => row.eachCell((cell) => {
+    // Excel stores a date as its day number; ExcelJS hands a date-formatted day number back as a Date.
+    if (cell.value instanceof Date && cell.value.toISOString().startsWith("2026-03-01")) hiredCell = cell;
+  }));
+  assert.ok(hiredCell, "the hiring date is a real date cell, so it sorts and filters as a date");
+  assert.equal((hiredCell as unknown as ExcelJS.Cell).numFmt, "dd mmm yyyy", "and it reads as a date");
+  assert.equal(excelDaySerial("2026-03-01"), 46082, "1 March 2026 is Excel day 46082");
+  const doctorCells = cells(workbook.getWorksheet("Not validated")!);
+  for (const name of ["Dr. Two", "Dr. Three", "Dr. Four"]) assert.equal(doctorCells.filter((value) => value === name).length, 1, `${name} is listed once`);
+  assert.ok(!doctorCells.includes("Dr. One"), "a validated doctor is not on the Not validated sheet");
+  assert.equal(validationProgressFileName("2026-11-25T22:30:00.000Z"), "doctor-list-validation-2026-11-26.xlsx", "the file is named by the Cairo day");
+
+  // The gates: the page and the route ask phoenix_crm:read, then the reader predicate; the loader asks it again.
+  const page = readFileSync("app/(admin)/admin/phoenix-crm/validation-progress/page.tsx", "utf8");
+  const route = readFileSync("app/api/admin/phoenix-crm/validation-progress/export/route.ts", "utf8");
+  const loader = readFileSync("src/lib/phoenix-crm/server/validation-progress.ts", "utf8");
+  for (const [file, text] of [["page", page], ["route", route]] as const) {
+    const gate = text.indexOf('canAccess(access, "phoenix_crm", "read")');
+    assert.ok(gate !== -1 && gate < text.indexOf("canReadValidationProgress(viewer)"), `the ${file} asks phoenix_crm:read first`);
+  }
+  assert.ok(route.indexOf("canReadValidationProgress(viewer)") < route.indexOf("loadValidationProgress(viewer)"), "the route asks the reader before any read");
+  assert.ok(route.includes("assertExportRateLimit") && route.includes("writeAuditLog"), "the export is rate-limited and audited");
+  assert.ok(/canReadValidationProgress\(viewer\)\) throw notFoundError/.test(loader), "the loader refuses anyone else itself");
+  assert.ok(/return viewer\.isSuperAdmin \|\| viewer\.isSfeManager;/.test(loader), "the readers are the Super Admin and the SFE Manager");
+  assert.ok(!/unstable_cache|getOrLoadShared/.test(loader), "the report is read live on every call, never from a stored copy");
+}
