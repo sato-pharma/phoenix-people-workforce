@@ -549,7 +549,9 @@ export function runCrmNewHireKeyingTests() {
     const kpiData = readFileSync("src/lib/crm/phoenix-kpi-data.ts", "utf8");
     assert.match(
       kpiData,
-      /scanPlanEntries\(input\.month\.start, input\.month\.end\)/,
+      // The only option the company-wide read may carry is the minute-old shared copy (25 Nov 2026) — never
+      // an agent filter.
+      /: scanPlanEntries\(input\.month\.start, input\.month\.end(?:, \{ reuseRecentWindow \})?\),/,
       "F6: the KPI plan read stays unfiltered — an hr-id filter would drop the vendor plan rows whose hr id is blank",
     );
     assert.match(kpiData, /canonicalHrIdKey\(hrId\) \?\? \(crmId != null/, "F6: and keys each plan row on its hr id first");

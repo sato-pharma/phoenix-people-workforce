@@ -187,7 +187,7 @@ export async function loadPhoenixRepKpis(input: {
           agentHrIds: narrowed.hrIds,
           memo: input.boardReads?.planChunks,
         }).then(inPlanEntryOrder)
-      : scanPlanEntries(input.month.start, input.month.end),
+      : scanPlanEntries(input.month.start, input.month.end, { reuseRecentWindow }),
     hasWindow
       ? queryVisits<VisitRecord>({
           dateFrom: input.month.start,

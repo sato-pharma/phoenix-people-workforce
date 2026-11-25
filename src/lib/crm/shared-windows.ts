@@ -13,11 +13,26 @@ export const CRM_CHECKIN_WINDOWS = "crm:checkin-windows";
 /** The Phoenix CRM List's averaged check-in pins (`loadObservedPointsFor`, src/lib/crm/shared-customers.ts). */
 export const CRM_OBSERVED_POINTS = "crm:observed-points";
 
+/**
+ * The company-wide plan window (`scanPlanEntries` with `reuseRecentWindow`, src/lib/crm/rep-doctor-lists.ts):
+ * every rep's plan entries for a month, read by the KPIs board's doctor lists and its Phoenix half. A
+ * team opening Coverage and Frequency together read it twice per open on 25 Nov 2026 and pushed the
+ * database to 96% CPU. Shared ONLY by a display caller that opts in.
+ */
+export const CRM_PLAN_WINDOWS = "crm:plan-windows";
+
 /** Drops every shared CRM window copy, so the next dashboard read goes to the database. */
 export function refreshSharedCrmWindows(reason: string): void {
   bumpSharedReadGeneration(CRM_VISIT_WINDOWS, reason);
   bumpSharedReadGeneration(CRM_CHECKIN_WINDOWS, reason);
   bumpSharedReadGeneration(CRM_OBSERVED_POINTS, reason);
+  // A saved visit can mark a planned call done, so the plan copy goes with the visits.
+  bumpSharedReadGeneration(CRM_PLAN_WINDOWS, reason);
+}
+
+/** Drops the shared plan window — called when a Phoenix CRM weekly plan is saved or moves on. */
+export function refreshSharedCrmPlanWindows(reason: string): void {
+  bumpSharedReadGeneration(CRM_PLAN_WINDOWS, reason);
 }
 
 /**

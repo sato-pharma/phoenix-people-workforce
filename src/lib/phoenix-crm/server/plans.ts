@@ -32,6 +32,7 @@
  */
 
 import { addDaysIso } from "@/lib/crm/dates";
+import { refreshSharedCrmPlanWindows } from "@/lib/crm/shared-windows";
 import { isMissingCrmRpcError } from "@/lib/crm/reads";
 import { afterResponse } from "@/lib/http/after-response";
 import { conflictError, notFoundError, validationError } from "@/lib/http/api-errors";
@@ -946,6 +947,9 @@ export async function savePlan(viewer: PhoenixCrmViewer, raw: unknown, keep?: { 
   if (activitiesSaved.status === "rejected") throw activitiesSaved.reason;
   if (startsSaved.status === "rejected") throw startsSaved.reason;
   if (keep) keep.reads = { seat, isTest, weekStart, customers, placesByCustomer, holidays, leave };
+  // The KPI boards read the company's plans from a copy up to a minute old (rep-doctor-lists.ts); a saved
+  // week is on them at once.
+  refreshSharedCrmPlanWindows("phoenix-crm plan saved");
   return {
     planId: String(result.plan_id),
     status: statusOf(result.status),
@@ -1118,6 +1122,7 @@ export async function transitionPlan(
       day: action === "return" ? day : null,
     },
   });
+  refreshSharedCrmPlanWindows(`phoenix-crm plan ${action}`);
   const status = statusOf(result.status);
   const version = Number(result.version);
   const weekStart = String(result.week_start);

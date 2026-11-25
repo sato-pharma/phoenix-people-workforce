@@ -29,6 +29,9 @@
 
 
 ## Inbox — new notes land here
+- [a restart that was a compute RESIZE shows in the checkpoint %](checkpoint-percent-reveals-a-compute-resize.md) - "wrote N buffers (P%)" is N ÷ shared_buffers; 25 Nov 17:33 went 1 GB → 4 GB, 18:59 back. Compare it before blaming the platform.
+- [A database restart can be a compute resize](a-database-restart-can-be-a-compute-resize.md) - compare db_host cpuCount/memTotalMb either side first; both 25 Nov restarts were resizes.
+- [25 Nov 17:26 CPU pin = KPI Coverage/Frequency plan scans](the-25-nov-cpu-pin-was-kpi-coverage-frequency-plan-scans.md) - each open re-reads the whole company's plans live (no shared copy); ~14 reps opened them together
 
 
 
