@@ -1220,6 +1220,9 @@ const LATER_MIGRATIONS = [
   // A timetable in several photos (owner, 25 Nov 2026: "make the rep able to upload multiple photos for a timetable"):
   // one NEW table, phoenix_crm_timetable_pages, and one NEW function, phoenix_crm_add_timetable_pages. It replaces nothing.
   "supabase/migrations/20261125221853_phoenix_crm_timetable_pages.sql",
+  // Add to a timetable on file instead of replacing it (owner, 25 Nov 2026: "replace the current timetable or ... add to
+  // what exists"): one NEW function, phoenix_crm_append_timetable_pages. It replaces nothing.
+  "supabase/migrations/20261125234726_phoenix_crm_append_timetable_pages.sql",
 ];
 
 /**
