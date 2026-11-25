@@ -572,11 +572,12 @@ export function ListTab({
         break;
       }
       case "venue-timetable": {
-        const { customerId, sharedPlaceId } = current;
+        const { customerId, mode, sharedPlaceId } = current;
         body = (
           <VenueTimetableScreen
             {...base}
-            key={`venue-timetable-${sharedPlaceId}`}
+            key={`venue-timetable-${sharedPlaceId}-${mode ?? "replace"}`}
+            mode={mode ?? "replace"}
             onBack={() => openCustomer(customerId)}
             onDone={(next) => customerChanged(customerId, next)}
             sharedPlaceId={sharedPlaceId}

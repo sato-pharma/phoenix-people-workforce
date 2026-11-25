@@ -391,6 +391,11 @@ export async function recordPlaceSchedule(placeId: string, check: PhoenixCrmSche
 export async function readTimetableBoards(input: {
   photoPath: string;
   extraPhotoPaths: ReadonlyArray<string>;
+  /**
+   * Photos this person has just taken to ADD to a reused board (owner, 25 Nov 2026), read after its own
+   * pages and through the door for a photo issued to him — they are not on file yet.
+   */
+  addedPhotoPaths?: ReadonlyArray<string>;
   seatId: string;
   repHrId: string;
   isTest: boolean;
@@ -398,7 +403,13 @@ export async function readTimetableBoards(input: {
   timeoutMs?: number;
 }): Promise<ScheduleBoardReading[]> {
   const first = readScheduleBoard(input);
-  if (input.extraPhotoPaths.length === 0) return [await first];
+  const added = (input.addedPhotoPaths ?? []).map(async (path): Promise<ScheduleBoardReading> => {
+    if (!hasAiApiKey()) return { kind: "unread", check: unjudged("no_api_key") };
+    const bytes = await downloadIssuedPlacePhoto({ hrId: input.repHrId, isTest: input.isTest, path, seatId: input.seatId }).catch(() => null);
+    if (!bytes) return { kind: "unread", check: unjudged("no_bytes") };
+    return readScheduleBytes(bytes, input.timeoutMs ? { timeoutMs: input.timeoutMs } : {});
+  });
+  if (input.extraPhotoPaths.length === 0) return Promise.all([first, ...added]);
   const stored = input.reusedTimetable ? await storedExtraReadings(input.photoPath, input.isTest) : new Map<string, ScheduleBoardReading>();
   const extras = input.extraPhotoPaths.map(async (path): Promise<ScheduleBoardReading> => {
     const kept = stored.get(path);
@@ -411,7 +422,7 @@ export async function readTimetableBoards(input: {
     if (!bytes) return { kind: "unread", check: unjudged("no_bytes") };
     return readScheduleBytes(bytes, input.timeoutMs ? { timeoutMs: input.timeoutMs } : {});
   });
-  return Promise.all([first, ...extras]);
+  return Promise.all([first, ...extras, ...added]);
 }
 
 /** One customer's verdict on every photo of the board: the page that says the most for him. */

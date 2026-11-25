@@ -4,11 +4,16 @@ import { readFileSync } from "node:fs";
 import { judgeSchedule, scheduleDoorAction, scheduleUnjudged, type PhoenixCrmScheduleCheck } from "../src/lib/phoenix-crm/schedule-rules.ts";
 import { parseSeatedPlaceDraft } from "../src/lib/phoenix-crm/shared-place-rules.ts";
 import {
+  addedPagesRefusal,
   bestTimetablePageCheck,
   extraPageRefusal,
+  parseAddedPhotoPaths,
   parseExtraPhotoPaths,
+  TIMETABLE_ADD_TO_ON_FILE,
   TIMETABLE_EXTRA_PAGES_MAX,
+  TIMETABLE_FULL,
   TIMETABLE_TOO_MANY_PAGES,
+  timetablePhotosLeft,
 } from "../src/lib/phoenix-crm/timetable-pages-rules.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -114,12 +119,18 @@ export async function runPhoenixCrmTimetablePagesTests(): Promise<void> {
   assert.ok(list.includes("readTimetableBoards({") && list.includes("judgeTimetableBoards(boards, subject.name)"), "the seating door reads and judges every photo");
   assert.ok(!list.includes("readPlaceSchedule("), "and never the first photo alone");
   assert.equal(list.split("await addTimetablePages(").length - 1, 2, "Validate and Add another clinic each keep the pages after their save");
-  assert.ok(list.includes("const pages = seatedPhoto.reused ? [] :"), "only a fresh board's pages are kept");
+  assert.ok(
+    list.includes("const newPaths = append ? seatedPhoto.addedPaths : seatedPhoto.extraPaths;"),
+    "a fresh board's pages are kept, and on a reused board only the photos ADDED to it, never its own pages again",
+  );
   const venue = code("src/lib/phoenix-crm/server/venue-timetable.ts");
   assert.ok(!venue.includes("judgeScheduleBoard("), "the building's own settle and the night judge on every photo too");
   assert.equal(venue.split("judgeTimetableBoards(boards, name)").length - 1, 2);
   const shared = code("src/lib/phoenix-crm/server/shared-places.ts");
-  assert.ok(shared.includes("return { path: venue.schedulePhotoPath, reused: true, extraPaths: venue.scheduleExtraPhotoPaths };"), "a reused board brings its own pages from the server");
+  assert.ok(
+    shared.includes("return { path: venue.schedulePhotoPath, reused: true, extraPaths: venue.scheduleExtraPhotoPaths, addedPaths };"),
+    "a reused board brings its own pages from the server",
+  );
 
   // 6 ─ Every photo appears where the timetable does.
   for (const screen of [
@@ -134,4 +145,45 @@ export async function runPhoenixCrmTimetablePagesTests(): Promise<void> {
   for (const camera of ["src/components/phoenix-crm/shared-place-screens.tsx", "src/components/phoenix-crm/venue-timetable-screen.tsx"]) {
     assert.ok(code(camera).includes("<TimetableExtraPhotos"), `${camera} offers another photo of the timetable`);
   }
+
+  // 7 ─ 🔴 ADD TO THE TIMETABLE ON FILE, OR REPLACE IT — HIS CHOICE (owner, 25 Nov 2026: "The timetable
+  // uploaded is already correct. I don't want to replace it ... replace the current timetable or ... add
+  // to what exists"). Breaking any pin below sends the rep back to retaking a correct board.
+  assert.deepEqual(parseAddedPhotoPaths(["b.jpg", " c.jpg ", "b.jpg", ""], null), { ok: true, paths: ["b.jpg", "c.jpg"] }, "unique and trimmed");
+  assert.deepEqual(parseAddedPhotoPaths(["b.jpg"], "a.jpg"), { ok: true, paths: [] }, "🔴 never beside a fresh first photo: that is a replacement");
+  assert.deepEqual(parseAddedPhotoPaths(["1", "2", "3", "4", "5"], null), { ok: false, error: TIMETABLE_TOO_MANY_PAGES });
+  assert.equal(addedPagesRefusal(0, 4), null, "a one-photo board takes four more");
+  assert.equal(addedPagesRefusal(3, 1), null);
+  assert.equal(addedPagesRefusal(4, 1), TIMETABLE_FULL, "five photos in all, the database's own CHECK");
+  assert.equal(addedPagesRefusal(1, 4), TIMETABLE_FULL);
+  assert.equal(addedPagesRefusal(4, 0), null, "a full board still seats a doctor against it");
+  assert.equal(timetablePhotosLeft(1), 4);
+  assert.equal(timetablePhotosLeft(5), 0);
+  assert.equal(timetablePhotosLeft(0), 4, "a count that never arrived is read as the one photo on file");
+  const adding = parseSeatedPlaceDraft({ ...draftBody, photoPath: null, addedPhotoPaths: ["n.jpg"] });
+  assert.ok(adding.ok && adding.value.addedPhotoPaths.length === 1 && adding.value.photoPath === null, "a seating against the board on file carries the photos added to it");
+  const replacing = parseSeatedPlaceDraft({ ...draftBody, photoPath: "a.jpg", addedPhotoPaths: ["n.jpg"] });
+  assert.ok(replacing.ok && replacing.value.addedPhotoPaths.length === 0, "and a replacement carries none");
+
+  assert.ok(list.includes("addedPhotoPaths: seatedPhoto.addedPaths,"), "the seating door reads the added photos after the board's own");
+  assert.equal(list.split("timetablePages = { append: scanned.append,").length - 1, 2, "both seating doors append, never add a second set of pages");
+  const pagesWriter = code("src/lib/phoenix-crm/server/timetable-pages.ts");
+  assert.ok(pagesWriter.includes(`input.append ? "phoenix_crm_append_timetable_pages" : "phoenix_crm_add_timetable_pages"`), "an append goes to its own function");
+  assert.ok(venue.includes(`callPhoenixCrm<Row>("phoenix_crm_append_timetable_pages"`), "the building's own door adds photos too, and answers its refusals");
+  assert.ok(venue.includes(`.neq("schedule_check->>verdict", "match")`), "🔴 a doctor already matched keeps his verdict; every other one is read again");
+  assert.ok(!venue.slice(venue.indexOf("export async function addVenueTimetablePages")).includes("phoenix_crm_set_venue_timetable"), "and it never replaces the board");
+  assert.ok(code("app/api/phoenix-crm/shared-places/route.ts").includes(`body?.action === "timetable_pages"`));
+  for (const screen of [
+    "src/components/phoenix-crm/shared-place-screens.tsx",
+    "src/components/phoenix-crm/list-customer.tsx",
+  ]) {
+    const drawn = code(screen);
+    assert.ok(drawn.includes("{TIMETABLE_ADD_TO_ON_FILE}") && drawn.includes("SEATED_PLACE_PHOTO_REPLACE"), `${screen} offers both: add to the timetable, or replace it`);
+  }
+  assert.ok(code("src/components/phoenix-crm/venue-timetable-screen.tsx").includes(`action: "timetable_pages"`), "the building's screen adds in add mode");
+  assert.equal(TIMETABLE_ADD_TO_ON_FILE, "Add a photo to this timetable");
+  const migration = readFileSync("supabase/migrations/20261125234726_phoenix_crm_append_timetable_pages.sql", "utf8");
+  assert.ok(migration.includes("raise exception 'phoenix_crm:timetable_changed'"), "photos are added only to the board on file at that moment");
+  assert.ok(migration.includes("coalesce(max(tp.page_number), 1)"), "numbered after the pages already there");
+  assert.ok(migration.includes("revoke execute on function public.phoenix_crm_append_timetable_pages(jsonb) from public, anon, authenticated;"), "never callable from the browser");
 }

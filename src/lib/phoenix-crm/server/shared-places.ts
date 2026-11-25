@@ -59,7 +59,8 @@ import { keepBuildingAdviceQuietly } from "@/lib/phoenix-crm/server/stored-advic
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
-import { timetableExtraPathsOf } from "@/lib/phoenix-crm/server/timetable-pages";
+import { timetableExtraPathsOf, timetablePagesOf } from "@/lib/phoenix-crm/server/timetable-pages";
+import { addedPagesRefusal } from "@/lib/phoenix-crm/timetable-pages-rules";
 import { tellDecisionComment } from "@/lib/phoenix-crm/server/place-notes";
 import { countTimetableRefusalsByVenue, recordRefusedReading } from "@/lib/phoenix-crm/server/refused-readings";
 import { readPlaceSignboard } from "@/lib/phoenix-crm/server/signboard-check";
@@ -132,6 +133,11 @@ export type SharedPlaceRow = {
   schedulePhotoCapturedAtText: string | null;
   /** This viewer's refused photographs of this board today: two open the upload on the last try. */
   timetableRefusedToday: number;
+  /**
+   * How many photos that timetable holds, the first one included — 0 with no board on file. The rep's
+   * "Add a photo to this timetable" offers only what is left of five (owner, 25 Nov 2026).
+   */
+  timetablePhotos: number;
 };
 
 export function kindOf(value: unknown): SharedPlaceKind {
@@ -144,7 +150,7 @@ function statusOf(value: unknown): SharedPlaceRow["status"] {
   return value === "held" || value === "retired" ? value : "active";
 }
 
-function mapSharedPlace(row: Row, seated: number, timetableRefusedToday = 0): SharedPlaceRow {
+function mapSharedPlace(row: Row, seated: number, timetableRefusedToday = 0, timetableExtraPages = 0): SharedPlaceRow {
   const kind = kindOf(row.kind);
   return {
     sharedPlaceId: String(row.id),
@@ -165,6 +171,7 @@ function mapSharedPlace(row: Row, seated: number, timetableRefusedToday = 0): Sh
       ? formatPhoenixDateTime(String(row.schedule_photo_captured_at))
       : null,
     timetableRefusedToday,
+    timetablePhotos: text(row.schedule_photo_path) ? 1 + timetableExtraPages : 0,
   };
 }
 
@@ -348,11 +355,22 @@ export async function loadSharedPlacesFor(viewer: PhoenixCrmViewer, raw: unknown
   // direct cast. The shape is proven by `SHARED_PLACE_COLUMNS` and the mapper below, not by this cast.
   const rows = (data ?? []) as unknown as Row[];
   const ids = rows.map((row) => String(row.id));
-  const [counts, refused] = await Promise.all([
+  const boards = rows.map((row) => text(row.schedule_photo_path)).filter((path): path is string => path !== null);
+  const [counts, refused, pages] = await Promise.all([
     seatedCounts(ids),
     countTimetableRefusalsByVenue({ sharedPlaceIds: ids, repHrId: viewer.hrId, isTest }),
+    // How many photos each board holds. A failed read offers the add as if the board were one photo: the
+    // server refuses a sixth photo on Save, so a wrong count here can never let one through.
+    timetablePagesOf(boards, isTest).catch(() => new Map<string, unknown[]>()),
   ]);
-  return rows.map((row) => mapSharedPlace(row, counts.get(String(row.id)) ?? 0, refused.get(String(row.id)) ?? 0));
+  return rows.map((row) =>
+    mapSharedPlace(
+      row,
+      counts.get(String(row.id)) ?? 0,
+      refused.get(String(row.id)) ?? 0,
+      pages.get(text(row.schedule_photo_path) ?? "")?.length ?? 0,
+    ),
+  );
 }
 
 // ── Capturing one ───────────────────────────────────────────────────────────────────────────────
@@ -584,15 +602,24 @@ export async function sharedPlaceForSeating(input: {
  * the path it is handed against the stored one: this function is the server's wording of the rule and
  * that comparison is its enforcement.
  */
-/** `extraPaths` are the timetable's pages 2 to 5: the ones sent with a fresh photo, or the board's own on a reuse. */
-export type EffectiveSeatedPhoto = { path: string; reused: boolean; extraPaths: string[] };
+/**
+ * `extraPaths` are the timetable's pages 2 to 5: the ones sent with a fresh photo, or the board's own on a
+ * reuse. `addedPaths` are photos the rep is ADDING to a reused board (owner, 25 Nov 2026: "replace the
+ * current timetable or ... add to what exists"), read after its own pages and appended to it once the save
+ * lands; always empty with a fresh photo.
+ */
+export type EffectiveSeatedPhoto = { path: string; reused: boolean; extraPaths: string[]; addedPaths: string[] };
 
 export function effectiveSeatedPhoto(venue: SeatingVenue, seated: SeatedPlaceDraft): EffectiveSeatedPhoto {
-  if (seated.photoPath) return { path: seated.photoPath, reused: false, extraPaths: seated.extraPhotoPaths };
+  if (seated.photoPath) return { path: seated.photoPath, reused: false, extraPaths: seated.extraPhotoPaths, addedPaths: [] };
   // The first customer in a building: no board on file and the phone sent none, so this is the one
-  // case where the refusal still belongs.
+  // case where the refusal still belongs. Photos to ADD need a board to add to, so they do not answer it.
   if (!venue.schedulePhotoPath) throw validationError(SEATED_PLACE_NO_PHOTO);
-  return { path: venue.schedulePhotoPath, reused: true, extraPaths: venue.scheduleExtraPhotoPaths };
+  const addedPaths = seated.addedPhotoPaths.filter((path) => path !== venue.schedulePhotoPath && !venue.scheduleExtraPhotoPaths.includes(path));
+  // Refused before anything is read or written: the board on file holds five photos at most.
+  const full = addedPagesRefusal(venue.scheduleExtraPhotoPaths.length, addedPaths.length);
+  if (full) throw validationError(full);
+  return { path: venue.schedulePhotoPath, reused: true, extraPaths: venue.scheduleExtraPhotoPaths, addedPaths };
 }
 
 export async function seatedPlacePayload(venue: SeatingVenue, seated: SeatedPlaceDraft): Promise<Row> {
