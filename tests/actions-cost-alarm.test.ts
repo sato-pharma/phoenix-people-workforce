@@ -56,7 +56,7 @@ export function runActionsCostAlarmTests() {
   assert.equal(includedMinutesFrom({}, true), 2000, "🔴 an organization with no stated allowance still projects, on the smallest plan's allowance");
   const fieldCamera = projectActionsCost(
     [{ ...row("2026-11-20", 0.72, 0.72), repositoryName: "phoenix-field-camera" }],
-    { now: new Date("2026-11-25T17:00:00Z"), budget: 0, includedMinutes: includedMinutesFrom({}, true) },
+    { now: new Date("2026-11-25T17:00:00Z"), budget: 0, includedMinutes: includedMinutesFrom({}, true) ?? 0 },
   );
   assert.equal(fieldCamera.finding, false, "🔴 120 minutes discounted in full were read as the $0 budget reached");
   assert.equal(allowanceIsEstimated({}, true), true, "and the reading is labelled an estimate");
