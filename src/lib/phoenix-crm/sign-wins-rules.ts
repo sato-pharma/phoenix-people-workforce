@@ -10,7 +10,7 @@
  * so each line of it is pinned by `tests/phoenix-crm-sign-wins.test.ts`.
  *
  * 🔴 WHAT IT NEVER TOUCHES, each named with the reason it is left to him:
- *   - a clinic customer still short of three names (no approve path ever takes one, owner 2026-11-07);
+ *   - a clinic customer still short of a first and last name (no approve path ever takes one, owner 2026-11-07);
  *   - a place with an integrity case nobody has settled (the silent boards are his to read first);
  *   - a place the SFE Manager recommended on (those wait on the SFE recommendations page, 19 Nov 2026);
  *   - a customer seated in a polyclinic (a building and its timetable are his alone, 2026-10-17);

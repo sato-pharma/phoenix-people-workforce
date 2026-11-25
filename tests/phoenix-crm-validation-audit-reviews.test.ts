@@ -292,7 +292,8 @@ export async function runPhoenixCrmValidationAuditReviewsTests(): Promise<void> 
     assert.equal(kept.verdict, "match", "the reading is kept as it was read");
     assert.equal(signboardReadsRecorded(kept), SIGNBOARD_HELD_MAX_READS, "with every read spent");
     assert.equal(signboardHoldStillReading({ pending: true, signboardHold: true, isTest: false, stored: kept }), false, "so the board no longer says the system is reading it");
-    assert.equal(approvalNeedsFullName({ listType: "PM", customerName: "سامي فؤاد" }), true, "two names on a clinic list wait for the third");
+    assert.equal(approvalNeedsFullName({ listType: "PM", customerName: "سامي" }), true, "one name on a clinic list waits for the last name");
+    assert.equal(approvalNeedsFullName({ listType: "PM", customerName: "سامي فؤاد" }), false, "🔴 a first and last name is approved since 2026-11-26");
     assert.equal(approvalNeedsFullName({ listType: "PM", customerName: "سامي فؤاد منصور" }), false, "three are approved as before");
   }
 

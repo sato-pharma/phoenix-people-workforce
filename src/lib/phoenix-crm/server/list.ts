@@ -2347,7 +2347,7 @@ async function validationSubject(seatId: string, isTest: boolean, mode: string, 
     if (!entry) return null;
     // His name as HIS ROW carries it: iReports360's for a row never renamed, and the full name he wrote
     // on "Change the details" for one that was — the reference list keeps the contact's own name for
-    // ever (owner, 2026-11-07: a doctor already at three names is never asked for them again).
+    // ever (owner, 2026-11-07: a doctor already at a full name is never asked for it again).
     return { name: own?.name || String(entry.name), listType: parseListType(entry.list_type), customerId: own?.id ?? null };
   }
   if (mode === "listed") {
@@ -2391,7 +2391,7 @@ async function customerRowForReference(seatId: string, isTest: boolean, contactC
  * name is one or two words is validated only with his first, middle and last name, and that full name is
  * what every check below judges against his board — so a match validates him with it in ONE save. Asked
  * before any check runs and before anything is written; null when nothing is asked (AM, a pharmacy, a
- * doctor already at three names, `new` and `outside`, which ask for the three boxes themselves).
+ * doctor already at a full name, `new` and `outside`, which ask for the name boxes themselves).
  */
 function fullNameAtValidation(subject: ValidationSubject | null, body: Row): string | null {
   if (!subject || !validationNeedsFullName(subject)) return null;
@@ -2728,7 +2728,7 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
   placeRowRead?.catch(() => undefined);
   // The owner's two steps (2026-10-03), before anything is written: is the Google listing this account,
   // and did he stand at it. A mismatch throws here; a hold is saved but not validated.
-  // A doctor validated with his three names is judged by them: the Google check, the signboard and the
+  // A doctor validated with his full name is judged by it: the Google check, the signboard and the
   // timetable all read the FULL name against the board (owner, 2026-11-07 — one step, not two).
   const subject: ValidationSubject | null =
     mode === "new" || mode === "outside"
@@ -2986,7 +2986,7 @@ export async function renameCustomer(
   // The type and the speciality, kept apart (owner, 2026-11-19). A form that offers the Type sends its key;
   // a page loaded before it existed leaves the type as it was and moves only the speciality, as before.
   const kind = Object.prototype.hasOwnProperty.call(body, "customerType") ? await renameKindOf(customerId, body) : null;
-  // A clinic doctor's new name is three names, held against his board (owner, 2026-11-07).
+  // A clinic doctor's new name is a full name (first and last since 2026-11-26), held against his board (owner, 2026-11-07).
   const named = await fullNameForRename(seat.seatId, isTest, customerId, body);
   const result = await callPhoenixCrm<Row>("phoenix_crm_rename_customer", {
     p: {

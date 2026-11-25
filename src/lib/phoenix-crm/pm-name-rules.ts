@@ -258,7 +258,7 @@ export function splitDoctorName(name: string | null | undefined): DoctorNamePart
 
 /**
  * Is this doctor blocked from the plan and Add visit until his full name is written? A PM doctor still
- * on the list — rep-added or from iReports360 — with fewer than three names and no full name waiting
+ * on the list — rep-added or from iReports360 — with fewer than DOCTOR_NAME_MIN_WORDS names (first and last since 2026-11-26) and no full name waiting
  * for the Super Admin.
  */
 export function doctorNeedsFullName(customer: {
@@ -396,16 +396,16 @@ export function validationNeedsFullName(subject: { listType: unknown; name: unkn
 /** What the rep reads above the three boxes at the door: his own fix, in his own words. */
 export const VALIDATION_FULL_NAME_ASK = "Write the first and last name as the sign shows them. The middle name is optional.";
 
-/** The refusal when a short-named doctor's validation arrives without the three names. */
+/** The refusal when a short-named doctor's validation arrives without a first and last name. */
 export const VALIDATION_FULL_NAME_MISSING = DOCTOR_NAME_SHORT;
 
 /** The error code of that refusal, so the screen returns the rep to the step that holds the boxes. */
 export const VALIDATION_FULL_NAME_CODE = "phoenix_crm_full_name_needed";
 
 /**
- * 🔴 PLACE CHECKS NEVER APPROVES A CLINIC DOCTOR WITH ONE OR TWO NAMES — IT IS SENT BACK TO THE REP
+ * 🔴 PLACE CHECKS NEVER APPROVES A CLINIC DOCTOR SHORT OF A FIRST AND LAST NAME — IT IS SENT BACK TO THE REP
  * (owner, 2026-11-07, chose "Send them back to the rep"). An approval would validate a doctor the plan
- * and Add visit still refuse; sent back, the rep's validation screen asks for the three names.
+ * and Add visit still refuse; sent back, the rep's validation screen asks for the first and last name (two names since 2026-11-26; three from 2026-11-07).
  */
 export function approvalNeedsFullName(row: { listType: unknown; customerName: unknown }): boolean {
   return validationNeedsFullName({ listType: row.listType, name: row.customerName });

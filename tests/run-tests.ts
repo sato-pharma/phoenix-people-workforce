@@ -8751,7 +8751,7 @@ await runTest(
   runPhoenixCrmValidationAuditDoorTests,
 );
 await runTest(
-  "Phoenix CRM validation audit, reviews and notices: 'validate again' is withdrawn wherever a customer ends validated; a review counts only on an active place; a refused place keeps its earlier evidence; the system never approves a clinic customer short of three names",
+  "Phoenix CRM validation audit, reviews and notices: 'validate again' is withdrawn wherever a customer ends validated; a review counts only on an active place; a refused place keeps its earlier evidence; the system never approves a clinic customer short of a first and last name",
   runPhoenixCrmValidationAuditReviewsTests,
 );
 await runTest(
