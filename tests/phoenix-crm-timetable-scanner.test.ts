@@ -161,8 +161,11 @@ export function runPhoenixCrmTimetableScannerTests() {
   assert.ok(scanner.includes("scheduleDoorAction(check, earlierTries)"), "and asks the pure ruling");
   assert.ok(scanner.includes("countTimetableRefusals("), "with this rep's refused photos of this building today");
   const filed = scanner.indexOf("await recordTimetableRefusal(");
-  const thrown = scanner.indexOf("throw validationError(action.message, SCHEDULE_RETAKE_CODE)");
+  // The rep's OWN photograph is filed, then refused; a board on file is refused unfiled (it spends no try).
+  const thrown = scanner.lastIndexOf("throw validationError(action.message, SCHEDULE_RETAKE_CODE)");
   assert.ok(filed > -1 && thrown > filed, "🔴 the refusal is FILED before the save is refused — or the third try could never be reached");
+  const unfiled = scanner.indexOf("if (seatedPhoto.reused) throw validationError(action.message, SCHEDULE_RETAKE_CODE)");
+  assert.ok(unfiled > -1 && unfiled < filed, "a board on file is refused before anything is filed, and only a board on file");
   assert.equal(list.includes("scheduleHoldsForReview("), false, "the old silent gate is gone from the door");
   for (const fn of ["export async function validateCustomer(", "export async function addPlace("]) {
     const body = list.slice(list.indexOf(fn), list.indexOf("\n}\n", list.indexOf(fn)));

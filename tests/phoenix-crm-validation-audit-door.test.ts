@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { SCHEDULE_MAX_TRIES, scheduleDoorAction, scheduleUnjudged } from "../src/lib/phoenix-crm/schedule-rules.ts";
+import { boardOnFileDoorAction, SCHEDULE_MAX_TRIES, scheduleDoorAction, scheduleUnjudged } from "../src/lib/phoenix-crm/schedule-rules.ts";
 import {
   heldSignboardOutcome,
   SIGNBOARD_HELD_MAX_READS,
@@ -135,27 +135,35 @@ export async function runPhoenixCrmValidationAuditDoorTests(): Promise<void> {
   {
     const scanner = list.slice(list.indexOf("async function scanSeatedTimetable("), list.indexOf("export type ValidateResult"));
     const refusing = scanner.slice(scanner.indexOf('if (action.kind === "retake") {'), scanner.indexOf('if (action.kind === "hold") {'));
-    const onFile = refusing.indexOf("if (seatedPhoto.reused) throw validationError(timetableRetakeWordsForBoardOnFile(action), SCHEDULE_RETAKE_CODE);");
+    const onFile = refusing.indexOf("if (seatedPhoto.reused) throw validationError(action.message, SCHEDULE_RETAKE_CODE);");
     const filed = refusing.indexOf("await recordTimetableRefusal(");
     assert.ok(onFile > -1, "🔴 the building's board on file is still refused with the retake code, so the camera opens");
     assert.ok(filed > -1 && onFile < filed, "🔴 and it leaves BEFORE the refusal is filed: no row, no try, for a photograph he did not take");
-    assert.ok(refusing.indexOf("throw validationError(action.message, SCHEDULE_RETAKE_CODE)") > filed, "his own photograph is still filed first, then refused");
+    assert.ok(refusing.indexOf("throw validationError(action.message, SCHEDULE_RETAKE_CODE)", filed) > filed, "his own photograph is still filed first, then refused");
+    assert.ok(
+      scanner.includes("const action = seatedPhoto.reused ? boardOnFileDoorAction(check, earlierTries) : scheduleDoorAction(check, earlierTries);"),
+      "🔴 a board on file is ruled by boardOnFileDoorAction, never by the rule that counts his tries",
+    );
 
     // The words: with the board on file not counted, the try named is his own next one.
-    const wording = list.slice(list.indexOf("function timetableRetakeWordsForBoardOnFile("), list.indexOf("async function scanSeatedTimetable("));
-    assert.ok(
-      wording.includes("action.message.replace(/ Try \\d+ of \\d+\\.$/, ` Try ${Math.max(1, action.nextTry - 1)} of ${SCHEDULE_MAX_TRIES}.`)"),
-      "the try in the sentence is one lower than the counted refusal would have said",
-    );
     const unreadable = { ...scheduleUnjudged("unreadable"), legibility: "unreadable" as const, problem: "too_far" as const };
-    for (const earlier of [0, 1]) {
-      const action = scheduleDoorAction(unreadable, earlier);
-      if (action.kind !== "retake") throw new Error("an unreadable board asks for a photograph");
-      assert.match(action.message, / Try \d+ of \d+\.$/, "🔴 the sentence still ends on the try, or the rewrite above changes nothing");
-      const words = action.message.replace(/ Try \d+ of \d+\.$/, ` Try ${Math.max(1, action.nextTry - 1)} of ${SCHEDULE_MAX_TRIES}.`);
-      assert.ok(words.endsWith(` Try ${earlier + 1} of ${SCHEDULE_MAX_TRIES}.`), `with ${earlier} refused today his next photograph is try ${earlier + 1}`);
-      assert.equal(words.split(" Try ").length - 1, 1, "and the try is said once");
+    for (const earlier of [0, 1, 2]) {
+      const action = boardOnFileDoorAction(unreadable, earlier);
+      if (action.kind !== "retake") throw new Error(`🔴 a board on file nobody can read asks for a photograph, with ${earlier} refused today — never a hold`);
+      assert.ok(action.message.endsWith(` Try ${earlier + 1} of ${SCHEDULE_MAX_TRIES}.`), `with ${earlier} refused today his next photograph is try ${earlier + 1}`);
+      assert.equal(action.message.split(" Try ").length - 1, 1, "and the try is said once");
     }
+
+    // 🔴 Hadeer Abdelnaser, Sobhy Atallah at El Kholafaa, 23 Nov 2026: two of her photos refused, then a
+    // save with none. The board on file must not become the third photograph that "still fails".
+    const ownThird = scheduleDoorAction(unreadable, 2);
+    assert.equal(ownThird.kind, "hold", "his OWN third photograph still fails into a hold, as the owner ruled");
+    assert.equal(boardOnFileDoorAction(unreadable, 2).kind, "retake", "🔴 the board on file after two refusals asks for his third photograph instead");
+    assert.equal(boardOnFileDoorAction({ ...unreadable, verdict: "no_schedule", reason: "schedule_missing" }, 2).kind, "retake", "nor does a board on file read as no timetable");
+    const otherName = boardOnFileDoorAction({ ...unreadable, legibility: "clear", problem: null, reason: "schedule_other_name", verdict: "other_name" }, 2);
+    assert.equal(otherName.kind, "hold", "a clear board on file without his name is still held — no retake changes it");
+    if (otherName.kind === "hold") assert.equal(otherName.tries, 3, "and the tries it records are his own count plus this one");
+    assert.equal(boardOnFileDoorAction({ ...unreadable, legibility: "clear", problem: null, reason: null, verdict: "match" }, 2).kind, "save", "a board on file that names him saves");
 
     // One photo sent twice is one try.
     const recorder = code("src/lib/phoenix-crm/server/refused-readings.ts");
