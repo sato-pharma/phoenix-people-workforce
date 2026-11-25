@@ -11,6 +11,8 @@ import {
   sharedReadKey,
 } from "../src/lib/cache/shared-read.ts";
 import { loadPeopleNames } from "../src/lib/phoenix-crm/server/people.ts";
+import { scanPlanEntries } from "../src/lib/crm/rep-doctor-lists.ts";
+import { refreshSharedCrmPlanWindows, refreshSharedCrmWindows } from "../src/lib/crm/shared-windows.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -412,5 +414,107 @@ export async function runSharedReadCacheTests() {
     }
   }
 
-  console.log("shared read cache: 14 blocks passed");
+  // ── (15) The company plan window is one shared copy, display only, dropped by a saved plan or visit ──
+  // 25 Nov 2026, 17:21–17:33 Cairo: the Anti Infective team kept opening KPIs → Frequency and Coverage, which
+  // read the whole company's plans on purpose, twice per open, about 80 requests a read — 3,213 calls and
+  // 9,947 s on the plan view in 18 minutes, and the 2-core database at 87–96% CPU. The visits beside it
+  // already came from the minute-old copy; the plans did not.
+  {
+    const lists = code("src/lib/crm/rep-doctor-lists.ts");
+    assert.match(
+      lists,
+      /: scanPlanEntries\(from, to, \{ reuseRecentWindow: input\.reuseRecentWindow === true \}\),/,
+      "RED THE DOCTOR LISTS READ THE COMPANY'S PLANS FRESH AGAIN: every KPI Coverage or Frequency open re-reads the whole month — or the option stopped defaulting OFF",
+    );
+    const phoenix = code("src/lib/crm/phoenix-kpi-data.ts");
+    assert.match(
+      phoenix,
+      /: scanPlanEntries\(input\.month\.start, input\.month\.end, \{ reuseRecentWindow \}\),/,
+      "RED THE PHOENIX HALF READS THE COMPANY'S PLANS FRESH AGAIN: the second company plan read of every KPI open",
+    );
+    const scan = lists.slice(lists.indexOf("export async function scanPlanEntries("));
+    assert.match(
+      scan,
+      /const windowRows = options\?\.reuseRecentWindow\s*\? \(await getOrLoadShared\(CRM_PLAN_WINDOWS, companyPlanWindowKey\(from, to\), readWindow, COMPANY_PLAN_WINDOW_LIMITS\)\)\.rows\s*: await readWindow\(\);/,
+      "RED the company plan window must share ONLY when the caller opts in, keyed on the window and the projection",
+    );
+
+    const plans = code("src/lib/phoenix-crm/server/plans.ts");
+    for (const [rpcName, label] of [
+      ["phoenix_crm_save_plan", "a saved weekly plan"],
+      ["phoenix_crm_plan_transition", "a weekly plan sent, approved, returned or reopened"],
+    ] as const) {
+      const rpc = plans.indexOf(`callPhoenixCrm<Row>("${rpcName}"`);
+      const refresh = plans.indexOf("refreshSharedCrmPlanWindows(", rpc);
+      const nextExport = plans.indexOf("\nexport async function", rpc);
+      assert.ok(rpc > 0 && refresh > rpc && refresh < nextExport, `RED ${label} must drop the shared plan window, after the write`);
+    }
+    const windows = code("src/lib/crm/shared-windows.ts");
+    const refreshAll = windows.slice(windows.indexOf("export function refreshSharedCrmWindows("));
+    assert.match(
+      refreshAll.slice(0, refreshAll.indexOf("\n}")),
+      /bumpSharedReadGeneration\(CRM_PLAN_WINDOWS, reason\);/,
+      "RED a saved visit marks a planned call done, so it must drop the plan copy too",
+    );
+
+    // Behaviour: the real scan, against a stub that answers every request, so nothing reaches a database.
+    const json = { "content-type": "application/json" };
+    const original = globalThis.fetch;
+    const previousUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const previousKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role-key";
+    let planRequests = 0;
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = new URL(String(input instanceof Request ? input.url : input));
+      if (url.pathname.endsWith("/crm_plan_entries_unified")) {
+        planRequests += 1;
+        return new Response(
+          JSON.stringify([
+            { agent_crm_id: 7, agent_hr_id: "AI-0001", contact_crm_id: 70, crm_plan_entry_id: 2, plan_date: "2026-11-02", plan_status: "planned" },
+            { agent_crm_id: 8, agent_hr_id: "AI-0002", contact_crm_id: 80, crm_plan_entry_id: 1, plan_date: "2026-11-01", plan_status: "planned" },
+          ]),
+          { status: 200, headers: json },
+        );
+      }
+      return new Response("[]", { status: 200, headers: json });
+    }) as typeof fetch;
+    try {
+      _resetSharedReadCache();
+      const first = await scanPlanEntries("2026-11-01", "2026-11-30", { reuseRecentWindow: true });
+      assert.equal(planRequests, 1, "a short month answers from its one probe page");
+      assert.deepEqual(first.map((row) => row.contact_crm_id), [80, 70], "in entry-id order");
+
+      first[0].contact_crm_id = 999;
+      const again = await scanPlanEntries("2026-11-01", "2026-11-30", { reuseRecentWindow: true });
+      assert.equal(planRequests, 1, "RED a second display board inside the minute must be served the shared company plan window");
+      assert.deepEqual(again.map((row) => row.contact_crm_id), [80, 70], "and never the rows an earlier caller changed in place");
+
+      await scanPlanEntries("2026-11-01", "2026-11-29", { reuseRecentWindow: true });
+      assert.equal(planRequests, 2, "a different window is its own read");
+
+      await scanPlanEntries("2026-11-01", "2026-11-30");
+      assert.equal(planRequests, 3, "RED a caller that did not opt in must read live — a read that decides money never shares");
+
+      await scanPlanEntries("2026-11-01", "2026-11-30", { agentHrIds: ["AI-0001"], reuseRecentWindow: true });
+      assert.equal(planRequests, 4, "a read that names agents reads live");
+
+      refreshSharedCrmPlanWindows("test: plan saved");
+      await scanPlanEntries("2026-11-01", "2026-11-30", { reuseRecentWindow: true });
+      assert.equal(planRequests, 5, "RED a saved plan must be on the boards at once");
+
+      refreshSharedCrmWindows("test: visit saved");
+      await scanPlanEntries("2026-11-01", "2026-11-30", { reuseRecentWindow: true });
+      assert.equal(planRequests, 6, "RED a saved visit must drop the plan copy too");
+    } finally {
+      globalThis.fetch = original;
+      _resetSharedReadCache();
+      if (previousUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+      else process.env.NEXT_PUBLIC_SUPABASE_URL = previousUrl;
+      if (previousKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+      else process.env.SUPABASE_SERVICE_ROLE_KEY = previousKey;
+    }
+  }
+
+  console.log("shared read cache: 15 blocks passed");
 }
