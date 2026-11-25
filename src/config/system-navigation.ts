@@ -4875,6 +4875,18 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "SFE Manager"],
   },
   {
+    // Each rep's AM and PM list — validated, not validated, and of those tried-and-blocked or never tried —
+    // with the hiring date, and an Excel export read live on each press (owner, 2026-11-26). The same two
+    // readers as Refused Readings, whose table the blocked tries come from; the enforcing gate is
+    // `canReadValidationProgress` inside the page, the route and the loader, and this card only draws the link.
+    href: "/admin/phoenix-crm/validation-progress",
+    icon: ClipboardList,
+    label: "List Validation",
+    description: "Each medical rep's AM and PM list with the hiring date: validated, not validated, and which of those the rep tried and was blocked on — with an Excel export read live.",
+    permissions: [{ resource: "phoenix_crm", action: "read" }],
+    roles: ["Super Admin", "SFE Manager"],
+  },
+  {
     // A rep's visit SAVED and held for the SFE instead of refused, after five far refusals from one tight
     // spot on one customer in one day (owner, 2026-11-10, after Momen Fathy was refused 51 times at Dr. Doria
     // Darraz's door). The SFE approves or refuses it, and can move the customer's place to where the rep
@@ -5647,6 +5659,8 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/phoenix-crm/master-list",
           // A rep turned away on his location: housekeeping like the duplicates row, same band.
           "/admin/phoenix-crm/refused-readings",
+          // Each rep's list, validated or still waiting: the same housekeeping band as the refused tries it counts.
+          "/admin/phoenix-crm/validation-progress",
           // A visit held for the SFE after five far refusals from one spot: the same stuck rep, the same band.
           "/admin/phoenix-crm/far-visit-holds",
           // The old CRM's visits Phoenix did not take over as visits: a record kept, read-only, same band.
