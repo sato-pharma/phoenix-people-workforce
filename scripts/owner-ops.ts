@@ -28,6 +28,12 @@
 //                 gets), the body's rows are written into it, and the filled sheet is handed to the
 //                 upload's own function — so every check of that upload runs (the seat marker, the
 //                 row rules, the database's same-name skip). Customers land "to validate" for the rep.
+//   start-tablet-agent startPositionAgentOnTablet       (no screen calls it; nobody can open the app)
+//                 Headwind's own runApp push to a tablet that already carries the position agent. The
+//                 app has no icon, no notification and no screen, so nobody can start it by hand, and
+//                 Android keeps an app that has never run in the stopped state where not even
+//                 BOOT_COMPLETED reaches it: until something starts it once, the tablet says nothing to
+//                 Phoenix. Refused when that tablet's own app list does not carry the agent.
 //   tablet-agents / bind-tablet-agent / revoke-tablet-agent
 //                 listPositionAgents · bindPositionAgent · revokePositionAgent (26 Nov 2026). The rep
 //                 tablets' own Phoenix Position app enrols itself at a token door; nothing but the
@@ -727,6 +733,29 @@ async function runTabletAgents(owner: AccessContext) {
   return { employees: [], focus: {}, proofDone: true };
 }
 
+async function runStartTabletAgent(plan: Extract<OwnerOpsPlan, { job: "start-tablet-agent" }>, owner: AccessContext) {
+  await assertTabletDeskAccess(owner);
+  const { startPositionAgentOnTablet } = await import("@/lib/devices/positions/start");
+  const { getAgentForDevice } = await import("@/lib/devices/positions/agents");
+
+  const before = await getAgentForDevice(plan.deviceNumber);
+  console.log(`\nBefore: ${before ? `${plan.deviceNumber} already has an install bound` : `no install is bound to ${plan.deviceNumber}`}`);
+  if (before) console.log(describePositionAgent(before));
+
+  const started = await startPositionAgentOnTablet({ deviceNumber: plan.deviceNumber }, OWNER_LOGIN_ID);
+  console.log(`\n${started.message}`);
+
+  // PROOF — the install list as the desk reads it. A hello takes as long as the tablet takes to
+  // receive the message, so a run that shows nothing new here has not failed: read it again in a
+  // minute with `tablet-agents`.
+  const { listPositionAgents } = await import("@/lib/devices/positions/agents");
+  const agents = await listPositionAgents();
+  console.log(`\nPROOF — ${agents.length} install(s) have said hello:`);
+  if (agents.length === 0) console.log("  none yet — the tablet has not received the message or has not run the app");
+  for (const agent of agents) console.log(describePositionAgent(agent));
+  return { employees: [], focus: {}, proofDone: true };
+}
+
 async function runBindTabletAgent(plan: Extract<OwnerOpsPlan, { job: "bind-tablet-agent" }>, owner: AccessContext) {
   await assertTabletDeskAccess(owner);
   const { bindPositionAgent, getPositionAgent, listAgentFixes } = await import("@/lib/devices/positions/agents");
@@ -813,6 +842,7 @@ async function main() {
     else if (plan.job === "load-crm-list") outcome = await runLoadCrmList(plan, owner.access);
     else if (plan.job === "seat-in-building") outcome = await runSeatInBuilding(plan, owner.access);
     else if (plan.job === "tablet-agents") outcome = await runTabletAgents(owner.access);
+    else if (plan.job === "start-tablet-agent") outcome = await runStartTabletAgent(plan, owner.access);
     else if (plan.job === "bind-tablet-agent") outcome = await runBindTabletAgent(plan, owner.access);
     else if (plan.job === "revoke-tablet-agent") outcome = await runRevokeTabletAgent(plan, owner.access);
     else outcome = await runPinPharmacy(plan, owner.access);

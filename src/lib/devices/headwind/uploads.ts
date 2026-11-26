@@ -59,16 +59,24 @@ type FileUploadResult = { serverPath?: string; fileDetails?: unknown; [field: st
  * `{"status":"ERROR","message":"error.internal.server"}` under an HTTP 200 — measured on production,
  * 9 Nov 2026, uploading the Sato Anti-Infective line app. A label the server could not read falls back
  * to the package name, so the NOT NULL column is never sent empty.
+ *
+ * 🔴 `runAfterInstall` IS SENT EVERY TIME, FALSE INCLUDED, BECAUSE AN UPLOAD IS ALSO AN UPDATE. The
+ * register PUT writes the app row, so a field left out of it is a field the next version upload can
+ * reset: an app that must start itself would silently stop doing so at its own upgrade, which is the
+ * hardest kind of regression to see — the APK arrives, nothing runs it, and the tablet looks fine. It
+ * matters for exactly one kind of app here, the one nobody can open: the position agent
+ * (`src/lib/devices/positions/start.ts`).
  */
 export function applicationRegisterBody(
   serverPath: string,
   fileDetails: unknown,
   showIcon: boolean,
+  runAfterInstall = false,
 ): Record<string, unknown> {
   const details = fileDetails && typeof fileDetails === "object" ? (fileDetails as Record<string, unknown>) : {};
   const text = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : null);
   const pkg = text(details.pkg);
-  const body: Record<string, unknown> = { filePath: serverPath, showIcon, type: "app" };
+  const body: Record<string, unknown> = { filePath: serverPath, runAfterInstall, showIcon, type: "app" };
   if (pkg) body.pkg = pkg;
   const name = text(details.name) ?? pkg;
   if (name) body.name = name;
@@ -208,7 +216,7 @@ function readText(value: unknown): string | null {
  * after them left a registered app with no record of who added it.
  */
 export async function uploadHeadwindApp(
-  input: { file: unknown; rules?: HeadwindRulesTarget | null; showIcon?: boolean },
+  input: { file: unknown; rules?: HeadwindRulesTarget | null; showIcon?: boolean; runAfterInstall?: boolean },
   actor: string,
   fetchImpl: typeof fetch = fetch,
   env: NodeJS.ProcessEnv = process.env,
@@ -256,7 +264,9 @@ export async function uploadHeadwindApp(
   const application = await callHeadwind<Record<string, unknown>>(
     "/rest/private/applications/android",
     {
-      body: JSON.stringify(applicationRegisterBody(serverPath, fileDetails, input.showIcon !== false)),
+      body: JSON.stringify(
+        applicationRegisterBody(serverPath, fileDetails, input.showIcon !== false, input.runAfterInstall === true),
+      ),
       method: "PUT",
     },
     fetchImpl,
@@ -346,6 +356,77 @@ export async function uploadHeadwindApp(
     packageName,
     rules: reached,
     version,
+  };
+}
+
+/**
+ * Turn "run it once it is installed" on or off for one app on the tablet server.
+ *
+ * 🔴 THE WHOLE APP ROW IS READ AND SENT BACK, WITH ONE FIELD CHANGED — never a patch of two fields.
+ * `PUT /rest/private/applications/android` writes the row, so a field the body leaves out is a field
+ * the server may store empty: the same trap as a whole-configuration PUT dropping every app link
+ * (`configurationWriteBody`). Here the risk is the app's own download URL and version pointers, which
+ * is to say every tablet's ability to install it at all.
+ *
+ * 🔴 AND IT ONLY GOVERNS THE NEXT INSTALL. Headwind acts on this at install time — there is nothing
+ * to run after an install that has already happened — so turning it on does nothing for a tablet
+ * holding the app already. That tablet is started with the `runApp` push
+ * (`startPositionAgentOnTablet`, `src/lib/devices/positions/start.ts`).
+ */
+export async function setHeadwindAppRunAfterInstall(
+  input: { applicationId: number; runAfterInstall: boolean },
+  actor: string,
+  fetchImpl: typeof fetch = fetch,
+  env: NodeJS.ProcessEnv = process.env,
+  audit: HeadwindAuditWriter = writeRequiredAuditLog,
+): Promise<{ applicationId: number; packageName: string | null; runAfterInstall: boolean; message: string }> {
+  const list = await callHeadwind<unknown>("/rest/private/applications/search", { method: "GET" }, fetchImpl, env);
+  const rows = Array.isArray(list) ? list.filter((row): row is Record<string, unknown> => !!row && typeof row === "object") : null;
+  if (!rows) {
+    throw new HeadwindUploadError(
+      "The tablet server did not say what is in its app list, so nothing was changed. Try again in a minute.",
+    );
+  }
+  const current = rows.find((row) => row.id === input.applicationId) ?? null;
+  if (!current) {
+    throw new HeadwindUploadError(
+      `The tablet server has no app numbered ${input.applicationId} any more, so nothing was changed.`,
+    );
+  }
+  const was = current.runAfterInstall === true;
+  const packageName = typeof current.pkg === "string" ? current.pkg : null;
+  if (was === input.runAfterInstall) {
+    return {
+      applicationId: input.applicationId,
+      message: `${packageName ?? `App ${input.applicationId}`} already ${was ? "starts" : "does not start"} itself after it installs. Nothing was changed.`,
+      packageName,
+      runAfterInstall: was,
+    };
+  }
+
+  await callHeadwind(
+    "/rest/private/applications/android",
+    { body: JSON.stringify({ ...current, runAfterInstall: input.runAfterInstall }), method: "PUT" },
+    fetchImpl,
+    env,
+  );
+
+  await audit({
+    actorLoginId: actor,
+    entityId: packageName ?? String(input.applicationId),
+    entityType: "headwind_configuration",
+    newValues: { applicationId: input.applicationId, change: "run-after-install", runAfterInstall: input.runAfterInstall },
+    oldValues: { runAfterInstall: was },
+    summary: `${input.runAfterInstall ? "Set" : "Stopped"} ${packageName ?? `app ${input.applicationId}`} ${input.runAfterInstall ? "to start" : "starting"} itself after it installs`,
+  });
+
+  return {
+    applicationId: input.applicationId,
+    message: input.runAfterInstall
+      ? `${packageName ?? `App ${input.applicationId}`} now starts itself on every tablet that installs it from now on. A tablet that already holds it has no install left to run after — start that one with the run push.`
+      : `${packageName ?? `App ${input.applicationId}`} no longer starts itself after it installs.`,
+    packageName,
+    runAfterInstall: input.runAfterInstall,
   };
 }
 

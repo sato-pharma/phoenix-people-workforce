@@ -1473,13 +1473,30 @@ put there by this console or by Headwind's own does not come back, while the set
 at it. The tablet then fails "Bad server response" at every check-in and never installs the app.
 Measured 2026-10-22: WhatsApp, WPS Office and Telegram had all been 404 since at least 11 October, so
 the rep tablet had installed none of the three. `infra/headwind-phoenix-actions/phoenix-entrypoint.sh`
-restores **three** apps on every start: RustDesk and the Phoenix launcher (exact files from immutable
-releases, checked by exact size), and **WhatsApp** (the official current build from
-`whatsapp.com/android/current/WhatsApp.apk`, checked by an 80 MiB floor and the zip magic, because that
-source floats). WhatsApp only ever moves forward, so a tablet holding a newer build than the one in the
-rules reads it as a downgrade and leaves it alone, and nothing loops. **WPS Office and Telegram are not
-restored yet**: re-adding one in the console works only until the next redeploy, until its file is
-mirrored to a public release and pinned in the entrypoint the way the launcher is.
+restores **five** apps on every start: RustDesk and the Phoenix launcher (exact files from immutable
+releases, checked by exact size, in the foreground because enrolment needs them), and the three everyday
+apps in a background subshell — **WhatsApp** (`whatsapp.com/android/current/WhatsApp.apk`), **Telegram**
+(telegram.org's own direct download) and **WPS Office** (WPS's own CDN, a per-version file pinned to its
+exact size). A floating source gets an 80 MiB or 40 MiB floor and the zip magic rather than an exact
+size. Each only ever moves forward, so a tablet holding a newer build than the rules name reads it as a
+downgrade and leaves it alone, and nothing loops.
+
+🔴 **A FLOATING SOURCE WENT STALE FOR EVER, BECAUSE A PRESENT FILE WAS ONLY EVER MEASURED AGAINST ITS
+FLOOR.** The first build to land stayed. Read on 26 Nov 2026: `/files/Telegram.apk` was still the
+70,867,407-byte file this block fetched on 22 October (13.1.0, versionCode 72299) while telegram.org
+served 81,653,599 bytes (13.3.1, 73469), and `/files/WhatsApp.apk` was 153,404,958 against the
+164,417,118 whatsapp.com was serving. Since then `provision_official_apk` reads the publisher's current
+`content-length` through a headers-only request that follows redirects (`remote_apk_size`) and re-fetches
+on any difference. A pinned asset is never asked; a publisher that cannot be read, or that answers with
+something below the floor, leaves the working file exactly where it is.
+
+🔴 **BUT A REFRESHED FILE DOES NOT REACH A TABLET THAT ALREADY HOLDS THE OLD BUILD — THE HEADWIND VERSION
+ROW IS WHAT TRIGGERS AN INSTALL, AND NOTHING MOVES IT AUTOMATICALLY.** The launcher compares what is
+installed against the ROW's `versionCode`, so while row 10079 reads 13.1.0 / 72299 a tablet already on
+13.1.0 has nothing to do. Bumping that row is a hand step, and the new file's real `versionCode` and
+`versionName` must be read out of its own binary manifest first: a row claiming a HIGHER code than the
+file it serves makes every tablet re-download it hourly for ever. Recipe:
+`docs/owner-operations-recipes.md`, "Put an app on every rep tablet".
 
 ### 6.4 The command history is Phoenix's own record
 
@@ -2276,3 +2293,35 @@ would say hello to PRODUCTION and every build would leave an unbound install beh
 two jobs are `position` (build, sign, prove the certificate) and `position-install-check` (API 26 and 34:
 installs, starts once with no crash, the round is with Android's scheduler, and starting the activity again
 resolves to nothing — the proof the icon is gone).
+
+🔴 **AND HEADWIND ONLY STARTS AN APP IT HAS INSTALLED WHEN THE APPLICATION ROW SAYS SO — `runAfterInstall`,
+WHICH WAS FALSE ON APPLICATION 98, SO THE APK LANDED ON TWO TABLETS AND NOTHING EVER RAN IT.** Measured on
+production 26 Nov 2026: Phoenix Position 1.0.0 was installed on PHX-TAB-0007 (checked in 08:35 UTC) and
+PHX-TAB-0008 (07:45 UTC), both level with their rules, and `device_position_agents` held **0 rows and 0
+positions**. The paragraph above explains why `StartActivity` exists; this is the field that was supposed to
+fire it. The two halves of the cure:
+
+- **For every future install** — `setHeadwindAppRunAfterInstall({ applicationId, runAfterInstall: true },
+  actor)` in `src/lib/devices/headwind/uploads.ts`: it reads the whole application row out of
+  `/rest/private/applications/search` and PUTs it back to `/rest/private/applications/android` with that one
+  field changed (a partial PUT drops what it does not send, exactly as in §8.14). Every upload through
+  `uploadHeadwindApp` now carries the field explicitly, false included, so a new app row never inherits a
+  default nobody chose. 🔴 **Headwind acts on it at INSTALL time only** — turning it on cannot reach a tablet
+  that already holds the APK, because there is no install left to run after.
+- **For a tablet already holding it** — `startPositionAgentOnTablet` in
+  `src/lib/devices/positions/start.ts`, job `start-tablet-agent --tablet <number>` behind
+  `company_devices / approve`, audited as `tablet_position_agent`: Headwind's own `runApp` push, payload
+  `{"pkg":"com.satopharma.phoenixposition"}` **as a string containing JSON**, which the launcher turns into a
+  `startActivity` on that package. An explicit start by another app is what lifts the stopped state, so one
+  push does for a tablet already carrying the app what `runAfterInstall` does for the next one to receive it.
+  It reads the tablet's own app list first and **refuses a tablet that has not got the agent** — the push
+  answers 200 whatever package it names, so without that read a tablet the app never reached would read
+  exactly like one that just started, and the hello that never came would look like a fault in the app. A
+  tablet that reported no apps at all is "could not be read", never "has not got it".
+
+🔴 **START THEM ONE AT A TIME.** Two identical Lenovos give identical introductions — model, Android version,
+agent version — so the only certain way to know whose install is whose is to push to one tablet, wait for
+exactly one new row, bind it (`bind-tablet-agent`), and only then push to the next. A wrong bind puts one
+rep's movements on another rep's tablet, and the bind back-stamps every fix that install already sent.
+Recipe: `docs/owner-operations-recipes.md`, "Make a tablet that already carries Phoenix Position actually
+start it".

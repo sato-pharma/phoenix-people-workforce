@@ -112,14 +112,52 @@ apk_size_ok() {
   # $1 the size read, $2 the exact size (empty for a floating official source), $3 the minimum size
   if [ -n "$2" ]; then [ "$1" = "$2" ]; else [ "$1" -ge "$3" ] 2>/dev/null; fi
 }
+remote_apk_size() {
+  # $1 the URL. Prints the size the publisher is serving RIGHT NOW, following redirects, or nothing at
+  # all when it cannot be read. Headers only — no body — so this costs one round trip, not 70 MB.
+  # telegram.org answers 302 to a token-signed CDN file, so following redirects is the whole point: the
+  # content-length that matters is the LAST one in the chain.
+  if command -v wget >/dev/null 2>&1; then
+    wget -q -T 15 -t 1 --spider -S "$1" 2>&1 | awk 'tolower($1) == "content-length:" { print $2 }' | tr -d '\r' | tail -n 1
+  elif command -v curl >/dev/null 2>&1; then
+    curl -fsSLI --connect-timeout 10 --max-time 60 "$1" 2>/dev/null | awk 'tolower($1) == "content-length:" { print $2 }' | tr -d '\r' | tail -n 1
+  fi
+}
 provision_official_apk() {
   # $1 the file name configuration 3 serves at /files/, $2 the publisher's URL, $3 exact size or "", $4 minimum size
   pa_name="$1"; pa_url="$2"; pa_exact="$3"; pa_min="$4"
   pa_dest="$FILES_DIR/$pa_name"
   pa_have="$([ -f "$pa_dest" ] && wc -c < "$pa_dest" | tr -d ' ' || echo 0)"
   if apk_size_ok "$pa_have" "$pa_exact" "$pa_min"; then
-    echo "phoenix-entrypoint(files): $pa_name already present ($pa_have bytes)"
-    return 0
+    # A pinned asset (an exact size) is immutable: present is current, and there is nothing to ask.
+    if [ -n "$pa_exact" ]; then
+      echo "phoenix-entrypoint(files): $pa_name already present ($pa_have bytes)"
+      return 0
+    fi
+    # 🔴 A FLOATING SOURCE WENT STALE FOR EVER, BECAUSE "BIG ENOUGH" READ AS "CURRENT". The floor is all
+    # these apps had, so the first file to land stayed: measured 26 Nov 2026, /files/Telegram.apk was
+    # still the 70,867,407-byte build this block fetched on 22 October (13.1.0, versionCode 72299) while
+    # Telegram was publishing 13.3.1 — five weeks of updates the fleet could not be given. So the
+    # publisher's CURRENT size is read from headers and a difference means a new build: refresh it.
+    pa_remote="$(remote_apk_size "$pa_url" || true)"
+    case "$pa_remote" in
+      "" | *[!0-9]*)
+        # 🔴 AN UNREADABLE PUBLISHER IS NOT A REASON TO TOUCH A WORKING FILE. A blocked HEAD, a DNS
+        # failure or an HTML error page leaves the app exactly as it is — never deleted, never re-fetched
+        # on a guess — and the next start asks again.
+        echo "phoenix-entrypoint(files): $pa_name present ($pa_have bytes); could not read its publisher's current size — keeping it"
+        return 0
+        ;;
+    esac
+    if [ "$pa_remote" = "$pa_have" ]; then
+      echo "phoenix-entrypoint(files): $pa_name already present and current ($pa_have bytes)"
+      return 0
+    fi
+    if ! apk_size_ok "$pa_remote" "" "$pa_min"; then
+      echo "phoenix-entrypoint(files): $pa_name present ($pa_have bytes); the publisher is serving only $pa_remote bytes, below the floor — keeping what we have" >&2
+      return 0
+    fi
+    echo "phoenix-entrypoint(files): $pa_name is $pa_have bytes and its publisher now serves $pa_remote — fetching the newer build"
   fi
   echo "phoenix-entrypoint(files): $pa_name missing or wrong size ($pa_have) — fetching it from its publisher"
   pa_tmp="$FILES_DIR/.$pa_name.part"
@@ -259,29 +297,13 @@ provision_official_apk "hmdm-phoenix-6.50.apk" \
 # Headwind record needs no change. We never re-host WhatsApp's binary ourselves; it comes straight from
 # WhatsApp. Same defensive shape otherwise: temp download, checks before the move, and it NEVER aborts
 # startup — a failed or blocked fetch logs and the server still boots, and it retries on the next start.
+# 🔴 AND IT GOES THROUGH THE SAME ONE HELPER AS TELEGRAM AND WPS, so the staleness fix above covers it
+# too: a hand-rolled copy of this block is how WhatsApp sat on one build for weeks while the helper's
+# callers were refreshed. The floor and the zip magic are unchanged.
 WHATSAPP_APK="WhatsApp.apk"
 WHATSAPP_URL="https://www.whatsapp.com/android/current/WhatsApp.apk"
 WHATSAPP_MIN_SIZE=83886080   # 80 MiB floor — the universal APK is ~150 MB; a floating official source gets a minimum + zip-magic check, not an exact size
-WA_DEST="$FILES_DIR/$WHATSAPP_APK"
-have_wa="$([ -f "$WA_DEST" ] && wc -c < "$WA_DEST" | tr -d ' ' || echo 0)"
-if [ "$have_wa" -ge "$WHATSAPP_MIN_SIZE" ] 2>/dev/null; then
-  echo "phoenix-entrypoint(files): $WHATSAPP_APK already present ($have_wa bytes)"
-else
-  echo "phoenix-entrypoint(files): $WHATSAPP_APK missing or too small ($have_wa) — fetching the official current WhatsApp"
-  WA_TMP="$FILES_DIR/.$WHATSAPP_APK.part"
-  rm -f "$WA_TMP"
-  wa_fetched=""
-  fetch_url "$WA_TMP" "$WHATSAPP_URL" && wa_fetched="yes" || true
-  wa_got="$([ -f "$WA_TMP" ] && wc -c < "$WA_TMP" | tr -d ' ' || echo 0)"
-  wa_magic="$([ -f "$WA_TMP" ] && dd if="$WA_TMP" bs=2 count=1 2>/dev/null || true)"
-  if [ -n "$wa_fetched" ] && [ "$wa_got" -ge "$WHATSAPP_MIN_SIZE" ] 2>/dev/null && [ "$wa_magic" = "PK" ]; then
-    mv -f "$WA_TMP" "$WA_DEST"
-    echo "phoenix-entrypoint(files): installed $WHATSAPP_APK ($wa_got bytes)"
-  else
-    rm -f "$WA_TMP"
-    echo "phoenix-entrypoint(files): could not fetch a valid $WHATSAPP_APK (got $wa_got bytes) — it will retry next start" >&2
-  fi
-fi
+provision_official_apk "$WHATSAPP_APK" "$WHATSAPP_URL" "" "$WHATSAPP_MIN_SIZE"
 
 # 🔴 RE-PROVISION TELEGRAM AND WPS OFFICE — the last two of configuration 3's everyday apps that a bare
 # work/ leaves a 404. Measured 2026-10-22: /files/Telegram.apk and /files/wps_18.25.2_abi32_en00000.apk
@@ -296,7 +318,7 @@ fi
 #   - WPS Office from WPS's own CDN, a per-version file, so it is pinned to its exact size like RustDesk.
 # Same defensive shape as every block above: temp download, checks before the move, and a failed fetch
 # logs and falls through — it NEVER aborts startup, and retries on the next start.
-TELEGRAM_MIN_SIZE=41943040   # 40 MiB floor — the official build measured 70,867,407 bytes on 2026-10-22
+TELEGRAM_MIN_SIZE=41943040   # 40 MiB floor — 70,867,407 bytes on 2026-10-22 (13.1.0), 81,653,599 on 2026-11-26 (13.3.1); the floor is a sanity check, and the size difference is what triggers the refresh
 WPS_SIZE=171366058           # bytes — the exact size of WPS's own wps_18.25.2_abi32_en00000.apk
 provision_official_apk "Telegram.apk" "https://telegram.org/dl/android/apk" "" "$TELEGRAM_MIN_SIZE"
 provision_official_apk "wps_18.25.2_abi32_en00000.apk" \

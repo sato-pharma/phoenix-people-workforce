@@ -161,6 +161,37 @@ node --env-file-if-exists=.env.local --experimental-strip-types --experimental-s
 
 ## Rep tablets
 
+### Make a tablet that already carries Phoenix Position actually start it
+
+- 🔴 **AN APK HEADWIND HAS INSTALLED IS NOT AN APP THAT HAS RUN, AND THIS IS THE APP WHERE THAT IS THE
+  WHOLE DIFFERENCE.** Measured on production 26 Nov 2026: Phoenix Position 1.0.0 was installed on
+  PHX-TAB-0007 and PHX-TAB-0008, both of which had checked in that morning, and
+  `device_position_agents` held **zero rows**. The app shows the rep nothing — no icon, no
+  notification, no screen — so nobody can open it, and Android keeps an app that has never run in the
+  **stopped** state, where not even `BOOT_COMPLETED` reaches it. Until something starts it once it
+  mints no install id, says no hello and schedules no rounds.
+- **The cause was one false field, and it is now true.** The application row's own `runAfterInstall`
+  (application 98) was `false`, so Headwind installed the APK and ran nothing.
+  `setHeadwindAppRunAfterInstall({ applicationId, runAfterInstall: true }, "B-10")` turns it on — it
+  reads the whole app row and sends it back with that one field changed. 🔴 **It governs the NEXT
+  install only**: Headwind acts on it at install time, so it does nothing for a tablet already holding
+  the app.
+- **For a tablet already holding it:** `owner-ops.ts start-tablet-agent --tablet PHX-TAB-0007` —
+  `startPositionAgentOnTablet` in `src/lib/devices/positions/start.ts`, Headwind's own `runApp` push,
+  which the launcher turns into a `startActivity` on that package. An explicit start by another app is
+  what lifts the stopped state. Run it with `railway run` (the credentials are production-only, as
+  below), and it is audited as `tablet_position_agent`.
+- **It refuses a tablet that has not got the app**, and says "could not be read" rather than "has not
+  got it" for a tablet whose app list is empty — the push answers 200 whatever package it names, so
+  without that read a tablet the app never reached would look exactly like one that just started it.
+- 🔴 **START THEM ONE AT A TIME.** Two identical Lenovos give identical introductions, so the only
+  certain way to know whose install is whose is to push to one tablet, wait for exactly one new row,
+  bind it, then push to the next. A wrong bind puts one rep's movements on another's tablet.
+- **Proof:** `owner-ops.ts tablet-agents`, or
+  `select install_id, device_number, first_seen_at from device_position_agents order by first_seen_at desc`.
+  The hello arrives as soon as the tablet receives the push; a tablet that is off the network gets it
+  at its next check-in.
+
 ### Say which tablet a Phoenix Position install is (and read its trail)
 
 - **Why it needs doing at all.** The rep tablets' own Phoenix Position app enrols ITSELF: it says hello
@@ -191,6 +222,45 @@ node --env-file-if-exists=.env.local --experimental-strip-types --experimental-s
   (`listAgentFixes`), newest first. Both the bind and the revoke write an audit row under entity type
   `tablet_position_agent`.
 - **Permission:** the same `company_devices / approve` check every Headwind route makes.
+
+### Put an app on every rep tablet ("push it to the tablets")
+
+- **Nothing is pushed.** An app reaches a rep tablet because it is listed on that tablet's Headwind set of
+  rules; the tablet installs it on its next run. So "push X to the tablets" means: register the APK on the
+  tablet server and link it to **all three** rep sets — `Rep tablets` (3), `— Anti Infective` (4),
+  `— Pedia` (5). Two lines silently miss an app put on only one.
+- **Run it from the code:** `uploadHeadwindApp({ file, rules: "rep", showIcon }, "B-10")` in
+  `src/lib/devices/headwind/uploads.ts` — one upload, one link per set, one audit row per set, and it
+  moves the registered link onto `https://` itself. `showIcon: false` for an app the rep must not see.
+- 🔴 **The Headwind credentials exist ONLY in Railway production** — `HEADWIND_MDM_BASE_URL`, the two
+  `_ACCESS_CLIENT_*` values, `_LOGIN` and `_PASSWORD` are in no local env file, so the script is run with
+  `railway run --service phoenix-people-workforce -- node --experimental-strip-types
+  --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs <script>`.
+- 🔴 **THEN CHECK EVERY INSTALL LINK, OR THE APP CAN SIT ON THE RULES AND NEVER ARRIVE** —
+  `checkHeadwindInstallLinks("rep")` prints each set's broken count. One dead link stops that tablet's
+  whole update run at that app, so a link nobody checked keeps the new app off the fleet. Measured
+  26 Nov 2026: Phoenix Position was correctly on all three sets (one link each, 200) while **Telegram's
+  own `https://telegram.org/dl/android/apk` had rotted into a 302** — one broken of 12, 13 and 13.
+- **A publisher's URL rots into a redirect, and the cure is the file the server already holds.** Probe
+  `https://mdm.satopharma.com/files/<name>` with a HEAD first: the big third-party apps are already on the
+  46 GB volume at `/usr/local/tomcat/work/files` (Telegram, WhatsApp, WPS). Then edit that app's version
+  row **in place** — `PUT /rest/private/applications/versions` with its `id` kept, never a configuration
+  PUT (§8.14) — so the download becomes that address, which answers 200 by itself.
+- 🔴 **THE ROW'S `version` AND `versionCode` MUST MATCH THE FILE ON THE DISK, or every tablet
+  re-downloads it hourly for ever** — the launcher compares an app row by `versionCode`. Read the real
+  pair out of the APK's own binary manifest (`versionCode`, `versionName` on the `<manifest>` element);
+  26 Nov 2026 the disk held 13.1.0 / 72299 while the row claimed 13.2.1 / 72919.
+- 🔴 **A BIG APK CANNOT BE UPLOADED FROM THE LAPTOP — CLOUDFLARE CUTS IT AT HTTP 524.** `mdm-console` sits
+  behind Cloudflare Access, whose origin wait is about 100 seconds, and 81,653,599 bytes of Telegram 13.3.1
+  died there (`uploadBytes`, 26 Nov 2026) having registered nothing. A file that big reaches the disk only
+  from the server's own side: `phoenix-entrypoint.sh` fetches the three everyday apps at every start and,
+  since 26 Nov 2026, re-fetches a floating source whose publisher is serving a different `content-length`.
+- 🔴 **A REFRESHED FILE ON THE DISK STILL REACHES NO TABLET THAT HOLDS THE OLD BUILD — THE VERSION ROW IS
+  THE TRIGGER.** The launcher compares what is installed against the row's `versionCode`, so bumping the
+  row to the file's real pair is the hand step that actually ships an update to the fleet.
+- **Proof:** read the sets back (`readHeadwindConfigurationApplications`) — one link per set, `action 1`,
+  `remove false`, the version you sent — and then the link report showing **0 broken on all three**
+  (measured 26 Nov 2026: 0 of 12, 0 of 13, 0 of 13).
 
 ## Phoenix CRM
 
