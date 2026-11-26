@@ -97,16 +97,25 @@ node --env-file-if-exists=.env.local --experimental-strip-types --experimental-s
 
 ### Merge a duplicate customer (a doctor saved twice)
 
-- **Order:** merge the duplicate PHARMACY copies first (above), so both customers point at the same
-  venues; then merge the customer.
+- **Run:** `owner-ops.ts merge-customers --survivor <kept customer id> --retired <copy id> --reason "<why: same doctor, same mobile, same pharmacy>"`
+  — a dry run first (the merge runs inside a rolled-back transaction and prints what it would move),
+  then the same line with `--apply`. It acts as the owner through a real session, so
+  `assertRealSessionForDecision` passes the way it does on his screen; never through the spare.
+- **Order:** since 26 Nov 2026 the merge folds the same distributor code on a second venue copy by
+  itself (`linksFoldedByCode`), so the pharmacy copies no longer have to be merged first for the
+  customer to hold each shop once. The duplicate VENUE stays on file until `merge-venues` folds it.
 - **Function:** `mergeMarketingCustomers` in `src/lib/marketing-requests/customer-merge.ts` (route
   `POST /api/marketing-requests/customer-merge`, body
   `{ "survivorId": "<kept>", "retiredId": "<copy>", "carryEvidence": false, "reason": "<why>" }`).
 - 🔴 **It refuses a dev-preview session** (`assertRealSessionForDecision`: "A dev-preview session
   cannot merge two customers"). The spare's dev-auth headers are a preview session, so the spare route
-  answers 403. Never work around that guard. The owner presses it himself, signed in as himself, on
-  Marketing Requests → Customer Database → "Merge duplicate customers": the customer that stays, the
-  customer to retire, the reason, then **Merge customers**.
+  answers 403. Never work around that guard; the runner above is a real session, not a way round it.
+- 🔴 **The screen's button cannot be pressed from the app's browser pane.** It asks "are you sure?"
+  in a browser OK box, and the pane closes that box unanswered, so no request is sent: pressed twice
+  on 26 Nov 2026 (رضا سليمان), production unchanged both times. Use the runner.
+- **Done this way first:** رضا سليمان (Anti Infective hospital, Alex East, Nahed Tarek Hattab), the copy
+  9D1B5FFF into D3B1021F, 26 Nov 2026 02:12 Cairo: 1 link folded by code, 1 contact and 1 Direct Orders
+  venue moved, the 2 requests already on the row that stays.
 - **Proof:** the copy's `marketing_customers.merged_into_customer_id` names the survivor and its
   `active` is false; the survivor's live links are unchanged.
 - First needed for Dr Othman El Shewehy / Sahar ElGallad, 25 Nov 2026: the four pharmacy copies merged

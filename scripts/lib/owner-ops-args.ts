@@ -12,7 +12,7 @@
 // refused rather than "last one wins".
 // ---------------------------------------------------------------------------
 
-export const OWNER_OPS_JOBS = ["link-doctor", "merge-venues", "pin-pharmacy", "load-crm-list", "seat-in-building"] as const;
+export const OWNER_OPS_JOBS = ["link-doctor", "merge-venues", "merge-customers", "pin-pharmacy", "load-crm-list", "seat-in-building"] as const;
 export type OwnerOpsJob = (typeof OWNER_OPS_JOBS)[number];
 
 /** Every flag the runner knows, for refuseUnknownFlags. */
@@ -28,6 +28,7 @@ export const OWNER_OPS_FLAGS = [
   "--loser",
   "--pharmacy",
   "--reason",
+  "--retired",
   "--seat",
   "--survivor",
   "-h",
@@ -36,6 +37,7 @@ export const OWNER_OPS_FLAGS = [
 const VALUE_FLAGS_BY_JOB: Record<OwnerOpsJob, readonly string[]> = {
   "link-doctor": ["--body"],
   "merge-venues": ["--survivor", "--loser", "--reason", "--employee"],
+  "merge-customers": ["--survivor", "--retired", "--reason"],
   "pin-pharmacy": ["--pharmacy", "--lat", "--lng", "--employee"],
   "load-crm-list": ["--seat", "--body"],
   "seat-in-building": ["--seat", "--building", "--customers", "--reason"],
@@ -58,6 +60,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export type OwnerOpsPlan =
   | { job: "link-doctor"; apply: boolean; bodyPath: string }
   | { job: "merge-venues"; apply: boolean; survivorId: string; loserId: string; reason: string; employeeHrId: string | null }
+  | { job: "merge-customers"; apply: boolean; survivorId: string; retiredId: string; reason: string }
   | { job: "pin-pharmacy"; apply: boolean; pharmacyId: string; latitude: number; longitude: number; employeeHrId: string | null }
   | { job: "load-crm-list"; apply: boolean; seatId: string; bodyPath: string }
   | { job: "seat-in-building"; apply: boolean; seatId: string; buildingId: string; customerIds: string[]; reason: string };
@@ -75,6 +78,9 @@ listed and none is sent. Only --apply writes. Every run ends with a proof read.
       (docs/owner-operations-recipes.md).
   merge-venues --survivor <pharmacy id> --loser <pharmacy id> --reason "<why they are one shop>" [--employee <hr id>]
       Fold a duplicate pharmacy copy into the one that stays. One copy per run.
+  merge-customers --survivor <customer id> --retired <customer id> --reason "<why they are one customer>"
+      Fold a customer saved twice into the one that stays (the Customer Database's "Merge duplicate
+      customers"). Same line, kind and area only; the database refuses anything else. One pair per run.
   pin-pharmacy --pharmacy <pharmacy id> --lat <latitude> --lng <longitude> [--employee <hr id>]
       Put a map pin on a saved pharmacy that has none (evidence stays pending: no shop photo).
   load-crm-list --seat <seat id> --body <file.json>
@@ -141,7 +147,7 @@ export function parseOwnerOpsArgs(argv: readonly string[]): OwnerOpsParse {
   const id = (name: string): string | { error: string } => {
     const value = need(name);
     if (typeof value !== "string") return value;
-    return UUID.test(value) ? value.toLowerCase() : { error: `${name} must be a pharmacy id (a uuid), got "${value}"` };
+    return UUID.test(value) ? value.toLowerCase() : { error: `${name} must be ${job === "merge-customers" ? "a customer" : "a pharmacy"} id (a uuid), got "${value}"` };
   };
 
   if (job === "link-doctor") {
@@ -179,6 +185,18 @@ export function parseOwnerOpsArgs(argv: readonly string[]): OwnerOpsParse {
     if (typeof reason !== "string") return { ok: false, ...reason };
     if (reason.length < 10 || reason.length > 500) return { ok: false, error: "--reason must be 10 to 500 characters" };
     return { ok: true, plan: { job, apply, seatId: seatId.toUpperCase(), buildingId: buildingId.toLowerCase(), customerIds: unique, reason } };
+  }
+
+  if (job === "merge-customers") {
+    const survivorId = id("--survivor");
+    if (typeof survivorId !== "string") return { ok: false, ...survivorId };
+    const retiredId = id("--retired");
+    if (typeof retiredId !== "string") return { ok: false, ...retiredId };
+    if (survivorId === retiredId) return { ok: false, error: "--survivor and --retired are the same customer" };
+    const reason = need("--reason");
+    if (typeof reason !== "string") return { ok: false, ...reason };
+    if (reason.length < 10 || reason.length > 500) return { ok: false, error: "--reason must be 10 to 500 characters: it is the only record of why two rows were judged one customer" };
+    return { ok: true, plan: { job, apply, survivorId, retiredId, reason } };
   }
 
   if (job === "merge-venues") {
