@@ -293,8 +293,8 @@ export function runPrivateCalendarPlanSourceTests() {
     // disputed is deciding on other evidence than the one in front of the employee.
     assert.equal(
       [...service.matchAll(/loadPlanPrivateCalendarItems\(/g)].length,
-      3,
-      "the plan loads in ALL THREE fan-outs — the calendar workspace, the company no-activity engine Deductions reads, and the dispute-day evidence the Calendar Disputes reviewer sees",
+      4,
+      "the plan loads in ALL FOUR fan-outs — the calendar workspace, the company no-activity engine Deductions reads, the dispute-day evidence the Calendar Disputes reviewer sees, and Phoenix CRM's calendar (2026-11-27, display only)",
     );
     assert.match(service, /plan: plans\.ready,/, "a plan source that could not be read says so, rather than showing a confident empty month");
 

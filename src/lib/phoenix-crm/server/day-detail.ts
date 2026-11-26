@@ -6,6 +6,8 @@ import type { ManagerDayVisit } from "@/lib/phoenix-crm/manager-visit-detail";
 import { territoryName } from "@/lib/phoenix-crm/scope";
 import { canEnterMissedRecordOn, canEnterMissedRecords, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadDayRouteSafely, type DayRouteLoad } from "@/lib/phoenix-crm/server/day-route";
+import { readDayPrivateCalendarEntries } from "@/lib/phoenix-crm/server/day-private-calendar";
+import type { PrivateCalendarEntry } from "@/lib/phoenix-crm/team-calendar";
 import { loadRepVisitDetails } from "@/lib/phoenix-crm/server/manager-visit-details";
 import { loadVisitDay, resolveVisitDayAddress, type VisitDayView } from "@/lib/phoenix-crm/server/visits";
 import { loadApprovedLeaveDays } from "@/lib/vacation/approved-leave-days";
@@ -70,6 +72,14 @@ export type PhoenixCrmDayDetail = VisitDayView &
     visitsInFull: ManagerDayVisit[];
     /** That read failed: said on the page, and the visit cards below it still carry the day. */
     visitsInFullUnread: boolean;
+    /**
+     * The private calendar's own entries for his day — the approved plan, the trip, the excuse, the interview, the
+     * holiday, the correction — shown, never counted. Not the leave this page already says, nor the interviews a
+     * recorded "Interviews" day already lists.
+     */
+    privateCalendarEntries: PrivateCalendarEntry[];
+    /** The private-calendar sources that could not be read, by label: said on the page, never an empty day. */
+    privateCalendarUnread: string[];
   };
 
 export async function loadPhoenixCrmDayDetail(
@@ -83,6 +93,7 @@ export async function loadPhoenixCrmDayDetail(
   const address = resolveVisitDayAddress(viewer, raw);
   const leaveRead = readDayLeave(address.seat.occupantHrId, address.date);
   const visitsInFullRead = readVisitsInFull(viewer, address);
+  const privateCalendarRead = readDayPrivateCalendarEntries(address.seat.occupantHrId, address.date, address.isTest);
   const loaded = await loadVisitDay(viewer, raw);
   // 🔴 EARLIEST FIRST, WHICH IS NOT HOW THE VISITS TAB ORDERS THEM. That tab is a rep's own day,
   // where the visit he just saved belongs at the top; this page is somebody ELSE reading the day
@@ -106,7 +117,10 @@ export async function loadPhoenixCrmDayDetail(
     })),
   );
 
-  const [{ onLeave, leaveUnread }, { visitsInFull, visitsInFullUnread }] = await Promise.all([leaveRead, visitsInFullRead]);
+  const [{ onLeave, leaveUnread }, { visitsInFull, visitsInFullUnread }, privateCalendar] = await Promise.all([leaveRead, visitsInFullRead, privateCalendarRead]);
+  const privateCalendarEntries = privateCalendar.entries.filter(
+    (entry) => !(onLeave && entry.source === "vacation") && !(day.dayActivity?.activityType === "interviews" && entry.source === "interview"),
+  );
 
   const seat = viewer.org.seats.get(day.territory.seatId);
   const missedRecords =
@@ -125,6 +139,8 @@ export async function loadPhoenixCrmDayDetail(
     onLeave,
     pharmacies,
     editsVisits: canEnterMissedRecords(viewer),
+    privateCalendarEntries,
+    privateCalendarUnread: privateCalendar.unread,
     adminDeletes: canEnterMissedRecords(viewer),
     visitsInFull,
     visitsInFullUnread,

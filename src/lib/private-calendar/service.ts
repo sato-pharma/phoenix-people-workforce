@@ -19,6 +19,8 @@ import { loadOutstationTripPrivateCalendarItems } from "@/lib/private-calendar/o
 import { loadInterviewPrivateCalendarItems } from "@/lib/private-calendar/interview-items";
 import { attachVisitDetails, loadPrivateCalendarVisitDetails } from "@/lib/private-calendar/visit-detail-items";
 import { loadAcceptedDeductionCorrections } from "@/lib/dispute-center/accepted-deduction-days";
+import { loadAcceptedReviewDays } from "@/lib/private-calendar/accepted-review-days";
+import { phoenixCrmEntriesOf, type PrivateCalendarCrmEntry } from "@/lib/private-calendar/phoenix-crm-entries";
 import { deductionsCategoryLabel } from "@/lib/deductions/calculations";
 import type { DeductionsCategory } from "@/lib/deductions/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -43,6 +45,7 @@ import {
   mapPrivateCalendarEmployee,
   mapVacationRowToPrivateCalendarItem,
   privateCalendarHrIdKey,
+  privateCalendarSourceLabels,
   privateCalendarItemOccursOn,
   privateCalendarSources,
   readAllPrivateCalendarRows,
@@ -922,4 +925,91 @@ export async function getPrivateCalendarDayEvidence(
     });
   }
   return out;
+}
+
+/**
+ * 🔴 THE PRIVATE CALENDAR'S ENTRIES FOR PHOENIX CRM'S CALENDAR (owner, 2026-11-27: "every single entry done must
+ * be appear in both calendars"). Every source Phoenix CRM does not draw from its own records — the approved plan,
+ * the outstation trip, the excuse, the office attendance, the interview, the national holiday, every leave the
+ * private calendar shows, and an admin-verified correction — through the SAME loaders the private calendar runs, so
+ * the two calendars list the same entries by construction. Display only, best-effort: a source that could not be read
+ * is named in `unreadable`, and the calendar says so rather than drawing its days blank.
+ */
+export async function loadPrivateCalendarEntriesForPhoenixCrm(
+  hrIds: readonly string[],
+  start: string,
+  end: string,
+): Promise<{ entries: PrivateCalendarCrmEntry[]; unreadable: PrivateCalendarSource[] }> {
+  const people = Array.from(new Set(hrIds.map((value) => String(value ?? "").trim()).filter(Boolean)));
+  if (people.length === 0) return { entries: [], unreadable: [] };
+  const months = monthsTouchedByRange(start, end);
+  const settle = <T,>(promise: Promise<T>, empty: T) => promise.then((value) => ({ ok: true as const, value })).catch((error: unknown) => {
+    console.error("[private-calendar] a source for Phoenix CRM's calendar could not be read", error);
+    return { ok: false as const, value: empty };
+  });
+  const none = { items: [] as PrivateCalendarItem[], ready: false };
+  const [attendance, vacations, excuses, plans, trips, interviews, reviews, deductionCorrections, holidaysByMonth] = await Promise.all([
+    settle(loadAttendanceItems(people, start, end), none),
+    settle(loadVacationItems(people, start, end), none),
+    settle(loadExcuseItems(people, start, end), none),
+    settle(loadPlanPrivateCalendarItems(people, start, end), none),
+    settle(loadOutstationTripPrivateCalendarItems(people, start, end), none),
+    settle(loadInterviewPrivateCalendarItems(people, start, end), none),
+    settle(loadAcceptedReviewDays({ end, start }), []),
+    settle(
+      loadAcceptedDeductionCorrections({
+        categoryLabel: (category) => deductionsCategoryLabel(category as DeductionsCategory),
+        end,
+        scopeHrIds: people,
+        start,
+      }),
+      [],
+    ),
+    Promise.all(months.map(({ year, month }) => settle(loadHolidayItems(year, month, start, end), [] as PrivateCalendarItem[]))),
+  ]);
+
+  const unreadable: PrivateCalendarSource[] = [];
+  const sourced: Array<[PrivateCalendarSource, { ok: boolean; value: { items: PrivateCalendarItem[]; ready: boolean } }]> = [
+    ["attendance", attendance],
+    ["vacation", vacations],
+    ["excuse", excuses],
+    ["plan", plans],
+    ["outstation", trips],
+    ["interview", interviews],
+  ];
+  const items: PrivateCalendarItem[] = [];
+  for (const [source, result] of sourced) {
+    if (!result.ok || !result.value.ready) unreadable.push(source);
+    items.push(...result.value.items);
+  }
+  if (!reviews.ok || !deductionCorrections.ok) unreadable.push("correction");
+  if (holidaysByMonth.some((result) => !result.ok)) unreadable.push("holiday");
+  const holidays = holidaysByMonth.flatMap((result) => result.value);
+
+  // An accepted whole-day review request, and an accepted deduction dispute, each verify the day in the employee's
+  // own words — the same claim the private calendar prints as its "Admin-verified correction".
+  const wanted = new Set(people.map(privateCalendarHrIdKey));
+  const corrections: PrivateCalendarCrmEntry[] = [
+    ...reviews.value.map((day) => ({ claim: day.claim, date: day.date, hrId: day.hrId })),
+    ...deductionCorrections.value.map((row) => ({ claim: row.claimText, date: row.disputeDate, hrId: row.employeeHrId })),
+  ]
+    .filter((row) => wanted.has(privateCalendarHrIdKey(row.hrId)) && row.date >= start && row.date <= end)
+    .map((row) => ({
+      date: row.date,
+      hrId: row.hrId,
+      label: privateCalendarSourceLabels.correction,
+      source: "correction" as const,
+      status: "Verified",
+      time: "",
+      title: row.claim.replace(/\s+/g, " ").trim() || "Verified by HR",
+    }));
+
+  const seen = new Set<string>();
+  const entries = [...phoenixCrmEntriesOf([...items, ...holidays], { end, start }), ...corrections].filter((entry) => {
+    const key = `${privateCalendarHrIdKey(entry.hrId)}|${entry.date}|${entry.source}|${entry.time}|${entry.title}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return { entries: entries.sort((left, right) => left.date.localeCompare(right.date) || left.time.localeCompare(right.time)), unreadable };
 }

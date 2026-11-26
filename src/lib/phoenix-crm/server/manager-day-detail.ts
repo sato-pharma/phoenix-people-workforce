@@ -9,6 +9,9 @@ import { isMissedRecordDay } from "@/lib/phoenix-crm/missed-records";
 import { managerChain, managersInScope, personKey, territoryName } from "@/lib/phoenix-crm/scope";
 import { canEnterMissedRecords, readsCalendar, readWorldFor, resolvePhoenixCrmViewer, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { dayRouteVisitOf, loadDayRouteSafely, type DayRouteLoad } from "@/lib/phoenix-crm/server/day-route";
+import { loadDayActivityOn, type DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
+import { readDayPrivateCalendarEntries } from "@/lib/phoenix-crm/server/day-private-calendar";
+import type { PrivateCalendarEntry } from "@/lib/phoenix-crm/team-calendar";
 import { computeManagerReports } from "@/lib/phoenix-crm/server/manager-plan-report";
 import { loadManagerVisitDetails } from "@/lib/phoenix-crm/server/manager-visit-details";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -77,6 +80,23 @@ export type PhoenixCrmManagerDayDetail = {
   onLeave: boolean;
   /** HR's leave could not be read, so `onLeave` is false for a reason that is not about him (said on the page). */
   leaveUnread: boolean;
+  /**
+   * 🔴 HOW HE RECORDED THE DAY — a meeting, training, travel (owner, 2026-11-27: "when I press, for example,
+   * meetings doesn't appear"). The calendar drew his recorded day on his row, and the page that square opens never
+   * read it. The same row the square reads (his own day seat, `ownDaySeat`). Null for a product manager, who
+   * records none here, and when nothing was recorded.
+   */
+  dayActivity: DayActivityRow | null;
+  /** That read failed: said on the page, never shown as a day with nothing recorded. */
+  dayActivityUnread: boolean;
+  /**
+   * The private calendar's own entries for his day — the trip, the excuse, the office attendance, the interview, the
+   * holiday, the correction — shown, never counted. Not the leave this page already says, nor the approved plan its
+   * Plan against actual table already draws.
+   */
+  privateCalendarEntries: PrivateCalendarEntry[];
+  /** The private-calendar sources that could not be read, by label: said on the page, never an empty day. */
+  privateCalendarUnread: string[];
 };
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -140,7 +160,19 @@ async function loadPhoenixCrmManagerDayDetail(
     return { plan, planUnread };
   })();
 
-  const [visits, names, { onLeave, leaveUnread }, { plan, planUnread }] = await Promise.all([
+  // His recorded day and his private-calendar entries: annotations like the leave, each with its own catch and its own sentence.
+  const activityRead = (async () => {
+    if (subject.productManager) return { dayActivity: null, dayActivityUnread: false };
+    try {
+      return { dayActivity: await loadDayActivityOn(subject.seatId, isTest, date), dayActivityUnread: false };
+    } catch (error) {
+      logError("Phoenix CRM manager day could not read the recorded day", { error, labels: { event: "phoenix_crm_manager_day_activity_unread" } });
+      return { dayActivity: null, dayActivityUnread: true };
+    }
+  })();
+  const privateCalendarRead = readDayPrivateCalendarEntries(subject.hrId, date, isTest);
+
+  const [visits, names, { onLeave, leaveUnread }, { plan, planUnread }, { dayActivity, dayActivityUnread }, privateCalendar] = await Promise.all([
     loadManagerVisitDetails({
       end: date,
       isTest,
@@ -156,12 +188,19 @@ async function loadPhoenixCrmManagerDayDetail(
     namesRead,
     leaveRead,
     planRead,
+    activityRead,
+    privateCalendarRead,
   ]);
+  const privateCalendarEntries = privateCalendar.entries.filter(
+    (entry) => !(onLeave && entry.source === "vacation") && !(plan !== null && entry.source === "plan"),
+  );
 
   const above = subject.aboveHrId;
   return {
     adminDeletes: canEnterMissedRecords(viewer),
     date,
+    dayActivity,
+    dayActivityUnread,
     figures: managerDayFigures(visits),
     isTest,
     leaveUnread,
@@ -173,6 +212,8 @@ async function loadPhoenixCrmManagerDayDetail(
       title: subject.title,
     },
     onLeave,
+    privateCalendarEntries,
+    privateCalendarUnread: privateCalendar.unread,
     plan,
     planUnread,
     visits,

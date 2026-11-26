@@ -1,6 +1,7 @@
 "use client";
 
 import { DayInterviewsList } from "@/components/phoenix-crm/day-interviews";
+import { PrivateCalendarEntriesList, privateCalendarUnreadNote } from "@/components/phoenix-crm/private-calendar-entries-list";
 import { cairoClock, dayLabelLong } from "@/components/phoenix-crm/format";
 import { listText } from "@/components/phoenix-crm/labels";
 import { ManagerPlanActual } from "@/components/phoenix-crm/manager-plan-actual-table";
@@ -113,7 +114,7 @@ export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
           ) : null}
         </CrmBlock>
 
-        {dayActivity || onLeave || view.leaveUnread ? (
+        {dayActivity || onLeave || view.leaveUnread || view.privateCalendarEntries.length > 0 || view.privateCalendarUnread.length > 0 ? (
           <CrmBlock title="What else this day was">
             {dayActivity ? (
               <p className="break-words text-sm font-semibold leading-6 text-slate-700">
@@ -148,6 +149,13 @@ export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
                 the rep worked and logged nothing. */}
             {view.leaveUnread ? (
               <p className="mt-1 break-words text-sm font-semibold leading-6 text-amber-800">{LEAVE_UNREAD_NOTE}</p>
+            ) : null}
+            {/* The private calendar's own entries for this day (owner, 2026-11-27: "every single entry … must appear in
+                both calendars"). The server leaves out what this block already says: the leave, and the interviews a
+                recorded "Interviews" day lists above. */}
+            <PrivateCalendarEntriesList entries={view.privateCalendarEntries} />
+            {view.privateCalendarUnread.length > 0 ? (
+              <p className="mt-1 break-words text-sm font-semibold leading-6 text-amber-800">{privateCalendarUnreadNote(view.privateCalendarUnread)}</p>
             ) : null}
           </CrmBlock>
         ) : null}

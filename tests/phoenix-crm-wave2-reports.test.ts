@@ -132,6 +132,49 @@ export function runPhoenixCrmWave2ReportTests(): void {
   );
   assert.equal(buildTeamCalendar("nonsense", people).length, 0);
 
+  // ── The private calendar's entries (owner, 2026-11-27: "every single entry … must appear in both calendars") ──
+  // An entry the private calendar shows — the approved plan, the trip, the interview — lands on the same person's
+  // square, as a day that opens; so does a day of visits to customers still waiting for validation. DISPLAY ONLY:
+  // neither enters AM, PM, Pharmacies or a total, a worked day keeps its worked shape, and leave stays leave.
+  {
+    const interview = { label: "Interview", source: "interview", status: "Lead interviewer", time: "10:00 – 10:45", title: "Interview — Medical Rep" };
+    const trip = { label: "Outstation trip", source: "outstation", status: "Approved", time: "", title: "Mahalla" };
+    const leaveEntry = { label: "Vacation", source: "vacation", status: "Approved", time: "", title: "Annual vacation" };
+    const withEntries = buildTeamCalendar("2026-02", people, {
+      calendarEntries: [
+        { day: "2026-02-15", entry: interview, seatId: "S1" },
+        { day: "2026-02-15", entry: { ...interview, time: "11:00 – 11:45" }, seatId: "S1" },
+        { day: "2026-02-03", entry: trip, seatId: "S1" },
+        { day: "2026-02-12", entry: leaveEntry, seatId: "S1" },
+        { day: "2026-03-02", entry: interview, seatId: "S1" },
+        { day: "2026-02-16", entry: interview, seatId: "SOMEONE-ELSE" },
+      ],
+      leave: [{ day: "2026-02-12", seatId: "S1" }],
+      visits: [
+        { counts: { am: 1, pharmacies: 0, pm: 2 }, day: "2026-02-03", seatId: "S1" },
+        { awaitingValidation: 2, counts: { am: 0, pharmacies: 0, pm: 0 }, day: "2026-02-17", seatId: "S1" },
+      ],
+    });
+    const onlyEntries = withEntries[0]?.days[14];
+    assert.equal(onlyEntries?.shape, "activity", "a day with only private-calendar entries is a square that opens, never an empty day");
+    assert.equal(onlyEntries?.calendarEntries.length, 2, "and it carries every entry of that day");
+    assert.deepEqual(onlyEntries?.counts, { am: 0, pharmacies: 0, pm: 0 }, "an entry is never a call");
+    assert.equal(withEntries[0]?.days[2]?.shape, "both", "a worked day keeps its worked shape");
+    assert.equal(withEntries[0]?.days[2]?.calendarEntries[0]?.label, "Outstation trip", "and still carries its entry");
+    assert.equal(withEntries[0]?.days[11]?.shape, "leave", "leave stays leave");
+    assert.equal(withEntries[0]?.days[11]?.calendarEntries.length, 0, "and its own leave entry is not listed a second time beside it");
+    const waitingOnly = withEntries[0]?.days[16];
+    assert.equal(waitingOnly?.shape, "activity", "a day of visits to customers still waiting for validation opens, never a blank square");
+    assert.equal(waitingOnly?.awaitingValidation, 2, "and says how many");
+    assert.deepEqual(withEntries[0]?.totals, { am: 1, pharmacies: 0, pm: 2 }, "neither ever reaches a total");
+    assert.equal(withEntries[1]?.days.every((day) => day.calendarEntries.length === 0), true, "and never another seat's row");
+    assert.equal(
+      dayShape({ activity: null, awaitingValidation: 1, counts: { am: 0, pharmacies: 0, pm: 0 }, day: "2026-03-05", entries: 1, onLeave: true }),
+      "leave",
+      "approved leave still reads as leave",
+    );
+  }
+
   // ── The managers' rows (owner, 2026-10-19: "yes, all manager levels") ──────────────────────────
   //
   // 🔴 A MANAGER'S ROW IS HIS DAYS, AND IT NEVER REACHES THE MONTH'S THREE FIGURES. The visits he rode

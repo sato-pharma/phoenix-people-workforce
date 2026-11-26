@@ -53,7 +53,21 @@ type CalendarView = {
   missedRecords: { through: string; seatIds: string[] } | null;
   /** HR's leave could not be read, so an approved vacation draws as blank days — said, never swallowed. */
   leaveUnread: boolean;
+  /** The private-calendar sources that could not be read, by label — said, never swallowed. Absent on an older answer. */
+  privateCalendarUnread?: string[];
 };
+
+/** "Approved plan, Outstation trip" — what a cell's title says the private calendar holds, each kind once. */
+function privateCalendarText(entries: TeamCalendarDay["calendarEntries"] | undefined): string | null {
+  const labels = [...new Set((entries ?? []).map((entry) => entry.label))];
+  return labels.length > 0 ? `On the private calendar: ${labels.join(", ")}` : null;
+}
+
+/** "1 visit to a customer still waiting for validation" — work on the day that no figure counts yet. */
+function waitingText(count: number): string | null {
+  if (count <= 0) return null;
+  return count === 1 ? "1 visit to a customer still waiting for validation" : `${count} visits to customers still waiting for validation`;
+}
 
 /** His legend, as ink. Square edges, and one class string per shape so nothing is composed at runtime. */
 const SHAPE_INK: Record<DayShape, string> = {
@@ -127,6 +141,10 @@ function dayTitle(person: string, day: TeamCalendarDay, opens: boolean): string 
   const parts = [`${person} · ${day.day}`, SHAPE_WORD[day.shape]];
   if (isWorkedShape(day.shape)) parts.push(splitText(day.counts));
   if (day.activity) parts.push(dayActivityLabel(day.activity));
+  const waiting = waitingText(day.awaitingValidation ?? 0);
+  if (waiting) parts.push(waiting);
+  const fromPrivateCalendar = privateCalendarText(day.calendarEntries);
+  if (fromPrivateCalendar) parts.push(fromPrivateCalendar);
   if (day.onLeave && day.shape !== "leave") parts.push("HR has approved leave on this day");
   if (opens) {
     parts.push(
@@ -384,6 +402,14 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
                 </CrmNote>
               </div>
             ) : null}
+            {(view.data.privateCalendarUnread?.length ?? 0) > 0 ? (
+              <div className="mt-3">
+                <CrmNote title="Part of the private calendar could not be read" tone="warn">
+                  The private calendar&apos;s {view.data.privateCalendarUnread?.join(", ")} could not be read just now, so a
+                  day with only one of those entries may show blank here. Open this month again in a few minutes.
+                </CrmNote>
+              </div>
+            ) : null}
             <div className="mt-3 flex min-w-0 flex-wrap gap-1.5">
               {LEGEND.map((shape) => (
                 <span
@@ -574,6 +600,27 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
                 <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-600">
                   Recorded as a day activity: {dayActivityLabel(chosen.day.activity)}.
                 </p>
+              ) : null}
+              {waitingText(chosen.day.awaitingValidation ?? 0) ? (
+                <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-600">
+                  {waitingText(chosen.day.awaitingValidation ?? 0)}: logged on the day, counted once the customer is validated.
+                </p>
+              ) : null}
+              {(chosen.day.calendarEntries?.length ?? 0) > 0 ? (
+                <div className="mt-2 min-w-0">
+                  <p className="break-words text-xs font-black uppercase tracking-[0.12em] text-slate-500">From the private calendar</p>
+                  <ul className="mt-1 min-w-0">
+                    {chosen.day.calendarEntries.map((entry, index) => (
+                      <li className="break-words text-xs font-semibold leading-5 text-slate-700" key={`${entry.source}-${entry.time}-${index}`}>
+                        <span className="font-black text-slate-900">{entry.label}</span>
+                        {entry.time ? <span className="tabular-nums"> · {entry.time}</span> : null}
+                        {" — "}
+                        <span dir="auto">{entry.title}</span>
+                        {entry.status ? ` · ${entry.status}` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               ) : null}
               {chosen.day.onLeave ? (
                 <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-600">
