@@ -56,10 +56,12 @@ export function runTabletFleetWatchTests() {
     ],
     NOW,
   );
+  // 🔴 `edge` sits one hour inside the 72-hour silence and is still named, for the working-day quiet:
+  // NOW here is Tuesday 14:00 Cairo, so 71 hours without a word has swallowed the whole working morning.
   assert.deepEqual(
     faults.map((fault) => `${fault.deviceNumber}:${fault.kind}`),
-    ["never:silent", "nofix:no_fix", "nofix-ever:never_fixed", "silent:silent", "undated:no_fix"],
-    "a tablet held by a person, silent or fixless past 72 hours; a tablet in a cupboard is meant to be quiet",
+    ["edge:network_quiet", "never:silent", "nofix:no_fix", "nofix-ever:never_fixed", "silent:silent", "undated:no_fix"],
+    "a tablet held by a person, quiet inside the working day or silent or fixless past 72 hours; a tablet in a cupboard is meant to be quiet",
   );
 
   // Blind means fail.

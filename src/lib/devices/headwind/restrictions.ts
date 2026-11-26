@@ -115,17 +115,28 @@ export const REP_TABLET_LOCK_SET: readonly string[] = [
 ];
 
 /**
- * 🔴 WHAT NO ANDROID LOCK CAN DO, SAID ON THE PAGE AS WELL AS HERE. There is NO user restriction that
- * stops the mobile-data switch being turned off: AOSP has none, and `no_config_mobile_networks` only
- * covers the network's settings. Holding mobile data on needs the launcher to turn it back on, which
- * is a launcher build, not a rules change. Saying "he cannot turn the network off" while only
- * aeroplane mode and Wi-Fi are held is the kind of half-truth that gets a tablet handed out believing
- * it is sealed.
+ * 🔴 WHAT NOTHING ON THESE TABLETS CAN DO, SAID ON THE PAGE AS WELL AS HERE. There is NO user restriction
+ * that stops the mobile-data switch being turned off: AOSP has none, and `no_config_mobile_networks` only
+ * covers the network's settings.
+ *
+ * 🔴 AND A LAUNCHER BUILD CANNOT CLOSE IT EITHER — corrected 26 Nov 2026, after this comment, the runbook
+ * and the module's rules all promised one could. Turning mobile data back on is
+ * `TelephonyManager.setDataEnabled` / `setDataEnabledForReason`, which need `MODIFY_PHONE_STATE`
+ * (`signature|privileged`) or carrier privileges, and `DevicePolicyManager` has no API for it at all, so
+ * device-owner status grants nothing here. The only builds that can are platform-signed or in
+ * `/system/priv-app`, a UICC-signed carrier app, or root (`svc data enable`) — none of them reachable on a
+ * retail Lenovo TB328XU. Reading the switch is free (`isDataEnabled()` needs only `ACCESS_NETWORK_STATE`),
+ * which is why the answer is to NOTICE the quiet, not to promise a lock: `fleet-watch.ts` names a held
+ * tablet that has said nothing for three hours of the Cairo working day. Saying "he cannot turn the network
+ * off" while only aeroplane mode and Wi-Fi are held is the half-truth that gets a tablet handed out
+ * believed sealed; promising a future launcher will seal it is the same half-truth with a date on it.
  */
 export const MOBILE_DATA_CANNOT_BE_HELD =
-  "The mobile-data switch itself cannot be held by any Android lock — aeroplane mode and Wi-Fi are held, " +
-  "but a rep can still turn mobile data off in quick settings. Only a launcher that turns it back on can " +
-  "close that, and that is a launcher build.";
+  "The mobile-data switch itself cannot be held — not by any Android lock, and not by a launcher build " +
+  "either: turning it back on needs MODIFY_PHONE_STATE, which only a platform-signed build, a carrier app " +
+  "or root has. Aeroplane mode and Wi-Fi are held, but a rep can still turn mobile data off in quick " +
+  "settings. So it is watched instead: a held tablet that says nothing for three hours of the working day " +
+  "is named to the Super Admin within the hour.";
 
 /** The tokens in a stored `restrictions` string, in order, with blanks and repeats dropped. */
 export function parseRestrictions(stored: unknown): string[] {
