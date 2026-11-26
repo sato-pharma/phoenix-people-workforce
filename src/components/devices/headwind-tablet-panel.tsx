@@ -251,10 +251,11 @@ type LocationFix = {
   firstRecordedAt: string | null;
   reports: number;
   batteryLevel: number | null;
-  source: "check-in" | "plugin";
+  source: "check-in" | "plugin" | "upload";
 };
 type LocationRead = {
   fixes: LocationFix[];
+  uploadReceiver: "serving" | "absent" | "unknown";
   pluginEnabled: boolean;
   collection: "on" | "off" | "unknown";
   note: string;
@@ -273,6 +274,17 @@ function fixWhen(fix: LocationFix): string {
 }
 
 const SOURCE_CHIP = "border border-slate-300 px-1 text-[8px] font-black uppercase tracking-[0.12em] text-slate-500";
+
+/**
+ * What each row's source is called on screen. 🔴 EVERY ROW SAYS WHERE IT CAME FROM, because the three
+ * sources are never blended: the tablet's own upload is its full record, the history plugin's is a
+ * separate one, and a check-in position is the single fix riding on a report.
+ */
+const SOURCE_LABEL: Record<LocationFix["source"], string> = {
+  "check-in": "Check-in",
+  plugin: "History plugin",
+  upload: "Tablet upload",
+};
 
 function MovementsPanel({ deviceNumber }: { deviceNumber: string }) {
   const query = encodeURIComponent(deviceNumber);
@@ -328,7 +340,7 @@ function MovementsPanel({ deviceNumber }: { deviceNumber: string }) {
           */}
           {movements.data.fixes.length > 0 ? (
             <TabletFleetMap
-              caption="Each numbered stop is one reported position with a time, joined oldest to newest, from one source only: the history plugin when it has positions, the check-ins otherwise. A straight line between two stops is not a road, only the two points we were told; a position with no time is listed below but not drawn."
+              caption="Each numbered stop is one reported position with a time, joined oldest to newest, from one source only: the tablet's own uploads when it has sent any, else the history plugin, else the check-ins. A straight line between two stops is not a road, only the two points we were told; a position with no time is listed below but not drawn."
               kind="trail"
               points={fixesToPoints(movements.data.fixes)}
               title="This tablet's trail"
@@ -341,7 +353,7 @@ function MovementsPanel({ deviceNumber }: { deviceNumber: string }) {
                   className="flex flex-wrap items-baseline gap-x-2 gap-y-1"
                   key={`${fix.source}:${fix.recordedAt ?? "unknown"}:${fix.firstRecordedAt ?? ""}:${fix.latitude},${fix.longitude}`}
                 >
-                  <span className={SOURCE_CHIP}>{fix.source === "check-in" ? "Check-in" : "History plugin"}</span>
+                  <span className={SOURCE_CHIP}>{SOURCE_LABEL[fix.source]}</span>
                   <span className="break-words text-[11px] font-bold text-slate-900">
                     {fixWhen(fix)}
                   </span>

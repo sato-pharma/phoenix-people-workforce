@@ -1,5 +1,5 @@
 -- ─────────────────────────────────────────────────────────────────────────────
--- The Phoenix actions add-on's one table, on the HEADWIND server's own Postgres.
+-- The Phoenix actions add-on's two tables, on the HEADWIND server's own Postgres.
 --
 -- 🔴 THIS IS NOT THE PHOENIX DATABASE. It lives inside the Headwind box, beside
 --    Headwind's own tables, and nothing in Supabase knows about it. It is applied
@@ -53,3 +53,33 @@ alter table phoenix_pending_actions add column if not exists confirmed_from varc
 create index if not exists phoenix_pending_actions_open_idx
   on phoenix_pending_actions (device_number)
   where confirmed_at is null;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- The second table (26 Nov 2026): the positions each tablet uploads itself.
+--
+-- The launcher PUTs the fixes it took to /rest/plugins/devicelocations/public/update/{number}
+-- — a premium plugin's path the free server answered 404 on, so every fix was thrown away on the
+-- tablet after a day. DeviceLocationsResource receives it now; Phoenix reads the rows through
+-- /rest/plugins/phoenix-actions/private/locations/{number}. Created by PhoenixLocationStore at
+-- start-up; repeated here so the two cannot drift.
+--
+-- 🔴 recorded_at_ms IS THE TABLET'S OWN EPOCH MILLISECONDS, NOT A timestamp — a timestamp without
+--    time zone would take the session's zone silently and shift a rep's trail by hours.
+-- 🔴 The unique index is the retry guard: the launcher re-sends what it saw no 2xx for.
+-- Rows older than 90 days are deleted for a tablet whenever it uploads.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+create table if not exists phoenix_device_locations (
+  id             bigserial        primary key,
+  device_number  varchar(128)     not null,
+  recorded_at_ms bigint           not null,
+  lat            double precision not null,
+  lon            double precision not null,
+  received_at    timestamp        not null default now()
+);
+
+create unique index if not exists phoenix_device_locations_fix_uq
+  on phoenix_device_locations (device_number, recorded_at_ms, lat, lon);
+
+create index if not exists phoenix_device_locations_recent_idx
+  on phoenix_device_locations (device_number, recorded_at_ms desc);

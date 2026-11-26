@@ -7,6 +7,13 @@
  *   **check-in**  The position the agent attaches to its own regular report (`{lat, lon, ts}`, from
  *                 `getLastKnownLocation`). It is the one that definitely arrives, because it rides on
  *                 the sync every managed tablet already does. It is also SPARSE — one fix per check-in.
+ *   **upload**    The positions the launcher took itself and PUT to
+ *                 `/rest/plugins/devicelocations/public/update/{number}`. That is a PREMIUM plugin's
+ *                 path, so the free server answered 404 and each tablet threw its own record away
+ *                 after a day — measured on PHX-TAB-0008 at 02:13 and 02:14 Cairo, 26 Nov 2026. Our
+ *                 own add-on receives it since then (`infra/headwind-phoenix-actions`) and Phoenix
+ *                 reads the rows back from it. This is the fullest record there is: one fix per
+ *                 sampling burst, kept 90 days, whether or not the `deviceinfo` plugin is ever fed.
  *   **plugin**    The `deviceinfo` plugin's own history, which IS in the free build:
  *                 `POST /rest/plugins/deviceinfo/deviceinfo/private/search/dynamic` returns `gpsLat`,
  *                 `gpsLon`, `latestUpdateTime`, battery and radio state per record. Its setting
@@ -27,7 +34,7 @@
  */
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
-import { callHeadwind } from "@/lib/devices/headwind/client";
+import { callHeadwind, HeadwindRequestError } from "@/lib/devices/headwind/client";
 import { launcherRank } from "@/lib/devices/headwind/dashboard";
 import { getHeadwindLocation, HeadwindDeviceNotFoundError, listHeadwindDevices } from "@/lib/devices/headwind/devices";
 import { resolveHeadwindActionTarget } from "@/lib/devices/headwind/target";
@@ -39,7 +46,7 @@ export class HeadwindLocationError extends Error {
   }
 }
 
-type HeadwindLocationSource = "check-in" | "plugin";
+type HeadwindLocationSource = "check-in" | "plugin" | "upload";
 
 export type HeadwindLocationFix = {
   latitude: number;
@@ -127,6 +134,44 @@ export function locationFixesFromPlugin(records: unknown): HeadwindLocationFix[]
       recordedAt,
       reports: 1,
       source: "plugin",
+    });
+  }
+  return fixes;
+}
+
+/**
+ * Where our own add-on keeps the positions the tablets uploaded themselves.
+ *
+ * 🔴 THE READ IS THE ADD-ON'S, THE UPLOAD IS THE AGENT'S. The tablet PUTs to Headwind's own
+ * `devicelocations` path, which is the launcher's spelling and not ours (`DeviceLocationsResource`
+ * says why); Phoenix reads the rows back from the add-on's private tree, behind the same JWT, console
+ * session and private-network filters as every other private call.
+ */
+const UPLOADED_TRAIL_PATH = "/rest/plugins/phoenix-actions/private/locations";
+
+/**
+ * The uploaded positions as fixes.
+ *
+ * 🔴 THE TIME IS THE TABLET'S OWN EPOCH MILLISECONDS, AND IT GOES THROUGH `asMoment` LIKE EVERY OTHER
+ * SOURCE — the add-on stores the number the tablet sent rather than a `timestamp`, so no session's
+ * time zone can shift a rep's trail by hours. A 0/0 pair is still Null Island and never a place.
+ */
+export function locationFixesFromUpload(items: unknown): HeadwindLocationFix[] {
+  if (!Array.isArray(items)) return [];
+  const fixes: HeadwindLocationFix[] = [];
+  for (const row of items as Array<Record<string, unknown>>) {
+    const latitude = asCoordinate(row?.lat);
+    const longitude = asCoordinate(row?.lon);
+    if (latitude === null || longitude === null) continue;
+    const recordedAt = asMoment(row.ts);
+    fixes.push({
+      batteryLevel: null,
+      firstRecordedAt: recordedAt,
+      latitude,
+      longitude,
+      recordedAt,
+      reports: 1,
+      source: "upload",
     });
   }
   return fixes;
@@ -238,6 +283,12 @@ export async function switchOnHeadwindLocationCollection(
 
 export type HeadwindLocationHistory = {
   fixes: HeadwindLocationFix[];
+  /**
+   * Whether the tablet server can receive what the tablets upload: "serving" when our add-on answers,
+   * "absent" on a 404 — a box rebuilt without it, so the uploads are being lost — and "unknown" when
+   * the read failed for any other reason. Never inferred from an empty trail.
+   */
+  uploadReceiver: "serving" | "absent" | "unknown";
   /** True only when the server said collection is on. */
   pluginEnabled: boolean;
   /** "unknown" when the setting could not be read — the panel offers the switch only on "off". */
@@ -256,9 +307,35 @@ export async function getHeadwindLocationHistory(
   const number = deviceNumber.trim();
   if (!number) throw new HeadwindLocationError("Say which tablet to show the movements of.");
 
+  // 🔴 THE TABLETS' OWN UPLOADS FIRST — the fullest record, and the only one proven to be fed.
+  let fixes: HeadwindLocationFix[] = [];
+  let uploadReceiver: HeadwindLocationHistory["uploadReceiver"] = "serving";
+  let uploadError: string | null = null;
+  let uploadTotal: number | null = null;
+  try {
+    const page = await callHeadwind<{ items?: unknown; total?: unknown }>(
+      `${UPLOADED_TRAIL_PATH}/${encodeURIComponent(number)}?limit=${HEADWIND_HISTORY_PAGE_SIZE}`,
+      { method: "GET" },
+      fetchImpl,
+      env,
+    );
+    fixes = locationFixesFromUpload(page?.items);
+    uploadTotal = typeof page?.total === "number" ? page.total : null;
+  } catch (error) {
+    // 🔴 ONLY A 404 MEANS THE RECEIVER IS NOT ON THIS BOX — the same rule as `headwindAddonInstalled`.
+    // A timeout or a refused sign-in reported as "no receiver" sends somebody to rebuild a server that
+    // has one and is merely unreachable.
+    if (error instanceof HeadwindRequestError && error.status === 404) {
+      uploadReceiver = "absent";
+    } else {
+      uploadReceiver = "unknown";
+      uploadError = error instanceof Error ? error.message : String(error);
+    }
+  }
+  const uploadFixes = fixes.length;
+
   const collection = await readHeadwindLocationCollection(fetchImpl, env);
 
-  let fixes: HeadwindLocationFix[] = [];
   let pluginError: string | null = null;
   let pluginRecords = 0;
   let pluginTotal: number | null = null;
@@ -279,7 +356,7 @@ export async function getHeadwindLocationHistory(
     );
     if (Array.isArray(page?.items)) {
       pluginRecords = page.items.length;
-      fixes = locationFixesFromPlugin(page.items);
+      fixes.push(...locationFixesFromPlugin(page.items));
     } else {
       pluginError = "it answered in a shape Phoenix cannot read";
     }
@@ -289,7 +366,7 @@ export async function getHeadwindLocationHistory(
     // refusal read as "nothing recorded"; the reason now reaches the note word for word.
     pluginError = error instanceof Error ? error.message : String(error);
   }
-  const pluginFixes = fixes.length;
+  const pluginFixes = fixes.length - uploadFixes;
 
   // The one that always arrives, kept even when the plugin answered, and labelled apart. 🔴 Guarded: a
   // device list the server will not give must not throw away a trail the plugin already answered with.
@@ -317,8 +394,16 @@ export async function getHeadwindLocationHistory(
   return {
     collection: collection.state,
     fixes,
-    note: historyNote({ collection, pluginError, pluginFixes, pluginRecords, pluginTotal }),
+    note: historyNote({
+      collection,
+      pluginError,
+      pluginFixes,
+      pluginRecords,
+      pluginTotal,
+      upload: { error: uploadError, fixes: uploadFixes, receiver: uploadReceiver, total: uploadTotal },
+    }),
     pluginEnabled: collection.state === "on",
+    uploadReceiver,
   };
 }
 
@@ -335,9 +420,41 @@ function historyNote(facts: {
   pluginFixes: number;
   pluginRecords: number;
   pluginTotal: number | null;
+  upload: {
+    error: string | null;
+    fixes: number;
+    receiver: HeadwindLocationHistory["uploadReceiver"];
+    total: number | null;
+  };
 }): string {
-  const { collection, pluginError, pluginFixes, pluginRecords, pluginTotal } = facts;
+  const { collection, pluginError, pluginFixes, pluginRecords, pluginTotal, upload } = facts;
   const parts: string[] = [];
+  if (upload.fixes > 0) {
+    parts.push(
+      "Rows marked as the tablet's own upload are the positions it recorded itself and sent to the " +
+        "tablet server. That is the fullest record there is.",
+    );
+    if (upload.total !== null && upload.total > upload.fixes) {
+      parts.push(`Showing the latest ${upload.fixes} of ${upload.total} uploaded positions.`);
+    }
+  } else if (upload.receiver === "absent") {
+    parts.push(
+      "🔴 This tablet server cannot receive the positions the tablets upload, so each tablet throws " +
+        "its own record away after a day. Rebuilt with the Phoenix image " +
+        "(infra/headwind-phoenix-actions), it fills this in by itself with no change to any tablet.",
+    );
+  } else if (upload.receiver === "unknown") {
+    parts.push(
+      `🔴 The uploaded positions could not be read (${upload.error ?? "no reason given"}), so only the ` +
+        "other two sources are shown — this is NOT an empty history.",
+    );
+  } else {
+    parts.push(
+      "The tablet server has received no uploaded position from this tablet yet. A tablet uploads what " +
+        "it recorded at its next report, and one that has been off, indoors or out of coverage has " +
+        "nothing to send.",
+    );
+  }
   if (pluginError) {
     parts.push(
       `🔴 The movement-history plugin refused the read: ${pluginError}. Only the position from the tablet's ` +

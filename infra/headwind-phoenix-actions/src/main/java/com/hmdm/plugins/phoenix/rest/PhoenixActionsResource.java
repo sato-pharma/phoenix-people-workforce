@@ -1,6 +1,8 @@
 package com.hmdm.plugins.phoenix.rest;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -11,11 +13,14 @@ import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
+import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
+import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
 import com.hmdm.plugins.phoenix.PhoenixActionStore;
+import com.hmdm.plugins.phoenix.PhoenixLocationStore;
 
 /**
  * What Phoenix calls to queue an instruction.
@@ -36,10 +41,12 @@ public class PhoenixActionsResource {
     private static final Logger LOGGER = Logger.getLogger(PhoenixActionsResource.class.getName());
 
     private final PhoenixActionStore store;
+    private final PhoenixLocationStore locations;
 
     @Inject
-    public PhoenixActionsResource(PhoenixActionStore store) {
+    public PhoenixActionsResource(PhoenixActionStore store, PhoenixLocationStore locations) {
         this.store = store;
+        this.locations = locations;
     }
 
     /**
@@ -63,7 +70,45 @@ public class PhoenixActionsResource {
             PhoenixActionStore.PASSWORD_RESET,
             PhoenixActionStore.REBOOT,
         });
+        // 🔴 PHOENIX READS THIS BEFORE ASKING FOR A TRAIL. A box still on the add-on from before
+        // 26 Nov 2026 answers without it, and Phoenix then says the trail is not on this server yet
+        // rather than reporting an empty one.
+        body.put("locations", true);
         return Response.ok(body).build();
+    }
+
+    /**
+     * The positions a tablet uploaded itself (`DeviceLocationsResource`), newest first.
+     *
+     * Times are the tablet's own epoch milliseconds, exactly as it sent them; `total` is how many the
+     * server holds, so Phoenix can say "the latest N of M".
+     */
+    @GET
+    @Path("/private/locations/{number}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response locationHistory(@PathParam("number") String number, @QueryParam("limit") Integer limit) {
+        try {
+            String deviceNumber = number == null ? null : number.trim();
+            if (deviceNumber == null || deviceNumber.isEmpty()) {
+                return refuse("A tablet has to be named.");
+            }
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (PhoenixLocationStore.Fix fix : locations.recent(deviceNumber, limit == null ? 200 : limit)) {
+                Map<String, Object> row = new HashMap<>();
+                row.put("ts", fix.recordedAtMs);
+                row.put("lat", fix.lat);
+                row.put("lon", fix.lon);
+                rows.add(row);
+            }
+            Map<String, Object> body = new HashMap<>();
+            body.put("status", "OK");
+            body.put("items", rows);
+            body.put("total", locations.count(deviceNumber));
+            return Response.ok(body).build();
+        } catch (Exception exception) {
+            LOGGER.log(Level.SEVERE, "Phoenix location history could not be read for " + number, exception);
+            return Response.serverError().build();
+        }
     }
 
     /** Queue one instruction for one tablet. */

@@ -158,7 +158,7 @@ export type DashboardLocationFix = {
   firstRecordedAt?: string | null;
   reports?: number;
   batteryLevel: number | null;
-  source: "check-in" | "plugin";
+  source: "check-in" | "plugin" | "upload";
 };
 
 /** Every figure on the overview strip, counted from the fleet rows. `now` is injectable for tests. */
@@ -225,8 +225,9 @@ export function fleetRowsToPoints(rows: readonly RepHeadwindRow[], now: number =
  *
  * 🔴 ONE SOURCE PER LINE, AND ONLY TIMED FIXES ON IT. The movements read hands back two sources that
  * are never blended — the history plugin's record and the position riding on each check-in — and a
- * line joining a plugin fix to a check-in fix draws a route nobody reported. So the trail is drawn from
- * the plugin's fixes when it has any, and from the check-ins otherwise. A fix with no time cannot be
+ * line joining a plugin fix to a check-in fix draws a route nobody reported. So ONE source is drawn,
+ * in this order of fullness: the tablet's own uploads when it has sent any (26 Nov 2026 — one fix per
+ * sampling burst), else the history plugin's record, else the check-ins. A fix with no time cannot be
  * placed in order: it used to sort FIRST (an empty string) and became stop 1; it is now left off the
  * line and stays in the list below the map.
  */
@@ -238,7 +239,9 @@ export function fixesToPoints(fixes: readonly DashboardLocationFix[]): MapPoint[
       typeof fix.recordedAt === "string" &&
       Number.isFinite(Date.parse(fix.recordedAt)),
   );
-  const source = timed.some((fix) => fix.source === "plugin") ? "plugin" : "check-in";
+  const source = (["upload", "plugin", "check-in"] as const).find((candidate) =>
+    timed.some((fix) => fix.source === candidate),
+  );
   const ordered = timed
     .filter((fix) => fix.source === source)
     .sort((left, right) => Date.parse(left.recordedAt as string) - Date.parse(right.recordedAt as string));
