@@ -14,6 +14,12 @@
  *                 own add-on receives it since then (`infra/headwind-phoenix-actions`) and Phoenix
  *                 reads the rows back from it. This is the fullest record there is: one fix per
  *                 sampling burst, kept 90 days, whether or not the `deviceinfo` plugin is ever fed.
+ *   **agent**     The positions the Phoenix Position agent posts to PHOENIX, not to the tablet server
+ *                 (`src/lib/devices/positions/agents.ts`, 26 Nov 2026). It depends on nothing else
+ *                 here — not the launcher's version, not a plugin, not the tablet server being up —
+ *                 and it is the only source Phoenix holds itself. It is shown only for a tablet whose
+ *                 agent install has been BOUND to it: an unbound install's positions belong to no
+ *                 tablet, and never appear on one.
  *   **plugin**    The `deviceinfo` plugin's own history, which IS in the free build:
  *                 `POST /rest/plugins/deviceinfo/deviceinfo/private/search/dynamic` returns `gpsLat`,
  *                 `gpsLon`, `latestUpdateTime`, battery and radio state per record. Its setting
@@ -38,6 +44,7 @@ import { callHeadwind, HeadwindRequestError } from "@/lib/devices/headwind/clien
 import { launcherRank } from "@/lib/devices/headwind/dashboard";
 import { getHeadwindLocation, HeadwindDeviceNotFoundError, listHeadwindDevices } from "@/lib/devices/headwind/devices";
 import { resolveHeadwindActionTarget } from "@/lib/devices/headwind/target";
+import { getAgentForDevice, listAgentFixes } from "@/lib/devices/positions/agents";
 
 export class HeadwindLocationError extends Error {
   constructor(message: string) {
@@ -46,7 +53,7 @@ export class HeadwindLocationError extends Error {
   }
 }
 
-type HeadwindLocationSource = "check-in" | "plugin" | "upload";
+type HeadwindLocationSource = "check-in" | "plugin" | "upload" | "agent";
 
 export type HeadwindLocationFix = {
   latitude: number;
@@ -59,6 +66,27 @@ export type HeadwindLocationFix = {
   reports: number;
   batteryLevel: number | null;
   source: HeadwindLocationSource;
+};
+
+/**
+ * The two reads of Phoenix's own agent trail, injectable for the same reason `fetchImpl` is: a test of
+ * what the tablet SERVER answers must not depend on a database, and a test of the note must be able to
+ * put this source in any state.
+ */
+export type AgentTrailReads = {
+  agentForDevice: (deviceNumber: string) => Promise<{ locationPermission: string | null } | null>;
+  agentFixes: (
+    deviceNumber: string,
+    limit?: number,
+  ) => Promise<{
+    error: string | null;
+    fixes: Array<{ batteryLevel: number | null; latitude: number; longitude: number; recordedAt: string }>;
+  }>;
+};
+
+export const liveAgentTrailReads: AgentTrailReads = {
+  agentForDevice: getAgentForDevice,
+  agentFixes: listAgentFixes,
 };
 
 /** How long a tablet is given to check in after being woken, before the position is read back. */
@@ -289,6 +317,18 @@ export type HeadwindLocationHistory = {
    * the read failed for any other reason. Never inferred from an empty trail.
    */
   uploadReceiver: "serving" | "absent" | "unknown";
+  /**
+   * The tablet's own Phoenix Position agent: whether an install is bound to this tablet at all, how
+   * many of its fixes are shown, what it last said about its location permission, and the reason the
+   * read failed when it did. 🔴 `bound: false` is not an empty trail — it means nobody has told
+   * Phoenix which install is this tablet, so its positions (if it is reporting) are waiting unclaimed.
+   */
+  agent: {
+    bound: boolean;
+    error: string | null;
+    fixes: number;
+    permission: string | null;
+  };
   /** True only when the server said collection is on. */
   pluginEnabled: boolean;
   /** "unknown" when the setting could not be read — the panel offers the switch only on "off". */
@@ -303,6 +343,7 @@ export async function getHeadwindLocationHistory(
   deviceNumber: string,
   fetchImpl: typeof fetch = fetch,
   env: NodeJS.ProcessEnv = process.env,
+  agentReads: AgentTrailReads = liveAgentTrailReads,
 ): Promise<HeadwindLocationHistory> {
   const number = deviceNumber.trim();
   if (!number) throw new HeadwindLocationError("Say which tablet to show the movements of.");
@@ -333,6 +374,40 @@ export async function getHeadwindLocationHistory(
     }
   }
   const uploadFixes = fixes.length;
+
+  // 🔴 PHOENIX'S OWN COPY, AND THE ONLY SOURCE THAT NEEDS NOTHING ELSE TO BE WORKING. Guarded in
+  // full: the tablet pages must still draw the other three sources when the agent tables cannot be
+  // read at all (a deploy serving this code minutes before its migration answers PGRST205).
+  let agentBound = false;
+  let agentPermission: string | null = null;
+  let agentError: string | null = null;
+  try {
+    const bound = await agentReads.agentForDevice(number);
+    agentBound = bound !== null;
+    agentPermission = bound?.locationPermission ?? null;
+  } catch (error) {
+    agentError = error instanceof Error ? error.message : String(error);
+  }
+  let agentFixes = 0;
+  if (agentBound) {
+    const trail = await agentReads.agentFixes(number, HEADWIND_HISTORY_PAGE_SIZE);
+    if (trail.error) {
+      agentError = trail.error;
+    } else {
+      for (const fix of trail.fixes) {
+        fixes.push({
+          batteryLevel: fix.batteryLevel,
+          firstRecordedAt: fix.recordedAt,
+          latitude: fix.latitude,
+          longitude: fix.longitude,
+          recordedAt: fix.recordedAt,
+          reports: 1,
+          source: "agent",
+        });
+      }
+      agentFixes = trail.fixes.length;
+    }
+  }
 
   const collection = await readHeadwindLocationCollection(fetchImpl, env);
 
@@ -366,7 +441,7 @@ export async function getHeadwindLocationHistory(
     // refusal read as "nothing recorded"; the reason now reaches the note word for word.
     pluginError = error instanceof Error ? error.message : String(error);
   }
-  const pluginFixes = fixes.length - uploadFixes;
+  const pluginFixes = fixes.length - uploadFixes - agentFixes;
 
   // The one that always arrives, kept even when the plugin answered, and labelled apart. 🔴 Guarded: a
   // device list the server will not give must not throw away a trail the plugin already answered with.
@@ -392,9 +467,11 @@ export async function getHeadwindLocationHistory(
   fixes = collapseRepeatedFixes(fixes);
 
   return {
+    agent: { bound: agentBound, error: agentError, fixes: agentFixes, permission: agentPermission },
     collection: collection.state,
     fixes,
     note: historyNote({
+      agent: { bound: agentBound, error: agentError, fixes: agentFixes, permission: agentPermission },
       collection,
       pluginError,
       pluginFixes,
@@ -415,6 +492,7 @@ export async function getHeadwindLocationHistory(
  * "nothing recorded", and even that never means "did not move".
  */
 function historyNote(facts: {
+  agent: HeadwindLocationHistory["agent"];
   collection: HeadwindLocationCollection;
   pluginError: string | null;
   pluginFixes: number;
@@ -427,8 +505,38 @@ function historyNote(facts: {
     total: number | null;
   };
 }): string {
-  const { collection, pluginError, pluginFixes, pluginRecords, pluginTotal, upload } = facts;
+  const { agent, collection, pluginError, pluginFixes, pluginRecords, pluginTotal, upload } = facts;
   const parts: string[] = [];
+  // 🔴 THE AGENT IS SAID FIRST BECAUSE IT IS THE ONE SOURCE PHOENIX HOLDS ITSELF — and each of these
+  // four states means something different: nobody has claimed the install, the install is claimed and
+  // reporting, it is claimed and Android has given it no location permission, or the read failed.
+  if (agent.error) {
+    parts.push(
+      `🔴 The positions this tablet posts to Phoenix could not be read (${agent.error}), so only what the ` +
+        "tablet server holds is shown — this is NOT an empty history.",
+    );
+  } else if (!agent.bound) {
+    parts.push(
+      "No Phoenix Position agent is bound to this tablet, so nothing here comes from the tablet itself " +
+        "reporting to Phoenix. 🔴 If the app is installed, its positions are being KEPT and are waiting " +
+        "to be claimed — bind the install to this tablet and its whole trail appears here at once.",
+    );
+  } else if (agent.fixes > 0) {
+    parts.push(
+      `Rows marked as the tablet's agent are the ${agent.fixes} newest positions the tablet posted to ` +
+        "Phoenix itself. That source needs neither the tablet server nor a plugin.",
+    );
+  } else if (agent.permission === "none") {
+    parts.push(
+      "🔴 This tablet's agent is reporting, but Android has given it NO location permission, so it has no " +
+        "position to send. That is a permission to grant, not a tablet that stayed still.",
+    );
+  } else {
+    parts.push(
+      "This tablet's agent has posted no position to Phoenix yet. It samples on Android's own schedule " +
+        "and sends when there is network, so a tablet that is off or out of coverage has nothing to send.",
+    );
+  }
   if (upload.fixes > 0) {
     parts.push(
       "Rows marked as the tablet's own upload are the positions it recorded itself and sent to the " +

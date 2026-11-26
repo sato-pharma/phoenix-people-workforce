@@ -158,7 +158,7 @@ export type DashboardLocationFix = {
   firstRecordedAt?: string | null;
   reports?: number;
   batteryLevel: number | null;
-  source: "check-in" | "plugin" | "upload";
+  source: "check-in" | "plugin" | "upload" | "agent";
 };
 
 /** Every figure on the overview strip, counted from the fleet rows. `now` is injectable for tests. */
@@ -223,13 +223,15 @@ export function fleetRowsToPoints(rows: readonly RepHeadwindRow[], now: number =
 /**
  * One tablet's fixes as a numbered trail, oldest first.
  *
- * 🔴 ONE SOURCE PER LINE, AND ONLY TIMED FIXES ON IT. The movements read hands back two sources that
- * are never blended — the history plugin's record and the position riding on each check-in — and a
- * line joining a plugin fix to a check-in fix draws a route nobody reported. So ONE source is drawn,
- * in this order of fullness: the tablet's own uploads when it has sent any (26 Nov 2026 — one fix per
- * sampling burst), else the history plugin's record, else the check-ins. A fix with no time cannot be
- * placed in order: it used to sort FIRST (an empty string) and became stop 1; it is now left off the
- * line and stays in the list below the map.
+ * 🔴 ONE SOURCE PER LINE, AND ONLY TIMED FIXES ON IT. The movements read hands back four sources that
+ * are never blended — Phoenix's own agent, the tablet's uploads to the tablet server, the history
+ * plugin's record and the position riding on each check-in — and a line joining one source's fix to
+ * another's draws a route nobody reported. So ONE source is drawn, in this order of fullness: the
+ * tablet's own Phoenix Position agent when an install bound to it has posted anything (26 Nov 2026 —
+ * it samples on its own schedule and needs no tablet server), else the tablet's uploads to the tablet
+ * server, else the history plugin's record, else the check-ins. A fix with no time cannot be placed in
+ * order: it used to sort FIRST (an empty string) and became stop 1; it is now left off the line and
+ * stays in the list below the map.
  */
 export function fixesToPoints(fixes: readonly DashboardLocationFix[]): MapPoint[] {
   const timed = fixes.filter(
@@ -239,7 +241,7 @@ export function fixesToPoints(fixes: readonly DashboardLocationFix[]): MapPoint[
       typeof fix.recordedAt === "string" &&
       Number.isFinite(Date.parse(fix.recordedAt)),
   );
-  const source = (["upload", "plugin", "check-in"] as const).find((candidate) =>
+  const source = (["agent", "upload", "plugin", "check-in"] as const).find((candidate) =>
     timed.some((fix) => fix.source === candidate),
   );
   const ordered = timed

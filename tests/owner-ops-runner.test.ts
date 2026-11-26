@@ -39,8 +39,10 @@ function dryRunIsTheDefault() {
   const customers = ["merge-customers", "--survivor", PHARMACY, "--retired", OTHER, "--reason", "same doctor saved twice"];
   const unlink = ["remove-customer-pharmacy", "--customer", OTHER, "--pharmacy", PHARMACY, "--reason", "second copy of the same pharmacy"];
   const seat = ["seat-in-building", "--seat", "SEAT-PED-REP-D12", "--building", PHARMACY, "--customers", `${OTHER},${PHARMACY}`, "--reason", "his timetable names them"];
+  const bind = ["bind-tablet-agent", "--install", OTHER, "--tablet", "PHX-TAB-0008"];
+  const revoke = ["revoke-tablet-agent", "--install", OTHER, "--reason", "the tablet was factory reset"];
 
-  for (const argv of [link, merge, pin, crm, seat, customers, unlink]) {
+  for (const argv of [link, merge, pin, crm, seat, customers, unlink, bind, revoke]) {
     assert.equal(plan(argv).apply, false, `${argv[0]} with no --apply is a DRY RUN`);
     assert.equal(plan([...argv, "--apply"]).apply, true, `${argv[0]} --apply writes`);
     assert.equal(plan([argv[0]!, "--apply", ...argv.slice(1)]).apply, true, "--apply counts wherever it stands");
@@ -93,6 +95,25 @@ function dryRunIsTheDefault() {
   refused(["seat-in-building", "--seat", "SEAT-PED-REP-D12", "--building", PHARMACY, "--customers", OTHER, "--reason", "short"], "a reason under 10 characters, which the database refuses");
   refused(["seat-in-building", "--seat", "SEAT-PED-REP-D12", "--customers", OTHER, "--reason", "his timetable names them"], "a seating with no building");
   refused(["seat-in-building", "--seat", "PD-0030", "--building", PHARMACY, "--customers", OTHER, "--reason", "his timetable names them"], "an HR id is not a territory seat id");
+
+  // The rep tablets' own position agent (26 Nov 2026). The tablet number is read in capitals, because
+  // Headwind holds it that way and a lower-case one would bind nothing.
+  const bindPlan = plan(["bind-tablet-agent", "--install", OTHER.toUpperCase(), "--tablet", "phx-tab-0008"]);
+  assert.deepEqual(
+    bindPlan.job === "bind-tablet-agent" && [bindPlan.installId, bindPlan.deviceNumber],
+    [OTHER, "PHX-TAB-0008"],
+    "the install id is read in lower case and the tablet number in capitals",
+  );
+  assert.equal(plan(["tablet-agents"]).job, "tablet-agents", "the listing takes no flags at all");
+  refused(["tablet-agents", "--install", OTHER], "the listing takes no flags, so one is a mistyped job");
+  refused(["bind-tablet-agent", "--install", "not-a-uuid", "--tablet", "PHX-TAB-0008"], "an install id that is not a uuid");
+  refused(["bind-tablet-agent", "--install", OTHER], "a bind that does not say which tablet");
+  refused(["bind-tablet-agent", "--tablet", "PHX-TAB-0008"], "and one that does not say which install");
+  refused(["bind-tablet-agent", "--install", OTHER, "--tablet", "PHX TAB 0008"], "a tablet number with spaces in it");
+  refused(["bind-tablet-agent", "--install", OTHER, "--tablet", "PHX-TAB-0008", "--reason", "x"], "--reason belongs to the revoke, never to the bind");
+  refused(["revoke-tablet-agent", "--install", OTHER], "a revoke with no reason");
+  refused(["revoke-tablet-agent", "--install", OTHER, "--reason", "reset"], "a reason under 10 characters");
+  refused(["revoke-tablet-agent", "--install", OTHER, "--tablet", "PHX-TAB-0008", "--reason", "the tablet was factory reset"], "--tablet belongs to the bind, never to the revoke");
 }
 
 type Call = { url: string; method: string };
