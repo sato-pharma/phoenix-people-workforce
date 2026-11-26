@@ -2248,3 +2248,31 @@ never an empty trail, including a `PGRST205` from a deploy that is minutes ahead
 `tests/tablet-position-agent.test.ts` (the parsers, then both routes end to end against a stand-in
 PostgREST). The Android side is the `:position` module in the public `sato-pharma/phoenix-field-camera`
 repository — no launcher icon, no notification, WorkManager plus a boot receiver.
+
+**The app itself (Phoenix Position 1.0.0, `:position`, package `com.satopharma.phoenixposition`).** Its own
+APK beside the camera's, signed with the same key and the same certificate digest. Every quarter of an hour
+Android's scheduler wakes it: one reading from the tablet's combined position, kept in its own private
+storage, then everything the tablet still holds goes up in at most four batches of 240 — a month of
+readings is kept (`Trail.KEEP`), and a batch is forgotten only after Phoenix says it stored it, so no
+coverage makes the trail late and never missing. 403 marks the install revoked and cancels the rounds for
+good; 401 mints a new install id, which lands unbound and waiting to be claimed.
+
+🔴 **AN APP NOTHING HAS EVER STARTED RECEIVES NO BROADCAST AT ALL — NOT EVEN `BOOT_COMPLETED`.** Android
+keeps a freshly installed app in the "stopped" state until something starts it, so a position agent with no
+activity at all would never run a single round. That is the only reason `StartActivity` exists: Headwind,
+the device owner, starts an app it has just installed through its launcher intent. The activity draws
+nothing (it finishes inside `onCreate` under a translucent theme), schedules the round, and then **disables
+its own component**, so from the first run there is no icon in any launcher and the rep has nothing to open.
+Afterwards the rounds are started again from a cable without bringing the icon back:
+`adb shell am broadcast -n com.satopharma.phoenixposition/.StartReceiver -a com.satopharma.phoenixposition.START --include-stopped-packages`.
+
+🔴 **The permission word is always the truth.** `Install.permission` reports `background`, `fine`, `coarse`
+or `none` in every call, and the round still reports when it can read nothing: a tablet Android never
+granted the permission must never read to anyone as a tablet that did not move. Headwind grants the three
+location permissions silently as device owner.
+
+🔴 **The CI install-check runs with the emulator OFF the network, on purpose.** With network the first round
+would say hello to PRODUCTION and every build would leave an unbound install behind in the real data. The
+two jobs are `position` (build, sign, prove the certificate) and `position-install-check` (API 26 and 34:
+installs, starts once with no crash, the round is with Android's scheduler, and starting the activity again
+resolves to nothing — the proof the icon is gone).
