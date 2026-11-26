@@ -2187,3 +2187,92 @@ and item 13 of the add-on wiring tests).
 **What ships it:** the `phoenix-headwind` image rebuild. Until that deploys, the tablets keep getting
 404 and keep discarding their trails — a tablet that has been off or indoors has nothing banked to send
 once it does, because 24 hours is all it keeps.
+
+### 8.20 🔴 Phoenix Position — the tablets talk to PHOENIX directly, with no tablet server in the path (26 Nov 2026)
+
+**Why there is a second route at all.** §8.19 fixed the tablet server so it receives what the launcher
+uploads. That trail still crosses two systems: the launcher takes the fix, the Headwind add-on stores
+it, and Phoenix reads it back over the bridge. Every failure of the tablet server — a paused Railway
+build, a rewrite rule, a dead install link, the 24 hours the launcher keeps a fix for — is a hole in the
+rep's trail. The owner's answer (his words, 26 Nov 2026 03:02, "Build the app", after "both"): a small
+Android app on the tablet that talks to **Phoenix's own API**, so the trail survives the tablet server
+being down altogether.
+
+**The two doors, and why they take no session.** An Android app has no cookie and no Origin, so both are
+token doors, declared `authMode: "machine-token"` in `src/lib/security/access-registry.ts` and exempt
+from the proxy's POST origin check by their exact paths:
+
+- `POST /api/devices/positions/hello` — the app says who it is (an install id it minted and keeps in its
+  own private storage, plus model, Android version, agent version, and the location permission Android
+  actually granted). Phoenix mints a token, stores only its **SHA-256**, and hands the token back **once**,
+  201 on the first hello. 🔴 **A SECOND HELLO FOR A KNOWN INSTALL MINTS NOTHING** — otherwise anyone who
+  learned an install id could ask for that install's token and start writing a real tablet's trail. An app
+  that lost its token lost its storage with it and comes back as a NEW install id, which lands unbound.
+- `POST /api/devices/positions` — `Authorization: Bearer <token>`, a batch of up to 240 fixes, each with
+  the **tablet's own epoch milliseconds**. 🔴 **An unknown install and a wrong token answer the SAME 401**,
+  word for word: a different answer would tell a caller which install ids exist. A revoked install is 403.
+  A store that fails is 503, never a silent accept — a 2xx the app believes makes it delete the fixes.
+
+**What is thrown out, and what is kept.** 0/0 (Null Island), a pair off the globe, a time more than ten
+minutes in the future or more than 30 days old; the count of dropped rows is reported back to the app, so
+a tablet with a broken clock is visible rather than silent. The unique key
+`(install_id, recorded_at, latitude, longitude)` makes a re-sent batch free — the app may re-send until it
+sees a 2xx, exactly as the launcher does. Both tables are RLS-on and service-role only; `anon` and
+`authenticated` are revoked, and a CHECK refuses a `token_hash` that is not 64 characters.
+
+**Nothing on the tablet says which tablet it is.** The app shows the rep nothing and asks nothing — the
+golden rule (`rep-tablet-never-shows-tracking-golden-rule`) — so an install arrives UNBOUND and a person
+says whose it is. That is three owner-ops jobs, each behind the same `company_devices / approve` check the
+Headwind routes make, each audited under entity type `tablet_position_agent`:
+
+```bash
+node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node \
+  --import ./tests/register-alias-loader.mjs scripts/owner-ops.ts tablet-agents
+# then, for one install (dry run first, then the same line with --apply):
+  ... scripts/owner-ops.ts bind-tablet-agent --install <install id> --tablet PHX-TAB-0008
+  ... scripts/owner-ops.ts revoke-tablet-agent --install <install id> --reason "<why>"
+```
+
+🔴 **The bind stamps the fixes that install already sent.** Without it the days before anybody claimed the
+install would read as a tablet that reported nothing. A partial unique index
+(`device_position_agents_one_live_per_device`) means one LIVE install per tablet, so two installs can never
+both claim to be one tablet; a factory-reset tablet is revoked and its new install bound.
+
+**On the Tablet Dashboard** the agent is a fourth source on the movements read, `"agent"`, and it is drawn
+**first** of the four — it samples on its own schedule and needs no tablet server. The order is
+agent → upload → plugin → check-in, one source per line (§8.19). A read that fails is "could not be read",
+never an empty trail, including a `PGRST205` from a deploy that is minutes ahead of its migration.
+
+**Where it is:** `src/lib/devices/positions/agents.ts` (every rule, pure parsers apart),
+`app/api/devices/positions/` (the two routes), migration `20261126021500_tablet_position_agents.sql`,
+`tests/tablet-position-agent.test.ts` (the parsers, then both routes end to end against a stand-in
+PostgREST). The Android side is the `:position` module in the public `sato-pharma/phoenix-field-camera`
+repository — no launcher icon, no notification, WorkManager plus a boot receiver.
+
+**The app itself (Phoenix Position 1.0.0, `:position`, package `com.satopharma.phoenixposition`).** Its own
+APK beside the camera's, signed with the same key and the same certificate digest. Every quarter of an hour
+Android's scheduler wakes it: one reading from the tablet's combined position, kept in its own private
+storage, then everything the tablet still holds goes up in at most four batches of 240 — a month of
+readings is kept (`Trail.KEEP`), and a batch is forgotten only after Phoenix says it stored it, so no
+coverage makes the trail late and never missing. 403 marks the install revoked and cancels the rounds for
+good; 401 mints a new install id, which lands unbound and waiting to be claimed.
+
+🔴 **AN APP NOTHING HAS EVER STARTED RECEIVES NO BROADCAST AT ALL — NOT EVEN `BOOT_COMPLETED`.** Android
+keeps a freshly installed app in the "stopped" state until something starts it, so a position agent with no
+activity at all would never run a single round. That is the only reason `StartActivity` exists: Headwind,
+the device owner, starts an app it has just installed through its launcher intent. The activity draws
+nothing (it finishes inside `onCreate` under a translucent theme), schedules the round, and then **disables
+its own component**, so from the first run there is no icon in any launcher and the rep has nothing to open.
+Afterwards the rounds are started again from a cable without bringing the icon back:
+`adb shell am broadcast -n com.satopharma.phoenixposition/.StartReceiver -a com.satopharma.phoenixposition.START --include-stopped-packages`.
+
+🔴 **The permission word is always the truth.** `Install.permission` reports `background`, `fine`, `coarse`
+or `none` in every call, and the round still reports when it can read nothing: a tablet Android never
+granted the permission must never read to anyone as a tablet that did not move. Headwind grants the three
+location permissions silently as device owner.
+
+🔴 **The CI install-check runs with the emulator OFF the network, on purpose.** With network the first round
+would say hello to PRODUCTION and every build would leave an unbound install behind in the real data. The
+two jobs are `position` (build, sign, prove the certificate) and `position-install-check` (API 26 and 34:
+installs, starts once with no crash, the round is with Android's scheduler, and starting the activity again
+resolves to nothing — the proof the icon is gone).

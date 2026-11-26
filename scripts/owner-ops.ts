@@ -28,6 +28,13 @@
 //                 gets), the body's rows are written into it, and the filled sheet is handed to the
 //                 upload's own function — so every check of that upload runs (the seat marker, the
 //                 row rules, the database's same-name skip). Customers land "to validate" for the rep.
+//   tablet-agents / bind-tablet-agent / revoke-tablet-agent
+//                 listPositionAgents · bindPositionAgent · revokePositionAgent (26 Nov 2026). The rep
+//                 tablets' own Phoenix Position app enrols itself at a token door; nothing but the
+//                 install's own id says which tablet it is, and no screen asks. These three list the
+//                 installs, say which tablet one belongs to (stamping the fixes it already sent), and
+//                 take one out of service — each through the same `company_devices / approve` check the
+//                 Headwind routes use, and each audited.
 //   seat-in-building seatWaitingCustomersInVenue     (the Super Admin's door; no screen calls it yet)
 //                 Customers still waiting, with hours and no place, are seated in an approved building
 //                 at its own point; the building's timetable is then read for each, and only the ones it
@@ -674,6 +681,96 @@ async function seatInBuildingRows(plan: Extract<OwnerOpsPlan, { job: "seat-in-bu
   };
 }
 
+// ---------------------------------------------------------------------------------------------
+// The rep tablets' own position agent (26 Nov 2026)
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * 🔴 THE SAME GATE THE SCREENS USE. Every Headwind route checks `company_devices / approve`
+ * (app/api/devices/headwind/*), and these three jobs reach the same tables from the command line, so
+ * they run that check as the owner rather than trusting that the command was typed by him.
+ */
+async function assertTabletDeskAccess(owner: AccessContext): Promise<void> {
+  const { assertPermission } = await import("@/lib/auth/permissions");
+  await assertPermission(owner, "company_devices", "approve");
+}
+
+function describePositionAgent(agent: {
+  installId: string; deviceNumber: string | null; model: string | null; manufacturer: string | null;
+  androidVersion: string | null; agentVersion: string | null; locationPermission: string | null;
+  firstSeenAt: string; lastSeenAt: string; lastFixAt: string | null; fixesReceived: number;
+  boundAt: string | null; boundByHrId: string | null; revokedAt: string | null; revokedReason: string | null;
+}): string {
+  const hardware = [agent.manufacturer, agent.model].filter(Boolean).join(" ") || "model not reported";
+  const state = agent.revokedAt
+    ? `OUT OF SERVICE since ${agent.revokedAt}${agent.revokedReason ? ` — ${agent.revokedReason}` : ""}`
+    : agent.deviceNumber
+      ? `bound to ${agent.deviceNumber}${agent.boundByHrId ? ` by ${agent.boundByHrId}` : ""}`
+      : "NOT BOUND to a tablet yet";
+  return [
+    `  ${agent.installId}  ${state}`,
+    `      ${hardware} · Android ${agent.androidVersion ?? "?"} · agent ${agent.agentVersion ?? "?"} · location permission ${agent.locationPermission ?? "not said"}`,
+    `      first hello ${agent.firstSeenAt} · last call ${agent.lastSeenAt} · ${agent.fixesReceived} fix(es)`
+      + ` · last fix ${agent.lastFixAt ?? "none"}`,
+  ].join("\n");
+}
+
+async function runTabletAgents(owner: AccessContext) {
+  await assertTabletDeskAccess(owner);
+  const { listPositionAgents } = await import("@/lib/devices/positions/agents");
+  const agents = await listPositionAgents();
+  console.log(`\n${agents.length} Phoenix Position install(s) have said hello:`);
+  if (agents.length === 0) {
+    console.log("  none — no tablet is running the app yet, or none has reached this server.");
+  }
+  for (const agent of agents) console.log(describePositionAgent(agent));
+  return { employees: [], focus: {}, proofDone: true };
+}
+
+async function runBindTabletAgent(plan: Extract<OwnerOpsPlan, { job: "bind-tablet-agent" }>, owner: AccessContext) {
+  await assertTabletDeskAccess(owner);
+  const { bindPositionAgent, getPositionAgent, listAgentFixes } = await import("@/lib/devices/positions/agents");
+  const before = await getPositionAgent(plan.installId);
+  console.log(`\nBefore:`);
+  console.log(before ? describePositionAgent(before) : `  ${plan.installId}: no install has said hello with that id`);
+  const bound = await bindPositionAgent({ actor: OWNER_LOGIN_ID, deviceNumber: plan.deviceNumber, installId: plan.installId });
+  console.log("\nThe app accepted it:");
+  console.log(describePositionAgent(bound));
+
+  // PROOF — the tablet's own trail, read the way the Tablet Dashboard reads it. On a dry run the write
+  // was answered without being sent, so this shows the trail as it still is.
+  const trail = await listAgentFixes(plan.deviceNumber, 5);
+  console.log(`\nPROOF — ${plan.deviceNumber}'s agent trail as the tablet page reads it:`);
+  if (trail.error) console.log(`  could not be read: ${trail.error}`);
+  else if (trail.fixes.length === 0) console.log("  no fix carries this tablet's number yet");
+  for (const fix of trail.fixes) {
+    console.log(`  ${fix.recordedAt}  ${fix.latitude}, ${fix.longitude}  ±${fix.accuracyM ?? "?"} m  battery ${fix.batteryLevel ?? "?"}%${fix.mock ? "  MOCK" : ""}`);
+  }
+  if (plan.apply && bound.deviceNumber !== plan.deviceNumber) {
+    // Exit 3, never a refusal: the write has already happened, and "refused" would read as "nothing changed".
+    console.error("\nPROOF FAILED — the bind reported success but the row does not name that tablet.");
+    process.exitCode = 3;
+  }
+  return { employees: [], focus: {}, proofDone: true };
+}
+
+async function runRevokeTabletAgent(plan: Extract<OwnerOpsPlan, { job: "revoke-tablet-agent" }>, owner: AccessContext) {
+  await assertTabletDeskAccess(owner);
+  const { revokePositionAgent, getPositionAgent } = await import("@/lib/devices/positions/agents");
+  const before = await getPositionAgent(plan.installId);
+  console.log(`\nBefore:`);
+  console.log(before ? describePositionAgent(before) : `  ${plan.installId}: no install has said hello with that id`);
+  console.log(`Reason: ${plan.reason}`);
+  const revoked = await revokePositionAgent({ actor: OWNER_LOGIN_ID, installId: plan.installId, reason: plan.reason });
+  console.log("\nThe app accepted it:");
+  console.log(describePositionAgent(revoked));
+  if (plan.apply && !revoked.revokedAt) {
+    console.error("\nPROOF FAILED — the install reported out of service but the row still has no revoked time.");
+    process.exitCode = 3;
+  }
+  return { employees: [], focus: {}, proofDone: true };
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   if (argv.includes("--help") || argv.includes("-h")) {
@@ -715,6 +812,9 @@ async function main() {
     else if (plan.job === "remove-customer-pharmacy") outcome = await runRemoveCustomerPharmacy(plan, owner.access);
     else if (plan.job === "load-crm-list") outcome = await runLoadCrmList(plan, owner.access);
     else if (plan.job === "seat-in-building") outcome = await runSeatInBuilding(plan, owner.access);
+    else if (plan.job === "tablet-agents") outcome = await runTabletAgents(owner.access);
+    else if (plan.job === "bind-tablet-agent") outcome = await runBindTabletAgent(plan, owner.access);
+    else if (plan.job === "revoke-tablet-agent") outcome = await runRevokeTabletAgent(plan, owner.access);
     else outcome = await runPinPharmacy(plan, owner.access);
   } catch (error) {
     refused = errorText(error);

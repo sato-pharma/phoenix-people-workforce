@@ -119,6 +119,12 @@ export type AuditEntityType =
   // who can reach the MDM console can reach every tablet, whatever Phoenix says. The row names the
   // login and the role it was given, and NEVER the password.
   | "headwind_user"
+  // Binding or retiring one INSTALL of the Phoenix Position agent (2026-11-26) — the app on a rep
+  // tablet that reports where the tablet is straight to Phoenix. Apart from the command and app types
+  // because it is the act that decides WHOSE trail a stream of positions is: until an install is bound
+  // its positions belong to no tablet at all. The entity is the tablet's number once there is one, so
+  // a tablet's history reads as one story; the row names the install and never its token.
+  | "tablet_position_agent"
   // Apps pushed to or removed from a rep's tablet from inside Phoenix (2026-09-25). A separate type
   // from the command above because it is a different kind of act: a command changes what the tablet
   // is doing for a moment, while installing or removing an app changes what the rep can do with it

@@ -251,7 +251,7 @@ type LocationFix = {
   firstRecordedAt: string | null;
   reports: number;
   batteryLevel: number | null;
-  source: "check-in" | "plugin" | "upload";
+  source: "check-in" | "plugin" | "upload" | "agent";
 };
 type LocationRead = {
   fixes: LocationFix[];
@@ -276,11 +276,13 @@ function fixWhen(fix: LocationFix): string {
 const SOURCE_CHIP = "border border-slate-300 px-1 text-[8px] font-black uppercase tracking-[0.12em] text-slate-500";
 
 /**
- * What each row's source is called on screen. 🔴 EVERY ROW SAYS WHERE IT CAME FROM, because the three
- * sources are never blended: the tablet's own upload is its full record, the history plugin's is a
- * separate one, and a check-in position is the single fix riding on a report.
+ * What each row's source is called on screen. 🔴 EVERY ROW SAYS WHERE IT CAME FROM, because the four
+ * sources are never blended: the tablet's own agent posts straight to Phoenix, its upload to the tablet
+ * server is a separate record, the history plugin's is a third, and a check-in position is the single
+ * fix riding on a report.
  */
 const SOURCE_LABEL: Record<LocationFix["source"], string> = {
+  agent: "Tablet agent",
   "check-in": "Check-in",
   plugin: "History plugin",
   upload: "Tablet upload",

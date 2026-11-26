@@ -12,7 +12,7 @@
 // refused rather than "last one wins".
 // ---------------------------------------------------------------------------
 
-export const OWNER_OPS_JOBS = ["link-doctor", "merge-venues", "merge-customers", "remove-customer-pharmacy", "pin-pharmacy", "load-crm-list", "seat-in-building"] as const;
+export const OWNER_OPS_JOBS = ["link-doctor", "merge-venues", "merge-customers", "remove-customer-pharmacy", "pin-pharmacy", "load-crm-list", "seat-in-building", "tablet-agents", "bind-tablet-agent", "revoke-tablet-agent"] as const;
 export type OwnerOpsJob = (typeof OWNER_OPS_JOBS)[number];
 
 /** Every flag the runner knows, for refuseUnknownFlags. */
@@ -24,6 +24,7 @@ export const OWNER_OPS_FLAGS = [
   "--customers",
   "--employee",
   "--help",
+  "--install",
   "--lat",
   "--lng",
   "--loser",
@@ -32,6 +33,7 @@ export const OWNER_OPS_FLAGS = [
   "--retired",
   "--seat",
   "--survivor",
+  "--tablet",
   "-h",
 ] as const;
 
@@ -43,7 +45,13 @@ const VALUE_FLAGS_BY_JOB: Record<OwnerOpsJob, readonly string[]> = {
   "pin-pharmacy": ["--pharmacy", "--lat", "--lng", "--employee"],
   "load-crm-list": ["--seat", "--body"],
   "seat-in-building": ["--seat", "--building", "--customers", "--reason"],
+  "tablet-agents": [],
+  "bind-tablet-agent": ["--install", "--tablet"],
+  "revoke-tablet-agent": ["--install", "--reason"],
 };
+
+/** A tablet's number as Headwind holds it — PHX-TAB-0008. Never a database row id. */
+const TABLET_NUMBER = /^[A-Z0-9][A-Z0-9-]{2,39}$/i;
 
 /** The database's own ceiling on one seating list (phoenix_crm_seat_waiting_customers_in_venue). */
 export const SEAT_IN_BUILDING_MAX_CUSTOMERS = 60;
@@ -66,7 +74,10 @@ export type OwnerOpsPlan =
   | { job: "remove-customer-pharmacy"; apply: boolean; customerId: string; pharmacyId: string; reason: string }
   | { job: "pin-pharmacy"; apply: boolean; pharmacyId: string; latitude: number; longitude: number; employeeHrId: string | null }
   | { job: "load-crm-list"; apply: boolean; seatId: string; bodyPath: string }
-  | { job: "seat-in-building"; apply: boolean; seatId: string; buildingId: string; customerIds: string[]; reason: string };
+  | { job: "seat-in-building"; apply: boolean; seatId: string; buildingId: string; customerIds: string[]; reason: string }
+  | { job: "tablet-agents"; apply: boolean }
+  | { job: "bind-tablet-agent"; apply: boolean; installId: string; deviceNumber: string }
+  | { job: "revoke-tablet-agent"; apply: boolean; installId: string; reason: string };
 
 export type OwnerOpsParse = { ok: true; plan: OwnerOpsPlan } | { ok: false; error: string };
 
@@ -95,6 +106,14 @@ listed and none is sent. Only --apply writes. Every run ends with a proof read.
   seat-in-building --seat <seat id> --building <building id> --customers <id,id,...> --reason "<why>"
       Seat customers still waiting to be validated (no place yet, hours set) in an approved building
       that has a timetable, at the building's point. The board then validates only the ones it names.
+  tablet-agents
+      List every Phoenix Position install that has said hello — which tablet each is bound to, when it
+      last reported, and how many fixes it has sent. Reads only; --apply is meaningless here.
+  bind-tablet-agent --install <install id> --tablet <tablet number>
+      Say which tablet an install belongs to (e.g. PHX-TAB-0008). The positions it sent before anybody
+      knew whose they were are stamped with that tablet too. One live install per tablet.
+  revoke-tablet-agent --install <install id> --reason "<why it comes out of service>"
+      Take an install out of service: refused from its next call, and the tablet is free to re-bind.
 
   --apply      write for real (refused from a tree behind origin/main)
   --employee   whose draft workspace the proof read opens; by default every employee holding a
@@ -155,6 +174,29 @@ export function parseOwnerOpsArgs(argv: readonly string[]): OwnerOpsParse {
     if (typeof value !== "string") return value;
     return UUID.test(value) ? value.toLowerCase() : { error: `${name} must be ${job === "merge-customers" || name === "--customer" ? "a customer" : "a pharmacy"} id (a uuid), got "${value}"` };
   };
+
+  if (job === "tablet-agents") {
+    return { ok: true, plan: { job, apply } };
+  }
+
+  if (job === "bind-tablet-agent" || job === "revoke-tablet-agent") {
+    const raw = need("--install");
+    if (typeof raw !== "string") return { ok: false, ...raw };
+    // The same shape the app's own readInstallId accepts — a mistyped id must be refused here rather
+    // than reach the database and bind nothing.
+    if (!UUID.test(raw)) return { ok: false, error: `--install must be the install's id (a uuid), got "${raw}"` };
+    const installId = raw.toLowerCase();
+    if (job === "revoke-tablet-agent") {
+      const reason = need("--reason");
+      if (typeof reason !== "string") return { ok: false, ...reason };
+      if (reason.length < 10 || reason.length > 200) return { ok: false, error: "--reason must be 10 to 200 characters: it is the only record of why the install came out of service" };
+      return { ok: true, plan: { job, apply, installId, reason } };
+    }
+    const tablet = need("--tablet");
+    if (typeof tablet !== "string") return { ok: false, ...tablet };
+    if (!TABLET_NUMBER.test(tablet)) return { ok: false, error: `--tablet must be a tablet number like PHX-TAB-0008, got "${tablet}"` };
+    return { ok: true, plan: { job, apply, installId, deviceNumber: tablet.toUpperCase() } };
+  }
 
   if (job === "link-doctor") {
     const bodyPath = need("--body");
