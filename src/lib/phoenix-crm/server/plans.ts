@@ -1183,7 +1183,8 @@ export type PlanReviewView = {
   isTest: boolean;
   weekStart: string;
   /** The plannable weeks, with the plans waiting for this viewer's decision in each. */
-  weeks: Array<{ weekStart: string; waiting: number }>;
+  /** `waitingSeatIds`: the seats whose sent plan waits for this viewer that week, for the Team tab's Rep picker. */
+  weeks: Array<{ weekStart: string; waiting: number; waitingSeatIds: string[] }>;
   rows: PlanReviewRow[];
   farApartKm: number;
 };
@@ -1233,10 +1234,12 @@ export async function loadPlanReviews(
   // them, so the page's "waiting for you" count (overview.ts) and this one stay the same number.
   const approves = (row: Row) => canReviewTerritory(viewer, territoryById.get(String(row.seat_id)) as OrgSeat, isTest);
   const waitingByWeek = new Map<string, number>();
+  const waitingSeatsByWeek = new Map<string, string[]>();
   for (const row of planRows) {
     if (row.status !== "submitted" || !approves(row)) continue;
     const week = String(row.week_start);
     waitingByWeek.set(week, (waitingByWeek.get(week) ?? 0) + 1);
+    waitingSeatsByWeek.set(week, [...(waitingSeatsByWeek.get(week) ?? []), String(row.seat_id)]);
   }
 
   // 🔴 IT OPENS ON THE WEEK THAT IS WAITING FOR HIM (2026-10-08), not on the calendar's first week.
@@ -1319,7 +1322,7 @@ export async function loadPlanReviews(
   return {
     isTest,
     weekStart,
-    weeks: weekList.map((week) => ({ weekStart: week, waiting: waitingByWeek.get(week) ?? 0 })),
+    weeks: weekList.map((week) => ({ weekStart: week, waiting: waitingByWeek.get(week) ?? 0, waitingSeatIds: waitingSeatsByWeek.get(week) ?? [] })),
     rows,
     farApartKm,
   };

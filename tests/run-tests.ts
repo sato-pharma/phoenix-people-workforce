@@ -3100,6 +3100,7 @@ import { runPrivateCalendarNoticePeriodTests } from "./private-calendar-notice-p
 import { runPrivateCalendarReadsStartTogetherTests } from "./private-calendar-reads-start-together.test.ts";
 import { runPhoenixCrmOffplanDayTests } from "./phoenix-crm-offplan-day.test.ts";
 import { runPhoenixCrmBulkDropTests } from "./phoenix-crm-bulk-drop.test.ts";
+import { runPhoenixCrmBulkRespondTests } from "./phoenix-crm-bulk-respond.test.ts";
 import { runPhoenixCrmReturnForCommentTests } from "./phoenix-crm-return-for-comment.test.ts";
 import { runPhoenixCrmTeamReadinessTests } from "./phoenix-crm-team-readiness.test.ts";
 import { runShareLinkDeadTokenPollingTests } from "./share-link-dead-token-polling.test.ts";
@@ -12401,6 +12402,10 @@ await runTest(
 await runTest(
   "Phoenix CRM bulk drop (owner, 2026-10-12): a rep's request to drop a customer always carries a written comment — on every reason, refused on the server and on the screen — while the SFE Manager's own drop keeps it optional; the Team tab lets the viewer tick the drops waiting at HIS step or select them all (never an add, a grade, a bring-back, another manager's or a decided one), behind a confirm, and approves each through the one decide route one at a time with the step the screen showed, naming any that fail while the rest stand",
   runPhoenixCrmBulkDropTests,
+);
+await runTest(
+  "Phoenix CRM bulk respond (owner, 2026-11-27): every list request the viewer answers from its own card, the Administrator's included, can be ticked or selected all and approved, refused or returned for a comment together, each through the card's own route one at a time, leaving out and naming what the card would not do (an add still to grade, a place on Place checks, a step that cannot go back to the rep), and a decision never scrolls the page or moves the open section",
+  runPhoenixCrmBulkRespondTests,
 );
 await runTest(
   "Phoenix CRM return for comment (owner, 2026-10-12): SFE can send the step it holds — a drop, an add, a bring-back, or a grade change on a territory with no manager — back to the rep with a required note; it stays pending with the rep (stored stage rep), nothing can approve it until the rep answers, the answer goes straight back to SFE, no manager is nudged meanwhile, and the bulk drop closes a rep's repeat ask with its customer instead of sending a call that is refused",

@@ -97,3 +97,56 @@ export function teamRepManagerToOpen(
   const match = managerHrIds.find((hrId) => choices.some((entry) => entry.hrId === hrId)) ?? null;
   return match && match !== showing ? match : null;
 }
+
+/**
+ * The Team tab's counts — the sentence at the top and every "Look at" tile — from the rows themselves,
+ * so they follow the Rep picker (owner, 2026-11-27: "make the request count follow the filter, rep has 2,
+ * make the request count 2"). The server builds the whole team's summary with this same function, so the
+ * figure with no rep chosen and the one on the server are one count, never two formulas.
+ */
+export type TeamCountRows = {
+  territories: ReadonlyArray<{ territory: { repHrId: string | null }; readiness: { ready: boolean } | null }>;
+  requests: ReadonlyArray<{ canDecide: boolean }>;
+  unplannedVisits: ReadonlyArray<{ canDecide: boolean }>;
+  planEdits: ReadonlyArray<{ canDecide: boolean }>;
+};
+
+export type TeamCounts = {
+  territories: number;
+  vacant: number;
+  ready: number;
+  notReady: number;
+  requestsWaiting: number;
+  /** Requests this viewer decides. */
+  waitingForYou: number;
+  unplannedWaiting: number;
+  unplannedWaitingForYou: number;
+  planEditsWaiting: number;
+  planEditsWaitingForYou: number;
+};
+
+export function teamCountsOf(rows: TeamCountRows): TeamCounts {
+  // A test world carries no readiness: those rows are neither ready nor not ready.
+  const real = rows.territories.filter((row) => row.readiness);
+  return {
+    territories: rows.territories.length,
+    vacant: rows.territories.filter((row) => !row.territory.repHrId).length,
+    ready: real.filter((row) => row.readiness?.ready).length,
+    notReady: real.filter((row) => !row.readiness?.ready).length,
+    requestsWaiting: rows.requests.length,
+    waitingForYou: rows.requests.filter((request) => request.canDecide).length,
+    unplannedWaiting: rows.unplannedVisits.length,
+    unplannedWaitingForYou: rows.unplannedVisits.filter((visit) => visit.canDecide).length,
+    planEditsWaiting: rows.planEdits.length,
+    planEditsWaitingForYou: rows.planEdits.filter((edit) => edit.canDecide).length,
+  };
+}
+
+/**
+ * The week strip's "waiting for you" for the chosen rep: each week counts only the sent plans on his
+ * seats. With no rep chosen the server's own count stands.
+ */
+export function teamWeeksForRep<W extends { waiting: number; waitingSeatIds?: readonly string[] }>(scope: TeamRepScope, weeks: readonly W[]): W[] {
+  if (!scope) return [...weeks];
+  return weeks.map((week) => ({ ...week, waiting: (week.waitingSeatIds ?? []).filter((seatId) => scope.seatIds.has(seatId)).length }));
+}

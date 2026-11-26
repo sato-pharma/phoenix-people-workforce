@@ -6,10 +6,12 @@ import { stripComments } from "./support/comment-strip.ts";
 import {
   filterByTeamRep,
   inTeamRepScope,
+  teamCountsOf,
   teamRepLabel,
   teamRepManagerToOpen,
   teamRepsOf,
   teamRepScope,
+  teamWeeksForRep,
 } from "../src/lib/phoenix-crm/team-rep-filter.ts";
 
 /**
@@ -86,6 +88,60 @@ export function runPhoenixCrmTeamRepFilterTests(): void {
     assert.equal(teamRepManagerToOpen(["DM-1"], choices, null), null, "a manager out of reach is never asked for");
     assert.equal(teamRepManagerToOpen(["DM-3"], choices, "DM-3"), null, "already showing him: nothing to change");
     assert.equal(teamRepManagerToOpen(["DM-3"], null, null), null, "a district manager reading his own has no choice to make");
+  }
+
+  // ── The counts follow the rep (owner, 2026-11-27: "rep has 2, make the request count 2") ──────────
+  {
+    const counts = teamCountsOf({
+      territories: [
+        { territory: { repHrId: "R-2" }, readiness: { ready: true } },
+        { territory: { repHrId: null }, readiness: { ready: false } },
+        // A test world carries no readiness: neither ready nor not ready.
+        { territory: { repHrId: "R-1" }, readiness: null },
+      ],
+      requests: [{ canDecide: true }, { canDecide: false }],
+      unplannedVisits: [{ canDecide: true }],
+      planEdits: [],
+    });
+    assert.deepEqual(counts, {
+      territories: 3,
+      vacant: 1,
+      ready: 1,
+      notReady: 1,
+      requestsWaiting: 2,
+      waitingForYou: 1,
+      unplannedWaiting: 1,
+      unplannedWaitingForYou: 1,
+      planEditsWaiting: 0,
+      planEditsWaitingForYou: 0,
+    });
+
+    const scope = teamRepScope(teamRepsOf(territories), "R-2");
+    const weeks = [
+      { weekStart: "2026-11-28", waiting: 3, waitingSeatIds: ["minia-2", "minia-1", "beni-suef-1"] },
+      { weekStart: "2026-12-05", waiting: 1, waitingSeatIds: ["minia-1"] },
+    ];
+    assert.deepEqual(
+      teamWeeksForRep(scope, weeks).map((week) => week.waiting),
+      [2, 0],
+      "each week counts only the sent plans on the chosen rep's seats",
+    );
+    assert.deepEqual(teamWeeksForRep(null, weeks).map((week) => week.waiting), [3, 1], "with every rep the server's count stands");
+
+    const tab = source("src/components/phoenix-crm/team-tab.tsx");
+    assert.match(
+      tab,
+      /const summary = team\.data && teamShown \? \(repScope \? \{ \.\.\.team\.data\.summary, \.\.\.teamCountsOf\(teamShown\) \} : team\.data\.summary\) : null;/,
+      "the sentence and the Look at tiles read the rep's own rows once a rep is chosen",
+    );
+    assert.match(tab, /const repWeeks = reviews\.data \? teamWeeksForRep\(repScope, reviews\.data\.weeks\) : null;/, "and so does the week strip");
+    assert.match(tab, /const plansWaiting = repWeeks \?/, "and the plans tile");
+    assert.match(tab, /const monthsWaiting = monthsShown \?/, "and the months tile");
+    assert.match(tab, /onChange=\{\(event\) => \{\s*setSection\(current\);\s*setRepHrId\(/, "choosing a rep keeps the section open, even as its counts change");
+    const team = source("src/lib/phoenix-crm/server/team.ts");
+    assert.match(team, /\.\.\.teamCountsOf\(\{ territories, requests, unplannedVisits, planEdits \}\)/, "the server counts the whole team with the same function");
+    const plans = source("src/lib/phoenix-crm/server/plans.ts");
+    assert.match(plans, /waitingSeatIds: waitingSeatsByWeek\.get\(week\) \?\? \[\]/, "each week names the seats whose plan waits");
   }
 
   // ── The screen: ONE picker above the sections, and every section fed the narrowed data ─────────

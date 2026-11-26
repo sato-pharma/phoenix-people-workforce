@@ -154,7 +154,7 @@ export function runPhoenixCrmReturnForCommentTests(): void {
     assert.equal(notice.title, "Approved 2 drop requests: 2 customers dropped from the list · 1 repeat request closed with them.");
 
     const team = source("src/components/phoenix-crm/team-tab.tsx");
-    assert.match(team, /if \(repeatOfDropped\(request, dropped\)\) \{/, "the Team tab skips the repeat instead of sending a call that is refused");
+    assert.match(team, /if \(response === "approve" && repeatOfDropped\(request, dropped\)\) \{/, "the Team tab skips the repeat instead of sending a call that is refused");
     assert.match(team, /if \(result\.final && request\.customerKey\) dropped\.add\(request\.customerKey\)/, "only a final drop closes the customer's other asks");
   }
 
