@@ -15,7 +15,7 @@ import java.util.Map;
  * actions with it. Three small JSON documents (a JWT header, its claims, Cloudflare's key list) do not
  * justify that risk.
  */
-final class MiniJson {
+public final class MiniJson {
 
     private final String text;
     private int pos;
@@ -24,7 +24,7 @@ final class MiniJson {
         this.text = text;
     }
 
-    static Object parse(String text) {
+    public static Object parse(String text) {
         MiniJson reader = new MiniJson(text);
         reader.space();
         Object value = reader.value();

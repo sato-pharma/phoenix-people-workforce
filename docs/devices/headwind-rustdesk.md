@@ -2138,3 +2138,52 @@ nor the device-info history holds a position, and it has been switched off since
 why those posts left nothing is unproven until a tablet on 6.48 is online. The server side is not the
 gap: `SyncResource.updateDeviceInfo` stores `DeviceInfo.location` (`lat`, `lon`, `ts`) and the
 `deviceinfo` plugin is registered and not switched off server-wide (`/rest/plugin/main/public/registered`).
+
+### 8.19 🔴 The tablets were uploading their positions all along — the free server answered 404 (26 Nov 2026)
+
+**What §8.18 left unproven is now measured.** PHX-TAB-0008's own log showed "posted device info with
+fresh location" every ten minutes on 22 Oct and nothing was stored anywhere. The reason is not the
+launcher and not `SyncResource`: from 6.41 the launcher keeps every fix it takes in its OWN `locations`
+table and sends the pending rows separately, with
+`PUT {project}/rest/plugins/devicelocations/public/update/{number}` — a JSON array of
+`{"id":…, "ts": <epoch ms>, "lat":…, "lon":…}` (`ServerService.sendLocations`, `LocationTable.Location`,
+`SendLocationsTask`; the strings are in the 6.51 APK's `classes.dex`). It deletes the rows it sent
+**only on a 2xx**, and its own `deleteOldItems` drops anything older than 24 hours.
+
+`devicelocations` is a **premium** Headwind plugin. This server does not have it, so that PUT answered
+**404** — read in Railway's HTTP logs for `phoenix-headwind`: PHX-TAB-0008, 00:13:13Z and 00:14:52Z on
+26 Nov (02:13 and 02:14 Cairo). Every tablet has therefore been recording positions, failing to hand
+them over, and throwing them away a day later, for as long as the fleet has existed. The `deviceinfo`
+history plugin — the other source Phoenix reads — has never received a row from any tablet, which is
+the same fact seen from the other end.
+
+**The fix is on the server, and no tablet is touched.** The add-on now serves that exact path:
+
+- `rest/DeviceLocationsResource.java` — `@Path("/plugins/devicelocations")` + `@PUT /public/update/{number}`,
+  registered in `PhoenixRestModule`'s `PUBLIC_RESOURCES` (the launcher sends no token, exactly like
+  `DeviceResetConfirmResource`). The body is read capped at 512 KB; a position is dropped when it is
+  0/0, off the globe, more than a day in the future or older than 30 days; a number below 10^12 is read
+  as seconds; at most 2,000 rows are kept from one upload; an upload for a device number the server
+  never enrolled is dropped (`isKnownDevice`). It answers `{"status":"OK"}` whenever the body could be
+  read — even when nothing was kept, because a refusal makes a real tablet re-send for a day — 400 for
+  an unreadable body, and **500 for a database failure, which deliberately leaves the rows on the tablet.**
+- `PhoenixLocationStore.java` — the add-on's second table, `phoenix_device_locations`. The time is the
+  tablet's own **epoch milliseconds in a `bigint`**, never a `timestamp`: Headwind's columns are
+  `timestamp without time zone`, and a silent zone conversion is a two-hour error on a rep's trail. A
+  unique index on `(device_number, recorded_at_ms, lat, lon)` is the retry guard, since the launcher
+  re-sends what it saw no 2xx for; rows are pruned past 90 days. A table that cannot be created is
+  logged SEVERE and the server still starts.
+- `PhoenixActionsResource.java` — `@GET /private/locations/{number}` hands the rows back
+  (`{status, items:[{ts,lat,lon}], total}`) behind the same JWT, Access and private-network filters as
+  every other private call, and `status()` reports `locations: true`.
+
+**Phoenix side.** `getHeadwindLocationHistory` reads that endpoint **first** (`locationFixesFromUpload`,
+source `"upload"`), then the `deviceinfo` plugin, then the check-in. The trail line draws ONE source and
+now prefers upload over plugin over check-in. A 404 from the read means *this server has no receiver* —
+the note says so and names the rebuild, never the tablet; any other failure is "could not be read",
+never an empty history. All of it is pinned in `tests/headwind-bridge.test.ts` (`runLocationHonestyTests`
+and item 13 of the add-on wiring tests).
+
+**What ships it:** the `phoenix-headwind` image rebuild. Until that deploys, the tablets keep getting
+404 and keep discarding their trails — a tablet that has been off or indoors has nothing banked to send
+once it does, because 24 hours is all it keeps.

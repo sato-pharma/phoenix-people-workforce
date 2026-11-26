@@ -5,6 +5,7 @@ import java.util.List;
 
 import com.google.inject.servlet.ServletModule;
 
+import com.hmdm.plugins.phoenix.rest.DeviceLocationsResource;
 import com.hmdm.plugins.phoenix.rest.DeviceResetConfirmResource;
 import com.hmdm.plugins.phoenix.rest.PhoenixActionsResource;
 import com.hmdm.plugins.phoenix.security.AccessGateFilter;
@@ -23,8 +24,9 @@ import com.hmdm.security.jwt.JWTFilter;
  * The stock chain is JWT → Auth → `PluginAccessFilter` → PrivateIP. `PluginAccessFilter` refuses a
  * user who lacks the per-customer permission row for the plugin — a row created by a plugin's own
  * Liquibase changelog, registering it in Headwind's `plugins` table. This add-on deliberately does
- * not write rows into Headwind's own tables (it owns exactly one table of its own, and creating it is
- * the only schema change it makes), so that filter would refuse EVERY caller including the only
+ * not write rows into Headwind's own tables (it owns two tables of its own — the pending actions and,
+ * since 26 Nov 2026, the tablets' uploaded positions — and creating them is the only schema change it
+ * makes), so that filter would refuse EVERY caller including the only
  * account that exists. The remaining three still apply: a caller needs a valid JWT, an authenticated
  * console session, and a private-network source address, and the console itself sits behind
  * Cloudflare Access. The honest cost, written here rather than discovered later: any authenticated
@@ -37,6 +39,9 @@ import com.hmdm.security.jwt.JWTFilter;
  * serve it, so it 404s today. Serving it is what turns "sent" into "witnessed". It carries only
  * `PublicIPFilter`, because the agent posts these without a token — that is the agent's design, and
  * the worst an anonymous caller can do is close a row early for a device number it already knows.
+ *
+ * 🔴 `/rest/plugins/devicelocations/public/*` IS THE AGENT'S TOO (26 Nov 2026): the launcher PUTs the
+ * positions it took there, also with no token. `DeviceLocationsResource` says what it bounds.
  */
 public class PhoenixRestModule extends ServletModule {
 
@@ -50,7 +55,7 @@ public class PhoenixRestModule extends ServletModule {
         Arrays.asList("/rest/plugins/phoenix-actions/private/*");
 
     private static final List<String> PUBLIC_RESOURCES =
-        Arrays.asList("/rest/plugins/devicereset/public/*");
+        Arrays.asList("/rest/plugins/devicereset/public/*", "/rest/plugins/devicelocations/public/*");
 
     @Override
     protected void configureServlets() {
@@ -68,5 +73,6 @@ public class PhoenixRestModule extends ServletModule {
 
         bind(PhoenixActionsResource.class);
         bind(DeviceResetConfirmResource.class);
+        bind(DeviceLocationsResource.class);
     }
 }
