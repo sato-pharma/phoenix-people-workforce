@@ -107,6 +107,11 @@ import {
   HeadwindUploadError,
 } from "../src/lib/devices/headwind/uploads.ts";
 import {
+  startPositionAgentOnTablet,
+  POSITION_AGENT_PACKAGE,
+  POSITION_AGENT_START_MESSAGE,
+} from "../src/lib/devices/positions/start.ts";
+import {
   consoleRolesFrom,
   consoleUsersFrom,
   createHeadwindConsoleUser,
@@ -1081,6 +1086,83 @@ async function runAppRemovalTests() {
   assert.match(route, /assertPermission\(access, "company_devices", "approve"\)/, "Super Admin only, on the route");
   assert.match(route, /const csrf = assertSameOriginMutation\(request\);\s*if \(csrf\) return csrf;/);
   assert.doesNotMatch(route, /export async function GET/, "reading the app list stays on the fleet route — this one only removes");
+}
+
+/**
+ * Starting the position agent — the one app on a rep tablet nobody can open.
+ *
+ * 🔴 WHY THIS EXISTS AT ALL, MEASURED ON PRODUCTION ON 26 NOV 2026: Phoenix Position 1.0.0 was
+ * installed on PHX-TAB-0007 and PHX-TAB-0008, both of which had checked in that morning, and
+ * `device_position_agents` held ZERO rows. The app has no icon, no notification and no screen (a rep
+ * tablet never shows its user any sign it is tracked), so nobody can start it by hand; Android keeps
+ * an app that has never run in the stopped state, where not even BOOT_COMPLETED arrives; and the
+ * application row's `runAfterInstall` — the one thing that would have started it — was FALSE. So the
+ * APK reached both tablets and never ran, which looks exactly like an app that does not work.
+ *
+ * Both halves are pinned here: `runAfterInstall` for every tablet that installs it from now on, and
+ * the `runApp` push for a tablet already holding it, where there is no install left to run after.
+ */
+async function runPositionAgentStartTests() {
+  assert.equal(POSITION_AGENT_PACKAGE, "com.satopharma.phoenixposition", "the :position module's own applicationId");
+  assert.equal(
+    POSITION_AGENT_START_MESSAGE,
+    "runApp",
+    "`PushMessage.TYPE_RUN_APP` → runApplication(context, payload) — one of the seventeen names the agent declares, never an invention",
+  );
+
+  const untouched = makeFetch({ api: [{ body: { status: "OK" }, status: 200 }] });
+  await assert.rejects(
+    () => startPositionAgentOnTablet({ deviceNumber: "   " }, "B-10", untouched.fetch, ENV, async () => {}),
+    HeadwindCommandInputError,
+    "a start with no tablet named is refused before anything happens",
+  );
+  assert.equal(untouched.calls.length, 0, "and nothing was sent — no sign-in, no push");
+
+  // The push itself resolves the custody register, so the wire shape is pinned at the source — the
+  // same reason the app removal's is (this suite reads the tablet server only).
+  const start = stripComments(source("src/lib/devices/positions/start.ts"));
+  assert.match(start, /messageType: POSITION_AGENT_START_MESSAGE/);
+  assert.match(
+    start,
+    /payload: JSON\.stringify\(\{ pkg: POSITION_AGENT_PACKAGE \}\)/,
+    "a STRING containing JSON, keyed `pkg` — the one key the agent reads out of a runApp payload",
+  );
+  assert.match(start, /deviceNumbers: \[target\.deviceNumber\]/, "addressed by device NUMBER, never the server's row id");
+  assert.match(start, /entityType: "tablet_position_agent"/, "and a start nobody can see writes a REQUIRED audit row");
+
+  // 🔴 THE TWO REFUSALS COME BEFORE THE PUSH, AND THEY ARE DIFFERENT SENTENCES. Headwind answers a
+  // runApp 200 whatever package it names, so a tablet that has not got the agent would otherwise read
+  // exactly like one that just started it — and the hello that never comes would be blamed on the app.
+  const noApps = start.indexOf("has not reported which apps");
+  const noAgent = start.indexOf("has not got the position agent yet");
+  const push = start.indexOf('"/rest/private/push"');
+  assert.ok(noApps > 0 && noAgent > 0 && push > 0, "both refusals and the push are present");
+  assert.ok(noApps < push, "a tablet that reported no apps at all is answered before anything is sent");
+  assert.ok(noAgent < push, "and so is a tablet whose app list does not carry the agent");
+  assert.ok(
+    noApps < noAgent,
+    "🔴 in this order: an empty app list is 'could not be read', never 'has not got it' — the two call for different acts",
+  );
+
+  // 🔴 `runAfterInstall` IS SENT ON EVERY REGISTER, FALSE INCLUDED. The register PUT writes the app
+  // row, so a field left out of it is one the next version upload can reset — an app that must start
+  // itself would silently stop doing so at its own upgrade.
+  const body = applicationRegisterBody("/files/a.apk", { pkg: "com.satopharma.phoenixposition", version: "1.0.0" }, false, true);
+  assert.equal(body.runAfterInstall, true, "an app that must start itself can be registered that way");
+  const quiet = applicationRegisterBody("/files/a.apk", { pkg: "com.phoenix.reps" }, true);
+  assert.equal(quiet.runAfterInstall, false, "and every other app is registered explicitly NOT starting itself");
+
+  const uploads = stripComments(source("src/lib/devices/headwind/uploads.ts"));
+  assert.match(
+    uploads,
+    /body: JSON\.stringify\(\{ \.\.\.current, runAfterInstall: input\.runAfterInstall \}\)/,
+    "🔴 turning it on sends the whole app row back with ONE field changed — a two-field patch is how an app loses its own download URL",
+  );
+  assert.match(
+    uploads,
+    /"\/rest\/private\/applications\/android"/,
+    "and it is written through the same endpoint that registers an app, which is the only one that writes the row",
+  );
 }
 
 /**
@@ -4565,6 +4647,7 @@ export async function runHeadwindBridgeTests() {
   await runCommandTests();
   runAppsTests();
   await runAppRemovalTests();
+  await runPositionAgentStartTests();
   await runRemoteScreenIdTests();
   await runCorporateWipeTests();
   runRecordingTests();

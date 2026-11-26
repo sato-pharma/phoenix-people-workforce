@@ -105,6 +105,19 @@ function dryRunIsTheDefault() {
     "the install id is read in lower case and the tablet number in capitals",
   );
   assert.equal(plan(["tablet-agents"]).job, "tablet-agents", "the listing takes no flags at all");
+
+  // 🔴 STARTING THE AGENT TAKES A TABLET AND NOTHING ELSE. It is the one job addressed to a tablet
+  // that has said nothing to Phoenix yet, so there is no install id to give it — asking for one would
+  // be asking for the thing the start exists to produce.
+  const startPlan = plan(["start-tablet-agent", "--tablet", "phx-tab-0007"]);
+  assert.equal(
+    startPlan.job === "start-tablet-agent" && startPlan.deviceNumber,
+    "PHX-TAB-0007",
+    "the tablet number is read in capitals, the way Headwind holds it",
+  );
+  refused(["start-tablet-agent"], "a start that does not say which tablet");
+  refused(["start-tablet-agent", "--install", OTHER], "--install belongs to the bind and the revoke, never to the start");
+  refused(["start-tablet-agent", "--tablet", "PHX TAB 0007"], "a tablet number with spaces in it");
   refused(["tablet-agents", "--install", OTHER], "the listing takes no flags, so one is a mistyped job");
   refused(["bind-tablet-agent", "--install", "not-a-uuid", "--tablet", "PHX-TAB-0008"], "an install id that is not a uuid");
   refused(["bind-tablet-agent", "--install", OTHER], "a bind that does not say which tablet");

@@ -12,7 +12,7 @@
 // refused rather than "last one wins".
 // ---------------------------------------------------------------------------
 
-export const OWNER_OPS_JOBS = ["link-doctor", "merge-venues", "merge-customers", "remove-customer-pharmacy", "pin-pharmacy", "load-crm-list", "seat-in-building", "tablet-agents", "bind-tablet-agent", "revoke-tablet-agent"] as const;
+export const OWNER_OPS_JOBS = ["link-doctor", "merge-venues", "merge-customers", "remove-customer-pharmacy", "pin-pharmacy", "load-crm-list", "seat-in-building", "tablet-agents", "start-tablet-agent", "bind-tablet-agent", "revoke-tablet-agent"] as const;
 export type OwnerOpsJob = (typeof OWNER_OPS_JOBS)[number];
 
 /** Every flag the runner knows, for refuseUnknownFlags. */
@@ -46,6 +46,7 @@ const VALUE_FLAGS_BY_JOB: Record<OwnerOpsJob, readonly string[]> = {
   "load-crm-list": ["--seat", "--body"],
   "seat-in-building": ["--seat", "--building", "--customers", "--reason"],
   "tablet-agents": [],
+  "start-tablet-agent": ["--tablet"],
   "bind-tablet-agent": ["--install", "--tablet"],
   "revoke-tablet-agent": ["--install", "--reason"],
 };
@@ -76,6 +77,7 @@ export type OwnerOpsPlan =
   | { job: "load-crm-list"; apply: boolean; seatId: string; bodyPath: string }
   | { job: "seat-in-building"; apply: boolean; seatId: string; buildingId: string; customerIds: string[]; reason: string }
   | { job: "tablet-agents"; apply: boolean }
+  | { job: "start-tablet-agent"; apply: boolean; deviceNumber: string }
   | { job: "bind-tablet-agent"; apply: boolean; installId: string; deviceNumber: string }
   | { job: "revoke-tablet-agent"; apply: boolean; installId: string; reason: string };
 
@@ -109,6 +111,11 @@ listed and none is sent. Only --apply writes. Every run ends with a proof read.
   tablet-agents
       List every Phoenix Position install that has said hello — which tablet each is bound to, when it
       last reported, and how many fixes it has sent. Reads only; --apply is meaningless here.
+  start-tablet-agent --tablet <tablet number>
+      Tell a tablet that already carries the position agent to start it now. Nobody can open it — it
+      has no icon and no screen — and Android never lets an app that has never run receive anything,
+      so until something starts it once the tablet says nothing to Phoenix. Refused when that tablet
+      has not got the app.
   bind-tablet-agent --install <install id> --tablet <tablet number>
       Say which tablet an install belongs to (e.g. PHX-TAB-0008). The positions it sent before anybody
       knew whose they were are stamped with that tablet too. One live install per tablet.
@@ -177,6 +184,13 @@ export function parseOwnerOpsArgs(argv: readonly string[]): OwnerOpsParse {
 
   if (job === "tablet-agents") {
     return { ok: true, plan: { job, apply } };
+  }
+
+  if (job === "start-tablet-agent") {
+    const tablet = need("--tablet");
+    if (typeof tablet !== "string") return { ok: false, ...tablet };
+    if (!TABLET_NUMBER.test(tablet)) return { ok: false, error: `--tablet must be a tablet number like PHX-TAB-0008, got "${tablet}"` };
+    return { ok: true, plan: { job, apply, deviceNumber: tablet.toUpperCase() } };
   }
 
   if (job === "bind-tablet-agent" || job === "revoke-tablet-agent") {
