@@ -161,6 +161,37 @@ node --env-file-if-exists=.env.local --experimental-strip-types --experimental-s
 
 ## Rep tablets
 
+### Make a tablet that already carries Phoenix Position actually start it
+
+- 🔴 **AN APK HEADWIND HAS INSTALLED IS NOT AN APP THAT HAS RUN, AND THIS IS THE APP WHERE THAT IS THE
+  WHOLE DIFFERENCE.** Measured on production 26 Nov 2026: Phoenix Position 1.0.0 was installed on
+  PHX-TAB-0007 and PHX-TAB-0008, both of which had checked in that morning, and
+  `device_position_agents` held **zero rows**. The app shows the rep nothing — no icon, no
+  notification, no screen — so nobody can open it, and Android keeps an app that has never run in the
+  **stopped** state, where not even `BOOT_COMPLETED` reaches it. Until something starts it once it
+  mints no install id, says no hello and schedules no rounds.
+- **The cause was one false field, and it is now true.** The application row's own `runAfterInstall`
+  (application 98) was `false`, so Headwind installed the APK and ran nothing.
+  `setHeadwindAppRunAfterInstall({ applicationId, runAfterInstall: true }, "B-10")` turns it on — it
+  reads the whole app row and sends it back with that one field changed. 🔴 **It governs the NEXT
+  install only**: Headwind acts on it at install time, so it does nothing for a tablet already holding
+  the app.
+- **For a tablet already holding it:** `owner-ops.ts start-tablet-agent --tablet PHX-TAB-0007` —
+  `startPositionAgentOnTablet` in `src/lib/devices/positions/start.ts`, Headwind's own `runApp` push,
+  which the launcher turns into a `startActivity` on that package. An explicit start by another app is
+  what lifts the stopped state. Run it with `railway run` (the credentials are production-only, as
+  below), and it is audited as `tablet_position_agent`.
+- **It refuses a tablet that has not got the app**, and says "could not be read" rather than "has not
+  got it" for a tablet whose app list is empty — the push answers 200 whatever package it names, so
+  without that read a tablet the app never reached would look exactly like one that just started it.
+- 🔴 **START THEM ONE AT A TIME.** Two identical Lenovos give identical introductions, so the only
+  certain way to know whose install is whose is to push to one tablet, wait for exactly one new row,
+  bind it, then push to the next. A wrong bind puts one rep's movements on another's tablet.
+- **Proof:** `owner-ops.ts tablet-agents`, or
+  `select install_id, device_number, first_seen_at from device_position_agents order by first_seen_at desc`.
+  The hello arrives as soon as the tablet receives the push; a tablet that is off the network gets it
+  at its next check-in.
+
 ### Say which tablet a Phoenix Position install is (and read its trail)
 
 - **Why it needs doing at all.** The rep tablets' own Phoenix Position app enrols ITSELF: it says hello

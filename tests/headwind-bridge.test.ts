@@ -1498,7 +1498,18 @@ async function runUploadTests() {
   // 9 Nov 2026, the Sato Anti-Infective line app). The console copies fileDetails onto the app; so do we.
   assert.deepEqual(
     applicationRegisterBody("/tmp/x.apk.temp", { arch: null, name: "Sato Anti-Infective", pkg: "com.satopharma.antiinfective", version: "1.0.18", versionCode: 19 }, true),
-    { filePath: "/tmp/x.apk.temp", name: "Sato Anti-Infective", pkg: "com.satopharma.antiinfective", showIcon: true, type: "app", version: "1.0.18", versionCode: 19 },
+    {
+      filePath: "/tmp/x.apk.temp",
+      name: "Sato Anti-Infective",
+      pkg: "com.satopharma.antiinfective",
+      // 🔴 EXPLICITLY FALSE, NEVER ABSENT — the register PUT writes the row, so a field left out is one
+      // the next version upload can reset (`runPositionAgentStartTests`).
+      runAfterInstall: false,
+      showIcon: true,
+      type: "app",
+      version: "1.0.18",
+      versionCode: 19,
+    },
     "the package, label and version the server read from the file go into the register",
   );
   assert.equal(

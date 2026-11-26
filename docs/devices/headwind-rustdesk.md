@@ -2293,3 +2293,35 @@ would say hello to PRODUCTION and every build would leave an unbound install beh
 two jobs are `position` (build, sign, prove the certificate) and `position-install-check` (API 26 and 34:
 installs, starts once with no crash, the round is with Android's scheduler, and starting the activity again
 resolves to nothing — the proof the icon is gone).
+
+🔴 **AND HEADWIND ONLY STARTS AN APP IT HAS INSTALLED WHEN THE APPLICATION ROW SAYS SO — `runAfterInstall`,
+WHICH WAS FALSE ON APPLICATION 98, SO THE APK LANDED ON TWO TABLETS AND NOTHING EVER RAN IT.** Measured on
+production 26 Nov 2026: Phoenix Position 1.0.0 was installed on PHX-TAB-0007 (checked in 08:35 UTC) and
+PHX-TAB-0008 (07:45 UTC), both level with their rules, and `device_position_agents` held **0 rows and 0
+positions**. The paragraph above explains why `StartActivity` exists; this is the field that was supposed to
+fire it. The two halves of the cure:
+
+- **For every future install** — `setHeadwindAppRunAfterInstall({ applicationId, runAfterInstall: true },
+  actor)` in `src/lib/devices/headwind/uploads.ts`: it reads the whole application row out of
+  `/rest/private/applications/search` and PUTs it back to `/rest/private/applications/android` with that one
+  field changed (a partial PUT drops what it does not send, exactly as in §8.14). Every upload through
+  `uploadHeadwindApp` now carries the field explicitly, false included, so a new app row never inherits a
+  default nobody chose. 🔴 **Headwind acts on it at INSTALL time only** — turning it on cannot reach a tablet
+  that already holds the APK, because there is no install left to run after.
+- **For a tablet already holding it** — `startPositionAgentOnTablet` in
+  `src/lib/devices/positions/start.ts`, job `start-tablet-agent --tablet <number>` behind
+  `company_devices / approve`, audited as `tablet_position_agent`: Headwind's own `runApp` push, payload
+  `{"pkg":"com.satopharma.phoenixposition"}` **as a string containing JSON**, which the launcher turns into a
+  `startActivity` on that package. An explicit start by another app is what lifts the stopped state, so one
+  push does for a tablet already carrying the app what `runAfterInstall` does for the next one to receive it.
+  It reads the tablet's own app list first and **refuses a tablet that has not got the agent** — the push
+  answers 200 whatever package it names, so without that read a tablet the app never reached would read
+  exactly like one that just started, and the hello that never came would look like a fault in the app. A
+  tablet that reported no apps at all is "could not be read", never "has not got it".
+
+🔴 **START THEM ONE AT A TIME.** Two identical Lenovos give identical introductions — model, Android version,
+agent version — so the only certain way to know whose install is whose is to push to one tablet, wait for
+exactly one new row, bind it (`bind-tablet-agent`), and only then push to the next. A wrong bind puts one
+rep's movements on another rep's tablet, and the bind back-stamps every fix that install already sent.
+Recipe: `docs/owner-operations-recipes.md`, "Make a tablet that already carries Phoenix Position actually
+start it".

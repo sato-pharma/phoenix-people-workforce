@@ -1759,6 +1759,29 @@ export const MODULES = [
     keywords: ["headwind", "mdm", "device register", "tablet", "tablets"],
     tables: ["device"],
   },
+  // 🔴 SPLIT 2026-11-26, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `devices` reached 25
+  // rules and its injected pointer measured 3,987 bytes against the 4,000-byte margin
+  // `tests/module-memory.test.ts` holds — thirteen bytes — the moment the rule that an installed APK is
+  // not an app that has run was written. WHERE A TABLET IS is the clean cut: the position agent, the
+  // trail Phoenix reads and the honesty rules for showing a fix are one family, and none of them is
+  // read while linking an app to a configuration or resetting a screen lock. `devices` KEEPS EVERY GLOB
+  // IT HAD, so `src/lib/devices/positions/start.ts` loads the PAIR and nothing that used to arrive
+  // stops arriving. The file itself was at 29 KB of its 72,000-byte cap — two different limits, and the
+  // one that bit is the small one.
+  {
+    id: "devices-positions",
+    title: "Devices — the tablets' own position agent and the location trail",
+    scope: "Phoenix Position on a rep tablet: how it reaches the tablet and what starts it, its two token doors, the person who says whose install it is, and the trail Phoenix reads back — with the rules for never saying more than the tablet said.",
+    globs: [
+      "src/lib/devices/positions/**",
+      "src/lib/devices/headwind/locations.ts",
+      "app/api/devices/positions/**",
+      "tests/tablet-position-agent.test.ts",
+      "supabase/migrations/*tablet_position*",
+    ],
+    keywords: ["phoenix position", "position agent", "tablet location", "tablet positions", "location history", "runafterinstall"],
+    tables: ["device_position_agents", "device_positions", "phoenix_device_locations"],
+  },
   {
     id: "platform",
     title: "Platform — auth, security, cron, data access and shared UI",
