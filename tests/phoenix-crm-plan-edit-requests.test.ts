@@ -247,7 +247,8 @@ export function runPhoenixCrmPlanEditRequestTests(): void {
 
     // The queue is in Team, for each person whose step it is.
     const team = source("src/components/phoenix-crm/team-tab.tsx");
-    assert.match(team, /current === "edits" && team\.data \?/, "the Team tab has its Plan edits section");
+    // `teamShown` is the team payload narrowed by the Rep picker (owner, 2026-11-27), or the whole of it.
+    assert.match(team, /current === "edits" && teamShown \?/, "the Team tab has its Plan edits section");
     const card = source("src/components/phoenix-crm/plan-edit-card.tsx");
     assert.match(card, /"\/api\/phoenix-crm\/plans\/edit-requests\/decide"/, "the card posts each step");
     assert.doesNotMatch(card, /Acknowledge/, "there is no acknowledge button any more");

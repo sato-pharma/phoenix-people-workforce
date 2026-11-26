@@ -130,6 +130,10 @@ export async function loadReversibleItems(viewer: PhoenixCrmViewer, isTest: bool
         label: `Approved ${requestKindLabel(requestKindOf(row.kind)).toLowerCase()}`,
         subject: String(row.customer_name),
         repName: nameOf(names, textOrNull(row.requested_by_hr_id)),
+        // A list request is read by its seat, as the Team tab's own request cards are: who raised it
+        // may be a manager on the rep's seat, and it is still that rep's list.
+        repHrId: null,
+        seatId: String(row.seat_id),
         territoryName: territoryNameOf(row.seat_id),
         decidedAt: String(row.decided_at),
       }),
@@ -143,6 +147,8 @@ export async function loadReversibleItems(viewer: PhoenixCrmViewer, isTest: bool
         label: "Approved off-plan visit",
         subject: `${textOrNull(customer?.name) ?? "A customer"} · ${formatPhoenixLongDate(String(row.visit_date))}`,
         repName: nameOf(names, textOrNull(row.rep_hr_id)),
+        repHrId: textOrNull(row.rep_hr_id),
+        seatId: String(row.seat_id),
         territoryName: territoryNameOf(row.seat_id),
         decidedAt: String(row.decided_at),
       };
@@ -155,6 +161,8 @@ export async function loadReversibleItems(viewer: PhoenixCrmViewer, isTest: bool
         label: "Reopened week",
         subject: `Week starting ${formatPhoenixLongDate(String(row.week_start))}`,
         repName: nameOf(names, textOrNull(row.rep_hr_id)),
+        repHrId: textOrNull(row.rep_hr_id),
+        seatId: String(row.seat_id),
         territoryName: territoryNameOf(row.seat_id),
         decidedAt: String(row.decided_at),
       }),

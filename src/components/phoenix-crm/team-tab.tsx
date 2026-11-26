@@ -44,6 +44,7 @@ import {
   CrmPanel,
   CrmPill,
   CrmSearchField,
+  CrmSelect,
   CrmShowMore,
   CrmTable,
   crmTdClassName,
@@ -65,6 +66,7 @@ import {
 import { fieldWeekStart, plannableWeeks } from "@/lib/phoenix-crm/calendar";
 import { splitOffPlanDays, type OffPlanDay } from "@/lib/phoenix-crm/offplan-day";
 import { planStatusLine, withPlanDeadline } from "@/lib/phoenix-crm/plan-rules";
+import { filterByTeamRep, teamRepLabel, teamRepsOf, teamRepScope } from "@/lib/phoenix-crm/team-rep-filter";
 import { teamTodayLine, teamTodayTone } from "@/lib/phoenix-crm/team-today";
 import { vendorLeftoverNote, VENDOR_LEFTOVER_TITLE } from "@/lib/phoenix-crm/vendor-leftovers";
 import { teamWaitingLine, teamWeeksToShow } from "@/lib/phoenix-crm/team-waiting";
@@ -345,6 +347,9 @@ export function TeamTab({
   const [openPlan, setOpenPlan] = useState<OpenPlan | null>(null);
   const [openMonth, setOpenMonth] = useState<OpenMonth | null>(null);
   const [notice, setNotice] = useState<TeamNotice | null>(null);
+  // One Rep picker for every section (owner, 2026-11-27: "filter by rep in all tabs"). It lives here,
+  // above the sections, so the rep he chose stays chosen when he moves from one section to the next.
+  const [repHrId, setRepHrId] = useState<string | null>(null);
   const topRef = useRef<HTMLDivElement>(null);
 
   function scrollToTop() {
@@ -411,6 +416,29 @@ export function TeamTab({
   function requestDecided(message: string) {
     showNotice({ tone: "info", title: message });
   }
+
+  // Every rep the tab knows of: the team's territories, and the week's and the month's plans, which can
+  // name a seat the territory list does not (a test plan on the Super Admin's tab).
+  const reps = teamRepsOf([
+    ...(team.data?.territories ?? []).map((row) => row.territory),
+    ...(reviews.data?.rows ?? []).map((row) => row.territory),
+    ...(months.data?.rows ?? []).map((row) => row.territory),
+  ]);
+  const repScope = teamRepScope(reps, repHrId);
+  const ownedByTerritory = (row: { territory: TerritorySummary }) => ({ repHrId: row.territory.repHrId, seatId: row.territory.seatId });
+  const reviewsShown = reviews.data && repScope ? { ...reviews.data, rows: filterByTeamRep(repScope, reviews.data.rows, ownedByTerritory) } : reviews.data;
+  const monthsShown = months.data && repScope ? { ...months.data, rows: filterByTeamRep(repScope, months.data.rows, ownedByTerritory) } : months.data;
+  const teamShown: TeamView | null =
+    team.data && repScope
+      ? {
+          ...team.data,
+          territories: filterByTeamRep(repScope, team.data.territories, ownedByTerritory),
+          // A list request and a plan edit name their seat, never the rep's id: they are his by his seat.
+          requests: filterByTeamRep(repScope, team.data.requests, (request) => ({ seatId: request.seatId })),
+          planEdits: filterByTeamRep(repScope, team.data.planEdits, (edit) => ({ seatId: edit.seatId })),
+          unplannedVisits: filterByTeamRep(repScope, team.data.unplannedVisits, (visit) => ({ repHrId: visit.repHrId, seatId: visit.seatId })),
+        }
+      : team.data;
 
   const fallbackWeeks = plannableWeeks(cairoToday);
   const weeks: ReadonlyArray<{ weekStart: string; waiting: number | null }> =
@@ -499,6 +527,7 @@ export function TeamTab({
   );
   // The Administrator alone (owner, 2026-10-08): the decisions he can still take back, fourteen days.
   const reversible = team.data?.reversible ?? null;
+  const reversibleShown = reversible ? filterByTeamRep(repScope, reversible, (item) => ({ repHrId: item.repHrId, seatId: item.seatId })) : null;
   if (reversible) {
     sectionOptions.push({
       value: "decided",
@@ -603,6 +632,33 @@ export function TeamTab({
             <CrmLoading label="Loading your team" />
           )}
 
+          {current && reps.length > 1 ? (
+            <CrmBlock className="border-t border-slate-100" title="Rep">
+              <CrmField className="sm:max-w-md" htmlFor={`${idPrefix}-team-rep`} label="Show the work of">
+                <CrmSelect
+                  id={`${idPrefix}-team-rep`}
+                  onChange={(event) => {
+                    setRepHrId(event.target.value || null);
+                    setNotice(null);
+                  }}
+                  value={repScope ? repScope.hrId : ""}
+                >
+                  <option value="">{`Every rep (${countText(reps.length)})`}</option>
+                  {reps.map((rep) => (
+                    <option key={rep.hrId} value={rep.hrId}>
+                      {teamRepLabel(rep)}
+                    </option>
+                  ))}
+                </CrmSelect>
+              </CrmField>
+              {repScope ? (
+                <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-500">
+                  Every section below shows this rep alone. The manager sections open on the manager of this rep.
+                </p>
+              ) : null}
+            </CrmBlock>
+          ) : null}
+
           {current ? (
             <CrmBlock className="border-t border-slate-100" title="Look at">
               <CrmChoice
@@ -627,7 +683,7 @@ export function TeamTab({
               selectedWeek={selectedWeek}
               test={test}
               thisWeek={fieldWeekStart(cairoToday)}
-              view={reviews.data}
+              view={reviewsShown}
               viewerHrId={team.data?.viewerHrId ?? null}
               weeks={weeks}
             />
@@ -640,38 +696,45 @@ export function TeamTab({
               onOpen={(row) => openMonthReview(row.territory.seatId, months.data?.monthStart ?? row.plan?.monthStart ?? cairoToday)}
               onRetry={months.reload}
               test={test}
-              view={months.data}
+              view={monthsShown}
             />
           ) : null}
 
-          {current === "edits" && team.data ? (
+          {current === "edits" && teamShown ? (
             <PlanEditsSection
               idPrefix={idPrefix}
               onChanged={requestDecided}
               onOpenWeek={(edit) => openReview(edit.seatId, edit.weekStart)}
-              team={team.data}
+              team={teamShown}
               test={test}
             />
           ) : null}
 
-          {current === "unplanned" && team.data ? (
-            <UnplannedSection idPrefix={idPrefix} onBatchDone={showNotice} onChanged={requestDecided} team={team.data} test={test} />
+          {current === "unplanned" && teamShown ? (
+            <UnplannedSection idPrefix={idPrefix} onBatchDone={showNotice} onChanged={requestDecided} team={teamShown} test={test} />
           ) : null}
 
-          {current === "requests" && team.data ? (
-            <RequestsSection idPrefix={idPrefix} onBatchDone={showNotice} onChanged={requestDecided} team={team.data} test={test} />
+          {current === "requests" && teamShown ? (
+            <RequestsSection idPrefix={idPrefix} onBatchDone={showNotice} onChanged={requestDecided} team={teamShown} test={test} />
           ) : null}
 
-          {current === "decided" && reversible ? <AdministratorReversalsPanel items={reversible} onChanged={requestDecided} /> : null}
+          {current === "decided" && reversibleShown ? <AdministratorReversalsPanel items={reversibleShown} onChanged={requestDecided} /> : null}
 
-          {current === "lists" && team.data ? <ListsSection idPrefix={idPrefix} onOpenList={onOpenList} team={team.data} /> : null}
+          {current === "lists" && teamShown ? <ListsSection idPrefix={idPrefix} onOpenList={onOpenList} team={teamShown} /> : null}
 
-          {current === "own_list" && managerPlans ? <ManagerOwnListSection test={test} /> : null}
+          {/* A manager's week is his, not a rep's: with a rep chosen, the two open on that rep's own manager. */}
+          {current === "own_list" && managerPlans ? (
+            <ManagerOwnListSection key={repScope?.hrId ?? "every-rep"} repManagerHrIds={repScope?.managerHrIds} test={test} />
+          ) : null}
 
-          {current === "manager_plans" && managerPlans ? <ManagerPlansSection test={test} /> : null}
+          {current === "manager_plans" && managerPlans ? (
+            <ManagerPlansSection key={repScope?.hrId ?? "every-rep"} repManagerHrIds={repScope?.managerHrIds} test={test} />
+          ) : null}
 
           {/* What the reps asked of this manager. Answering one refreshes the counts on the page. */}
-          {current === "double" && visitAsks ? <VisitAskInbox cairoToday={cairoToday} onChanged={refresh} place="team" test={test} /> : null}
+          {current === "double" && visitAsks ? (
+            <VisitAskInbox cairoToday={cairoToday} onChanged={refresh} place="team" repScope={repScope} test={test} />
+          ) : null}
         </CrmPanel>
       )}
     </div>

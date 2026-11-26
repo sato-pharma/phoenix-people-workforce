@@ -39,6 +39,9 @@ export type ReversibleItem = {
   /** What it concerns, one line: the customer, or the week. */
   subject: string;
   repName: string;
+  /** Whose it is and where, so the Team tab's Rep picker can narrow the list (owner, 2026-11-27). */
+  repHrId: string | null;
+  seatId: string;
   territoryName: string;
   /** When it was decided (ISO). */
   decidedAt: string;

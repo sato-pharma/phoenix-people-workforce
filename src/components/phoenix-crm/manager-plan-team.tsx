@@ -37,6 +37,7 @@ import {
   type PillTone,
 } from "@/components/phoenix-crm/ui";
 import { MANAGER_PLAN_REASON_MAX, type ManagerOutcome } from "@/lib/phoenix-crm/manager-plan-rules";
+import { teamRepManagerToOpen } from "@/lib/phoenix-crm/team-rep-filter";
 import type { ManagerCustomerView, ManagerOwnListView, ManagerPlanReportView } from "@/lib/phoenix-crm/view-types";
 
 const OUTCOME_TONE: Record<ManagerOutcome, PillTone> = {
@@ -75,7 +76,7 @@ function ManagerPicker({
 
 // ── Manager plans ───────────────────────────────────────────────────────────────────────────────
 
-export function ManagerPlansSection({ test }: { test: boolean }) {
+export function ManagerPlansSection({ repManagerHrIds = [], test }: { repManagerHrIds?: readonly string[]; test: boolean }) {
   const [week, setWeek] = useState<string | null>(null);
   const [manager, setManager] = useState<string | null>(null);
   const report = useCrmGet<ManagerPlanReportView>(crmUrl("/api/phoenix-crm/manager-plans/report", { week, manager, test }), "report");
@@ -83,8 +84,19 @@ export function ManagerPlansSection({ test }: { test: boolean }) {
   // the pickers keep the answer they were chosen FROM while the report below them loads, rather than the
   // whole section blanking to a spinner on every pick.
   const [chosenFrom, setChosenFrom] = useState<ManagerPlanReportView | null>(null);
+  const [repManagerTried, setRepManagerTried] = useState(false);
   const view = report.data;
   const pickers = view ?? chosenFrom;
+  // The Team tab's Rep picker (owner, 2026-11-27): open once on the chosen rep's own manager. The tab
+  // remounts this section when the rep changes, so a new rep is a new first look.
+  if (!repManagerTried && pickers && repManagerHrIds.length > 0) {
+    setRepManagerTried(true);
+    const open = manager === null ? teamRepManagerToOpen(repManagerHrIds, pickers.managers, pickers.manager?.hrId ?? null) : null;
+    if (open) {
+      setChosenFrom(pickers);
+      setManager(open);
+    }
+  }
 
   if (!pickers) {
     return report.error ? <CrmLoadError message={report.error} onRetry={report.reload} /> : <CrmLoading label="Loading the managers' plans" />;
@@ -211,7 +223,7 @@ function ReportVisitPlace({ place }: { place: string }) {
 
 // ── Manager's own list ──────────────────────────────────────────────────────────────────────────
 
-export function ManagerOwnListSection({ test }: { test: boolean }) {
+export function ManagerOwnListSection({ repManagerHrIds = [], test }: { repManagerHrIds?: readonly string[]; test: boolean }) {
   const idPrefix = useId();
   const [manager, setManager] = useState<string | null>(null);
   const list = useCrmGet<ManagerOwnListView>(crmUrl("/api/phoenix-crm/manager-plans/customers", { manager, test }), "list");
@@ -222,7 +234,17 @@ export function ManagerOwnListSection({ test }: { test: boolean }) {
   const [error, setError] = useState<string | null>(null);
   // As the plans section: the picker keeps the list it was chosen from while the next one loads.
   const [chosenFrom, setChosenFrom] = useState<ManagerOwnListView | null>(null);
+  const [repManagerTried, setRepManagerTried] = useState(false);
   const view = list.data;
+  // The Team tab's Rep picker: open once on the chosen rep's own manager, as the plans section does.
+  if (!repManagerTried && view && repManagerHrIds.length > 0) {
+    setRepManagerTried(true);
+    const open = manager === null ? teamRepManagerToOpen(repManagerHrIds, view.managers, view.manager?.hrId ?? null) : null;
+    if (open) {
+      setChosenFrom(view);
+      setManager(open);
+    }
+  }
 
   if (!view) {
     const loading = list.error ? <CrmLoadError message={list.error} onRetry={list.reload} /> : <CrmLoading label="Loading Manager's own list" />;

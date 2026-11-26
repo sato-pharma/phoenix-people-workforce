@@ -2221,6 +2221,7 @@ import { runPhoenixCrmPlanCopyTests } from "./phoenix-crm-plan-copy.test.ts";
 import { runPhoenixCrmStartGuideTests } from "./phoenix-crm-start-guide.test.ts";
 import { runPhoenixCrmPortalIntentTests } from "./phoenix-crm-portal-intent.test.ts";
 import { runPhoenixCrmTeamShorterTests } from "./phoenix-crm-team-shorter.test.ts";
+import { runPhoenixCrmTeamRepFilterTests } from "./phoenix-crm-team-rep-filter.test.ts";
 import { runPhoenixCrmTeamTodayTests } from "./phoenix-crm-team-today.test.ts";
 import { runPhoenixCrmPlanNeverBlockedTests } from "./phoenix-crm-plan-never-blocked.test.ts";
 import { runPhoenixCrmPlanPendingVacationTests } from "./phoenix-crm-plan-pending-vacation.test.ts";
@@ -8689,6 +8690,11 @@ await runTest(
 await runTest(
   "Phoenix CRM Team today (owner, 2026-09-30: easiest, yet controlled): each rep's visit day on his managers' Team tab - the sent plan's progress AM and PM apart and what he logged - read in batches, never per rep, and carrying no integrity signal",
   runPhoenixCrmTeamTodayTests,
+);
+
+await runTest(
+  "Phoenix CRM Team tab Rep picker (owner, 2026-11-27: filter by rep in all tabs): one choice above the sections narrows every section to that rep - by his HR id, or by his seat for the kinds that name only a seat - stays chosen across sections, and opens the manager sections on his own manager",
+  runPhoenixCrmTeamRepFilterTests,
 );
 
 await runTest(
