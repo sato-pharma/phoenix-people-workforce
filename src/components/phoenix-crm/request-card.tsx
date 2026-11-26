@@ -22,7 +22,7 @@ import { useId, useState } from "react";
 import { crmPost, errorCodeOf, messageOf } from "@/components/phoenix-crm/api";
 import { cairoStamp } from "@/components/phoenix-crm/format";
 import { listText } from "@/components/phoenix-crm/labels";
-import { AdministratorDecline, AdministratorStepNote } from "@/components/phoenix-crm/administrator-decline";
+import { AdministratorStepNote } from "@/components/phoenix-crm/administrator-decline";
 import { CrmButton, CrmCard, CrmCheck, CrmChoice, CrmField, CrmNote, CrmPill, crmTextareaClassName, type PillTone } from "@/components/phoenix-crm/ui";
 import { DROP_REASON_MAX, POTENTIAL_GRADES, type PotentialGrade } from "@/lib/phoenix-crm/entry-rules";
 import {
@@ -159,13 +159,20 @@ export function RequestCard({
   const pending = request.status === "pending";
   const decides = pending && canDecide && request.canDecide;
   // The Administrator takes the step the request is AT, in place of whoever holds it (owner, 2026-10-14),
-  // with the same buttons. A request with the rep waits for the rep's comment, so there is nothing to approve.
-  const administratorDecides = pending && canOverride && !decides && !request.withRep && request.stage !== null;
+  // with the same buttons — at ANY step and status (owner, 2026-11-27: "any step any status"): a grade
+  // change (no stage), the district manager's step, SFE's, and a request still with the rep, which he
+  // decides at the step it returns to.
+  const administratorDecides = pending && canOverride && !decides;
   const deciding = decides || administratorDecides;
   // SFE's step of an add or a bring-back waits while the customer's place is on Place checks. The server
   // says so and refuses the approval, so the card shows why and offers only Refuse (System Audit,
-  // 2026-10-31: seventeen presses refused from 25 to 29 Oct). Only an approver ever receives it.
-  const heldOnPlaceChecks = request.placeCheckHold;
+  // 2026-10-31: seventeen presses refused from 25 to 29 Oct). Only an approver ever receives it. The
+  // Administrator, who decides Place checks himself, approves through the hold (owner, 2026-11-27); he
+  // still reads that the place is waiting.
+  const heldOnPlaceChecks = canOverride ? null : request.placeCheckHold;
+  const placeCheckNote = canOverride && request.placeCheckHold
+    ? "Google Maps could not confirm this customer's place, and it is still waiting on Place Checks. You can approve this request now as the Administrator, or decide the place first."
+    : heldOnPlaceChecks;
   // Who grades an add: the district manager at his step, and SFE where the territory has no manager at
   // all (one pure rule, `setsAdmissionGrades`, so the card can never differ from what the server takes).
   const admitting =
@@ -180,7 +187,10 @@ export function RequestCard({
   const noteId = `${fieldId}-note`;
   const replyId = `${fieldId}-reply`;
   // SFE may send the step it holds back to the rep; the rep, whose request it is, answers it (2026-10-12).
-  const canReturn = decides && request.canReturn;
+  // The Administrator may return any step that is not already with the rep (2026-11-27).
+  const canReturn = deciding && !request.withRep && request.canReturn;
+  // Where the rep's comment goes once he answers: the step the request was returned from.
+  const backToName = request.stage === "manager" ? "your district manager" : "SFE";
   const answering = pending && request.withRep && canWithdraw;
 
   async function decide(decision: "approve" | "refuse") {
@@ -264,7 +274,7 @@ export function RequestCard({
     setProblem(null);
     try {
       await crmPost("/api/phoenix-crm/list/requests/answer", { requestId: request.requestId, reply: trimmed, seatId, test }, "request");
-      onChanged(`Comment sent to SFE: ${request.customerName}.`);
+      onChanged(`Comment sent to ${backToName}: ${request.customerName}.`);
     } catch (error) {
       setProblem(messageOf(error));
     } finally {
@@ -349,7 +359,12 @@ export function RequestCard({
 
       {deciding ? (
         <div className="mt-3 grid min-w-0 gap-3 border-t border-slate-100 pt-3">
-          {administratorDecides ? <AdministratorStepNote holder={request.stage === "sfe" ? "SFE" : "the district manager"} /> : null}
+          {administratorDecides ? (
+            <AdministratorStepNote holder={request.stage === "sfe" ? "SFE" : request.stage === "manager" ? "the district manager" : "the territory's reviewing manager"} />
+          ) : null}
+          {administratorDecides && request.withRep ? (
+            <CrmNote tone="info">This request is with the rep for a comment. Your decision takes the step it goes back to.</CrmNote>
+          ) : null}
           {admitting ? (
             <>
               {admittingForVacantSeat ? (
@@ -405,7 +420,7 @@ export function RequestCard({
               value={note}
             />
           </CrmField>
-          {heldOnPlaceChecks ? <CrmNote tone="warn">{heldOnPlaceChecks}</CrmNote> : null}
+          {placeCheckNote ? <CrmNote tone="warn">{placeCheckNote}</CrmNote> : null}
           {request.sameNameOnSeat && request.sameNameOnSeat.length > 0 ? (
             <CrmNote title="The same name is on this territory already" tone="warn">
               {sameNameOnSeatText(request.sameNameOnSeat)}
@@ -434,7 +449,7 @@ export function RequestCard({
 
       {answering ? (
         <div className="mt-3 grid min-w-0 gap-3 border-t border-slate-100 pt-3">
-          <CrmField hint="SFE asked you to explain. Your comment goes straight back to SFE." htmlFor={replyId} label="Your comment">
+          <CrmField hint={`${request.returnedByName ?? "SFE"} asked you to explain. Your comment goes straight back to ${backToName}.`} htmlFor={replyId} label="Your comment">
             <textarea
               className={crmTextareaClassName}
               disabled={busy !== null}
@@ -454,21 +469,6 @@ export function RequestCard({
             </CrmButton>
           </div>
         </div>
-      ) : null}
-
-      {pending && canOverride && !deciding ? (
-        <AdministratorDecline
-          hint="The rep reads it."
-          onSubmit={async (comment) => {
-            await crmPost<DecideResult>(
-              "/api/phoenix-crm/list/requests/decide",
-              { requestId: request.requestId, decision: "refuse", note: comment, stage: request.stage },
-              "request",
-            );
-            onChanged(`Declined by the Administrator: ${request.customerName}.`);
-          }}
-          verb="Decline"
-        />
       ) : null}
 
       {pending && canWithdraw ? (

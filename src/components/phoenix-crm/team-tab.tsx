@@ -1048,7 +1048,8 @@ function MonthsSection({
 
 /**
  * A rep's requests to edit a week he already sent (owner, 2026-10-01): the district manager decides
- * first, then SFE — and SFE's approval opens the week again for him. The Administrator may decline.
+ * first, then SFE — and SFE's approval opens the week again for him. The Administrator approves or refuses
+ * either step in its holder's place (owner, 2026-11-27).
  */
 function PlanEditsSection({
   idPrefix,

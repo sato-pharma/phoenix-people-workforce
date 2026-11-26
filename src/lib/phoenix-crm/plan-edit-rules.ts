@@ -125,7 +125,7 @@ export function nextPlanEditStatus(stage: PlanEditStage): Extract<PlanEditStatus
   return stage === "manager" ? "sfe_pending" : "reopened";
 }
 
-/** What a step may decide. The Administrator's only act is a decline (see `canAdminister`). */
+/** What a step may decide — the same two for its holder and for the Administrator in his place (2026-11-27). */
 export function planEditDecisionsFor(_stage: PlanEditStage): ReadonlyArray<"approve" | "refuse"> {
   return ["approve", "refuse"];
 }
