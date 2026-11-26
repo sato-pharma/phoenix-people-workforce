@@ -17,7 +17,7 @@ import {
   type ExportVisit,
   type RepVisitsExportData,
 } from "../src/lib/rep-visits-export/rules.ts";
-import { addDays, fileNameOf, probationMatches, retryWaitSeconds, reviewPeriodFor, visitsPeriodFor } from "../src/lib/rep-visits-export/desk.ts";
+import { addDays, fileNameOf, probationMatches, repPlaceLabel, retryWaitSeconds, reviewPeriodFor, visitsPeriodFor } from "../src/lib/rep-visits-export/desk.ts";
 import { REVIEW_MAX_PERIOD_MONTHS, resolveReviewPeriod } from "../src/lib/sales/rep-effectiveness/model.ts";
 import { buildRepVisitsWorkbook, EVERY_DAY_HEADERS, everyDayRows, REP_VISITS_WORKBOOK_SHEETS } from "../src/lib/rep-visits-export/workbook.ts";
 import { stripComments } from "./support/comment-strip.ts";
@@ -281,6 +281,9 @@ function theRepDesk(): void {
   assert.equal(retryWaitSeconds("42"), 42);
   assert.equal(retryWaitSeconds(null), 30);
   assert.equal(retryWaitSeconds("900"), 90);
+  assert.equal(repPlaceLabel("Kafr El-Sheikh 1 · Pedia", "Pedia"), "Kafr El-Sheikh 1 · Pedia", "a territory that names its line is not followed by the line again");
+  assert.equal(repPlaceLabel("Kafr El-Sheikh 1", "Pedia"), "Kafr El-Sheikh 1 · Pedia");
+  assert.equal(repPlaceLabel("Pedia Cairo 2", "Pedia"), "Pedia Cairo 2 · Pedia", "only a whole part of the name counts as the line")
   const desk = stripComments(readFileSync("src/components/rep-visits-export/rep-export-desk.tsx", "utf8"));
   assert.match(desk, /probationMatches\(option\.probation, probation\)/, "the probation filter is the shared rule");
   assert.match(desk, /option\.line === line/, "the line filter");
