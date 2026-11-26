@@ -2325,3 +2325,97 @@ exactly one new row, bind it (`bind-tablet-agent`), and only then push to the ne
 rep's movements on another rep's tablet, and the bind back-stamps every fix that install already sent.
 Recipe: `docs/owner-operations-recipes.md`, "Make a tablet that already carries Phoenix Position actually
 start it".
+
+### 8.21 🔴 The version row is the trigger, not the file — and reading the APK's own build (26 Nov 2026)
+
+**What was wrong.** A rep tablet's launcher decides whether to download an app by comparing what is
+installed against the `versionCode` on the Headwind **version row** — never against the bytes. So a row
+that disagrees with its own file is not cosmetic drift: the tablet downloads the file, installs a build
+whose code is not the one the row asks for, finds itself still "wrong" at the next check-in and
+downloads it again, for ever, at the file's full size. Measured on production: app 84's row 10079 asked
+for Telegram **13.1.0 / 72299** while `/files/Telegram.apk`, which it points at, had become
+**13.3.1 / 73469** (81,653,599 bytes) underneath it.
+
+**And the file now moves by itself.** `phoenix-entrypoint.sh` re-fetches a floating app whenever its
+publisher serves a different `content-length` (the same day), so every tablet-server deploy can shift a
+file under its row. That turned "type the numbers out of the APK by hand" into a step nobody is there to
+run — and a typed number is exactly what puts the fleet in the loop.
+
+**What reads it now.** `src/lib/devices/headwind/apk-build.ts` reads the build out of the file itself,
+by ranged requests: the zip's end-of-central-directory from the tail, the central directory, then
+`AndroidManifest.xml` alone — about 100 KB of an 81 MB APK over four reads, never a download. Two traps
+are written into it because each produced a confident wrong answer:
+
+- 🔴 **This server hands back one byte fewer than the range it confirms.** `Range: bytes=0-1023` answers
+  `206` with `Content-Range: bytes 0-1023/81653599` and a body of 1023 bytes. Every read therefore asks
+  for one spare byte and trims, and the file's very last byte cannot be had at all — which is why the
+  end-of-central-directory is searched for rather than assumed to sit flush against the end.
+- 🔴 **`attributeStart` counts from the attribute block, not from the chunk.** It is 16 bytes into the
+  node, past the chunk header, the line number and the comment. Reading it from the chunk start instead
+  returns a `<manifest>` whose every attribute is undefined — which reads exactly like an APK that
+  declares no version, so the caller "finds" nothing to write and nothing is reported. Pinned by a
+  hand-built binary manifest in `tests/headwind-bridge.test.ts` (`runApkBuildTests`).
+
+**The job.** `owner-ops.ts match-app-version --app <number>` (`matchHeadwindVersionsToFiles`,
+`src/lib/devices/headwind/versions.ts`): it refuses when the file is a different package — writing that
+file's numbers there would hand the fleet another app under this app's name — PUTs the row back **whole,
+with its `id`** (a partial body is how a second version row appears beside the old one, §8.15), moves the
+app row's own copy of the pair, and then **reads the row back**, because this endpoint has answered OK
+while storing nothing before (§8.14). A dry run's writes are answered by the owner-ops fence and never
+sent, so it is told not to prove and reports the proof as NOT DONE rather than refusing over a change
+nobody made.
+
+### 8.22 🔴 Protecting a rep tablet — Android's locks, the two that must never go on, and the one that cannot exist (26 Nov 2026)
+
+Owner, 26 Nov 2026: *"want to make sure he can't turn the location off. He can't turn the mobile network
+or the Wi-Fi off. He can't reset the tablet. He can't be developer mode. He can't install apps … but
+without irritating the usage."*
+
+**A configuration's `restrictions` string is handed straight to Android.** The launcher splits it on
+commas and calls `DevicePolicyManager.addUserRestriction(admin, token)` for each piece
+(`Utils.lockUserRestrictions`, upstream `h-mdm/hmdm-android`), so the vocabulary is Android's own
+`UserManager.DISALLOW_*` **values** — not a Headwind list — and **a token Android does not know is
+silently ignored**: the lock reads as applied on the server and holds nothing on the tablet. Every token
+in `src/lib/devices/headwind/restrictions.ts` was read out of AOSP's `UserManager.java`
+(android13-release) with its own rule about who may set it; all of them are device-owner-settable, which
+the rep tablets' agent is. Each carries what it **costs** a rep, and that is what gets printed before
+anything is sent — the owner's instruction was to protect the tablet without irritating the usage.
+
+| Lock | Stops | Costs the rep |
+| --- | --- | --- |
+| `no_factory_reset`, `no_safe_boot` | Resetting; booting where the agent would not run | Nothing a rep does |
+| `no_debugging_features` | Developer mode | Nothing a rep does |
+| `no_add_user` | A second user or a guest session | Nothing a rep does |
+| `no_config_location` | Turning location off | The switch is greyed out; Phoenix can still turn it on |
+| `no_uninstall_apps` | Uninstalling anything | Nothing a rep does |
+| `no_change_wifi_state` | Turning Wi-Fi off | Cannot switch Wi-Fi off; joining and switching networks still works |
+| `no_airplane_mode` | Aeroplane mode — the one tap that kills Wi-Fi and data together | Gone from quick settings; on a flight the tablet goes off instead |
+| `no_config_mobile_networks` | APN, network type, carrier choice | Nothing a rep does |
+| `no_network_reset` | The Settings button that wipes every saved network and the APN | Nothing a rep does |
+| `no_install_unknown_sources` | Side-loading an APK | Everything Phoenix sends still installs — the agent installs as device owner |
+| `no_control_apps` | Force-stopping, disabling or clearing any app's data | Nothing a rep needs; it is what stops the agent being stopped by hand |
+
+🔴 **The two that must never go on, both of which read like exactly what was asked for.**
+`no_install_apps` — AOSP: *"This user restriction also prevents device owners and profile owners
+installing apps"* — would stop every app, launcher and Phoenix update ever reaching the fleet again;
+`no_install_unknown_sources` is the one that was wanted. `no_config_wifi` stops the rep joining or
+switching a network at all, not merely turning Wi-Fi off; `no_change_wifi_state` is the one that was
+wanted. `no_share_location` would hold location sharing off, the opposite of what the position agent
+needs. All three are refused **by name, with the reason**, rather than left to be discovered on a fleet
+that has gone quiet.
+
+🔴 **And the one no Android lock can do: the mobile-data switch.** AOSP has no `DISALLOW_*` for it, and
+`no_config_mobile_networks` covers only the network's settings — so a rep can still turn mobile data off
+in quick settings. Only a launcher that turns it back on closes that, which is a launcher build
+(`Omar-3-xx/hmdm-android`, `patch-launcher.yml`), not a rules change. Saying "he cannot turn the network
+off" while only aeroplane mode and Wi-Fi are held is the half-truth that gets a tablet handed out
+believed sealed.
+
+**The job.** `owner-ops.ts lock-rep-tablets` (`lockRepTablets` → `setHeadwindRestrictions`), behind the
+same `company_devices / approve` check the other tablet jobs use, audited per set with the locks only —
+never the configuration object, which carries the plaintext device password. It goes on **all three** rep
+sets of rules (3, 4, 5) or none (`applyToEachRules`), it only ever **adds**, and it reads the locks back
+off the server and refuses if one did not store: a lock believed to be on is worse than no lock, because
+it is what gets reported to the owner as "he cannot turn it off". The first four are also in the fork's
+`Utils.PROTECTIVE_RESTRICTIONS`, which the launcher keeps locked for the whole sync and never lifts —
+see `.claude/rules/devices.md` before taking any of them off the rules.

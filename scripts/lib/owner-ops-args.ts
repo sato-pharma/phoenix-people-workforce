@@ -12,11 +12,12 @@
 // refused rather than "last one wins".
 // ---------------------------------------------------------------------------
 
-export const OWNER_OPS_JOBS = ["link-doctor", "merge-venues", "merge-customers", "remove-customer-pharmacy", "pin-pharmacy", "load-crm-list", "seat-in-building", "tablet-agents", "start-tablet-agent", "bind-tablet-agent", "revoke-tablet-agent"] as const;
+export const OWNER_OPS_JOBS = ["link-doctor", "merge-venues", "merge-customers", "remove-customer-pharmacy", "pin-pharmacy", "load-crm-list", "seat-in-building", "tablet-agents", "start-tablet-agent", "bind-tablet-agent", "revoke-tablet-agent", "match-app-version", "lock-rep-tablets"] as const;
 export type OwnerOpsJob = (typeof OWNER_OPS_JOBS)[number];
 
 /** Every flag the runner knows, for refuseUnknownFlags. */
 export const OWNER_OPS_FLAGS = [
+  "--app",
   "--apply",
   "--body",
   "--building",
@@ -49,6 +50,8 @@ const VALUE_FLAGS_BY_JOB: Record<OwnerOpsJob, readonly string[]> = {
   "start-tablet-agent": ["--tablet"],
   "bind-tablet-agent": ["--install", "--tablet"],
   "revoke-tablet-agent": ["--install", "--reason"],
+  "match-app-version": ["--app"],
+  "lock-rep-tablets": [],
 };
 
 /** A tablet's number as Headwind holds it — PHX-TAB-0008. Never a database row id. */
@@ -79,7 +82,9 @@ export type OwnerOpsPlan =
   | { job: "tablet-agents"; apply: boolean }
   | { job: "start-tablet-agent"; apply: boolean; deviceNumber: string }
   | { job: "bind-tablet-agent"; apply: boolean; installId: string; deviceNumber: string }
-  | { job: "revoke-tablet-agent"; apply: boolean; installId: string; reason: string };
+  | { job: "revoke-tablet-agent"; apply: boolean; installId: string; reason: string }
+  | { job: "match-app-version"; apply: boolean; applicationId: number }
+  | { job: "lock-rep-tablets"; apply: boolean };
 
 export type OwnerOpsParse = { ok: true; plan: OwnerOpsPlan } | { ok: false; error: string };
 
@@ -121,6 +126,19 @@ listed and none is sent. Only --apply writes. Every run ends with a proof read.
       knew whose they were are stamped with that tablet too. One live install per tablet.
   revoke-tablet-agent --install <install id> --reason "<why it comes out of service>"
       Take an install out of service: refused from its next call, and the tablet is free to re-bind.
+  match-app-version --app <app number>
+      Put an app's Headwind version row level with the APK it points at, reading the real
+      versionCode/versionName out of the file itself. The tablet server refreshes these files on its
+      own now, and a row that disagrees with its file makes every tablet re-download it hourly for
+      ever. Reads the file by byte range — never the whole 80 MB.
+  lock-rep-tablets
+      Put the rep tablets' lock set on ALL THREE rep sets of rules (Android enforces them itself):
+      no factory reset, no safe boot, no developer mode, no second user, location cannot be turned
+      off, nothing can be uninstalled, Wi-Fi cannot be turned off, no aeroplane mode, no mobile
+      network settings, no network reset, no side-loading, and Settings > Apps cannot force-stop or
+      clear an app. It never sets no_install_apps (Android applies that to the device owner too, so
+      nothing would ever install again) or no_config_wifi (the rep could not join a network). The
+      mobile-data switch itself cannot be held by any Android lock.
 
   --apply      write for real (refused from a tree behind origin/main)
   --employee   whose draft workspace the proof read opens; by default every employee holding a
@@ -182,8 +200,17 @@ export function parseOwnerOpsArgs(argv: readonly string[]): OwnerOpsParse {
     return UUID.test(value) ? value.toLowerCase() : { error: `${name} must be ${job === "merge-customers" || name === "--customer" ? "a customer" : "a pharmacy"} id (a uuid), got "${value}"` };
   };
 
-  if (job === "tablet-agents") {
+  if (job === "tablet-agents" || job === "lock-rep-tablets") {
     return { ok: true, plan: { job, apply } };
+  }
+
+  if (job === "match-app-version") {
+    const raw = need("--app");
+    if (typeof raw !== "string") return { ok: false, ...raw };
+    // The app's number on the tablet server, never a uuid: a non-number would read as app NaN and
+    // the runner would report "no app numbered NaN" for what is really a typo here.
+    if (!/^[0-9]{1,9}$/.test(raw)) return { ok: false, error: `--app must be the app's number on the tablet server, got "${raw}"` };
+    return { ok: true, plan: { job, apply, applicationId: Number(raw) } };
   }
 
   if (job === "start-tablet-agent") {
