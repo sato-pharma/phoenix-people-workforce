@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { adminPanelClassName, adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
+import { adminPanelClassName, adminPanelDepthClassName, adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
 import { FormField } from "@/components/ui/form-kit";
 import {
   phxButtonAccentClassName,
@@ -87,7 +87,7 @@ export function ReceiptBooksDesk({ register }: { register: DirectOrderReceiptReg
 
   return (
     <div className="space-y-5">
-      {message ? <p className="border border-slate-300 bg-white px-3 py-2 text-phx-sm font-bold text-slate-800">{message}</p> : null}
+      {message ? <p className={`border border-slate-300 bg-white px-3 py-2 text-phx-sm font-bold text-slate-800 ${adminPanelDepthClassName}`}>{message}</p> : null}
       {error ? <p className={phxFormErrorClassName}>{error}</p> : null}
 
       <Panel title={`Approved with no receipt — ${overdue.length} past ${register.overdueDays} days, ${waiting.length} within`}>

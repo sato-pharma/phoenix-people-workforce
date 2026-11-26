@@ -1,4 +1,4 @@
-import type { AccessContext } from "@/lib/auth/permissions";
+import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { canManageDirectOrderReceiptBooks } from "@/lib/direct-orders/finance-authority";
 import { DIRECT_ORDER_INVOICE_BUCKET, parseDirectOrderInvoiceDataUrl } from "@/lib/direct-orders/invoice-evidence";
@@ -228,6 +228,9 @@ export async function recordDirectOrderReceipt(
   access: AccessContext,
   input: { requestId: string; serial: unknown; code: unknown; photoDataUrl: unknown },
 ): Promise<{ message: string; serialLabel: string }> {
+  // Signed out or a role with no direct orders is refused before the order is looked up, so the
+  // answer never says whether an order id exists.
+  await assertPermission(access, "direct_orders", "read");
   const order = await loadOrder(input.requestId);
   if (!order) throw notFoundError("This direct order was not found.");
   if (!isRequester(access, order) && !canManageDirectOrderReceiptBooks(access)) {

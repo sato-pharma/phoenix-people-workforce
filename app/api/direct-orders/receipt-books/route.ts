@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { canManageDirectOrderReceiptBooks } from "@/lib/direct-orders/finance-authority";
 import {
   closeDirectOrderReceiptBook,
   issueDirectOrderReceiptBook,
   voidDirectOrderReceipt,
 } from "@/lib/direct-orders/receipt-books";
-import { toApiError, validationError } from "@/lib/http/api-errors";
+import { forbiddenError, toApiError, validationError } from "@/lib/http/api-errors";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
@@ -21,6 +22,8 @@ export async function POST(request: Request) {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
     const access = await resolveAccessContext(request);
+    // Refused before the body is read: signed out, or anyone who is not Finance or the Administrator.
+    if (!canManageDirectOrderReceiptBooks(access)) throw forbiddenError("Only Finance manages the receipt books.");
     const body = (await request.json().catch(() => ({}))) as {
       action?: unknown;
       bookNo?: unknown;
