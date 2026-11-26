@@ -13,9 +13,11 @@ import { findAccessRegistryEntry } from "../src/lib/security/access-registry.ts"
 
 const VENDOR_SQL = readFileSync("supabase/migrations/20261103090000_marketing_vendor_control.sql", "utf8");
 const MERGE_TABLE_SQL = readFileSync("supabase/migrations/20261103090100_marketing_customer_merge.sql", "utf8");
+/** The two helpers the merge calls (the code key and "the same pharmacy"), where they are defined. */
+const HELPERS_SQL = readFileSync("supabase/migrations/20261126013954_marketing_customer_merge_folds_same_code.sql", "utf8");
 // The function as it stands now; the newest file that replaces it.
-const MERGE_SQL = readFileSync("supabase/migrations/20261126013954_marketing_customer_merge_folds_same_code.sql", "utf8");
-/** The merge function itself, without the two helpers defined above it in the same file. */
+const MERGE_SQL = readFileSync("supabase/migrations/20261126033843_marketing_customer_merge_revives_one_copy.sql", "utf8");
+/** The merge function itself. */
 const MERGE_FUNCTION_SQL = MERGE_SQL.slice(MERGE_SQL.indexOf("create or replace function public.phx_merge_marketing_customers("));
 
 function customer(overrides: Partial<MarketingCustomerMergeOption> & { id: string }): MarketingCustomerMergeOption {
@@ -113,18 +115,33 @@ export function runMarketingVendorAndCustomerMergeTests() {
   // its own duplicate venues with their own code rows, so matching on the code row id alone moved them
   // and the survivor listed the shop twice.
   assert.ok(
-    MERGE_SQL.includes("regexp_replace(lower(btrim(regexp_replace(coalesce(p_code, ''), '\\s+', ' ', 'g'))), '^0+(?=.)', '')"),
+    HELPERS_SQL.includes("regexp_replace(lower(btrim(regexp_replace(coalesce(p_code, ''), '\\s+', ' ', 'g'))), '^0+(?=.)', '')"),
     "the code key is distributorCodeMatchKey's: spacing collapsed, trimmed, lower case, leading zeros dropped",
   );
   assert.equal(distributorCodeMatchKey(19, "0001552116"), distributorCodeMatchKey(19, " 1552116 "), "the app's key folds the padded code a distributor prints with the one a rep types");
   assert.notEqual(distributorCodeMatchKey(19, "1552116"), distributorCodeMatchKey(17, "1552116"), "the same digits at another distributor are another shop");
-  assert.match(MERGE_SQL, /\),\s+''\s+\),\s+'0'\s+\);/, "a blank or all-zero code never matches by key: those were invented to satisfy a form");
-  assert.match(MERGE_SQL, /ac\.distributor_id = bc\.distributor_id\s+and public\.phx_marketing_code_match_key\(/, "the key match is within one distributor");
+  assert.match(HELPERS_SQL, /\),\s+''\s+\),\s+'0'\s+\);/, "a blank or all-zero code never matches by key: those were invented to satisfy a form");
+  assert.match(HELPERS_SQL, /ac\.distributor_id = bc\.distributor_id\s+and public\.phx_marketing_code_match_key\(/, "the key match is within one distributor");
   assert.equal(
     (MERGE_FUNCTION_SQL.match(/public\.phx_marketing_links_same_pharmacy\(/g) ?? []).length,
-    5,
-    "one test of 'the same pharmacy' at every place the merge compares links: revive, carry, move (twice) and the record",
+    7,
+    "one test of 'the same pharmacy' at every place the merge compares links: revive (three times), carry, move (twice) and the record",
   );
+  // A switched-off survivor copy comes back on only when the survivor holds that pharmacy live nowhere,
+  // and only one copy per pharmacy (26 Nov 2026: merging د.سيد البلاصي into سيد البلاصي would have
+  // switched back on the ريهام duplicate folded off that night, listing ريهام twice again).
+  assert.match(
+    MERGE_FUNCTION_SQL,
+    /and not exists \(\s+select 1 from marketing_customer_pharmacies live\s+where live\.customer_id = p_survivor_id\s+and live\.active\s+and public\.phx_marketing_links_same_pharmacy\(live\.id, kept\.id\)/,
+    "never revived when the survivor already holds that pharmacy live",
+  );
+  assert.match(
+    MERGE_FUNCTION_SQL,
+    /chosen as \(\s+select me\.id\s+from ranked me\s+where not exists \(\s+select 1 from ranked earlier\s+where earlier\.ord < me\.ord/,
+    "at most ONE switched-off copy per pharmacy comes back on",
+  );
+  assert.match(MERGE_FUNCTION_SQL, /order by code_live desc, standing desc, created_at, id/, "the copy revived is on a live code row first, then the highest standing, then the oldest");
+  assert.match(MERGE_FUNCTION_SQL, /from chosen\s+where kept\.id = chosen\.id/, "only the chosen copies are switched on");
   assert.doesNotMatch(MERGE_FUNCTION_SQL, /kept\.distributor_code_id = (?:gone|link)\.distributor_code_id/, "no comparison of code row ids alone is left in the merge");
   assert.match(MERGE_FUNCTION_SQL, /select distinct on \(kept\.id\)/, "several retired copies of one pharmacy carry the best standing, never an arbitrary one");
   assert.match(
@@ -135,8 +152,8 @@ export function runMarketingVendorAndCustomerMergeTests() {
   assert.match(MERGE_FUNCTION_SQL, /order by\s+link\.active desc,\s+coalesce\(array_position\(/, "the copy that moves is the live one, then the highest standing");
   assert.match(MERGE_FUNCTION_SQL, /'linksFoldedByCode', to_jsonb\(v_links_folded_by_code\)/, "the record lists every link folded under another code row, so a wrong fold can be undone");
   assert.match(MERGE_FUNCTION_SQL, /kept\.distributor_code_id is distinct from gone\.distributor_code_id/);
-  assert.match(MERGE_SQL, /revoke all on function public\.phx_marketing_code_match_key\(text\) from public, anon, authenticated/, "the key is server-only");
-  assert.match(MERGE_SQL, /revoke all on function public\.phx_marketing_links_same_pharmacy\(uuid, uuid\) from public, anon, authenticated/, "the test is server-only");
+  assert.match(HELPERS_SQL, /revoke all on function public\.phx_marketing_code_match_key\(text\) from public, anon, authenticated/, "the key is server-only");
+  assert.match(HELPERS_SQL, /revoke all on function public\.phx_marketing_links_same_pharmacy\(uuid, uuid\) from public, anon, authenticated/, "the test is server-only");
   assert.match(readFileSync("src/components/employee-portal/marketing-customer-merge-panel.tsx", "utf8"), /outcome\.linksFoldedByCode/, "the screen says how many were folded");
 
   // ─── The service, the route and the screen ─────────────────────────
