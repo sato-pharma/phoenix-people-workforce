@@ -122,13 +122,20 @@ export function runPhoenixCrmBulkDropTests(): void {
   }
 
   // ── E · The Team tab wires it to the one decide route, one at a time ────────────────────────────
+  // Since 2026-11-27 the drop bar is the bulk RESPOND bar (tests/phoenix-crm-bulk-respond.test.ts): a drop
+  // is one of the requests it answers, and its repeat-ask and refusal wording are still these.
   {
     const team = source("src/components/phoenix-crm/team-tab.tsx");
-    assert.match(team, /const droppable = bulkDropTargets\(requests\);/, "the tab ticks only what the rule allows");
-    assert.match(team, /const chosen = pruneSelection\(selected, requests\);/, "and acts on the selection after pruning it");
-    assert.match(team, /for \(const request of batch\) \{[^]*?try \{\s*const result = await crmPost<\{ final: boolean \}>\("\/api\/phoenix-crm\/list\/requests\/decide", bulkDropDecisionBody\(request\)/, "one decision per request through the one decide route, in a loop that awaits each");
+    assert.match(team, /const targets = bulkRespondTargets\(requests\);/, "the tab ticks only what the rule allows");
+    assert.match(team, /const chosen = pruneRespondSelection\(selected, requests\);/, "and acts on the selection after pruning it");
+    assert.match(
+      team,
+      /for \(const request of batch\) \{[^]*?repeatOfDropped\(request, dropped\)[^]*?"\/api\/phoenix-crm\/list\/requests\/decide",\s*bulkRespondDecisionBody\(request, response, note\)/,
+      "one decision per request through the one decide route, in a loop that awaits each, a repeat ask skipped after its drop",
+    );
+    assert.match(team, /why: bulkDropFailureText\(errorCodeOf\(error\), messageOf\(error\)\)/, "a refusal is named in the drop's own words");
     assert.doesNotMatch(team, /Promise\.all\(batch|Promise\.all\(chosen/, "never all at once");
-    assert.match(team, /Select all \$\{countText\(droppable\.length\)\} drop requests/, "a select-all above the cards");
+    assert.match(team, /Select all \$\{countText\(targets\.length\)\} requests you can answer/, "a select-all above the cards");
     assert.match(team, /confirming \? \(/, "behind a confirm");
     assert.doesNotMatch(team, /rounded-(?!none)/, "square corners");
 

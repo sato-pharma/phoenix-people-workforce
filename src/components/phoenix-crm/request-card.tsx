@@ -140,7 +140,7 @@ export function RequestCard({
   onChanged: (message: string) => void;
   request: ListRequest;
   seatId: string;
-  /** The Team tab's bulk drop: a tick box on a drop waiting at the viewer's step. Absent everywhere else. */
+  /** The Team tab's bulk respond: a tick box on a request the viewer can answer. Absent everywhere else. */
   selection?: { checked: boolean; disabled: boolean; onChange: (next: boolean) => void };
   /** Shown on the Team tab, where requests from several territories sit together. */
   territoryName?: string | null;
@@ -312,7 +312,7 @@ export function RequestCard({
       <div className="grid min-w-0 gap-1.5 text-sm leading-6">
         {selection ? (
           <CrmCheck checked={selection.checked} disabled={selection.disabled} onChange={selection.onChange}>
-            Select to drop with the others
+            Select to answer with the others
           </CrmCheck>
         ) : null}
         <p className="break-words text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">{request.kindLabel}</p>

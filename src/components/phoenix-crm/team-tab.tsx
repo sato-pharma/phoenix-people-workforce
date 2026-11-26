@@ -44,27 +44,33 @@ import {
   CrmPanel,
   CrmPill,
   CrmSearchField,
+  CrmSelect,
   CrmShowMore,
   CrmTable,
   crmTdClassName,
+  crmTextareaClassName,
   crmThClassName,
   type CrmChoiceOption,
   type NoteTone,
   type PillTone,
 } from "@/components/phoenix-crm/ui";
+import { bulkDropFailureText, repeatOfDropped } from "@/lib/phoenix-crm/bulk-drop";
 import {
-  BULK_DROP_FROM,
-  bulkDropDecisionBody,
-  bulkDropFailureText,
-  bulkDropNotice,
-  bulkDropTargets,
-  repeatOfDropped,
-  pruneSelection,
-  type BulkDropOutcome,
-} from "@/lib/phoenix-crm/bulk-drop";
+  BULK_RESPOND_FROM,
+  bulkRespondDecisionBody,
+  bulkRespondNoteProblem,
+  bulkRespondNotice,
+  bulkRespondSkip,
+  bulkRespondTargets,
+  pruneRespondSelection,
+  type BulkRespondOutcome,
+  type BulkResponse,
+} from "@/lib/phoenix-crm/bulk-respond";
+import { RETURN_NOTE_MAX } from "@/lib/phoenix-crm/list-request-rules";
 import { fieldWeekStart, plannableWeeks } from "@/lib/phoenix-crm/calendar";
 import { splitOffPlanDays, type OffPlanDay } from "@/lib/phoenix-crm/offplan-day";
 import { planStatusLine, withPlanDeadline } from "@/lib/phoenix-crm/plan-rules";
+import { filterByTeamRep, teamCountsOf, teamRepLabel, teamRepsOf, teamRepScope, teamWeeksForRep } from "@/lib/phoenix-crm/team-rep-filter";
 import { teamTodayLine, teamTodayTone } from "@/lib/phoenix-crm/team-today";
 import { vendorLeftoverNote, VENDOR_LEFTOVER_TITLE } from "@/lib/phoenix-crm/vendor-leftovers";
 import { teamWaitingLine, teamWeeksToShow } from "@/lib/phoenix-crm/team-waiting";
@@ -345,6 +351,9 @@ export function TeamTab({
   const [openPlan, setOpenPlan] = useState<OpenPlan | null>(null);
   const [openMonth, setOpenMonth] = useState<OpenMonth | null>(null);
   const [notice, setNotice] = useState<TeamNotice | null>(null);
+  // One Rep picker for every section (owner, 2026-11-27: "filter by rep in all tabs"). It lives here,
+  // above the sections, so the rep he chose stays chosen when he moves from one section to the next.
+  const [repHrId, setRepHrId] = useState<string | null>(null);
   const topRef = useRef<HTMLDivElement>(null);
 
   function scrollToTop() {
@@ -402,22 +411,58 @@ export function TeamTab({
     setMonth(next.slice(0, 7));
   }
 
+  // 🔴 A decision never moves the page (owner, 2026-11-27: "when i press approve the page jumps to the top
+  // which is very irritating in bulks"). The notice is shown where it always is, the page stays where it
+  // is being worked, and the open section stays chosen: with none chosen by hand, the tab picks its
+  // opening section from the counts, so deciding the last item of one kind used to jump to another.
+  // Only opening and closing a plan or a month scrolls, because the screen itself changes then.
   function showNotice(next: TeamNotice) {
+    if (current) setSection(current);
     setNotice(next);
     refresh();
-    scrollToTop();
+  }
+
+  function refreshInPlace() {
+    if (current) setSection(current);
+    refresh();
   }
 
   function requestDecided(message: string) {
     showNotice({ tone: "info", title: message });
   }
 
+  // Every rep the tab knows of: the team's territories, and the week's and the month's plans, which can
+  // name a seat the territory list does not (a test plan on the Super Admin's tab).
+  const reps = teamRepsOf([
+    ...(team.data?.territories ?? []).map((row) => row.territory),
+    ...(reviews.data?.rows ?? []).map((row) => row.territory),
+    ...(months.data?.rows ?? []).map((row) => row.territory),
+  ]);
+  const repScope = teamRepScope(reps, repHrId);
+  const ownedByTerritory = (row: { territory: TerritorySummary }) => ({ repHrId: row.territory.repHrId, seatId: row.territory.seatId });
+  const reviewsShown = reviews.data && repScope ? { ...reviews.data, rows: filterByTeamRep(repScope, reviews.data.rows, ownedByTerritory) } : reviews.data;
+  const monthsShown = months.data && repScope ? { ...months.data, rows: filterByTeamRep(repScope, months.data.rows, ownedByTerritory) } : months.data;
+  const teamShown: TeamView | null =
+    team.data && repScope
+      ? {
+          ...team.data,
+          territories: filterByTeamRep(repScope, team.data.territories, ownedByTerritory),
+          // A list request and a plan edit name their seat, never the rep's id: they are his by his seat.
+          requests: filterByTeamRep(repScope, team.data.requests, (request) => ({ seatId: request.seatId })),
+          planEdits: filterByTeamRep(repScope, team.data.planEdits, (edit) => ({ seatId: edit.seatId })),
+          unplannedVisits: filterByTeamRep(repScope, team.data.unplannedVisits, (visit) => ({ repHrId: visit.repHrId, seatId: visit.seatId })),
+        }
+      : team.data;
+
   const fallbackWeeks = plannableWeeks(cairoToday);
+  // Every count on the tab follows the Rep picker (owner, 2026-11-27: "rep has 2, make the request count
+  // 2"): the week strip, the "Look at" tiles and the sentence at the top all read the narrowed rows.
+  const repWeeks = reviews.data ? teamWeeksForRep(repScope, reviews.data.weeks) : null;
   const weeks: ReadonlyArray<{ weekStart: string; waiting: number | null }> =
-    reviews.data?.weeks ?? fallbackWeeks.map((week) => ({ weekStart: week, waiting: null }));
+    repWeeks ?? fallbackWeeks.map((week) => ({ weekStart: week, waiting: null }));
   const selectedWeek = reviews.data?.weekStart ?? weekStart ?? fallbackWeeks[0];
-  const plansWaiting = reviews.data ? reviews.data.weeks.reduce((sum, week) => sum + week.waiting, 0) : null;
-  const summary = team.data?.summary ?? null;
+  const plansWaiting = repWeeks ? repWeeks.reduce((sum, week) => sum + week.waiting, 0) : null;
+  const summary = team.data && teamShown ? (repScope ? { ...team.data.summary, ...teamCountsOf(teamShown) } : team.data.summary) : null;
   const settled = (team.data !== null || !team.loading) && (reviews.data !== null || !reviews.loading);
   const current: TeamSection | null =
     section ??
@@ -435,7 +480,7 @@ export function TeamTab({
                 : "plans"
       : null);
 
-  const monthsWaiting = months.data ? months.data.rows.filter((row) => row.canApprove).length : null;
+  const monthsWaiting = monthsShown ? monthsShown.rows.filter((row) => row.canApprove).length : null;
   // A rep sends a week at a time since 2026-10-01 (owner), so a month only reaches a manager from
   // before that day. The section stays while one is still there to read, and leaves once none is.
   const anyMonthSent = months.data ? months.data.rows.some((row) => row.plan !== null) : false;
@@ -450,7 +495,9 @@ export function TeamTab({
           unplanned: summary.unplannedWaitingForYou,
           requests: summary.waitingForYou,
           // A viewer who answers no asks is not told "nothing": the kind is left out of the sentence.
-          visitAsks: team.data?.visitAsks?.canAnswer ? summary.visitAsksWaitingForYou : null,
+          // The asks are read by their own inbox, so with a rep chosen their count is left out of the
+          // sentence rather than told for the whole team.
+          visitAsks: team.data?.visitAsks?.canAnswer && !repScope ? summary.visitAsksWaitingForYou : null,
         },
         {
           territories: summary.territories,
@@ -499,11 +546,12 @@ export function TeamTab({
   );
   // The Administrator alone (owner, 2026-10-08): the decisions he can still take back, fourteen days.
   const reversible = team.data?.reversible ?? null;
+  const reversibleShown = reversible ? filterByTeamRep(repScope, reversible, (item) => ({ repHrId: item.repHrId, seatId: item.seatId })) : null;
   if (reversible) {
     sectionOptions.push({
       value: "decided",
       label: "Decided · reverse",
-      note: reversible.length > 0 ? `${countText(reversible.length)} you can take back` : undefined,
+      note: reversibleShown && reversibleShown.length > 0 ? `${countText(reversibleShown.length)} you can take back` : undefined,
     });
   }
   if (!test) {
@@ -542,7 +590,7 @@ export function TeamTab({
     sectionOptions.push({
       value: "double",
       label: "Double visits",
-      note: asksWaiting > 0 ? `${countText(asksWaiting)} asked of you` : "Asked by your reps",
+      note: asksWaiting > 0 && !repScope ? `${countText(asksWaiting)} asked of you` : "Asked by your reps",
     });
   }
 
@@ -616,6 +664,48 @@ export function TeamTab({
             </CrmBlock>
           ) : null}
 
+          {/* The rep is a field of its own, apart from each section's search (owner, 2026-11-27: "make the rep
+              separate field and filter and combo box"). It sits under "Look at" so it reads as the filter of
+              whichever section is open, and the choice lives in the tab, so it stays when the section changes.
+              CrmSelect is the combo box he types into on the admin account. */}
+          {current && reps.length > 1 ? (
+            <CrmBlock
+              actions={
+                repScope ? (
+                  <CrmButton onClick={() => setRepHrId(null)} size="sm" variant="ghost">
+                    Every rep
+                  </CrmButton>
+                ) : undefined
+              }
+              className="border-t border-slate-100"
+              title="Filter by rep"
+            >
+              <CrmField className="sm:max-w-md" htmlFor={`${idPrefix}-team-rep`} label="Rep">
+                <CrmSelect
+                  id={`${idPrefix}-team-rep`}
+                  onChange={(event) => {
+                    setSection(current);
+                    setRepHrId(event.target.value || null);
+                    setNotice(null);
+                  }}
+                  value={repScope ? repScope.hrId : ""}
+                >
+                  <option value="">{`Every rep (${countText(reps.length)})`}</option>
+                  {reps.map((rep) => (
+                    <option key={rep.hrId} value={rep.hrId}>
+                      {teamRepLabel(rep)}
+                    </option>
+                  ))}
+                </CrmSelect>
+              </CrmField>
+              {repScope ? (
+                <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-500">
+                  Every section shows this rep alone. The manager sections open on the manager of this rep.
+                </p>
+              ) : null}
+            </CrmBlock>
+          ) : null}
+
           {current === "plans" ? (
             <PlansSection
               error={reviews.error}
@@ -627,7 +717,7 @@ export function TeamTab({
               selectedWeek={selectedWeek}
               test={test}
               thisWeek={fieldWeekStart(cairoToday)}
-              view={reviews.data}
+              view={reviewsShown}
               viewerHrId={team.data?.viewerHrId ?? null}
               weeks={weeks}
             />
@@ -640,38 +730,45 @@ export function TeamTab({
               onOpen={(row) => openMonthReview(row.territory.seatId, months.data?.monthStart ?? row.plan?.monthStart ?? cairoToday)}
               onRetry={months.reload}
               test={test}
-              view={months.data}
+              view={monthsShown}
             />
           ) : null}
 
-          {current === "edits" && team.data ? (
+          {current === "edits" && teamShown ? (
             <PlanEditsSection
               idPrefix={idPrefix}
               onChanged={requestDecided}
               onOpenWeek={(edit) => openReview(edit.seatId, edit.weekStart)}
-              team={team.data}
+              team={teamShown}
               test={test}
             />
           ) : null}
 
-          {current === "unplanned" && team.data ? (
-            <UnplannedSection idPrefix={idPrefix} onBatchDone={showNotice} onChanged={requestDecided} team={team.data} test={test} />
+          {current === "unplanned" && teamShown ? (
+            <UnplannedSection idPrefix={idPrefix} onBatchDone={showNotice} onChanged={requestDecided} team={teamShown} test={test} />
           ) : null}
 
-          {current === "requests" && team.data ? (
-            <RequestsSection idPrefix={idPrefix} onBatchDone={showNotice} onChanged={requestDecided} team={team.data} test={test} />
+          {current === "requests" && teamShown ? (
+            <RequestsSection idPrefix={idPrefix} onBatchDone={refreshInPlace} onChanged={requestDecided} team={teamShown} test={test} />
           ) : null}
 
-          {current === "decided" && reversible ? <AdministratorReversalsPanel items={reversible} onChanged={requestDecided} /> : null}
+          {current === "decided" && reversibleShown ? <AdministratorReversalsPanel items={reversibleShown} onChanged={requestDecided} /> : null}
 
-          {current === "lists" && team.data ? <ListsSection idPrefix={idPrefix} onOpenList={onOpenList} team={team.data} /> : null}
+          {current === "lists" && teamShown ? <ListsSection idPrefix={idPrefix} onOpenList={onOpenList} team={teamShown} /> : null}
 
-          {current === "own_list" && managerPlans ? <ManagerOwnListSection test={test} /> : null}
+          {/* A manager's week is his, not a rep's: with a rep chosen, the two open on that rep's own manager. */}
+          {current === "own_list" && managerPlans ? (
+            <ManagerOwnListSection key={repScope?.hrId ?? "every-rep"} repManagerHrIds={repScope?.managerHrIds} test={test} />
+          ) : null}
 
-          {current === "manager_plans" && managerPlans ? <ManagerPlansSection test={test} /> : null}
+          {current === "manager_plans" && managerPlans ? (
+            <ManagerPlansSection key={repScope?.hrId ?? "every-rep"} repManagerHrIds={repScope?.managerHrIds} test={test} />
+          ) : null}
 
           {/* What the reps asked of this manager. Answering one refreshes the counts on the page. */}
-          {current === "double" && visitAsks ? <VisitAskInbox cairoToday={cairoToday} onChanged={refresh} place="team" test={test} /> : null}
+          {current === "double" && visitAsks ? (
+            <VisitAskInbox cairoToday={cairoToday} onChanged={refresh} place="team" repScope={repScope} test={test} />
+          ) : null}
         </CrmPanel>
       )}
     </div>
@@ -814,7 +911,7 @@ function PlansSection({
               id={`${idPrefix}-plans-search`}
               label="Find a territory"
               onChange={(next) => filterBy(() => setQuery(next))}
-              placeholder="Territory, rep or manager"
+              placeholder="Territory or manager"
               value={query}
             />
           ) : null}
@@ -1104,7 +1201,7 @@ function PlanEditsSection({
               setLimit(PAGE);
               setOthersLimit(PAGE);
             }}
-            placeholder="Rep, territory or week"
+            placeholder="Territory or week"
             value={query}
           />
         </CrmBlock>
@@ -1211,7 +1308,7 @@ function UnplannedSection({
               setLimit(PAGE);
               setOthersLimit(PAGE);
             }}
-            placeholder="Customer, territory, rep or reason"
+            placeholder="Customer, territory or reason"
             value={query}
           />
         </CrmBlock>
@@ -1261,8 +1358,8 @@ function RequestsSection({
   test,
 }: {
   idPrefix: string;
-  /** The bulk drop has run: what went through, and by name what did not. */
-  onBatchDone: (notice: TeamNotice) => void;
+  /** The bulk respond has run: reload, in place. Its result is told inside the section, where the work is. */
+  onBatchDone: () => void;
   onChanged: (message: string) => void;
   team: TeamView;
   test: boolean;
@@ -1270,11 +1367,15 @@ function RequestsSection({
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(PAGE);
   const [othersLimit, setOthersLimit] = useState(PAGE);
-  // The drops ticked for the bulk drop. Read through `pruneSelection` below, so a tick on a request that
-  // left the screen (decided elsewhere, filtered out by the search) is never acted on.
+  // The requests ticked for the bulk respond. Read through `pruneRespondSelection` below, so a tick on a
+  // request that left the screen (decided elsewhere, filtered out by the search or the Rep picker) is
+  // never acted on.
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
-  const [confirming, setConfirming] = useState(false);
-  // How many of the selected drops are finished, while the bulk runs; null when it is not running.
+  const [confirming, setConfirming] = useState<BulkResponse | null>(null);
+  const [bulkNote, setBulkNote] = useState("");
+  const [bulkProblem, setBulkProblem] = useState<string | null>(null);
+  const [bulkResult, setBulkResult] = useState<TeamNotice | null>(null);
+  // How many of the chosen requests are finished, while the bulk runs; null when it is not running.
   const [done, setDone] = useState<number | null>(null);
   const running = done !== null;
 
@@ -1310,53 +1411,85 @@ function RequestsSection({
   const withRep = requests.filter((request) => request.withRep);
   const others = requests.filter((request) => !request.canDecide && !request.withRep);
 
-  // Bulk drop (owner, 2026-10-12): every drop waiting at this viewer's step can be ticked, or all at once.
-  // Each is approved through the one decide route its own Approve uses, one at a time.
-  const droppable = bulkDropTargets(requests);
-  const bulkOffered = droppable.length >= BULK_DROP_FROM;
-  const chosen = pruneSelection(selected, requests);
-  const chosenRequests = droppable.filter((request) => chosen.has(request.requestId));
-  const allChosen = droppable.length > 0 && chosen.size === droppable.length;
+  // Bulk respond (owner, 2026-11-27: "make option of multi select and bulk respond"; the bulk drop of
+  // 2026-10-12 widened). Every request this viewer can answer can be ticked, or all at once, then
+  // approved, refused or returned together, each through the one route its own card uses, one at a time.
+  const targets = bulkRespondTargets(requests);
+  const bulkOffered = targets.length >= BULK_RESPOND_FROM;
+  const chosen = pruneRespondSelection(selected, requests);
+  const chosenRequests = targets.filter((request) => chosen.has(request.requestId));
+  const allChosen = targets.length > 0 && chosen.size === targets.length;
   const chosenCount = countText(chosen.size);
-  const chosenStep = chosenRequests.every((request) => request.stage === "sfe")
-    ? "sfe"
-    : chosenRequests.every((request) => request.stage === "manager")
-      ? "manager"
-      : "mixed";
+  const anyReturnable = chosenRequests.some((request) => bulkRespondSkip(request, "return") === null);
+  const sendable = confirming ? chosenRequests.filter((request) => bulkRespondSkip(request, confirming) === null) : [];
+  const skipped = confirming
+    ? chosenRequests.flatMap((request) => {
+        const why = bulkRespondSkip(request, confirming);
+        return why ? [`${request.customerName}: ${why}.`] : [];
+      })
+    : [];
+  const verb = confirming === "approve" ? "Approve" : confirming === "refuse" ? "Refuse" : "Return";
 
   function toggle(requestId: string, next: boolean) {
     const copy = new Set(chosen);
     if (next) copy.add(requestId);
     else copy.delete(requestId);
     setSelected(copy);
-    setConfirming(false);
+    setConfirming(null);
+    setBulkResult(null);
   }
 
   function chooseAll(next: boolean) {
-    setSelected(next ? new Set(droppable.map((request) => request.requestId)) : new Set());
-    setConfirming(false);
+    setSelected(next ? new Set(targets.map((request) => request.requestId)) : new Set());
+    setConfirming(null);
+    setBulkResult(null);
   }
 
-  async function dropChosen() {
-    const batch = [...chosenRequests];
-    setConfirming(false);
+  function openConfirm(response: BulkResponse) {
+    setConfirming(response);
+    setBulkProblem(null);
+    setBulkResult(null);
+  }
+
+  async function respondChosen(response: BulkResponse) {
+    const problem = bulkRespondNoteProblem(response, bulkNote);
+    if (problem) {
+      setBulkProblem(problem);
+      return;
+    }
+    const note = bulkNote.trim() || null;
+    const batch = chosenRequests.filter((request) => bulkRespondSkip(request, response) === null);
+    setConfirming(null);
+    setBulkProblem(null);
     setDone(0);
-    const outcomes: BulkDropOutcome[] = [];
+    const outcomes: BulkRespondOutcome[] = [];
     // One at a time, longest waiting first: each is its own decision through its own route, and a refusal
     // of one is named while the rest go on.
     // Dropping a customer closes every other request waiting on him, so a rep's repeat ask for the same
-    // customer is not sent after the first one went through: it would only come back "already decided".
+    // customer is not sent after the drop went through: it would only come back "already decided".
     const dropped = new Set<string>();
     for (const request of batch) {
-      if (repeatOfDropped(request, dropped)) {
+      if (response === "approve" && repeatOfDropped(request, dropped)) {
         outcomes.push({ customerName: request.customerName, ok: true, final: true, repeat: true });
         setDone(outcomes.length);
         continue;
       }
       try {
-        const result = await crmPost<{ final: boolean }>("/api/phoenix-crm/list/requests/decide", bulkDropDecisionBody(request), "request");
-        if (result.final && request.customerKey) dropped.add(request.customerKey);
-        outcomes.push({ customerName: request.customerName, ok: true, final: result.final });
+        if (response === "return") {
+          await crmPost("/api/phoenix-crm/list/requests/return", { requestId: request.requestId, note }, "request");
+          outcomes.push({ customerName: request.customerName, ok: true, final: false });
+        } else {
+          const result = await crmPost<{ final: boolean }>(
+            "/api/phoenix-crm/list/requests/decide",
+            bulkRespondDecisionBody(request, response, note),
+            "request",
+          );
+          // Only an approved drop at the last step takes the customer off the list and closes his other asks.
+          if (response === "approve" && request.kind === "drop") {
+            if (result.final && request.customerKey) dropped.add(request.customerKey);
+          }
+          outcomes.push({ customerName: request.customerName, ok: true, final: result.final });
+        }
       } catch (error) {
         outcomes.push({ customerName: request.customerName, ok: false, why: bulkDropFailureText(errorCodeOf(error), messageOf(error)) });
       }
@@ -1364,15 +1497,16 @@ function RequestsSection({
     }
     setDone(null);
     setSelected(new Set());
-    const notice = bulkDropNotice(outcomes);
-    onBatchDone({
-      tone: notice.tone,
-      title: notice.title,
+    setBulkNote("");
+    const told = bulkRespondNotice(response, outcomes);
+    setBulkResult({
+      tone: told.tone,
+      title: told.title,
       message:
-        notice.failures.length > 0 ? (
+        told.failures.length > 0 ? (
           <span className="grid gap-0.5">
-            <span className="block">Not approved:</span>
-            {notice.failures.map((line, index) => (
+            <span className="block">Not saved:</span>
+            {told.failures.map((line, index) => (
               <span className="block" dir="auto" key={index}>
                 {line}
               </span>
@@ -1380,6 +1514,7 @@ function RequestsSection({
           </span>
         ) : null,
     });
+    onBatchDone();
   }
 
   function card(request: TeamRequest) {
@@ -1393,7 +1528,7 @@ function RequestsSection({
         request={request}
         seatId={request.seatId}
         selection={
-          bulkOffered && droppable.includes(request)
+          bulkOffered && targets.includes(request)
             ? { checked: chosen.has(request.requestId), disabled: running, onChange: (next) => toggle(request.requestId, next) }
             : undefined
         }
@@ -1415,7 +1550,7 @@ function RequestsSection({
               setLimit(PAGE);
               setOthersLimit(PAGE);
             }}
-            placeholder="Customer, territory or rep"
+            placeholder="Customer or territory"
             value={query}
           />
         </CrmBlock>
@@ -1427,53 +1562,115 @@ function RequestsSection({
         </div>
       ) : null}
 
-      {forYou.length > 0 ? (
-        <>
-          <CrmBlock className="border-t border-slate-100" title={`Waiting for your decision · ${countText(forYou.length)}`}>
-            <p className="break-words text-sm font-medium leading-6 text-slate-600">
-              The longest waiting first. Approve a request, or refuse it with a note the rep reads.
-              {bulkOffered ? " Tick the drops you want gone, or select them all, and approve them in one go." : ""}
-            </p>
-            {bulkOffered ? (
+      {bulkOffered || bulkResult ? (
+        <CrmBlock className="border-t border-slate-100" title="Answer several at once">
+          {bulkResult ? (
+            <div className="mb-3">
+              <CrmNote title={bulkResult.title} tone={bulkResult.tone}>
+                {bulkResult.message}
+              </CrmNote>
+            </div>
+          ) : null}
+          {bulkOffered ? (
+            <>
+              <p className="break-words text-sm font-medium leading-6 text-slate-600">
+                Tick the requests to answer, or select them all, then approve, refuse or return them together. Each one is saved on its own,
+                exactly as its own buttons do, and its rep is told.
+              </p>
               <div className="mt-3 grid min-w-0 gap-2">
                 <CrmCheck checked={allChosen} disabled={running} onChange={chooseAll}>
-                  {`Select all ${countText(droppable.length)} drop requests`}
+                  {`Select all ${countText(targets.length)} requests you can answer`}
                 </CrmCheck>
-                {chosen.size > 0 ? (
+                {running ? (
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <CrmButton busy disabled>
+                      {`Saving ${countText(Math.min((done ?? 0) + 1, chosen.size))} of ${chosenCount}`}
+                    </CrmButton>
+                  </div>
+                ) : chosen.size > 0 ? (
                   confirming ? (
                     <div className="grid min-w-0 gap-2 border border-orange-200 bg-orange-50/40 px-3.5 py-3">
-                      <p className="break-words text-sm font-black text-slate-950">{`Approve ${chosenCount} drop ${chosen.size === 1 ? "request" : "requests"}?`}</p>
-                      <p className="break-words text-sm font-medium leading-6 text-slate-600">
-                        Each one is approved on its own, as your decision, exactly as its own Approve does, and the rep is told of each.{" "}
-                        {chosenStep === "manager"
-                          ? "They go on to SFE, who decides the last step."
-                          : chosenStep === "sfe"
-                            ? "Each customer leaves the rep’s list for the Archive."
-                            : "Those at SFE’s step leave the list for the Archive; the others go on to SFE."}{" "}
-                        One that cannot be approved is named, and the others stand.
+                      <p className="break-words text-sm font-black text-slate-950">
+                        {confirming === "return"
+                          ? `Return ${countText(sendable.length)} ${sendable.length === 1 ? "request" : "requests"} to the rep for a comment?`
+                          : `${verb} ${countText(sendable.length)} ${sendable.length === 1 ? "request" : "requests"}?`}
                       </p>
+                      <p className="break-words text-sm font-medium leading-6 text-slate-600">
+                        {confirming === "approve"
+                          ? "Each one is approved as your decision. One at the district manager’s step goes on to SFE; one at the last step is final."
+                          : confirming === "refuse"
+                            ? "Each one is refused with the note below, which every rep reads."
+                            : "Each one goes back to its rep with the note below, and comes back once the rep answers."}{" "}
+                        One that cannot be saved is named, and the others stand.
+                      </p>
+                      {skipped.length > 0 ? (
+                        <div className="grid min-w-0 gap-0.5 text-sm font-medium leading-6 text-slate-700">
+                          <p className="break-words font-black text-slate-800">{`Left as they are · ${countText(skipped.length)}`}</p>
+                          {skipped.map((line, index) => (
+                            <p className="break-words" dir="auto" key={index}>
+                              {line}
+                            </p>
+                          ))}
+                        </div>
+                      ) : null}
+                      {confirming !== "approve" ? (
+                        <CrmField
+                          hint={confirming === "refuse" ? "Needed to refuse. Every rep reads it." : "Needed to return them. Every rep reads it."}
+                          htmlFor={`${idPrefix}-bulk-note`}
+                          label="Note for the reps"
+                        >
+                          <textarea
+                            className={crmTextareaClassName}
+                            id={`${idPrefix}-bulk-note`}
+                            maxLength={RETURN_NOTE_MAX}
+                            onChange={(event) => {
+                              setBulkNote(event.target.value);
+                              setBulkProblem(null);
+                            }}
+                            rows={2}
+                            value={bulkNote}
+                          />
+                        </CrmField>
+                      ) : null}
+                      {bulkProblem ? <CrmNote tone="bad">{bulkProblem}</CrmNote> : null}
                       <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-                        <CrmButton onClick={() => void dropChosen()} variant="danger">
-                          {`Approve ${chosenCount}`}
+                        <CrmButton
+                          disabled={sendable.length === 0}
+                          onClick={() => void respondChosen(confirming)}
+                          variant={confirming === "approve" ? "success" : confirming === "refuse" ? "danger" : "secondary"}
+                        >
+                          {`${verb} ${countText(sendable.length)}`}
                         </CrmButton>
-                        <CrmButton onClick={() => setConfirming(false)}>Not yet</CrmButton>
+                        <CrmButton onClick={() => setConfirming(null)}>Not yet</CrmButton>
                       </div>
                     </div>
                   ) : (
                     <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <CrmButton busy={running} disabled={running} onClick={() => setConfirming(true)} variant="danger">
-                        {running
-                          ? `Approving ${countText(Math.min((done ?? 0) + 1, chosen.size))} of ${chosenCount}…`
-                          : `Drop the ${chosenCount} selected`}
+                      <CrmButton onClick={() => openConfirm("approve")} variant="success">
+                        {`Approve ${chosenCount}`}
                       </CrmButton>
-                      <CrmButton disabled={running} onClick={() => chooseAll(false)} size="sm">
+                      <CrmButton onClick={() => openConfirm("refuse")} variant="danger">
+                        {`Refuse ${chosenCount}`}
+                      </CrmButton>
+                      {anyReturnable ? <CrmButton onClick={() => openConfirm("return")}>{`Return ${chosenCount} for a comment`}</CrmButton> : null}
+                      <CrmButton onClick={() => chooseAll(false)} size="sm" variant="ghost">
                         Clear selection
                       </CrmButton>
                     </div>
                   )
                 ) : null}
               </div>
-            ) : null}
+            </>
+          ) : null}
+        </CrmBlock>
+      ) : null}
+
+      {forYou.length > 0 ? (
+        <>
+          <CrmBlock className="border-t border-slate-100" title={`Waiting for your decision · ${countText(forYou.length)}`}>
+            <p className="break-words text-sm font-medium leading-6 text-slate-600">
+              The longest waiting first. Approve a request, or refuse it with a note the rep reads.
+            </p>
           </CrmBlock>
           <div className="divide-y divide-slate-100 border-t border-slate-100">{forYou.slice(0, limit).map(card)}</div>
           <CrmShowMore left={forYou.length - limit} onMore={() => setLimit((value) => value + PAGE)} page={PAGE} />
@@ -1572,7 +1769,7 @@ function ListsSection({ idPrefix, onOpenList, team }: { idPrefix: string; onOpen
               id={`${idPrefix}-lists-search`}
               label="Find a territory"
               onChange={(next) => filterBy(() => setQuery(next))}
-              placeholder="Territory, rep or manager"
+              placeholder="Territory or manager"
               value={query}
             />
           ) : null}

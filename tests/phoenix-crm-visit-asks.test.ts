@@ -970,8 +970,12 @@ export async function runPhoenixCrmVisitAsksTests(): Promise<void> {
     const customer = source("src/components/phoenix-crm/list-customer.tsx");
     assert.match(customer, /<CustomerVisitAsks\s/, "the customer's page carries the rep's asks");
     const team = source("src/components/phoenix-crm/team-tab.tsx");
-    const inboxAt = team.indexOf('{current === "double" && visitAsks ? <VisitAskInbox cairoToday={cairoToday} onChanged={refresh} place="team" test={test} /> : null}');
-    assert.ok(inboxAt > 0, "the Team tab draws the asks in the Double visits section");
+    // Narrowed by the Team tab's Rep picker since 2026-11-27 (`repScope`), still the whole section.
+    assert.match(
+      team,
+      /\{current === "double" && visitAsks \? \(\s*<VisitAskInbox cairoToday=\{cairoToday\} onChanged=\{refresh\} place="team" repScope=\{repScope\} test=\{test\} \/>\s*\) : null\}/,
+      "the Team tab draws the asks in the Double visits section",
+    );
     // The district manager's double-visit planner that sat below it was retired on 2026-10-16 — his weekly
     // plan replaced it, in its own Team-tab sections — so the asks are the whole of this section now.
     assert.equal(team.includes("<DoubleVisitPlanSection"), false, "the retired planner is no longer drawn beside the asks");

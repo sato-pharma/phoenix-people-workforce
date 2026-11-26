@@ -88,6 +88,7 @@ import { isUnplannedKind, isUnplannedVisitStatus, kpiHoldBackOf, type KpiHoldBac
 import { type FarVisitHoldStatus } from "@/lib/phoenix-crm/far-visit-safeguards";
 import { loadUncountedFarVisitHolds } from "@/lib/phoenix-crm/server/far-visit-safeguards";
 import { sortVendorLeftovers, type VendorLeftoverRep } from "@/lib/phoenix-crm/vendor-leftovers";
+import { teamCountsOf } from "@/lib/phoenix-crm/team-rep-filter";
 import type { PhoenixCrmDoctorListType } from "@/lib/phoenix-crm/types";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -610,7 +611,6 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
     })
     .sort((left, right) => Number(right.canDecide) - Number(left.canDecide) || left.raisedAt.localeCompare(right.raisedAt));
 
-  const realRows = territories.filter((row) => row.readiness);
   const reversible = await reversibleRead;
   return {
     isTest,
@@ -625,17 +625,9 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
     })(),
     visitAsks,
     reversible,
+    // One function counts here and on the screen with a rep chosen (`team-rep-filter.ts`).
     summary: {
-      territories: territories.length,
-      vacant: territories.filter((row) => !row.territory.repHrId).length,
-      ready: realRows.filter((row) => row.readiness?.ready).length,
-      notReady: realRows.filter((row) => !row.readiness?.ready).length,
-      requestsWaiting: requests.length,
-      waitingForYou: requests.filter((request) => request.canDecide).length,
-      unplannedWaiting: unplannedVisits.length,
-      unplannedWaitingForYou: unplannedVisits.filter((visit) => visit.canDecide).length,
-      planEditsWaiting: planEdits.length,
-      planEditsWaitingForYou: planEdits.filter((edit) => edit.canDecide).length,
+      ...teamCountsOf({ territories, requests, unplannedVisits, planEdits }),
       visitAsksWaitingForYou: visitAsks?.waitingForYou ?? 0,
     },
   };
