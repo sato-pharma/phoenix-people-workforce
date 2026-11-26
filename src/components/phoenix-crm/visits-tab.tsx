@@ -1016,6 +1016,8 @@ function AddFlow({
           offPlan={loaded.offPlan}
           onBack={() => onStep({ name: "unplanned" })}
           onPick={(customerId) => onStep({ name: "reason", customerId, reason: filledReason(find(customerId)), back: { name: "out_of_plan" } })}
+          // Somebody on today's plan that she searched for here opens as the PLANNED visit — no reason, no approval (26 Nov 2026).
+          onPickPlanned={(customerId) => onStep({ name: "form", customerId, visitType: "planned", reason: null, back: { name: "out_of_plan" } })}
           voice={loaded.enteredAs === "rep" ? "rep" : "manager"}
         />,
         () => onStep({ name: "unplanned" }),

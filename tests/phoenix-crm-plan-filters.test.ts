@@ -156,6 +156,10 @@ export function runPhoenixCrmPlanFiltersTests() {
   assert.equal(foldedWordsMatch("مستشفي بنها", ["مستشفى بنها العام"]), true, "typing مستشفي بنها finds مستشفى بنها");
   assert.equal(foldedWordsMatch("بنها مستشفى", ["مستشفي بنها"]), true, "in any order, either spelling on either side");
   assert.equal(foldedWordsMatch("طنطا", ["مستشفى بنها"]), false, "and a word that is not there is still not there");
+  // A space is a spelling too (26 Nov 2026, محمد علي عبدالسلام on Hagar Abu zeid's list).
+  assert.equal(foldedWordsMatch("محمد على عبد السلام", ["محمد علي عبدالسلام"]), true, "عبد السلام typed with a space finds عبدالسلام");
+  assert.equal(foldedWordsMatch("عبدالسلام", ["محمد علي عبد السلام"]), true, "and عبدالسلام typed whole finds عبد السلام");
+  assert.equal(foldedWordsMatch("عبد الله", ["محمد عبدالسلام"]), false, "taking the spaces out never invents a name that is not there");
   assert.deepEqual(["احمد علي", "بسمة", "أحمد سعيد"].sort(compareFoldedNames), ["أحمد سعيد", "احمد علي", "بسمة"], "أحمد and احمد sort side by side");
 
   // ── One speciality typed several ways is one choice (owner walk, 2026-10-28: Uro and Urology) ───

@@ -2216,6 +2216,7 @@ import { runPhoenixCrmLineProductsTests } from "./phoenix-crm-line-products.test
 import { runPhoenixCrmVoiceNoteTests } from "./phoenix-crm-voice-note.test.ts";
 import { runPhoenixCrmMonthlyPlanTests } from "./phoenix-crm-monthly-plan.test.ts";
 import { runPhoenixCrmPlanFiltersTests } from "./phoenix-crm-plan-filters.test.ts";
+import { runPhoenixCrmVisitPickerSearchTests } from "./phoenix-crm-visit-picker-search.test.ts";
 import { runPhoenixCrmPlanCopyTests } from "./phoenix-crm-plan-copy.test.ts";
 import { runPhoenixCrmStartGuideTests } from "./phoenix-crm-start-guide.test.ts";
 import { runPhoenixCrmPortalIntentTests } from "./phoenix-crm-portal-intent.test.ts";
@@ -8307,6 +8308,11 @@ await runTest(
 await runTest(
   "Phoenix CRM plan filters (owner, 2026-09-25: while building a plan the rep narrows the doctor list by brick, by AM or PM, and by 'receives on this day between X and Y'; the narrowings are independent and each is met by any of a customer's places; a window reads only with a weekday; in Ramadan the special timings win and fall back to the normal ones)",
   runPhoenixCrmPlanFiltersTests,
+);
+
+await runTest(
+  "Phoenix CRM Add visit picker search (26 Nov 2026: a doctor on today's plan was not found under Out of plan and was saved twice — the search folds علي / على and عبدالسلام / عبد السلام, and Out of plan shows a typed match from today's plan above the list, opening as the planned visit with no reason and no approval)",
+  runPhoenixCrmVisitPickerSearchTests,
 );
 
 await runTest(
