@@ -192,6 +192,42 @@ node --env-file-if-exists=.env.local --experimental-strip-types --experimental-s
   `tablet_position_agent`.
 - **Permission:** the same `company_devices / approve` check every Headwind route makes.
 
+### Put an app on every rep tablet ("push it to the tablets")
+
+- **Nothing is pushed.** An app reaches a rep tablet because it is listed on that tablet's Headwind set of
+  rules; the tablet installs it on its next run. So "push X to the tablets" means: register the APK on the
+  tablet server and link it to **all three** rep sets — `Rep tablets` (3), `— Anti Infective` (4),
+  `— Pedia` (5). Two lines silently miss an app put on only one.
+- **Run it from the code:** `uploadHeadwindApp({ file, rules: "rep", showIcon }, "B-10")` in
+  `src/lib/devices/headwind/uploads.ts` — one upload, one link per set, one audit row per set, and it
+  moves the registered link onto `https://` itself. `showIcon: false` for an app the rep must not see.
+- 🔴 **The Headwind credentials exist ONLY in Railway production** — `HEADWIND_MDM_BASE_URL`, the two
+  `_ACCESS_CLIENT_*` values, `_LOGIN` and `_PASSWORD` are in no local env file, so the script is run with
+  `railway run --service phoenix-people-workforce -- node --experimental-strip-types
+  --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs <script>`.
+- 🔴 **THEN CHECK EVERY INSTALL LINK, OR THE APP CAN SIT ON THE RULES AND NEVER ARRIVE** —
+  `checkHeadwindInstallLinks("rep")` prints each set's broken count. One dead link stops that tablet's
+  whole update run at that app, so a link nobody checked keeps the new app off the fleet. Measured
+  26 Nov 2026: Phoenix Position was correctly on all three sets (one link each, 200) while **Telegram's
+  own `https://telegram.org/dl/android/apk` had rotted into a 302** — one broken of 12, 13 and 13.
+- **A publisher's URL rots into a redirect, and the cure is the file the server already holds.** Probe
+  `https://mdm.satopharma.com/files/<name>` with a HEAD first: the big third-party apps are already on the
+  46 GB volume at `/usr/local/tomcat/work/files` (Telegram, WhatsApp, WPS). Then edit that app's version
+  row **in place** — `PUT /rest/private/applications/versions` with its `id` kept, never a configuration
+  PUT (§8.14) — so the download becomes that address, which answers 200 by itself.
+- 🔴 **THE ROW'S `version` AND `versionCode` MUST MATCH THE FILE ON THE DISK, or every tablet
+  re-downloads it hourly for ever** — the launcher compares an app row by `versionCode`. Read the real
+  pair out of the APK's own binary manifest (`versionCode`, `versionName` on the `<manifest>` element);
+  26 Nov 2026 the disk held 13.1.0 / 72299 while the row claimed 13.2.1 / 72919.
+- 🔴 **A BIG APK CANNOT BE UPLOADED FROM THE LAPTOP — CLOUDFLARE CUTS IT AT HTTP 524.** `mdm-console` sits
+  behind Cloudflare Access, whose origin wait is about 100 seconds, and 81,653,599 bytes of Telegram 13.3.1
+  died there (`uploadBytes`, 26 Nov 2026) having registered nothing. A file that big reaches the disk only
+  from the server's own side — `phoenix-entrypoint.sh` fetches it at every start, the way WhatsApp is
+  fetched — never from here.
+- **Proof:** read the sets back (`readHeadwindConfigurationApplications`) — one link per set, `action 1`,
+  `remove false`, the version you sent — and then the link report showing **0 broken on all three**
+  (measured 26 Nov 2026: 0 of 12, 0 of 13, 0 of 13).
+
 ## Phoenix CRM
 
 ### Put doctors on a rep's list for her to validate (and their hours)
