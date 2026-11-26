@@ -41,6 +41,19 @@
 //                 installs, say which tablet one belongs to (stamping the fixes it already sent), and
 //                 take one out of service — each through the same `company_devices / approve` check the
 //                 Headwind routes use, and each audited.
+//   match-app-version matchHeadwindVersionsToFiles     (no screen calls it; it was a hand-typed number)
+//                 Reads the real versionName/versionCode out of the APK each of an app's Headwind
+//                 version rows points at — by ranged requests, never an 81 MB download — and puts any
+//                 row that disagrees with its own file back in place. A row claiming a build its file
+//                 is not makes every tablet re-download that file at every check-in for ever, and the
+//                 tablet server now re-fetches a floating app by itself, so the row can rot unwatched.
+//                 Refuses when the file is a different package: that would hand the fleet another app.
+//   lock-rep-tablets setHeadwindRestrictions / lockRepTablets   (owner, 26 Nov 2026: protect the tablet
+//                 "without irritating the usage"). Puts the full rep lock set on all three rep sets of
+//                 rules (3, 4, 5) — Wi-Fi off, aeroplane mode, the mobile network's settings, network
+//                 reset, side-loading and force-stop — on top of the six they already carry, and says
+//                 what each one costs the rep. It only ever ADDS. `no_install_apps` and `no_config_wifi`
+//                 are refused by name, and mobile data is reported as what no Android lock can hold.
 //   seat-in-building seatWaitingCustomersInVenue     (the Super Admin's door; no screen calls it yet)
 //                 Customers still waiting, with hours and no place, are seated in an approved building
 //                 at its own point; the building's timetable is then read for each, and only the ones it
@@ -800,6 +813,89 @@ async function runRevokeTabletAgent(plan: Extract<OwnerOpsPlan, { job: "revoke-t
   return { employees: [], focus: {}, proofDone: true };
 }
 
+async function runMatchAppVersion(plan: Extract<OwnerOpsPlan, { job: "match-app-version" }>, owner: AccessContext) {
+  await assertTabletDeskAccess(owner);
+  const { matchHeadwindVersionsToFiles, readHeadwindApplicationRow } = await import("@/lib/devices/headwind/versions");
+
+  const before = await readHeadwindApplicationRow(plan.applicationId);
+  console.log(
+    `\nBefore: app ${plan.applicationId} — ${before.name ?? before.pkg} asks for ${before.version ?? "?"} / versionCode ${before.versionCode ?? "?"}`,
+  );
+
+  // 🔴 A DRY RUN'S WRITES ARE ANSWERED AND NEVER SENT, so the function's own read-back would find the
+  // row unchanged and refuse over a change nobody made. It is told not to prove, and the proof below
+  // reports itself as NOT DONE rather than as a pass.
+  const done = await matchHeadwindVersionsToFiles(
+    { applicationId: plan.applicationId, proveStored: plan.apply },
+    OWNER_LOGIN_ID,
+  );
+  console.log(`\n${done.message}`);
+  for (const match of [...done.changed, ...done.level]) {
+    console.log(
+      `  version ${match.versionId}  ${match.was.version ?? "?"} / ${match.was.versionCode ?? "?"}` +
+        ` ${match.level ? "=" : "→"} ${match.now.version} / ${match.now.versionCode}  ${match.url}`,
+    );
+  }
+
+  if (!plan.apply) {
+    console.log(
+      "\nPROOF NOT DONE — nothing was sent, so the row still asks for what it asked for. " +
+        "Run it again with --apply to move the row and read it back.",
+    );
+    return { employees: [], focus: {}, proofDone: true };
+  }
+
+  // PROOF — the rows as the server holds them now, read again from scratch.
+  const after = await matchHeadwindVersionsToFiles({ applicationId: plan.applicationId }, OWNER_LOGIN_ID);
+  console.log(`\nPROOF — read again: ${after.message}`);
+  if (after.changed.length) {
+    console.error("\nPROOF FAILED — a second read still found a row that disagrees with its own file.");
+    process.exitCode = 3;
+  }
+  return { employees: [], focus: {}, proofDone: true };
+}
+
+async function runLockRepTablets(plan: Extract<OwnerOpsPlan, { job: "lock-rep-tablets" }>, owner: AccessContext) {
+  await assertTabletDeskAccess(owner);
+  const { lockRepTablets, resolveHeadwindRules, setHeadwindRestrictions } = await import("@/lib/devices/headwind/configurations");
+  const { describeTabletLock, MOBILE_DATA_CANNOT_BE_HELD, REP_TABLET_LOCK_SET } = await import("@/lib/devices/headwind/restrictions");
+
+  console.log("\nThe locks, and what each costs a rep:");
+  for (const token of REP_TABLET_LOCK_SET) console.log(`  ${describeTabletLock(token)}`);
+  console.log(`\n🔴 ${MOBILE_DATA_CANNOT_BE_HELD}`);
+
+  const rules = await resolveHeadwindRules("rep");
+  console.log(`\nBefore — ${rules.length} rep set(s) of rules: ${rules.map((set) => `${set.name} (${set.id})`).join(", ")}`);
+
+  // The dry run's PUT is answered by the fence, so the read-back is told to stand down (it would find
+  // the old locks and refuse over a change nobody made) and the proof says so instead of passing.
+  const done = await lockRepTablets(OWNER_LOGIN_ID, fetch, process.env, undefined, plan.apply);
+  console.log(`\n${plan.apply ? "Done on" : "Would be done on"}: ${done.reached.join(", ")}`);
+  for (const result of done.results) {
+    console.log(`  ${result.name}: ${result.added.length ? `adds ${result.added.join(", ")}` : "already carried them all"}`);
+    console.log(`      ${plan.apply ? "now" : "would be"}: ${result.restrictions.join(",")}`);
+  }
+
+  if (!plan.apply) {
+    console.log("\nPROOF NOT DONE — nothing was sent to the tablet server. Run it again with --apply to lock and read back.");
+    return { employees: [], focus: {}, proofDone: true };
+  }
+
+  // PROOF — every rep set carries every lock, read back off the server.
+  const after = await resolveHeadwindRules("rep");
+  const missing: string[] = [];
+  for (const set of after) {
+    const { restrictions } = await setHeadwindRestrictions({ add: [], configurationId: set.id }, OWNER_LOGIN_ID);
+    for (const token of REP_TABLET_LOCK_SET) if (!restrictions.includes(token)) missing.push(`${set.name}: ${token}`);
+  }
+  console.log(`\nPROOF — ${missing.length ? `NOT on ${missing.join("; ")}` : "every rep set of rules carries every lock, read back off the server"}`);
+  if (missing.length) {
+    console.error("\nPROOF FAILED — a lock is missing from a rep set of rules, so those tablets are not protected.");
+    process.exitCode = 3;
+  }
+  return { employees: [], focus: {}, proofDone: true };
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   if (argv.includes("--help") || argv.includes("-h")) {
@@ -845,6 +941,8 @@ async function main() {
     else if (plan.job === "start-tablet-agent") outcome = await runStartTabletAgent(plan, owner.access);
     else if (plan.job === "bind-tablet-agent") outcome = await runBindTabletAgent(plan, owner.access);
     else if (plan.job === "revoke-tablet-agent") outcome = await runRevokeTabletAgent(plan, owner.access);
+    else if (plan.job === "match-app-version") outcome = await runMatchAppVersion(plan, owner.access);
+    else if (plan.job === "lock-rep-tablets") outcome = await runLockRepTablets(plan, owner.access);
     else outcome = await runPinPharmacy(plan, owner.access);
   } catch (error) {
     refused = errorText(error);
