@@ -7,6 +7,7 @@
  * the unmapped localities kept apart and named. This is the half of that a test can hold to.
  */
 
+import { foldedWordsMatch } from "@/lib/phoenix-crm/name-fold";
 import type { ListCustomer } from "@/lib/phoenix-crm/view-types";
 
 export const NO_GRADE = "No grade";
@@ -113,7 +114,8 @@ export function distinct(values: readonly string[]): string[] {
 
 export function matchesQuery(customer: ListCustomer, needle: string): boolean {
   if (!needle) return true;
-  const hay = [
+  // Spelling folded (علي / على, عبدالسلام / عبد السلام, 26 Nov 2026) — the module's one rule for a name typed two ways.
+  return foldedWordsMatch(needle, [
     customer.name,
     customer.speciality,
     customer.grade,
@@ -121,11 +123,7 @@ export function matchesQuery(customer: ListCustomer, needle: string): boolean {
     customer.reference?.city ?? null,
     customer.reference?.zone ?? null,
     ...customer.places.flatMap((place) => [place.label, place.address, place.zone, place.brickName]),
-  ]
-    .filter((part): part is string => Boolean(part))
-    .join(" ")
-    .toLowerCase();
-  return hay.includes(needle);
+  ]);
 }
 
 /** The activity filter's two answers, read off the running month's visits. */

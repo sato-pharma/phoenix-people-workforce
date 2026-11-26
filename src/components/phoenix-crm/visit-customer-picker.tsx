@@ -52,6 +52,7 @@ import { movedDayReason } from "@/lib/phoenix-crm/offplan-day";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import { UNPLANNED_REASON_MAX } from "@/lib/phoenix-crm/unplanned-rules";
 import type { VisitCustomerOption } from "@/lib/phoenix-crm/view-types";
+import { pickerSearchMatches, plannedTodayMatches } from "@/lib/phoenix-crm/visit-picker-search";
 import { VISIT_WAITING_PILL } from "@/lib/phoenix-crm/visit-resend-rules";
 import { cn } from "@/lib/utils";
 
@@ -141,6 +142,7 @@ export function VisitCustomerPicker({
   onChooseUnplanned,
   onPharmacyDetails,
   onPick,
+  onPickPlanned,
   voice = "rep",
 }: {
   /** The form's whole customer list: brick hues are keyed off it, so a brick keeps its colour. */
@@ -161,18 +163,28 @@ export function VisitCustomerPicker({
   /** Planned with nobody on today's plan: straight to Unplanned. */
   onChooseUnplanned?: () => void;
   onPick: (customerId: string) => void;
+  /**
+   * Out of plan: a customer on TODAY's plan that he searched for, opened as the planned visit it is (26 Nov 2026).
+   * Absent, nobody on the plan is shown here — exactly as before.
+   */
+  onPickPlanned?: (customerId: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const [listType, setListType] = useState<"all" | PhoenixCrmListType>("all");
   // A page at a time: a territory's whole list is hundreds of buttons, and out of plan is exactly that.
   const [limit, setLimit] = useState(PICKER_PAGE);
-  const needle = query.trim().toLowerCase();
   const offered = customersFor(mode, allCustomers);
+  // Spelling folded (علي / على, عبدالسلام / عبد السلام) — the module's one rule for a name typed two ways.
   const shown = offered.filter(
-    (customer) =>
-      (listType === "all" || customer.listType === listType) &&
-      (!needle || customer.name.toLowerCase().includes(needle) || (customer.speciality ?? "").toLowerCase().includes(needle)),
+    (customer) => (listType === "all" || customer.listType === listType) && pickerSearchMatches(query, customer),
   );
+  // 🔴 Out of plan never offers today's plan (owner, 2026-09-29), so a search for somebody on it found
+  // nothing and the rep saved him again (محمد علي عبدالسلام, 24 Nov 2026). He is shown here, one tap from
+  // the planned visit — the planned door, never a new one, and only once she types.
+  const plannedMatches =
+    mode === "out_of_plan" && onPickPlanned
+      ? plannedTodayMatches(allCustomers, query).filter((customer) => listType === "all" || customer.listType === listType)
+      : [];
   const left = shown.length - limit;
   // Keyed off the WHOLE list, never this filtered one: a brick that changes colour as he searches is a
   // brick he cannot learn.
@@ -249,7 +261,41 @@ export function VisitCustomerPicker({
               value={listType}
             />
           )}
+          {plannedMatches.length > 0 && onPickPlanned ? (
+            <div className="min-w-0">
+              <p className="mb-1.5 break-words border-l-4 border-l-emerald-600 bg-emerald-50 px-2 py-1 text-phx-sm font-black uppercase tracking-[0.16em] text-emerald-800">
+                On today’s plan · {countText(plannedMatches.length)}
+              </p>
+              <ul className="grid gap-1.5">
+                {plannedMatches.map((customer) => (
+                  <li className="min-w-0" key={customer.customerId}>
+                    <button
+                      className="block w-full min-w-0 rounded-none border border-slate-200 bg-white px-3 py-3 text-left transition hover:border-orange-300 disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={customer.visitedToday || customer.waitingToSend === true || customer.validateFirst || customer.needsFullName === true}
+                      onClick={() => onPickPlanned(customer.customerId)}
+                      type="button"
+                    >
+                      <span className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                        <span className="min-w-[9rem] flex-1">
+                          <span className="block break-words text-sm font-black text-slate-950">{customer.name}</span>
+                          <span className="mt-0.5 block break-words text-xs font-semibold text-slate-500">{customerMetaText(customer)}</span>
+                        </span>
+                        <span className="flex max-w-full flex-wrap gap-1">
+                          {customer.visitedToday ? <CrmPill tone="good">Visited today</CrmPill> : null}
+                          {customer.waitingToSend ? <CrmPill tone="orange">{VISIT_WAITING_PILL}</CrmPill> : null}
+                        </span>
+                      </span>
+                      <span className="mt-1 block break-words text-xs font-semibold text-slate-600">
+                        On your plan for today: logged as a planned visit, with no reason and no approval.
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           {shown.length === 0 ? (
+            plannedMatches.length > 0 ? null : (
             <div className="grid gap-2 border border-dashed border-slate-200 px-3 py-4 text-center">
               <p className="text-sm font-semibold text-slate-500">
                 {offered.length > 0
@@ -270,6 +316,7 @@ export function VisitCustomerPicker({
                 </div>
               ) : null}
             </div>
+            )
           ) : (
             <div className="grid min-w-0 gap-3">
               {groups.map((group) => {

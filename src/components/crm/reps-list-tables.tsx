@@ -44,6 +44,7 @@ import type { RepsListContact, RepsListGroup } from "@/lib/crm/reps-list";
 import { brickCoverage } from "@/lib/crm/reps-list-groups";
 import { brickSpreadLine, REPS_LIST_NO_LOCATION, unmappedBrickLabel } from "@/lib/crm/reps-list-labels";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
+import { foldedWordsMatch } from "@/lib/phoenix-crm/name-fold";
 
 // Client half of Reps List — the rep's contacts, one block per brick.
 //
@@ -285,8 +286,8 @@ function groupedSpecialities(rows: readonly DoctorListRow[]): { kind: CrmContact
 }
 
 function matches(row: RepsListContact, needle: string): boolean {
-  if (!needle) return true;
-  const haystack = [
+  // Spelling folded (علي / على, عبدالسلام / عبد السلام, 26 Nov 2026), as the rep's own list searches.
+  return foldedWordsMatch(needle, [
     row.name,
     row.nameAr,
     row.speciality,
@@ -299,11 +300,7 @@ function matches(row: RepsListContact, needle: string): boolean {
     // Searchable because the sharing line is the answer to a real question — "what do I share with
     // Ahmed?" — and a highlight you cannot filter down to is a colour, not a tool.
     ...(row.sharedWith ?? []).map((entry) => entry.repName),
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-  return haystack.includes(needle);
+  ]);
 }
 
 /**
