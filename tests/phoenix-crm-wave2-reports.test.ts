@@ -132,6 +132,36 @@ export function runPhoenixCrmWave2ReportTests(): void {
   );
   assert.equal(buildTeamCalendar("nonsense", people).length, 0);
 
+  // ── The hiring calendar's interviews (owner, 2026-11-27: "every single entry … must appear in both calendars") ──
+  // An interview the private calendar shows lands on the same person's square, as a day that opens — and it is
+  // DISPLAY ONLY: it never enters AM, PM, Pharmacies or a total, and a worked day keeps its worked shape.
+  {
+    const interview = { part: "Lead interviewer", time: "10:00 – 10:45", title: "Interview — Medical Rep" };
+    const withInterviews = buildTeamCalendar("2026-02", people, {
+      interviews: [
+        { day: "2026-02-15", interview, seatId: "S1" },
+        { day: "2026-02-15", interview: { ...interview, time: "11:00 – 11:45" }, seatId: "S1" },
+        { day: "2026-02-03", interview, seatId: "S1" },
+        { day: "2026-03-02", interview, seatId: "S1" },
+        { day: "2026-02-16", interview, seatId: "SOMEONE-ELSE" },
+      ],
+      visits: [{ counts: { am: 1, pharmacies: 0, pm: 2 }, day: "2026-02-03", seatId: "S1" }],
+    });
+    const onlyInterviews = withInterviews[0]?.days[14];
+    assert.equal(onlyInterviews?.shape, "activity", "a day with only interviews is a square that opens, never an empty day");
+    assert.equal(onlyInterviews?.interviews.length, 2, "and it carries every interview of that day");
+    assert.deepEqual(onlyInterviews?.counts, { am: 0, pharmacies: 0, pm: 0 }, "an interview is never a call");
+    assert.equal(withInterviews[0]?.days[2]?.shape, "both", "a worked day keeps its worked shape");
+    assert.equal(withInterviews[0]?.days[2]?.interviews.length, 1, "and still carries its interview");
+    assert.deepEqual(withInterviews[0]?.totals, { am: 1, pharmacies: 0, pm: 2 }, "interviews never reach a total");
+    assert.equal(withInterviews[1]?.days.every((day) => day.interviews.length === 0), true, "and never another seat's row");
+    assert.equal(
+      dayShape({ activity: null, counts: { am: 0, pharmacies: 0, pm: 0 }, day: "2026-03-05", interviews: 1, onLeave: true }),
+      "leave",
+      "approved leave still reads as leave",
+    );
+  }
+
   // ── The managers' rows (owner, 2026-10-19: "yes, all manager levels") ──────────────────────────
   //
   // 🔴 A MANAGER'S ROW IS HIS DAYS, AND IT NEVER REACHES THE MONTH'S THREE FIGURES. The visits he rode

@@ -5,6 +5,7 @@ import { buildExportRows } from "../src/lib/private-calendar/export.ts";
 import {
   everyInterviewAttendance,
   interviewAttendeesFor,
+  interviewDayEntriesOf,
   interviewHalfDaysFromAttendances,
   mapInterviewToPrivateCalendarItem,
 } from "../src/lib/private-calendar/interview-items.ts";
@@ -108,6 +109,24 @@ export function runPrivateCalendarInterviewsTests() {
   // ── 2 · The item ───────────────────────────────────────────────────────────────────────────────
   const [lead, panel] = both.map(mapInterviewToPrivateCalendarItem);
   assert.ok(lead && panel);
+
+  // ── 2b · The same interviews, for Phoenix CRM's calendar (owner, 2026-11-27: "must appear in both calendars") ──
+  const entries = interviewDayEntriesOf([panel, lead]);
+  assert.deepEqual(
+    entries.map((entry) => [entry.hrId.toUpperCase(), entry.date, entry.time, entry.title, entry.part]),
+    [
+      ["B-41", lead.startDate, lead.time, lead.title, "Panel"],
+      ["B-40", lead.startDate, lead.time, lead.title, "Lead interviewer"],
+    ].sort((left, right) => String(left[2]).localeCompare(String(right[2]))),
+    "Phoenix CRM's calendar gets the private calendar's own items, in its own words, with each person's part",
+  );
+  assert.deepEqual(interviewDayEntriesOf([{ ...lead, source: "attendance" }]), [], "only the interview items cross over");
+  const itemsSource = read("src/lib/private-calendar/interview-items.ts");
+  assert.match(
+    itemsSource.slice(itemsSource.indexOf("export async function loadInterviewDayEntries")),
+    /^[^]*?loadInterviewPrivateCalendarItems\(hrIds, start, end\)/,
+    "built from the private calendar's own loader, so the two calendars cannot list two sets",
+  );
   assert.equal(lead.source, "interview");
   assert.equal(lead.activityKind, "interview");
   assert.equal(lead.severity, "info");

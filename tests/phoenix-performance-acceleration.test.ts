@@ -168,7 +168,11 @@ function testCrmPlanAndCalendar() {
   const monthAt = load.indexOf("await latestWorkedMonth(");
   assert.ok(startAt >= 0 && startAt < monthAt, "RED the product-manager read starts before the month lookup is awaited");
   assert.doesNotMatch(load, /await loadScopeProductManagers/, "RED nothing waits on the product managers before the month's reads start");
-  assert.equal((load.match(/productManagersOnGrid\.then\(/g) ?? []).length, 3, "the leave, the product-manager rows and the manager days chain off it");
+  assert.equal(
+    (load.match(/productManagersOnGrid\.then\(/g) ?? []).length,
+    4,
+    "the leave, the product-manager rows, the manager days and the hiring calendar's interviews chain off it",
+  );
 }
 
 function testCommandCenterCompliance() {

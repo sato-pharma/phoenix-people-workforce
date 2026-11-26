@@ -1,11 +1,13 @@
 import { AdminDelete } from "@/components/phoenix-crm/admin-delete";
 import { cairoStamp, dayLabelLong } from "@/components/phoenix-crm/format";
+import { HIRING_INTERVIEWS_UNREAD_NOTE, HiringInterviewsList } from "@/components/phoenix-crm/hiring-interviews-list";
 import { ManagerMissedRecordPanel } from "@/components/phoenix-crm/manager-missed-record-panel";
 import { ManagerPlanActualTable } from "@/components/phoenix-crm/manager-plan-actual-table";
 import { CrmBlock, CrmEmpty, CrmNote, CrmPanel, CrmStat, CrmStatGrid } from "@/components/phoenix-crm/ui";
 import { awaitingValidationNote } from "@/lib/crm/call-rate";
 import { adminDeleteTargetOfManagerDayVisit } from "@/lib/phoenix-crm/admin-delete-rules";
 import { buildPlanVsActual } from "@/lib/phoenix-crm/manager-day-plan";
+import { MISSED_RECORD_MARK } from "@/lib/phoenix-crm/missed-records";
 import { LEAVE_UNREAD_NOTE } from "@/lib/phoenix-crm/plan-leave";
 import { archiveHistoryNote } from "@/lib/phoenix-crm/unplanned-rules";
 // Through `view-types`, never `server/manager-day-detail`: a component may not import server code.
@@ -72,6 +74,31 @@ export function ManagerDayView({ view }: { view: PhoenixCrmManagerDayDetail }) {
           ) : null}
           {view.leaveUnread ? (
             <p className="mt-2 break-words text-sm font-semibold leading-6 text-amber-800">{LEAVE_UNREAD_NOTE}</p>
+          ) : null}
+          {/* 🔴 How he recorded the day — the meeting, training or travel the calendar square drew (owner,
+              2026-11-27: "when I press, for example, meetings doesn't appear"). */}
+          {view.dayActivity ? (
+            <p className="mt-2 break-words text-sm font-semibold leading-6 text-slate-700">
+              <span className="font-black text-slate-900">Recorded as: </span>
+              {view.dayActivity.activityLabel}
+              {view.dayActivity.halfDay ? " (half day)" : ""}
+              {view.dayActivity.note ? (
+                <>
+                  {" — "}
+                  <span dir="auto">{view.dayActivity.note}</span>
+                </>
+              ) : null}
+              {view.dayActivity.enteredByAdmin ? ` · ${MISSED_RECORD_MARK}` : ""}
+            </p>
+          ) : null}
+          {view.dayActivityUnread ? (
+            <p className="mt-2 break-words text-sm font-semibold leading-6 text-amber-800">
+              How this day was recorded could not be read just now, so a meeting, training or travel day is not shown here.
+            </p>
+          ) : null}
+          <HiringInterviewsList interviews={view.hiringInterviews} />
+          {view.hiringInterviewsUnread ? (
+            <p className="mt-2 break-words text-sm font-semibold leading-6 text-amber-800">{HIRING_INTERVIEWS_UNREAD_NOTE}</p>
           ) : null}
         </CrmBlock>
 

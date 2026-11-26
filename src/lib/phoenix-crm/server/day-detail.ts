@@ -6,6 +6,8 @@ import type { ManagerDayVisit } from "@/lib/phoenix-crm/manager-visit-detail";
 import { territoryName } from "@/lib/phoenix-crm/scope";
 import { canEnterMissedRecordOn, canEnterMissedRecords, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadDayRouteSafely, type DayRouteLoad } from "@/lib/phoenix-crm/server/day-route";
+import { readDayHiringInterviews } from "@/lib/phoenix-crm/server/day-hiring-interviews";
+import type { HiringCalendarInterview } from "@/lib/phoenix-crm/team-calendar";
 import { loadRepVisitDetails } from "@/lib/phoenix-crm/server/manager-visit-details";
 import { loadVisitDay, resolveVisitDayAddress, type VisitDayView } from "@/lib/phoenix-crm/server/visits";
 import { loadApprovedLeaveDays } from "@/lib/vacation/approved-leave-days";
@@ -70,6 +72,10 @@ export type PhoenixCrmDayDetail = VisitDayView &
     visitsInFull: ManagerDayVisit[];
     /** That read failed: said on the page, and the visit cards below it still carry the day. */
     visitsInFullUnread: boolean;
+    /** The hiring calendar's interviews he sits in that day — the private calendar's own list, shown, never counted. */
+    hiringInterviews: HiringCalendarInterview[];
+    /** That read failed: said on the page, never shown as a day without interviews. */
+    hiringInterviewsUnread: boolean;
   };
 
 export async function loadPhoenixCrmDayDetail(
@@ -83,6 +89,7 @@ export async function loadPhoenixCrmDayDetail(
   const address = resolveVisitDayAddress(viewer, raw);
   const leaveRead = readDayLeave(address.seat.occupantHrId, address.date);
   const visitsInFullRead = readVisitsInFull(viewer, address);
+  const interviewsRead = readDayHiringInterviews(address.seat.occupantHrId, address.date, address.isTest);
   const loaded = await loadVisitDay(viewer, raw);
   // 🔴 EARLIEST FIRST, WHICH IS NOT HOW THE VISITS TAB ORDERS THEM. That tab is a rep's own day,
   // where the visit he just saved belongs at the top; this page is somebody ELSE reading the day
@@ -106,7 +113,7 @@ export async function loadPhoenixCrmDayDetail(
     })),
   );
 
-  const [{ onLeave, leaveUnread }, { visitsInFull, visitsInFullUnread }] = await Promise.all([leaveRead, visitsInFullRead]);
+  const [{ onLeave, leaveUnread }, { visitsInFull, visitsInFullUnread }, hiring] = await Promise.all([leaveRead, visitsInFullRead, interviewsRead]);
 
   const seat = viewer.org.seats.get(day.territory.seatId);
   const missedRecords =
@@ -125,6 +132,8 @@ export async function loadPhoenixCrmDayDetail(
     onLeave,
     pharmacies,
     editsVisits: canEnterMissedRecords(viewer),
+    hiringInterviews: hiring.interviews,
+    hiringInterviewsUnread: hiring.unread,
     adminDeletes: canEnterMissedRecords(viewer),
     visitsInFull,
     visitsInFullUnread,

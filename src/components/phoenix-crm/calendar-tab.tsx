@@ -53,7 +53,14 @@ type CalendarView = {
   missedRecords: { through: string; seatIds: string[] } | null;
   /** HR's leave could not be read, so an approved vacation draws as blank days — said, never swallowed. */
   leaveUnread: boolean;
+  /** The hiring calendar's interviews could not be read — said, never swallowed. Absent on an older answer. */
+  interviewsUnread?: boolean;
 };
+
+/** "2 interviews from the hiring calendar" — the count a cell's title carries, never a candidate. */
+function interviewsText(count: number): string {
+  return count === 1 ? "1 interview from the hiring calendar" : `${count} interviews from the hiring calendar`;
+}
 
 /** His legend, as ink. Square edges, and one class string per shape so nothing is composed at runtime. */
 const SHAPE_INK: Record<DayShape, string> = {
@@ -127,6 +134,7 @@ function dayTitle(person: string, day: TeamCalendarDay, opens: boolean): string 
   const parts = [`${person} · ${day.day}`, SHAPE_WORD[day.shape]];
   if (isWorkedShape(day.shape)) parts.push(splitText(day.counts));
   if (day.activity) parts.push(dayActivityLabel(day.activity));
+  if ((day.interviews?.length ?? 0) > 0) parts.push(interviewsText(day.interviews.length));
   if (day.onLeave && day.shape !== "leave") parts.push("HR has approved leave on this day");
   if (opens) {
     parts.push(
@@ -384,6 +392,14 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
                 </CrmNote>
               </div>
             ) : null}
+            {view.data.interviewsUnread ? (
+              <div className="mt-3">
+                <CrmNote title="Interviews could not be read" tone="warn">
+                  The hiring calendar could not be read just now, so a day with only an interview may show blank here.
+                  It is on the private calendar; open this month again in a few minutes.
+                </CrmNote>
+              </div>
+            ) : null}
             <div className="mt-3 flex min-w-0 flex-wrap gap-1.5">
               {LEGEND.map((shape) => (
                 <span
@@ -574,6 +590,19 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
                 <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-600">
                   Recorded as a day activity: {dayActivityLabel(chosen.day.activity)}.
                 </p>
+              ) : null}
+              {(chosen.day.interviews?.length ?? 0) > 0 ? (
+                <div className="mt-2 min-w-0">
+                  <p className="break-words text-xs font-black uppercase tracking-[0.12em] text-slate-500">From the hiring calendar</p>
+                  <ul className="mt-1 min-w-0">
+                    {chosen.day.interviews.map((interview, index) => (
+                      <li className="break-words text-xs font-semibold leading-5 text-slate-700" key={`${interview.time}-${index}`}>
+                        <span className="font-black tabular-nums text-slate-900">{interview.time}</span> {interview.title}
+                        {interview.part ? ` · ${interview.part}` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               ) : null}
               {chosen.day.onLeave ? (
                 <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-600">
