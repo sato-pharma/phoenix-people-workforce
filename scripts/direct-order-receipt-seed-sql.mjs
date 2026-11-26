@@ -12,6 +12,15 @@
 // (`on conflict do nothing`), so a used or cancelled receipt is never reset.
 import { readFileSync } from "node:fs";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "direct-order-receipt-seed-sql",
+  entry: import.meta.url,
+  known: [],
+});
+
 const [file, ...rest] = process.argv.slice(2);
 if (!file || rest.length > 0) {
   console.error("Usage: node scripts/direct-order-receipt-seed-sql.mjs <path-to-register.json>");
