@@ -5,12 +5,15 @@ import { cairoTodayIso } from "@/lib/crm/dates";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 import { forbiddenError, validationError } from "@/lib/http/api-errors";
 import { hrIdLookupKeys } from "@/lib/hr-id";
+import { classifyProbationRowZone } from "@/lib/lifecycle-risk/metrics";
 import { personKey, territoryName, TERRITORY_TIER, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { chunk, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { loadPlanHolidays } from "@/lib/phoenix-crm/server/plan-holidays";
+import { getProbationTrackerRows } from "@/lib/probation/service";
+import type { RepProbationStanding } from "@/lib/rep-visits-export/desk";
 import {
   activityLabel,
   checkExportRange,
@@ -82,20 +85,64 @@ function listOf(value: unknown): ExportListType {
   return "Pharmacy";
 }
 
-export type RepVisitsExportOption = { hrId: string; name: string; territory: string };
+export type RepVisitsExportOption = {
+  hrId: string;
+  name: string;
+  territory: string;
+  /** The territory's line, by name ("Pedia"), for the page's line filter. */
+  line: string;
+  /** YYYY-MM-DD, or null when the employee record holds none — the "from the hire date" period needs it. */
+  hireDate: string | null;
+  probation: RepProbationStanding;
+};
 
-/** Everyone holding a rep's territory now, for the page's rep filter, by name. */
-export async function loadRepVisitsExportOptions(access: Pick<AccessContext, "role">): Promise<RepVisitsExportOption[]> {
+/**
+ * Everyone holding a rep's territory now, for the page's rep picker, by name — with the line, the hiring
+ * date and the probation zone the page filters on (owner, 26 Nov 2026: "filter line pedia probation status
+ * critical and filter from their hire date to utd").
+ */
+export async function loadRepVisitsExportOptions(access: AccessContext): Promise<RepVisitsExportOption[]> {
   if (!canExportRepVisits(access)) throw forbiddenError("The rep visits export is for the Super Admin.");
   const org = await loadPhoenixCrmOrg();
   const holders = org.territoryHolders.filter((seat) => seat.tier === TERRITORY_TIER && seat.occupantHrId);
-  const names = await loadPeopleNames(holders.map((seat) => seat.occupantHrId));
+  const hrIds = [...new Set(holders.map((seat) => seat.occupantHrId as string))];
+  const [names, hireDates, probation] = await Promise.all([
+    loadPeopleNames(hrIds),
+    loadHireDates(hrIds),
+    // The tracker's own rows, so "Critical" here is exactly the tracker's Critical.
+    getProbationTrackerRows(access).then(
+      (rows) => new Map(rows.map((row) => [personKey(row.hr_id), classifyProbationRowZone(row)] as const)),
+      () => null,
+    ),
+  ]);
   const out = new Map<string, RepVisitsExportOption>();
   for (const seat of holders) {
     const hrId = seat.occupantHrId as string;
-    if (!out.has(hrId)) out.set(hrId, { hrId, name: nameOf(names, hrId, hrId), territory: territoryName(seat) });
+    if (out.has(hrId)) continue;
+    out.set(hrId, {
+      hrId,
+      name: nameOf(names, hrId, hrId),
+      territory: territoryName(seat),
+      line: seat.lineName || lineName(seat.lineCode) || "No line",
+      hireDate: hireDates.get(personKey(hrId) ?? hrId) ?? null,
+      probation: probation ? (probation.get(personKey(hrId)) ?? "none") : "unread",
+    });
   }
   return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+async function loadHireDates(hrIds: string[]): Promise<Map<string, string>> {
+  const supabase = getSupabaseAdmin();
+  const out = new Map<string, string>();
+  for (const part of chunk([...new Set(hrIds.flatMap((hrId) => hrIdLookupKeys(hrId)))], 200)) {
+    const { data, error } = await supabase.from("employees").select("hr_id, hire_date").in("hr_id", part);
+    throwIfError(error);
+    for (const row of (data ?? []) as { hr_id: string | null; hire_date: string | null }[]) {
+      const key = personKey(row.hr_id);
+      if (key && row.hire_date) out.set(key, String(row.hire_date).slice(0, 10));
+    }
+  }
+  return out;
 }
 
 async function readAll<T extends Row>(what: string, build: () => unknown, maxRows = MAX_VISITS): Promise<T[]> {
