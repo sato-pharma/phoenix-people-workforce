@@ -176,7 +176,7 @@ export type InterviewDayEntry = { hrId: string; date: string; time: string; titl
 /** The private calendar's own interview items, cut to what another calendar prints. Pure; sorted by time. */
 export function interviewDayEntriesOf(items: readonly PrivateCalendarItem[]): InterviewDayEntry[] {
   return items
-    .filter((item) => item.source === "interview")
+    .flatMap((item) => (item.source === "interview" && item.employeeHrId ? [{ ...item, employeeHrId: item.employeeHrId }] : []))
     .map((item) => ({ date: item.startDate, hrId: item.employeeHrId, part: item.status ?? "", time: item.time ?? "", title: item.title }))
     .sort((left, right) => left.date.localeCompare(right.date) || left.time.localeCompare(right.time));
 }

@@ -102,7 +102,7 @@ export type TeamCalendarView = {
    * The hiring calendar's interviews could not be read, so a day with only an interview is drawn blank here while
    * the private calendar shows it. Said beside the grid, never swallowed — the same shape as `leaveUnread`.
    */
-  interviewsUnread: boolean;
+  interviewsUnread?: boolean;
 };
 
 type Row = Record<string, unknown>;
