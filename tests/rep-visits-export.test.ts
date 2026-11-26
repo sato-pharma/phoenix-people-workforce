@@ -10,12 +10,15 @@ import {
   dayType,
   repeatColours,
   repeatCounts,
+  REP_VISITS_EXPORT_MAX_DAYS,
   repVisitsExportFileName,
   standing,
   type ExportDayFacts,
   type ExportVisit,
   type RepVisitsExportData,
 } from "../src/lib/rep-visits-export/rules.ts";
+import { addDays, fileNameOf, probationMatches, retryWaitSeconds, reviewPeriodFor, visitsPeriodFor } from "../src/lib/rep-visits-export/desk.ts";
+import { REVIEW_MAX_PERIOD_MONTHS, resolveReviewPeriod } from "../src/lib/sales/rep-effectiveness/model.ts";
 import { buildRepVisitsWorkbook, EVERY_DAY_HEADERS, everyDayRows, REP_VISITS_WORKBOOK_SHEETS } from "../src/lib/rep-visits-export/workbook.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -238,6 +241,63 @@ function theSuperAdminsAlone(): void {
   assert.match(entry.slice(0, 600), /roles: \["Super Admin"\]/, "the menu card is the Super Admin's alone");
 }
 
+/**
+ * The rep desk (owner, 26 Nov 2026: "make me able to for example filter line pedia probation status critical
+ * and filter from their hire date to utd"; of the download, "one or multiple as i want").
+ */
+function theRepDesk(): void {
+  // Probation, in the tracker's own zones.
+  assert.equal(probationMatches("critical", "critical"), true);
+  assert.equal(probationMatches("warning", "critical"), false, "Critical is the critical zone alone");
+  assert.equal(probationMatches("overdue", "on"), true, "a probation that ended with no decision is still on probation");
+  assert.equal(probationMatches("none", "on"), false);
+  assert.equal(probationMatches("none", "none"), true);
+  assert.equal(probationMatches("unread", "critical"), true, "an unread tracker hides nobody; the page says the filter is off");
+
+  // From each rep's hire date to today.
+  const today = "2026-11-26";
+  type DeskRep = { name: string; hireDate: string | null };
+  const visits = (rep: DeskRep, fromHire = true) =>
+    visitsPeriodFor(rep, { from: "2026-11-01", to: today, fromHire, today, maxDays: REP_VISITS_EXPORT_MAX_DAYS });
+  const ebtissam: DeskRep = { name: "Ebtissam Alaa", hireDate: "2026-09-12" };
+  assert.deepEqual(visits(ebtissam), { from: "2026-09-12", to: today }, "hire date to today");
+  assert.deepEqual(visits(ebtissam, false), { from: "2026-11-01", to: today }, "unticked, the chosen range");
+  const longServing = visits({ name: "A long-serving rep", hireDate: "2019-03-01" });
+  assert.ok(!("error" in longServing));
+  assert.deepEqual(checkExportRange(longServing.from, longServing.to, today), { ok: true, ...longServing }, "a rep hired long ago starts at the day limit, which the route accepts");
+  assert.equal(checkExportRange(addDays(longServing.from, -1), longServing.to, today).ok, false, "one day earlier is refused: the limit is used to the day");
+  const undated = visits({ name: "Nour Samir", hireDate: null });
+  assert.ok("error" in undated && /Nour Samir has no hire date/.test(undated.error), "a rep with no hire date is named, never given a made-up period");
+
+  const review = (rep: DeskRep) =>
+    reviewPeriodFor(rep, { from: "2025-12", to: "2026-11", fromHire: true, today, maxMonths: REVIEW_MAX_PERIOD_MONTHS });
+  assert.deepEqual(review(ebtissam), { from: "2026-09", to: "2026-11" }, "hire month to this month");
+  const reviewLong = review({ name: "A long-serving rep", hireDate: "2019-03-01" });
+  assert.deepEqual(reviewLong, { from: "2025-12", to: "2026-11" }, "at most twelve months back");
+  assert.deepEqual(resolveReviewPeriod(reviewLong, today), reviewLong, "which the review route accepts");
+
+  // One file, or many in one zip; the ten-a-minute limit is waited out, never raised.
+  assert.equal(fileNameOf('attachment; filename="Ebtissam-Alaa-Visits.xlsx"'), "Ebtissam-Alaa-Visits.xlsx");
+  assert.equal(retryWaitSeconds("42"), 42);
+  assert.equal(retryWaitSeconds(null), 30);
+  assert.equal(retryWaitSeconds("900"), 90);
+  const desk = stripComments(readFileSync("src/components/rep-visits-export/rep-export-desk.tsx", "utf8"));
+  assert.match(desk, /probationMatches\(option\.probation, probation\)/, "the probation filter is the shared rule");
+  assert.match(desk, /option\.line === line/, "the line filter");
+  assert.match(desk, /visitsPeriodFor\(rep, \{ from: visitsFrom, to: visitsTo, fromHire: visitsFromHire,/, "each rep's range is the chosen one, or the rep's own from the hire date");
+  assert.match(desk, /response\.status === 429/, "a run that meets the export limit waits and carries on");
+  assert.match(desk, /await import\("jszip"\)/, "several reps are saved as one zip");
+  const limit = readFileSync("src/lib/http/assert-export-rate-limit.ts", "utf8");
+  assert.match(limit, /limit: 10,/, "the export limit is not raised for the desk");
+  const page = stripComments(readFileSync("app/(admin)/admin/rep-visits-export/page.tsx", "utf8"));
+  assert.match(page, /<RepExportDesk\s/);
+  assert.match(page, /visitsRoute=\{EXPORT_ROUTE\}/);
+  const server = stripComments(readFileSync("src/lib/rep-visits-export/server.ts", "utf8"));
+  assert.match(server, /getProbationTrackerRows\(access\)/, "probation is the tracker's own reading");
+  assert.match(server, /classifyProbationRowZone\(row\)/);
+  assert.match(server, /probation \? \(probation\.get\(personKey\(hrId\)\) \?\? "none"\) : "unread"/, "a tracker that could not be read is said, never shown as not on probation");
+}
+
 export async function runRepVisitsExportTests() {
   rangeAndFileName();
   ageAroundTheBirthday();
@@ -245,4 +305,5 @@ export async function runRepVisitsExportTests() {
   repeatColoursNeverShareAMonth();
   await theWorkbook();
   theSuperAdminsAlone();
+  theRepDesk();
 }
