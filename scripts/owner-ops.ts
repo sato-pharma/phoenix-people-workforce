@@ -12,6 +12,10 @@
 // WHAT IT DOES, PER JOB — the same function the route handler calls, nothing written by hand:
 //   link-doctor   createMarketingValidationRecord   (POST /api/marketing-requests/validation)
 //   merge-venues  mergeMarketingVenue               (POST /api/marketing-requests/venue-merge)
+//   merge-customers mergeMarketingCustomers         (POST /api/marketing-requests/customer-merge)
+//                 The screen's merge asks "are you sure?" in a browser OK box, which the app's browser
+//                 pane closes unanswered, so the press never reached the server (26 Nov 2026). The owner's
+//                 word in chat is the decision; this sends it through the same function and its refusals.
 //   pin-pharmacy  the desk-entry pin: captured_latitude/longitude/at on marketing_pharmacies with
 //                 evidence_status 'pending' (no shop photo). No route writes this; the 25 Nov pins were
 //                 one hand UPDATE, so it is done here with that UPDATE's own guard (no pin yet) plus a
@@ -268,6 +272,66 @@ async function runMergeVenues(plan: Extract<OwnerOpsPlan, { job: "merge-venues" 
     if (typeof value === "number") console.log(`  ${key}: ${value}`);
   }
   return { employees, focus: { pharmacyIds: [plan.survivorId, plan.loserId] } };
+}
+
+type MergeCustomerRow = {
+  active: boolean; area_id: string | null; customer_code: string; customer_type: string; display_name: string;
+  id: string; line_id: string | null; merged_into_customer_id: string | null; validation_status: string;
+};
+
+async function readMergeCustomers(ids: string[]): Promise<Map<string, MergeCustomerRow & { links: number; requests: number }>> {
+  const { getSupabaseAdmin } = await import("@/lib/supabase/server");
+  const supabase = getSupabaseAdmin();
+  const rows = await supabase
+    .from("marketing_customers")
+    .select("id, customer_code, display_name, customer_type, line_id, area_id, validation_status, active, merged_into_customer_id")
+    .in("id", ids);
+  if (rows.error) throw rows.error;
+  const out = new Map<string, MergeCustomerRow & { links: number; requests: number }>();
+  for (const row of (rows.data ?? []) as MergeCustomerRow[]) {
+    const links = await supabase.from("marketing_customer_pharmacies").select("id", { count: "exact", head: true }).eq("customer_id", row.id).eq("active", true);
+    if (links.error) throw links.error;
+    const requests = await supabase.from("marketing_requests").select("id", { count: "exact", head: true }).eq("customer_id", row.id);
+    if (requests.error) throw requests.error;
+    out.set(row.id, { ...row, links: links.count ?? 0, requests: requests.count ?? 0 });
+  }
+  return out;
+}
+
+function describeMergeCustomer(label: string, row: (MergeCustomerRow & { links: number; requests: number }) | undefined): string {
+  if (!row) return `  ${label}: not found`;
+  const state = row.merged_into_customer_id ? `merged into ${row.merged_into_customer_id}` : row.active ? "live" : "switched off";
+  return `  ${label}: ${row.display_name} · ${row.customer_code} · ${row.customer_type} · ${row.validation_status} · ${state} · ${row.links} live pharmacy link(s) · ${row.requests} request(s)`;
+}
+
+async function runMergeCustomers(plan: Extract<OwnerOpsPlan, { job: "merge-customers" }>, owner: AccessContext) {
+  const { mergeMarketingCustomers } = await import("@/lib/marketing-requests/customer-merge");
+  const before = await readMergeCustomers([plan.survivorId, plan.retiredId]);
+  console.log("Before:");
+  console.log(describeMergeCustomer("stays  ", before.get(plan.survivorId)));
+  console.log(describeMergeCustomer("retired", before.get(plan.retiredId)));
+  console.log(`Reason: ${plan.reason}`);
+  const result = await mergeMarketingCustomers(owner, {
+    carryEvidence: false,
+    reason: plan.reason,
+    retiredId: plan.retiredId,
+    survivorId: plan.survivorId,
+  });
+  console.log("\nThe app accepted it:");
+  for (const [key, value] of Object.entries(result ?? {})) console.log(`  ${key}: ${String(value)}`);
+
+  // PROOF — read back, not the function's own report. On a dry run the merge ran inside a rolled-back
+  // transaction, so this shows the rows as they still are.
+  const after = await readMergeCustomers([plan.survivorId, plan.retiredId]);
+  console.log("\nPROOF — the two rows now:");
+  console.log(describeMergeCustomer("stays  ", after.get(plan.survivorId)));
+  console.log(describeMergeCustomer("retired", after.get(plan.retiredId)));
+  if (plan.apply && after.get(plan.retiredId)?.merged_into_customer_id !== plan.survivorId) {
+    // Exit 3, never a refusal: the write has already happened, and "refused" would read as "nothing changed".
+    console.error("\nPROOF FAILED — the merge reported success but the retired row does not point at the one that stays.");
+    process.exitCode = 3;
+  }
+  return { employees: [], focus: {}, proofDone: true };
 }
 
 async function runPinPharmacy(plan: Extract<OwnerOpsPlan, { job: "pin-pharmacy" }>, owner: AccessContext) {
@@ -592,6 +656,7 @@ async function main() {
   try {
     if (plan.job === "link-doctor") outcome = await runLinkDoctor(plan, owner.access);
     else if (plan.job === "merge-venues") outcome = await runMergeVenues(plan, owner.access);
+    else if (plan.job === "merge-customers") outcome = await runMergeCustomers(plan, owner.access);
     else if (plan.job === "load-crm-list") outcome = await runLoadCrmList(plan, owner.access);
     else if (plan.job === "seat-in-building") outcome = await runSeatInBuilding(plan, owner.access);
     else outcome = await runPinPharmacy(plan, owner.access);
