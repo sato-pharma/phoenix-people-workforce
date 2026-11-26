@@ -163,6 +163,21 @@ const ENV = {
   RUSTDESK_PUBLIC_KEY: "PUBLICKEYNOTASECRET=",
 } as unknown as NodeJS.ProcessEnv;
 
+/**
+ * 🔴 NO TEST READS THE AGENT TABLES. `getHeadwindLocationHistory` takes Phoenix's own position-agent
+ * reads as its fourth argument precisely so this suite can answer them from memory: the live pair goes
+ * through `getSupabaseAdmin()`, and `pnpm run test` runs with `--env-file-if-exists=.env.local`, which
+ * points at PRODUCTION. Every call in this file reads the tablet server only.
+ */
+const NO_AGENT_TRAIL = {
+  agentFixes: async () => ({ error: null, fixes: [] }),
+  agentForDevice: async () => null,
+};
+
+function locationHistory(deviceNumber: string, fetchImpl: typeof fetch, env: NodeJS.ProcessEnv = ENV) {
+  return getHeadwindLocationHistory(deviceNumber, fetchImpl, env, NO_AGENT_TRAIL);
+}
+
 type StubResponse = { status: number; body: unknown };
 
 /**
@@ -719,7 +734,7 @@ async function runDeviceTests() {
   // 🔴 An unreadable device list must not throw away a movement trail the plugin already answered with —
   // and the refusal it raises no longer claims "nothing was changed", since it can follow a write.
   resetHeadwindTokenCache();
-  const trail = await getHeadwindLocationHistory(
+  const trail = await locationHistory(
     "D",
     makeFetch({
       api: [
@@ -739,7 +754,7 @@ async function runDeviceTests() {
   assert.equal(trail.fixes[0].source, "plugin");
   resetHeadwindTokenCache();
   await assert.rejects(
-    getHeadwindLocationHistory(
+    locationHistory(
       "D",
       makeFetch({
         api: [
@@ -1504,7 +1519,7 @@ async function runLocationHonestyTests() {
 
   // 🔴 A REFUSAL IS NOT AN EMPTY HISTORY. `catch { fixes = [] }` hid the 1 Nov refusal for weeks.
   resetHeadwindTokenCache();
-  const refused = await getHeadwindLocationHistory(
+  const refused = await locationHistory(
     "H",
     makeFetch({ api: [noUploads, ok({ sendData: true }), { body: { message: "error.notfound.device", status: "ERROR" }, status: 200 }, fleet] }).fetch,
     ENV,
@@ -1515,7 +1530,7 @@ async function runLocationHonestyTests() {
 
   // Records with no position are said so, not called "nothing recorded".
   resetHeadwindTokenCache();
-  const blind = await getHeadwindLocationHistory(
+  const blind = await locationHistory(
     "H",
     makeFetch({ api: [noUploads, ok({ sendData: true }), ok({ items: [{ gpsLat: 0, gpsLon: 0 }, { deviceBatteryLevel: 50 }], totalItemsCount: 2 }), fleet] }).fetch,
     ENV,
@@ -1527,7 +1542,7 @@ async function runLocationHonestyTests() {
   const capped = makeFetch({
     api: [noUploads, ok({ sendData: true }), ok({ items: [{ gpsLat: 30.1, gpsLon: 31.2, latestUpdateTime: 1_762_600_000_000 }], totalItemsCount: 350 }), fleet],
   });
-  const cappedRead = await getHeadwindLocationHistory("H", capped.fetch, ENV);
+  const cappedRead = await locationHistory("H", capped.fetch, ENV);
   const searchCall = capped.calls.find((call) => call.url.includes("/search/dynamic"));
   const searchBody = JSON.parse(String(searchCall?.init.body));
   assert.equal(searchBody.sortValue, undefined, "🔴 no sortValue — the server ignores it, and sending it implies an order it never applied");
@@ -1556,7 +1571,7 @@ async function runLocationHonestyTests() {
       fleet,
     ],
   });
-  const uploadedRead = await getHeadwindLocationHistory("H", uploaded.fetch, ENV);
+  const uploadedRead = await locationHistory("H", uploaded.fetch, ENV);
   const firstApiCall = uploaded.calls.find((call) => !call.url.includes("/rest/public/jwt/login"))!;
   assert.match(
     firstApiCall.url,
@@ -1571,7 +1586,7 @@ async function runLocationHonestyTests() {
   // 🔴 ONLY A 404 MEANS THIS SERVER HAS NO RECEIVER — and that is a server to rebuild, never a tablet
   // that stayed still. The sentence names the Phoenix image, because no tablet needs touching for it.
   resetHeadwindTokenCache();
-  const noReceiver = await getHeadwindLocationHistory(
+  const noReceiver = await locationHistory(
     "H",
     makeFetch({
       api: [{ body: { message: "not found", status: "ERROR" }, status: 404 }, ok({ sendData: true }), ok({ items: [] }), fleet],
@@ -1585,7 +1600,7 @@ async function runLocationHonestyTests() {
   // Any other failure is "could not be read", never "no receiver" — that would send somebody to rebuild
   // a server that has one and is merely unreachable.
   resetHeadwindTokenCache();
-  const unreadableUpload = await getHeadwindLocationHistory(
+  const unreadableUpload = await locationHistory(
     "H",
     makeFetch({
       api: [{ body: { message: "timeout", status: "ERROR" }, status: 200 }, ok({ sendData: true }), ok({ items: [] }), fleet],
@@ -1607,10 +1622,69 @@ async function runLocationHonestyTests() {
   assert.equal(fromUpload[0].recordedAt, new Date(1_762_600_000_000).toISOString(), "a seconds stamp is not read as 1970");
   assert.equal(fromUpload[0].source, "upload", "and the row says where it came from, so the panel can label it");
 
+  // ── Phoenix's own position agent, 26 Nov 2026 ─────────────────────────────────────────────────────
+  //
+  // 🔴 FOUR STATES, FOUR DIFFERENT SENTENCES, AND THE AGENT IS SAID FIRST. It is the one source Phoenix
+  // holds itself, so "nobody has claimed this install", "it is reporting", "Android gave it no location
+  // permission" and "the read failed" must never collapse into one line — least of all into silence,
+  // which is what reads as a tablet that stayed still.
+  const agentServer = () => makeFetch({ api: [noUploads, ok({ sendData: true }), ok({ items: [] }), fleet] });
+  resetHeadwindTokenCache();
+  const unbound = await getHeadwindLocationHistory("H", agentServer().fetch, ENV, NO_AGENT_TRAIL);
+  assert.match(unbound.note, /^No Phoenix Position agent is bound to this tablet/, "an unclaimed tablet is told so, first");
+  assert.match(unbound.note, /positions are being KEPT and are waiting to be claimed/, "and that nothing is being thrown away");
+  assert.equal(unbound.agent.bound, false);
+
+  resetHeadwindTokenCache();
+  const reporting = await getHeadwindLocationHistory("H", agentServer().fetch, ENV, {
+    agentFixes: async () => ({
+      error: null,
+      fixes: [
+        { accuracyM: 12, batteryLevel: 64, latitude: 30.12, longitude: 31.22, mock: false, recordedAt: new Date(1_764_100_000_000).toISOString() },
+        { accuracyM: 20, batteryLevel: 62, latitude: 30.13, longitude: 31.23, mock: false, recordedAt: new Date(1_764_000_000_000).toISOString() },
+      ],
+    }),
+    agentForDevice: async () => ({ locationPermission: "fine" }),
+  });
+  assert.equal(reporting.agent.fixes, 2);
+  assert.equal(reporting.fixes.filter((fix) => fix.source === "agent").length, 2, "its positions are rows of their own, labelled");
+  assert.match(reporting.note, /are the 2 newest positions the tablet posted to Phoenix itself/);
+  assert.match(reporting.note, /needs neither the tablet server nor a plugin/, "which is the whole point of this source");
+  // 🔴 AND IT OUTRANKS EVERY OTHER SOURCE ON THE MAP — one source per line, the fullest first.
+  assert.deepEqual(
+    fixesToPoints([
+      { batteryLevel: null, latitude: 30.5, longitude: 31.5, recordedAt: new Date(1_764_200_000_000).toISOString(), source: "upload" },
+      ...reporting.fixes
+        .filter((fix) => fix.source === "agent")
+        .map((fix) => ({ batteryLevel: fix.batteryLevel, latitude: fix.latitude, longitude: fix.longitude, recordedAt: fix.recordedAt, source: fix.source })),
+    ]).map((point) => point.latitude),
+    [30.13, 30.12],
+    "the agent's trail is drawn, oldest stop first, and the tablet server's upload is left off the line",
+  );
+
+  resetHeadwindTokenCache();
+  const noPermission = await getHeadwindLocationHistory("H", agentServer().fetch, ENV, {
+    agentFixes: async () => ({ error: null, fixes: [] }),
+    agentForDevice: async () => ({ locationPermission: "none" }),
+  });
+  assert.match(noPermission.note, /Android has given it NO location permission/);
+  assert.match(noPermission.note, /a permission to grant, not a tablet that stayed still/);
+
+  resetHeadwindTokenCache();
+  const agentUnreadable = await getHeadwindLocationHistory("H", agentServer().fetch, ENV, {
+    agentFixes: async () => ({ error: null, fixes: [] }),
+    agentForDevice: async () => {
+      throw new Error("PGRST205");
+    },
+  });
+  assert.match(agentUnreadable.note, /could not be read \(PGRST205\)/, "a deploy serving this code before its migration says so");
+  assert.match(agentUnreadable.note, /NOT an empty history/);
+  assert.equal(agentUnreadable.fixes.length, 1, "🔴 and the other sources are still drawn — one unreadable table hides no trail");
+
   // 🔴 READING NEVER WRITES. Collection off is reported, and no PUT is sent from the read.
   resetHeadwindTokenCache();
   const off = makeFetch({ api: [noUploads, ok({ intervalMins: 15, sendData: false }), ok({ items: [] }), fleet] });
-  const offRead = await getHeadwindLocationHistory("H", off.fetch, ENV);
+  const offRead = await locationHistory("H", off.fetch, ENV);
   assert.equal(offRead.collection, "off");
   assert.equal(offRead.pluginEnabled, false);
   assert.match(offRead.note, /switched off on the tablet server/);

@@ -31,8 +31,10 @@ node --env-file-if-exists=.env.local --experimental-strip-types --experimental-s
 - **`--apply` refuses a tree that is behind `origin/main`.** Run it from a fresh checkout.
 - 🔴 **Run `--apply` on production only when the owner's own message orders that specific job.**
   The dry run is always allowed, so run it first and read its list.
-- **Every run ends with a proof read:** the employee's draft workspace (`getMarketingRequestDraftWorkspace`,
-  the read behind `GET /api/marketing-requests/drafts`). Exit 2 = bad arguments; 1 = refused by
+- **Every run ends with a proof read** — for the marketing jobs the employee's draft workspace
+  (`getMarketingRequestDraftWorkspace`, the read behind `GET /api/marketing-requests/drafts`); a job
+  whose change no workspace shows reads its own rows back instead (the two merged customer rows, a
+  tablet's agent trail) and says so. Exit 2 = bad arguments; 1 = refused by
   the app; 3 = written but the proof could not be read (do not re-run: the write happened).
 - `--help` lists the jobs. Pinned by `tests/owner-ops-runner.test.ts`.
 
@@ -156,6 +158,39 @@ node --env-file-if-exists=.env.local --experimental-strip-types --experimental-s
   longitude ranges overlap, so a swapped Cairo or Delta pin still passes the Egypt check: read the
   printed pin row.
 - **Proof:** the pin row, then the linked employees' workspaces.
+
+## Rep tablets
+
+### Say which tablet a Phoenix Position install is (and read its trail)
+
+- **Why it needs doing at all.** The rep tablets' own Phoenix Position app enrols ITSELF: it says hello
+  with an install id it minted, Phoenix answers a token once, and from then on it posts its fixes with
+  that token. Nothing in that exchange says which tablet it is — the app is deliberately silent on the
+  tablet (`rep-tablet-never-shows-tracking-golden-rule`), so nobody types a number into it. The install
+  arrives UNBOUND, its fixes are kept with no tablet number, and a person says whose they are.
+- **List them:** `owner-ops.ts tablet-agents` — every install that has ever said hello, which tablet each
+  is bound to, when it last called, how many fixes it has sent, and whether it is out of service. A read;
+  `--apply` means nothing here.
+- **Bind one:** `owner-ops.ts bind-tablet-agent --install <install id> --tablet PHX-TAB-0008` — a dry run
+  first, then the same line with `--apply`. It calls `bindPositionAgent` in
+  `src/lib/devices/positions/agents.ts` and 🔴 **stamps the fixes that install already sent with that
+  tablet too** — without it the week before the bind would read as a tablet that reported nothing.
+- **Take one out of service:** `owner-ops.ts revoke-tablet-agent --install <id> --reason "<why>"` — the
+  install is refused from its next call (403) and the tablet is free to bind a new one. Do this when a
+  tablet is factory reset, re-issued or lost: a reset tablet comes back as a NEW install id, and the old
+  row would otherwise keep the tablet's number.
+- **Which install belongs to which tablet.** The listing prints the manufacturer, model and Android
+  version the install reported, and its first hello's time. Match those against the tablet in Headwind
+  (its own model and the hour it was set up); where two are alike, bind one and read its trail — a fix
+  near the rep's own area settles it. Never guess: a wrong bind puts one rep's movements on another's
+  tablet.
+- **What it refuses:** an install id no hello has used (404), one already out of service (409), and a
+  tablet that is already reporting through a different live install (409, naming it) — one live install
+  per tablet, pinned by a partial unique index in the database.
+- **Proof:** the run reads that tablet's agent trail back the way the Tablet Dashboard reads it
+  (`listAgentFixes`), newest first. Both the bind and the revoke write an audit row under entity type
+  `tablet_position_agent`.
+- **Permission:** the same `company_devices / approve` check every Headwind route makes.
 
 ## Phoenix CRM
 

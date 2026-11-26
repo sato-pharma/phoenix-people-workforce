@@ -1203,6 +1203,7 @@ import { runManagedPlayIframeTests } from "./managed-play-iframe.test.ts";
 import { runTabletEnrollmentTests } from "./tablet-enrollment.test.ts";
 import { runTabletAutoRegisterTests } from "./tablet-auto-register.test.ts";
 import { runHeadwindBridgeTests } from "./headwind-bridge.test.ts";
+import { runTabletPositionAgentTests } from "./tablet-position-agent.test.ts";
 import { runHeadwindCustodyConfirmTests } from "./headwind-custody-confirm.test.ts";
 import { runCustodyItemValuesTests } from "./custody-item-values.test.ts";
 import { runDeviceImportAttemptLogTests } from "./device-import-attempt-log.test.ts";
@@ -5947,6 +5948,17 @@ await runTest(
   + "already in the register (naming its tag), and one carrying neither a serial nor an IMEI, writing "
   + "exactly one row through the one shared register door",
   runHeadwindCustodyConfirmTests,
+);
+await runTest(
+  "the rep tablets' own Phoenix Position agent (26 Nov 2026): a tablet enrols itself once at the hello "
+  + "door and is answered a token it never sees again — the row keeps only its hash — a second hello "
+  + "mints nothing, a batch of fixes is stored by the install's own epoch milliseconds with Null Island "
+  + "and an out-of-range pair thrown out, the same batch re-sent stores nothing, an unknown install and "
+  + "a wrong token are refused with the SAME 401 so neither answer tells a caller which half was wrong, "
+  + "a revoked install is refused 403, a store that fails is 503 rather than a silent accept, both doors "
+  + "are rate-limited, and binding an install to a tablet stamps the fixes it posted before anybody knew "
+  + "whose they were",
+  runTabletPositionAgentTests,
 );
 await runTest("organogram hardening", runOrganogramHardeningTests);
 await runTest("vacancy report / organogram consistency", runVacancyReportOrganogramConsistencyTests);

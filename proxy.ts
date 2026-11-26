@@ -340,6 +340,12 @@ function securityProxy(request: NextRequest): NextResponse | null {
       // session and writes no database (it counts a directive, an origin and a page shape in memory),
       // so there is nothing for a cross-site request to forge.
       request.nextUrl.pathname === "/api/security/csp-report" ||
+      // The Phoenix Position agent on a rep tablet (26 Nov 2026): an Android app POSTs these with no
+      // Origin, no Referer and no cookie. The hello mints a token for the install id the app made up,
+      // and every report is authorised by that token inside the route — an install nobody has bound to
+      // a tablet is inert, so neither door hands a forged request anything. There is no cookie to ride.
+      request.nextUrl.pathname === "/api/devices/positions" ||
+      request.nextUrl.pathname === "/api/devices/positions/hello" ||
       // The ChatGPT data connector (17 Nov 2026): ChatGPT's servers POST these with no Origin and no
       // cookie. /api/mcp is authorised by a connector bearer token re-checked live against the account
       // on every call; register, token and revoke are the OAuth endpoints a public client must reach

@@ -60041,6 +60041,75 @@ COMMENT ON COLUMN public.device_assignments.is_placeholder IS 'True while this r
 COMMENT ON CONSTRAINT device_assignments_settlement_within_agreed ON public.device_assignments IS 'البند (10) of the custody receipt caps recovery at the estimated value shown at signature. A settlement above it would be a wage deduction the signed instrument does not authorise.';
 
 --
+-- Name: device_position_agents; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.device_position_agents (
+    install_id uuid NOT NULL,
+    token_hash text NOT NULL,
+    device_number text,
+    android_id text,
+    model text,
+    manufacturer text,
+    android_version text,
+    agent_version text,
+    location_permission text,
+    first_seen_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_seen_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_fix_at timestamp with time zone,
+    fixes_received bigint DEFAULT 0 NOT NULL,
+    bound_at timestamp with time zone,
+    bound_by_hr_id text,
+    revoked_at timestamp with time zone,
+    revoked_reason text,
+    CONSTRAINT device_position_agents_bound CHECK (((device_number IS NULL) = (bound_at IS NULL))),
+    CONSTRAINT device_position_agents_device CHECK (((device_number IS NULL) OR ((char_length(device_number) >= 1) AND (char_length(device_number) <= 80)))),
+    CONSTRAINT device_position_agents_permission CHECK (((location_permission IS NULL) OR (location_permission = ANY (ARRAY['fine'::text, 'coarse'::text, 'background'::text, 'none'::text])))),
+    CONSTRAINT device_position_agents_token_hash CHECK ((char_length(token_hash) = 64))
+);
+
+ALTER TABLE public.device_position_agents OWNER TO postgres;
+
+--
+-- Name: device_positions; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.device_positions (
+    id bigint NOT NULL,
+    install_id uuid NOT NULL,
+    device_number text,
+    recorded_at timestamp with time zone NOT NULL,
+    latitude double precision NOT NULL,
+    longitude double precision NOT NULL,
+    accuracy_m double precision,
+    battery_level integer,
+    provider text,
+    mock boolean DEFAULT false NOT NULL,
+    received_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT device_positions_accuracy CHECK (((accuracy_m IS NULL) OR ((accuracy_m >= (0)::double precision) AND (accuracy_m <= (100000)::double precision)))),
+    CONSTRAINT device_positions_battery CHECK (((battery_level IS NULL) OR ((battery_level >= 0) AND (battery_level <= 100)))),
+    CONSTRAINT device_positions_device CHECK (((device_number IS NULL) OR ((char_length(device_number) >= 1) AND (char_length(device_number) <= 80)))),
+    CONSTRAINT device_positions_latitude CHECK (((latitude >= ('-90'::integer)::double precision) AND (latitude <= (90)::double precision))),
+    CONSTRAINT device_positions_longitude CHECK (((longitude >= ('-180'::integer)::double precision) AND (longitude <= (180)::double precision))),
+    CONSTRAINT device_positions_not_null_island CHECK (((latitude <> (0)::double precision) OR (longitude <> (0)::double precision)))
+);
+
+ALTER TABLE public.device_positions OWNER TO postgres;
+
+--
+-- Name: device_positions_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.device_positions ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.device_positions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+--
 -- Name: device_screen_recordings; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -77114,6 +77183,20 @@ ALTER TABLE ONLY public.device_assignments
     ADD CONSTRAINT device_assignments_pkey PRIMARY KEY (id);
 
 --
+-- Name: device_position_agents device_position_agents_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.device_position_agents
+    ADD CONSTRAINT device_position_agents_pkey PRIMARY KEY (install_id);
+
+--
+-- Name: device_positions device_positions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.device_positions
+    ADD CONSTRAINT device_positions_pkey PRIMARY KEY (id);
+
+--
 -- Name: device_screen_recordings device_screen_recordings_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -83296,6 +83379,36 @@ CREATE INDEX deductions_publications_superseded_by_idx ON public.deductions_publ
 --
 
 CREATE INDEX departments_is_active_idx ON public.departments USING btree (is_active);
+
+--
+-- Name: device_position_agents_one_live_per_device; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE UNIQUE INDEX device_position_agents_one_live_per_device ON public.device_position_agents USING btree (device_number) WHERE ((device_number IS NOT NULL) AND (revoked_at IS NULL));
+
+--
+-- Name: device_position_agents_seen_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX device_position_agents_seen_idx ON public.device_position_agents USING btree (last_seen_at DESC);
+
+--
+-- Name: device_positions_device_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX device_positions_device_idx ON public.device_positions USING btree (device_number, recorded_at DESC);
+
+--
+-- Name: device_positions_install_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX device_positions_install_idx ON public.device_positions USING btree (install_id, recorded_at DESC);
+
+--
+-- Name: device_positions_one_per_fix; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE UNIQUE INDEX device_positions_one_per_fix ON public.device_positions USING btree (install_id, recorded_at, latitude, longitude);
 
 --
 -- Name: device_screen_recordings_device_idx; Type: INDEX; Schema: public; Owner: postgres
@@ -91806,6 +91919,13 @@ ALTER TABLE ONLY public.device_assignments
     ADD CONSTRAINT device_assignments_device_id_fkey FOREIGN KEY (device_id) REFERENCES public.company_devices(id) ON DELETE RESTRICT;
 
 --
+-- Name: device_positions device_positions_install_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.device_positions
+    ADD CONSTRAINT device_positions_install_id_fkey FOREIGN KEY (install_id) REFERENCES public.device_position_agents(install_id) ON DELETE CASCADE;
+
+--
 -- Name: direct_order_approval_steps direct_order_approval_steps_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -96294,6 +96414,30 @@ ALTER TABLE public.departments ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.device_assignments ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: device_position_agents; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.device_position_agents ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: device_position_agents device_position_agents_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY device_position_agents_service_role ON public.device_position_agents TO service_role USING (true) WITH CHECK (true);
+
+--
+-- Name: device_positions; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.device_positions ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: device_positions device_positions_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY device_positions_service_role ON public.device_positions TO service_role USING (true) WITH CHECK (true);
 
 --
 -- Name: device_screen_recordings; Type: ROW SECURITY; Schema: public; Owner: postgres
@@ -107940,6 +108084,24 @@ GRANT ALL ON SEQUENCE public.departments_id_seq TO service_role;
 --
 
 GRANT ALL ON TABLE public.device_assignments TO service_role;
+
+--
+-- Name: TABLE device_position_agents; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.device_position_agents TO service_role;
+
+--
+-- Name: TABLE device_positions; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.device_positions TO service_role;
+
+--
+-- Name: SEQUENCE device_positions_id_seq; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON SEQUENCE public.device_positions_id_seq TO service_role;
 
 --
 -- Name: TABLE device_screen_recordings; Type: ACL; Schema: public; Owner: postgres
