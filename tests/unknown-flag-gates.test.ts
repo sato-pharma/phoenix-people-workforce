@@ -119,6 +119,7 @@ const PINNED = [
   "scripts/cv-triage-questions.mjs",
   "scripts/deps-refresh/refresh.mjs",
   "scripts/dictation-corrector-eval.ts",
+  "scripts/direct-order-receipt-seed-sql.mjs",
   "scripts/direct-orders-pharmacy-price-backfill.ts",
   "scripts/direct-orders-rebuild-approval-chains.ts",
   "scripts/dm-line-achievement.ts",

@@ -38,6 +38,7 @@ import {
   Fingerprint,
   FlaskConical,
   Gauge,
+  BookCheck,
   HeartPulse,
   Hourglass,
   IdCard,
@@ -5191,6 +5192,16 @@ export const directOrdersPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "CEO", "SFE Manager", "National Sales Manager", "Regional Manager", "District Manager"],
   },
   {
+    href: "/admin/direct-orders/receipts",
+    icon: BookCheck,
+    label: "Receipt Books",
+    description: "Who holds each numbered delivery-receipt book, and which approved orders still owe a signed and stamped receipt.",
+    permissions: [{ resource: "direct_orders", action: "read" }],
+    // Finance's desk (owner, 26 Nov 2026). The page itself admits only the Finance officer and the
+    // Administrator (canManageDirectOrderReceiptBooks); another Finance Manager is sent back.
+    roles: ["Super Admin", "Finance Manager"],
+  },
+  {
     href: "/admin/direct-orders/pharmacy-variances",
     icon: MapPinned,
     label: "Pharmacy Variances",
@@ -5596,6 +5607,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/direct-orders/returned",
           "/admin/direct-orders/approval-exceptions",
           "/admin/direct-orders/rep-counters",
+          "/admin/direct-orders/receipts",
         ],
       },
       {

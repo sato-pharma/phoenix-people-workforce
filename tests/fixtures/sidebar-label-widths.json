@@ -254,7 +254,8 @@
     "WhatsApp Inbox": 97,
     "WhatsApp Replies": 105,
     "WhatsApp Templates": 123,
-    "Workflow Control": 103
+    "Workflow Control": 103,
+    "Receipt Books": 82
   },
   "portal": {
     "All Marketing Requests": 131,
@@ -695,7 +696,8 @@
       "WhatsApp Inbox": 101,
       "WhatsApp Replies": 113,
       "WhatsApp Templates": 129,
-      "Workflow Control": 107
+      "Workflow Control": 107,
+      "Receipt Books": 89
     },
     "portal": {
       "All Marketing Requests": 133,

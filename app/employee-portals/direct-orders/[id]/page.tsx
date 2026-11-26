@@ -4,6 +4,8 @@ import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise
 import { DirectOrderRequestDetail } from "@/components/approvals-hub/direct-order-request-detail";
 import { PharmacyValidationCapture } from "@/components/direct-orders/pharmacy-validation-capture";
 import { CancelHeldOrder } from "@/components/direct-orders/cancel-held-order";
+import { DirectOrderReceiptPanel } from "@/components/direct-orders/direct-order-receipt-panel";
+import { loadDirectOrderReceiptPanel } from "@/lib/direct-orders/receipt-books";
 import { getDirectOrderApprovalDetail } from "@/lib/direct-orders/service";
 import { canCancelHeldDirectOrder } from "@/lib/direct-orders/cancel-visibility";
 import { canCaptureDirectOrderValidation } from "@/lib/direct-orders/validation-visibility";
@@ -54,6 +56,10 @@ export default async function PortalMyDirectOrderDetailPage({
   // person it was built for.
   const showCancel = canCancelHeldDirectOrder({ hrId: access.hrId, role: access.role }, detail);
 
+  // The delivery receipt (owner, 26 Nov 2026: "Build the check"). Read only for an order the viewer
+  // may already see — the detail loader answered null otherwise — and never for a draft.
+  const receiptPanel = detail ? await loadDirectOrderReceiptPanel(access, detail.request.id) : null;
+
   return (
     <EmployeePortalPageShell
       badge="Direct Orders"
@@ -84,6 +90,7 @@ export default async function PortalMyDirectOrderDetailPage({
             invoiceSlots={invoiceSlots ? { used: invoiceSlots.used, limit: invoiceSlots.limit } : null}
           />
         ) : null}
+        {receiptPanel && detail ? <DirectOrderReceiptPanel requestId={detail.request.id} panel={receiptPanel} /> : null}
         {showCancel && detail ? (
           <CancelHeldOrder
             requestId={detail.request.id}

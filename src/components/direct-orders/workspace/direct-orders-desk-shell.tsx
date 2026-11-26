@@ -22,6 +22,7 @@ const DESK_GROUP: Record<string, DirectOrderWorkspaceTabKey> = {
   "rep-counters": "reports",
   reconciliation: "reports",
   "approval-exceptions": "reports",
+  receipts: "reports",
   caps: "controls",
 };
 

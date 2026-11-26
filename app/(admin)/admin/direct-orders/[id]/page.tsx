@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { DirectOrderRequestDetail } from "@/components/approvals-hub/direct-order-request-detail";
 import { PharmacyValidationCapture } from "@/components/direct-orders/pharmacy-validation-capture";
 import { CancelHeldOrder } from "@/components/direct-orders/cancel-held-order";
+import { DirectOrderReceiptPanel } from "@/components/direct-orders/direct-order-receipt-panel";
+import { loadDirectOrderReceiptPanel } from "@/lib/direct-orders/receipt-books";
 import { getDirectOrderApprovalDetail } from "@/lib/direct-orders/service";
 import { canCancelHeldDirectOrder } from "@/lib/direct-orders/cancel-visibility";
 import { canCaptureDirectOrderValidation } from "@/lib/direct-orders/validation-visibility";
@@ -63,6 +65,10 @@ export default async function AdminMyDirectOrderDetailPage({
   // raised. Same shared predicate as the portal twin, for the same reason as the capture above.
   const showCancel = canCancelHeldDirectOrder({ hrId: access.hrId, role: access.role }, detail);
 
+  // The delivery receipt (owner, 26 Nov 2026: "Build the check"). Read only for an order the viewer
+  // may already see — the detail loader answered null otherwise — and never for a draft.
+  const receiptPanel = detail ? await loadDirectOrderReceiptPanel(access, detail.request.id) : null;
+
   const canOpenCustomer = detail?.pharmacy ? await canOpenCustomer360(access) : false;
   const customer360Href = canOpenCustomer && detail?.pharmacy ? directOrderCustomer360Href(detail.pharmacy.id) : null;
 
@@ -88,6 +94,7 @@ export default async function AdminMyDirectOrderDetailPage({
           invoiceSlots={invoiceSlots ? { used: invoiceSlots.used, limit: invoiceSlots.limit } : null}
         />
       ) : null}
+      {receiptPanel && detail ? <DirectOrderReceiptPanel requestId={detail.request.id} panel={receiptPanel} /> : null}
       {showCancel && detail ? (
         <CancelHeldOrder
           requestId={detail.request.id}

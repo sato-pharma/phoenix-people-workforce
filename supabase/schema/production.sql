@@ -37657,19 +37657,52 @@ begin
 
   -- A pharmacy the survivor already holds does not move: the same code row cannot (two unique
   -- indexes), and the same code on another venue copy must not (the survivor would hold the shop
-  -- twice). If the survivor's copy is switched off and a retired copy is live, the live answer wins,
-  -- before anything moves.
-  with revived as (
+  -- twice). If the survivor holds the pharmacy only switched off and a retired copy is live, the live
+  -- answer wins before anything moves: ONE switched-off copy comes back on (a live code row first,
+  -- then the highest standing, then the oldest). Never when the survivor already holds it live.
+  with candidates as (
+    select
+      kept.id,
+      kept.created_at,
+      coalesce(kc.active, false) as code_live,
+      coalesce(array_position(array['pending', 'system_validated', 'sfe_validated', 'admin_approved'], kept.validation_status), 0) as standing
+    from marketing_customer_pharmacies kept
+    left join marketing_pharmacy_distributor_codes kc on kc.id = kept.distributor_code_id
+    where kept.customer_id = p_survivor_id
+      and not kept.active
+      and exists (
+        select 1 from marketing_customer_pharmacies gone
+        where gone.customer_id = p_retired_id
+          and gone.active
+          and public.phx_marketing_links_same_pharmacy(kept.id, gone.id)
+      )
+      and not exists (
+        select 1 from marketing_customer_pharmacies live
+        where live.customer_id = p_survivor_id
+          and live.active
+          and public.phx_marketing_links_same_pharmacy(live.id, kept.id)
+      )
+  ),
+  ranked as (
+    select id, row_number() over (order by code_live desc, standing desc, created_at, id) as ord
+    from candidates
+  ),
+  chosen as (
+    select me.id
+    from ranked me
+    where not exists (
+      select 1 from ranked earlier
+      where earlier.ord < me.ord
+        and public.phx_marketing_links_same_pharmacy(earlier.id, me.id)
+    )
+  ),
+  revived as (
     update marketing_customer_pharmacies kept
     set active = true, updated_at = now(), updated_by_hr_id = p_actor_hr_id
-    from marketing_customer_pharmacies gone
-    where kept.customer_id = p_survivor_id
-      and gone.customer_id = p_retired_id
-      and not kept.active
-      and gone.active
-      and public.phx_marketing_links_same_pharmacy(kept.id, gone.id)
+    from chosen
+    where kept.id = chosen.id
     returning kept.id
-  ) select coalesce(array_agg(distinct id), '{}') into v_links_reactivated from revived;
+  ) select coalesce(array_agg(id), '{}') into v_links_reactivated from revived;
 
   -- The survivor's copy of a shared pharmacy takes the retired row's standing when that is higher, under
   -- the customer's own rule: upward only, never over a rejection and never a rejection. When several
@@ -60371,6 +60404,74 @@ COMMENT ON COLUMN public.direct_order_pharmacy_validations.photo_longitude IS 'T
 COMMENT ON COLUMN public.direct_order_pharmacy_validations.photo_accuracy_meters IS 'Reported accuracy of the shutter fix. Stored only; it refuses nothing and decides nothing.';
 
 --
+-- Name: direct_order_receipt_books; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.direct_order_receipt_books (
+    book_no smallint NOT NULL,
+    first_serial integer NOT NULL,
+    last_serial integer NOT NULL,
+    printed_holder_hr_id text,
+    holder_hr_id text,
+    status text DEFAULT 'in_store'::text NOT NULL,
+    issued_at timestamp with time zone,
+    issued_by_hr_id text,
+    closed_at timestamp with time zone,
+    closed_by_hr_id text,
+    note text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT direct_order_receipt_books_book_no_check CHECK ((book_no > 0)),
+    CONSTRAINT direct_order_receipt_books_closed CHECK (((status <> ALL (ARRAY['returned'::text, 'lost'::text])) OR (closed_at IS NOT NULL))),
+    CONSTRAINT direct_order_receipt_books_first_serial_check CHECK ((first_serial > 0)),
+    CONSTRAINT direct_order_receipt_books_issued CHECK (((status = 'in_store'::text) OR ((holder_hr_id IS NOT NULL) AND (issued_at IS NOT NULL)))),
+    CONSTRAINT direct_order_receipt_books_range CHECK ((last_serial >= first_serial)),
+    CONSTRAINT direct_order_receipt_books_status_check CHECK ((status = ANY (ARRAY['in_store'::text, 'issued'::text, 'returned'::text, 'lost'::text])))
+);
+
+ALTER TABLE public.direct_order_receipt_books OWNER TO postgres;
+
+--
+-- Name: TABLE direct_order_receipt_books; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.direct_order_receipt_books IS 'Printed direct-order delivery-receipt books held as custody by District Managers (owner, 26 Nov 2026). Finance issues, returns and reports them lost. Service role only. See src/lib/direct-orders/receipt-books.ts.';
+
+--
+-- Name: direct_order_receipts; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.direct_order_receipts (
+    serial integer NOT NULL,
+    book_no smallint NOT NULL,
+    check_code text NOT NULL,
+    state text DEFAULT 'unused'::text NOT NULL,
+    request_id uuid,
+    photo_storage_path text,
+    photo_content_type text,
+    used_by_hr_id text,
+    used_at timestamp with time zone,
+    voided_reason text,
+    voided_by_hr_id text,
+    voided_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT direct_order_receipts_check_code_check CHECK ((check_code ~ '^[2-9A-HJKMNP-Z]{6}$'::text)),
+    CONSTRAINT direct_order_receipts_serial_check CHECK ((serial > 0)),
+    CONSTRAINT direct_order_receipts_state_check CHECK ((state = ANY (ARRAY['unused'::text, 'used'::text, 'voided'::text]))),
+    CONSTRAINT direct_order_receipts_used CHECK ((((state = 'used'::text) = (request_id IS NOT NULL)) AND ((state <> 'used'::text) OR ((photo_storage_path IS NOT NULL) AND (used_at IS NOT NULL) AND (used_by_hr_id IS NOT NULL))))),
+    CONSTRAINT direct_order_receipts_voided CHECK (((state <> 'voided'::text) OR ((voided_reason IS NOT NULL) AND (voided_at IS NOT NULL))))
+);
+
+ALTER TABLE public.direct_order_receipts OWNER TO postgres;
+
+--
+-- Name: TABLE direct_order_receipts; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.direct_order_receipts IS 'One row per printed delivery receipt: serial, the printed check code, and the one direct order it proves once used. A receipt moves unused -> used once; request_id is unique. Codes are never sent to a browser. Service role only.';
+
+--
 -- Name: direct_order_report_share_links; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -77288,6 +77389,27 @@ ALTER TABLE ONLY public.direct_order_pharmacy_validations
     ADD CONSTRAINT direct_order_pharmacy_validations_pkey PRIMARY KEY (id);
 
 --
+-- Name: direct_order_receipt_books direct_order_receipt_books_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.direct_order_receipt_books
+    ADD CONSTRAINT direct_order_receipt_books_pkey PRIMARY KEY (book_no);
+
+--
+-- Name: direct_order_receipts direct_order_receipts_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.direct_order_receipts
+    ADD CONSTRAINT direct_order_receipts_pkey PRIMARY KEY (serial);
+
+--
+-- Name: direct_order_receipts direct_order_receipts_request_id_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.direct_order_receipts
+    ADD CONSTRAINT direct_order_receipts_request_id_key UNIQUE (request_id);
+
+--
 -- Name: direct_order_report_share_links direct_order_report_share_links_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -83517,6 +83639,12 @@ CREATE INDEX direct_order_pharmacy_validations_request_idx ON public.direct_orde
 --
 
 CREATE INDEX direct_order_pharmacy_validations_status_idx ON public.direct_order_pharmacy_validations USING btree (status, requested_at DESC);
+
+--
+-- Name: direct_order_receipts_book_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX direct_order_receipts_book_idx ON public.direct_order_receipts USING btree (book_no, state);
 
 --
 -- Name: direct_order_report_share_links_active_idx; Type: INDEX; Schema: public; Owner: postgres
@@ -91982,6 +92110,20 @@ ALTER TABLE ONLY public.direct_order_pharmacy_validations
     ADD CONSTRAINT direct_order_pharmacy_validations_request_id_fkey FOREIGN KEY (request_id) REFERENCES public.direct_order_requests(id) ON DELETE SET NULL;
 
 --
+-- Name: direct_order_receipts direct_order_receipts_book_no_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.direct_order_receipts
+    ADD CONSTRAINT direct_order_receipts_book_no_fkey FOREIGN KEY (book_no) REFERENCES public.direct_order_receipt_books(book_no);
+
+--
+-- Name: direct_order_receipts direct_order_receipts_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.direct_order_receipts
+    ADD CONSTRAINT direct_order_receipts_request_id_fkey FOREIGN KEY (request_id) REFERENCES public.direct_order_requests(id);
+
+--
 -- Name: direct_order_request_items direct_order_request_items_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -96498,6 +96640,30 @@ ALTER TABLE public.direct_order_pharmacy_validations ENABLE ROW LEVEL SECURITY;
 --
 
 CREATE POLICY direct_order_pharmacy_validations_service_role_all ON public.direct_order_pharmacy_validations TO service_role USING (true) WITH CHECK (true);
+
+--
+-- Name: direct_order_receipt_books; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.direct_order_receipt_books ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: direct_order_receipt_books direct_order_receipt_books_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY direct_order_receipt_books_service_role ON public.direct_order_receipt_books TO service_role USING (true) WITH CHECK (true);
+
+--
+-- Name: direct_order_receipts; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.direct_order_receipts ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: direct_order_receipts direct_order_receipts_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY direct_order_receipts_service_role ON public.direct_order_receipts TO service_role USING (true) WITH CHECK (true);
 
 --
 -- Name: direct_order_report_share_links; Type: ROW SECURITY; Schema: public; Owner: postgres
@@ -108144,6 +108310,18 @@ GRANT ALL ON TABLE public.direct_order_pharmacy_distributor_codes TO service_rol
 --
 
 GRANT ALL ON TABLE public.direct_order_pharmacy_validations TO service_role;
+
+--
+-- Name: TABLE direct_order_receipt_books; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.direct_order_receipt_books TO service_role;
+
+--
+-- Name: TABLE direct_order_receipts; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.direct_order_receipts TO service_role;
 
 --
 -- Name: TABLE direct_order_report_share_links; Type: ACL; Schema: public; Owner: postgres

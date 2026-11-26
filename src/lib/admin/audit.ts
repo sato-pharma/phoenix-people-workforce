@@ -295,6 +295,9 @@ export type AuditEntityType =
   // An employee's dispute of a released daily line, decided in the Dispute Center (2026-11-13).
   | "daily_deductions_dispute"
   | "direct_order_request"
+  // Added 2026-11-26: a delivery-receipt book handed out, returned or recorded lost, or one of its
+  // receipts cancelled. The entity id is the book number, or the receipt's six-digit serial.
+  | "direct_order_receipt_book"
   | "doctor_coverage_config"
   | "double_visit_import"
   | "employee_decline_offer"

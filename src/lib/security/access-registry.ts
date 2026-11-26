@@ -955,6 +955,8 @@ export const accessRegistry = [
   // requester role; the real gate is attachDirectOrderInvoice — the order's OWN requester, and only
   // while it is held or still waiting on the SFE Manager.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/:id/invoice", permission: { resource: "direct_orders", action: "create" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/:id/receipt", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/receipt-books", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // Re-address a stuck approval rung. `update` is the widest permission this entry can name, and it
   // is NOT the real gate: repairDirectOrderApprovalRung is Super Admin only, asserts the workflow
   // registry transition, and refuses any rung whose approver still resolves in the directory. That
