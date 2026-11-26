@@ -223,9 +223,9 @@ function theChosenPeriod(): void {
   assert.match(server, /resolveReviewPeriod\(raw, today\)/, "the loader resolves the period it was asked for");
   const route = stripComments(readFileSync("app/api/admin/rep-effectiveness-export/route.ts", "utf8"));
   assert.match(route, /from: params\.get\("from"\), to: params\.get\("to"\)/, "the route passes the chosen months on");
-  const page = stripComments(readFileSync("app/(admin)/admin/rep-visits-export/page.tsx", "utf8"));
-  assert.match(page, /type="month" name="from"/);
-  assert.match(page, /type="month" name="to"/);
+  const desk = stripComments(readFileSync("src/components/rep-visits-export/rep-export-desk.tsx", "utf8"));
+  assert.equal((desk.match(/type="month"/g) ?? []).length, 2, "the review is asked for a from month and a to month");
+  assert.match(desk, /reviewPeriodFor\(rep, \{ from: reviewFrom, to: reviewTo,/, "each rep's months are the chosen ones, or the rep's own from the hire month");
 }
 
 async function theWorkbook(): Promise<void> {
@@ -270,16 +270,11 @@ function theSuperAdminsAlone(): void {
   assert.match(server, /listPublishedPeriodsForLine\(/, "only published closing months are read");
   const page = stripComments(readFileSync("app/(admin)/admin/rep-visits-export/page.tsx", "utf8"));
   assert.match(page, /const REVIEW_ROUTE = "\/api\/admin\/rep-effectiveness-export"/);
-  assert.match(page, /value="xlsx"/);
-  assert.match(page, /value="pdf"/);
-  // Both rep pickers are comboboxes you can type into (owner, 26 Nov 2026: "make the 2 droplists combobox"),
-  // and exactly one field named rep reaches the download URL: the rep's id, never the typed label.
-  assert.equal((page.match(/<RepCombobox name="rep" options=\{options\} \/>/g) ?? []).length, 2, "both rep pickers are comboboxes");
-  assert.doesNotMatch(page, /<select name="rep"/, "no plain rep list is left");
-  const combo = stripComments(readFileSync("src/components/rep-visits-export/rep-combobox.tsx", "utf8"));
-  const searchable = combo.slice(combo.indexOf("<SearchableSelect"), combo.indexOf("</SearchableSelect>"));
-  assert.doesNotMatch(searchable, /\bname=/, "the typing box is unnamed, so the typed label never reaches the URL");
-  assert.match(combo, /name=\{name\}\s+onChange=\{\(\) => undefined\}\s+required/, "the one submitted field is checked, so no rep stops the download");
+  assert.match(page, /reviewRoute=\{REVIEW_ROUTE\}/, "the desk downloads the review from its own route");
+  const desk = stripComments(readFileSync("src/components/rep-visits-export/rep-export-desk.tsx", "utf8"));
+  assert.match(desk, /new URLSearchParams\(\{ rep: rep\.hrId, \.\.\.period, format \}\)/, "each review asks for its rep, its months and its format");
+  assert.match(desk, /reviewJobs\("xlsx"\)/);
+  assert.match(desk, /reviewJobs\("pdf"\)/);
   const registry = readFileSync("src/lib/security/access-registry.ts", "utf8");
   assert.match(registry, /pattern: "\/api\/admin\/rep-effectiveness-export"/);
 }
