@@ -76,6 +76,7 @@ import {
   describeNoFix,
   getHeadwindLocationHistory,
   locationFixesFromPlugin,
+  locationFixesFromUpload,
   locateHeadwindDevice,
   readHeadwindLocationCollection,
   switchOnHeadwindLocationCollection,
@@ -722,6 +723,8 @@ async function runDeviceTests() {
     "D",
     makeFetch({
       api: [
+        // The uploaded trail is read first; this tablet has sent none.
+        { body: { data: { items: [], total: 0 }, status: "OK" }, status: 200 },
         { body: { data: { sendData: true }, status: "OK" }, status: 200 },
         {
           body: { data: { items: [{ gpsLat: 30.05, gpsLon: 31.24, latestUpdateTime: 1_760_000_000_000 }] }, status: "OK" },
@@ -740,6 +743,7 @@ async function runDeviceTests() {
       "D",
       makeFetch({
         api: [
+          { body: { data: { items: [], total: 0 }, status: "OK" }, status: 200 },
           { body: { data: { sendData: true }, status: "OK" }, status: 200 },
           { body: { data: { items: [] }, status: "OK" }, status: 200 },
           { body: { data: { someFutureShape: true }, status: "OK" }, status: 200 },
@@ -1494,12 +1498,15 @@ async function runLocationTests() {
 async function runLocationHonestyTests() {
   const ok = (data: unknown) => ({ body: { data, status: "OK" }, status: 200 });
   const fleet = ok({ items: [{ info: { location: { lat: 30.07, lon: 31.26, ts: 1_762_600_000_000 } }, number: "H" }] });
+  // 🔴 THE UPLOADED TRAIL IS READ FIRST, so every queue below opens with the add-on's answer. `makeFetch`
+  // repeats its LAST entry for ever, so a queue missing this entry silently reuses `fleet` instead.
+  const noUploads = ok({ items: [], total: 0 });
 
   // 🔴 A REFUSAL IS NOT AN EMPTY HISTORY. `catch { fixes = [] }` hid the 1 Nov refusal for weeks.
   resetHeadwindTokenCache();
   const refused = await getHeadwindLocationHistory(
     "H",
-    makeFetch({ api: [ok({ sendData: true }), { body: { message: "error.notfound.device", status: "ERROR" }, status: 200 }, fleet] }).fetch,
+    makeFetch({ api: [noUploads, ok({ sendData: true }), { body: { message: "error.notfound.device", status: "ERROR" }, status: 200 }, fleet] }).fetch,
     ENV,
   );
   assert.match(refused.note, /refused the read: error\.notfound\.device/, "the plugin's refusal is said, word for word");
@@ -1510,7 +1517,7 @@ async function runLocationHonestyTests() {
   resetHeadwindTokenCache();
   const blind = await getHeadwindLocationHistory(
     "H",
-    makeFetch({ api: [ok({ sendData: true }), ok({ items: [{ gpsLat: 0, gpsLon: 0 }, { deviceBatteryLevel: 50 }], totalItemsCount: 2 }), fleet] }).fetch,
+    makeFetch({ api: [noUploads, ok({ sendData: true }), ok({ items: [{ gpsLat: 0, gpsLon: 0 }, { deviceBatteryLevel: 50 }], totalItemsCount: 2 }), fleet] }).fetch,
     ENV,
   );
   assert.match(blind.note, /holds 2 records for this tablet, but none carries a position/);
@@ -1518,7 +1525,7 @@ async function runLocationHonestyTests() {
   // No sort field (the server has none and orders newest first), and the cap is said.
   resetHeadwindTokenCache();
   const capped = makeFetch({
-    api: [ok({ sendData: true }), ok({ items: [{ gpsLat: 30.1, gpsLon: 31.2, latestUpdateTime: 1_762_600_000_000 }], totalItemsCount: 350 }), fleet],
+    api: [noUploads, ok({ sendData: true }), ok({ items: [{ gpsLat: 30.1, gpsLon: 31.2, latestUpdateTime: 1_762_600_000_000 }], totalItemsCount: 350 }), fleet],
   });
   const cappedRead = await getHeadwindLocationHistory("H", capped.fetch, ENV);
   const searchCall = capped.calls.find((call) => call.url.includes("/search/dynamic"));
@@ -1527,9 +1534,82 @@ async function runLocationHonestyTests() {
   assert.equal(searchBody.pageSize, HEADWIND_HISTORY_PAGE_SIZE);
   assert.match(cappedRead.note, /Showing the latest 1 of 350 history records/, "a capped read says it is capped");
 
+  // ── The tablet's own uploads, 26 Nov 2026 ─────────────────────────────────────────────────────────
+  //
+  // 🔴 THE FULLEST RECORD IS THE ONE THE TABLET UPLOADS ITSELF, AND IT IS READ FIRST. The launcher has
+  // PUT its stored fixes to `/rest/plugins/devicelocations/public/update/{number}` since 6.41; that path
+  // belongs to a premium Headwind plugin the free server does not have, so every upload answered 404 —
+  // measured on PHX-TAB-0008 at 02:13 and 02:14 Cairo on 26 Nov — and the tablet dropped each fix after
+  // a day. `DeviceLocationsResource` in the add-on receives them now, and this read is what shows them.
+  resetHeadwindTokenCache();
+  const uploaded = makeFetch({
+    api: [
+      ok({
+        items: [
+          { lat: 30.11, lon: 31.21, ts: 1_762_600_000_000 },
+          { lat: 0, lon: 0, ts: 1_762_600_000_000 },
+        ],
+        total: 350,
+      }),
+      ok({ sendData: true }),
+      ok({ items: [], totalItemsCount: 0 }),
+      fleet,
+    ],
+  });
+  const uploadedRead = await getHeadwindLocationHistory("H", uploaded.fetch, ENV);
+  const firstApiCall = uploaded.calls.find((call) => !call.url.includes("/rest/public/jwt/login"))!;
+  assert.match(
+    firstApiCall.url,
+    /\/rest\/plugins\/phoenix-actions\/private\/locations\/H\?limit=/,
+    "🔴 the uploaded trail is the FIRST thing read, from the add-on's private tree — never the launcher's own public upload path",
+  );
+  assert.equal(uploadedRead.uploadReceiver, "serving");
+  assert.equal(uploadedRead.fixes.filter((fix) => fix.source === "upload").length, 1, "the 0/0 row is Null Island, never a place");
+  assert.match(uploadedRead.note, /That is the fullest record there is/, "and the note says which source is the fullest");
+  assert.match(uploadedRead.note, /Showing the latest 1 of 350 uploaded positions/, "a capped upload read says it is capped");
+
+  // 🔴 ONLY A 404 MEANS THIS SERVER HAS NO RECEIVER — and that is a server to rebuild, never a tablet
+  // that stayed still. The sentence names the Phoenix image, because no tablet needs touching for it.
+  resetHeadwindTokenCache();
+  const noReceiver = await getHeadwindLocationHistory(
+    "H",
+    makeFetch({
+      api: [{ body: { message: "not found", status: "ERROR" }, status: 404 }, ok({ sendData: true }), ok({ items: [] }), fleet],
+    }).fetch,
+    ENV,
+  );
+  assert.equal(noReceiver.uploadReceiver, "absent");
+  assert.match(noReceiver.note, /cannot receive the positions the tablets upload/, "the free server's 404 is said as what it is");
+  assert.equal(noReceiver.fixes.length, 1, "and the check-in position is still shown");
+
+  // Any other failure is "could not be read", never "no receiver" — that would send somebody to rebuild
+  // a server that has one and is merely unreachable.
+  resetHeadwindTokenCache();
+  const unreadableUpload = await getHeadwindLocationHistory(
+    "H",
+    makeFetch({
+      api: [{ body: { message: "timeout", status: "ERROR" }, status: 200 }, ok({ sendData: true }), ok({ items: [] }), fleet],
+    }).fetch,
+    ENV,
+  );
+  assert.equal(unreadableUpload.uploadReceiver, "unknown");
+  assert.match(unreadableUpload.note, /uploaded positions could not be read \(timeout/, "with the reason the server gave");
+  assert.match(unreadableUpload.note, /NOT an empty history/, "and never as a tablet that recorded nothing");
+
+  // The uploaded rows, read as defensively as every other source.
+  assert.deepEqual(locationFixesFromUpload("not a list"), [], "a reply that is not a list is no fixes, never a throw");
+  const fromUpload = locationFixesFromUpload([
+    { lat: 30.1, lon: 31.2, ts: 1_762_600_000 },
+    { lat: 0, lon: 0, ts: 1_762_600_000_000 },
+    { lat: 30.1, ts: 1_762_600_000_000 },
+  ]);
+  assert.equal(fromUpload.length, 1, "0/0 and a row with no longitude are both dropped");
+  assert.equal(fromUpload[0].recordedAt, new Date(1_762_600_000_000).toISOString(), "a seconds stamp is not read as 1970");
+  assert.equal(fromUpload[0].source, "upload", "and the row says where it came from, so the panel can label it");
+
   // 🔴 READING NEVER WRITES. Collection off is reported, and no PUT is sent from the read.
   resetHeadwindTokenCache();
-  const off = makeFetch({ api: [ok({ intervalMins: 15, sendData: false }), ok({ items: [] }), fleet] });
+  const off = makeFetch({ api: [noUploads, ok({ intervalMins: 15, sendData: false }), ok({ items: [] }), fleet] });
   const offRead = await getHeadwindLocationHistory("H", off.fetch, ENV);
   assert.equal(offRead.collection, "off");
   assert.equal(offRead.pluginEnabled, false);
@@ -2854,6 +2934,76 @@ function runServerImageTests() {
   assert.match(imageWorkflow, /- "infra\/headwind-phoenix-actions\/\*\*"/, "the image build runs on every PR touching the add-on's folder");
   assert.match(imageWorkflow, /docker build [^\n]*infra\/headwind-phoenix-actions/, "and builds exactly that folder, as Railway does");
   assert.doesNotMatch(imageWorkflow, /docker push|railway |secrets\./, "and pushes and deploys nothing");
+
+  // 13. 🔴 THE RECEIVER FOR THE POSITIONS THE TABLETS ALREADY UPLOAD (26 Nov 2026). Since 6.41 the
+  //     launcher PUTs its stored fixes to `/rest/plugins/devicelocations/public/update/{number}` and
+  //     deletes them only on a 2xx; that plugin is premium, the free server answered 404 (PHX-TAB-0008,
+  //     02:13 and 02:14 Cairo), and `deleteOldItems` threw each fix away after a day. These are the
+  //     ways this receiver ships green and wrong.
+  const locationStore = java("PhoenixLocationStore.java");
+  assert.match(
+    locationStore,
+    /create table if not exists phoenix_device_locations/,
+    "the uploads land in a SECOND table of our own — never in Headwind's, whose shape belongs to the premium plugin",
+  );
+  assert.doesNotMatch(
+    locationStore,
+    /alter table phoenix_device_locations/,
+    "and it needs no add-column, unlike item 7's table: this one has never existed on the live box, so its create block IS its schema",
+  );
+  assert.match(
+    locationStore,
+    /recorded_at_ms bigint not null/,
+    "🔴 the tablet's own epoch milliseconds, never a `timestamp` — Headwind's columns carry no zone, and converting would shift a rep's trail by the session's offset",
+  );
+  assert.match(
+    locationStore,
+    /create unique index if not exists phoenix_device_locations_fix_uq/,
+    "the unique index is the retry guard — the launcher re-sends every row it has seen no 2xx for",
+  );
+  assert.match(locationStore, /on conflict do nothing/, "and the insert leans on that index instead of reading first");
+  assert.match(
+    locationStore,
+    /select 1 from devices where number = \?/,
+    "🔴 an upload for a number the server never enrolled is dropped — the path is unauthenticated, so a stranger must not be able to fill the table",
+  );
+
+  const locationsResource = java("rest/DeviceLocationsResource.java");
+  assert.match(
+    locationsResource,
+    /@Path\("\/plugins\/devicelocations"\)/,
+    "🔴 the path is the LAUNCHER's spelling, not ours — it is already compiled into every tablet, so a tidier name receives nothing",
+  );
+  assert.match(locationsResource, /MAX_BODY_BYTES/, "the body is read capped, so an endless upload cannot fill the heap");
+  assert.match(locationsResource, /lat == 0 && lon == 0/, "a 0/0 pair is Null Island and is never stored");
+  assert.match(
+    locationsResource,
+    /ts < 1_000_000_000_000d/,
+    "a stamp below 10^12 is seconds, the same rule as Phoenix's own asMoment — read as milliseconds it lands in 1970",
+  );
+  assert.match(
+    locationsResource,
+    /Response\.serverError\(\)/,
+    "🔴 a database failure answers 500, which KEEPS the rows on the tablet for its next try — an OK there loses them for good",
+  );
+  assert.match(
+    locationsResource,
+    /answer\.put\("status", "OK"\)/,
+    "and a body that parsed answers OK even when nothing was kept, or a real tablet re-sends the same rows for a day",
+  );
+
+  const locationProvider = wiring.slice(wiring.indexOf("phoenixLocationStore"));
+  assert.match(
+    locationProvider,
+    /Level\.SEVERE/,
+    "a location table that cannot be created is logged SEVERE — the same rule as the action store, because a throw here stops the whole MDM server from starting",
+  );
+  assert.doesNotMatch(locationProvider, /throw /, "and never rethrown");
+  assert.match(
+    source("infra/headwind-phoenix-actions/schema.sql"),
+    /create table if not exists phoenix_device_locations/,
+    "and schema.sql documents the same second table, so a reader of the add-on's SQL sees both",
+  );
 }
 
 /**
@@ -3840,6 +3990,14 @@ function runDashboardTests() {
   // joined to a check-in fix, which draws a route nobody reported.
   const mixed = fixesToPoints([...fixes, { batteryLevel: 60, latitude: 30.5, longitude: 31.5, recordedAt: t1, source: "plugin" }]);
   assert.deepEqual(mixed.map((point) => point.latitude), [30.5], "the plugin's fixes alone make the line when it has any");
+  // 🔴 AND THE TABLET'S OWN UPLOAD OUTRANKS BOTH (26 Nov 2026) — it is the only source that records a
+  // position the tablet took when nobody asked, so a line drawn from it is the nearest thing to the day.
+  const threeSources = fixesToPoints([
+    ...fixes,
+    { batteryLevel: 60, latitude: 30.5, longitude: 31.5, recordedAt: t1, source: "plugin" },
+    { batteryLevel: null, latitude: 30.9, longitude: 31.9, recordedAt: t0, source: "upload" },
+  ]);
+  assert.deepEqual(threeSources.map((point) => point.latitude), [30.9], "the uploaded fixes alone make the line when the tablet has uploaded any");
   // 🔴 OLDEST FIRST. The read hands fixes back newest-first; a trail reads in time order. BREAK-TEST:
   // remove the sort in dashboard.ts and the order below is [t2, t0, t1].
   assert.deepEqual(trail.map((point) => point.sublabel), [t0, t1, t2], "sorted oldest-first by recorded time");

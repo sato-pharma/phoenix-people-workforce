@@ -11,6 +11,7 @@ import com.google.inject.Singleton;
 import com.google.inject.multibindings.Multibinder;
 
 import com.hmdm.plugins.phoenix.PhoenixActionStore;
+import com.hmdm.plugins.phoenix.PhoenixLocationStore;
 import com.hmdm.plugins.phoenix.PhoenixSyncResponseHook;
 import com.hmdm.rest.json.SyncResponseHook;
 
@@ -58,6 +59,26 @@ public class PhoenixActionsModule extends AbstractModule {
             LOGGER.log(Level.SEVERE,
                 "Phoenix actions add-on could NOT create its table — lock, lost mode, factory reset and "
                     + "password reset will not work. The rest of the server is unaffected.",
+                exception);
+        }
+        return store;
+    }
+
+    /**
+     * The tablets' own position uploads (`DeviceLocationsResource`, 26 Nov 2026). Same rule as the
+     * action store above: a table that cannot be created is logged loudly and the server still starts.
+     */
+    @Provides
+    @Singleton
+    public PhoenixLocationStore phoenixLocationStore(DataSource dataSource) {
+        PhoenixLocationStore store = new PhoenixLocationStore(dataSource);
+        try {
+            store.ensureSchema();
+            LOGGER.info("Phoenix actions add-on: location table ready.");
+        } catch (Exception exception) {
+            LOGGER.log(Level.SEVERE,
+                "Phoenix actions add-on could NOT create its location table — tablet position uploads "
+                    + "will answer 500 and stay on the tablets. The rest of the server is unaffected.",
                 exception);
         }
         return store;
