@@ -20,7 +20,7 @@ import {
 import { visitDetailEditedText } from "@/components/phoenix-crm/visit-detail-panel";
 import { EditVisit } from "@/components/phoenix-crm/visit-edit-panel";
 import { CrmVisitRecordingPlayer, CrmVoiceNotePlayer } from "@/components/phoenix-crm/voice-playback";
-import { awaitingValidationNote } from "@/lib/crm/call-rate";
+import { awaitingValidationNote, waitingCountedAsVisitsNote } from "@/lib/crm/call-rate";
 import { DAY_START_READ_LABEL, dayStartReadLine } from "@/lib/phoenix-crm/day-start-rules";
 import { MISSED_RECORD_MARK } from "@/lib/phoenix-crm/missed-records";
 import { LEAVE_UNREAD_NOTE } from "@/lib/phoenix-crm/plan-leave";
@@ -53,7 +53,7 @@ function timeOf(visit: { capturedAt: string; copiedFromOldSystem: boolean }): st
 }
 
 export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
-  const { archiveHistory, awaitingApproval, awaitingValidation, counts, dayActivity, dayStart, onLeave, pharmacies, territory, visits } = view;
+  const { archiveHistory, awaitingApproval, awaitingValidation, counts, dayActivity, dayStart, heldForValidation, onLeave, pharmacies, territory, visits } = view;
 
   return (
     <div className="grid min-w-0 gap-3">
@@ -85,11 +85,17 @@ export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
               {dayStartReadLine(dayStart, cairoClock(dayStart.startedAt))}
             </p>
           ) : null}
-          {/* 🔴 Saved, real, and in no figure yet — so a 0 above a list of visits says WHY. The same
-              sentence both call-rate boards and the calendar print, and the two reasons stay apart. */}
-          {awaitingValidationNote({ awaitingValidation }) ? (
-            <CrmNote title="Some of this day is not scored yet" tone="info">
-              <p>{awaitingValidationNote({ awaitingValidation })}</p>
+          {/* 🔴 Counted above as visits, in no KPI yet (owner, 2026-11-27: "they count as visits but not count in
+              KPIs"). The same sentence the calendar prints, and the two reasons stay apart. */}
+          {waitingCountedAsVisitsNote(awaitingValidation) ? (
+            <CrmNote title="Visits waiting for validation" tone="info">
+              <p>{waitingCountedAsVisitsNote(awaitingValidation)}.</p>
+            </CrmNote>
+          ) : null}
+          {/* Copied history to a customer still pending: in no figure even as a visit until its place is validated. */}
+          {awaitingValidationNote({ awaitingValidation: heldForValidation ?? 0 }) ? (
+            <CrmNote title="Some of this day is not counted yet" tone="info">
+              <p>{awaitingValidationNote({ awaitingValidation: heldForValidation ?? 0 })}</p>
             </CrmNote>
           ) : null}
           {awaitingApproval > 0 ? (

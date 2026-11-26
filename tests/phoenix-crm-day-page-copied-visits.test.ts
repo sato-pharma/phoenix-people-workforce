@@ -54,7 +54,9 @@ export function runPhoenixCrmDayPageCopiedVisitsTests() {
   ]);
   assert.deepEqual(day.counts, { am: 0, pharmacies: 1, pm: 0 }, "the copied pharmacy reaches its figure, and nothing else does");
   assert.equal(day.archiveHistory, 1, "the Archive visit is said apart");
-  assert.equal(day.awaitingValidation, 1, "only the pending customer is waiting");
+  assert.equal(day.heldForValidation, 1, "only the pending customer is waiting");
+  assert.equal(day.awaitingValidation, 0, "and a copied visit waits for its place before it counts even as a visit (2026-11-27)");
+  assert.equal(day.awaitingApproval, 0, "never filed with the approvers");
   assert.equal(day.pharmacies[0]?.firstCapturedAt, "", "a copied pharmacy prints no clock");
 
   const row = (fields: Partial<ManagerDayVisit>) =>
@@ -62,7 +64,9 @@ export function runPhoenixCrmDayPageCopiedVisitsTests() {
   const figures = managerDayFigures([row({ archiveHistory: true }), row({})]);
   assert.equal(figures.archiveHistory, 1, "a manager's day says it apart too");
   assert.equal(figures.awaitingValidation, 1);
-  assert.equal(figures.pm, 0, "and neither is counted");
+  // 🔴 Since 2026-11-27 a ride-along whose customer waits for validation COUNTS AS A VISIT ("they count as visits but
+  //    not count in KPIs"); the Archive's copied history still waits for nobody and is counted nowhere.
+  assert.equal(figures.pm, 1, "the waiting one is counted as a visit, the Archive one is not");
 
   // 🔴 NO CLOCK, NO HALF. Every copied visit is stamped midnight, which files a pharmacy under PM on the strength of nothing.
   const planRow = (fields: Partial<ManagerDayVisit>) => ({ actual: fields, plan: null }) as unknown as PlanVsActualRow;

@@ -152,10 +152,10 @@ export function runPhoenixCrmManagerVisitDetailTests(): void {
       visit({ bucket: "AM", id: "ride:2", kind: "chain", kindLabel: "Chain visit", listType: "AM", source: "ride_along" }),
       visit({ bucket: "PM", id: "ride:3", kind: "double", kindLabel: "Double visit", listType: "Pharmacy", pharmacyName: "Seif Pharmacy", source: "ride_along" }),
       visit({ bucket: "PM", id: "ride:4", kind: "double", kindLabel: "Double visit", listType: "Pharmacy", pharmacyName: "seif pharmacy", source: "ride_along" }),
-      // Not validated: real work, counted in nothing, said apart.
+      // Not validated: real work, counted as a visit and in no KPI (owner, 2026-11-27), and said apart.
       visit({ awaitingValidation: true, bucket: "AM", id: "ride:5", kind: "double", kindLabel: "Double visit", listType: "AM", source: "ride_along" }),
     ]);
-    assert.equal(figures.am, 3, "two own AM-half visits and one AM-list chain visit");
+    assert.equal(figures.am, 4, "two own AM-half visits, one AM-list chain visit and the AM visit still waiting for validation");
     assert.equal(figures.pm, 2, "one own PM-half visit and one PM-list double visit — a pharmacy is never filed among the doctors");
     assert.equal(figures.pharmacies, 1, "one pharmacy named twice in different spelling is one pharmacy");
     assert.equal(figures.awaitingValidation, 1);

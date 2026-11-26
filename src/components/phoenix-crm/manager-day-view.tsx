@@ -4,7 +4,7 @@ import { PrivateCalendarEntriesList, privateCalendarUnreadNote } from "@/compone
 import { ManagerMissedRecordPanel } from "@/components/phoenix-crm/manager-missed-record-panel";
 import { ManagerPlanActualTable } from "@/components/phoenix-crm/manager-plan-actual-table";
 import { CrmBlock, CrmEmpty, CrmNote, CrmPanel, CrmStat, CrmStatGrid } from "@/components/phoenix-crm/ui";
-import { awaitingValidationNote } from "@/lib/crm/call-rate";
+import { waitingCountedAsVisitsNote } from "@/lib/crm/call-rate";
 import { adminDeleteTargetOfManagerDayVisit } from "@/lib/phoenix-crm/admin-delete-rules";
 import { buildPlanVsActual } from "@/lib/phoenix-crm/manager-day-plan";
 import { MISSED_RECORD_MARK } from "@/lib/phoenix-crm/missed-records";
@@ -29,7 +29,8 @@ import type { PhoenixCrmManagerDayDetail } from "@/lib/phoenix-crm/view-types";
  */
 export function ManagerDayView({ view }: { view: PhoenixCrmManagerDayDetail }) {
   const { figures, manager, visits } = view;
-  const waiting = awaitingValidationNote({ awaitingValidation: figures.awaitingValidation });
+  // Counted above as visits, in no KPI yet (owner, 2026-11-27) — the sentence the calendar and the rep's day print.
+  const waiting = waitingCountedAsVisitsNote(figures.awaitingValidation);
   const history = archiveHistoryNote(figures.archiveHistory);
   const { rows, summary } = buildPlanVsActual(view.plan, visits);
 
@@ -58,8 +59,8 @@ export function ManagerDayView({ view }: { view: PhoenixCrmManagerDayDetail }) {
             </CrmStatGrid>
           ) : null}
           {waiting ? (
-            <CrmNote title="Some of this day is not scored yet" tone="info">
-              <p>{waiting}</p>
+            <CrmNote title="Visits waiting for validation" tone="info">
+              <p>{waiting}.</p>
             </CrmNote>
           ) : null}
           {history ? (

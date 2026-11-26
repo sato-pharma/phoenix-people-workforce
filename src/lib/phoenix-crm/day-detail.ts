@@ -15,8 +15,10 @@ import { todayPharmacies, type TodayVisit } from "@/lib/phoenix-crm/today-rules"
  * one pharmacy. `todayPharmacies` is that grouping, case-insensitive with the most recent spelling,
  * and it is reused rather than rewritten: a second copy is a second answer that will drift.
  *
- * 🔴 AND THE HEADLINE COUNTS ONLY WHAT COUNTS IN A KPI — THE SAME BASIS AS THE CALENDAR CELL THAT
- * OPENS THIS PAGE. It used to count every row it was handed, while `server/team-calendar.ts` counts
+ * 🔴 AND THE HEADLINE COUNTS ON THE SAME BASIS AS THE CALENDAR CELL THAT OPENS THIS PAGE. Since 2026-11-27 that
+ * basis is `visitCountsAsVisit` — a visit to a customer still waiting for validation COUNTS AS A VISIT here and on
+ * the cell (owner: "they count as visits but not count in KPIs"), and is said in words; no KPI reads this page.
+ * The history, before that ruling: It used to count every row it was handed, while `server/team-calendar.ts` counts
  * the rows `phoenix_crm_countable_visits` and `customer_validated` agree on. So a rep's Tuesday read
  * 3 on the grid and 5 on the page the grid links to, with nothing on either screen to say which was
  * right — and on a team that has just started the gap is EVERY visit, because none of the
@@ -36,10 +38,16 @@ export type DayDetailVisit = {
   /** The server's own instant, unformatted — see `firstCapturedAt` for why it is not a clock here. */
   capturedAt: string;
   /**
-   * Whether this visit is inside a KPI figure (`visitCountsInKpi`, read off the row). The headline
-   * counts only these; the list below carries every visit with its own status.
+   * Whether this visit is inside a KPI figure (`visitCountsInKpi`, read off the row). The page is no KPI: it
+   * reads this only to say WHY a visit is held back; the list below carries every visit with its own status.
    */
   countsInKpi: boolean;
+  /**
+   * Whether this visit counts as a VISIT (`visitCountsAsVisit`): every half of `countsInKpi` except the
+   * customer's validation (owner, 2026-11-27: "they count as visits but not count in KPIs"). The headline counts
+   * these, as the calendar cell does. Absent reads as `countsInKpi`.
+   */
+  countsAsVisit?: boolean;
   /** Whether its customer has been validated and admitted to the list. */
   customerValidated: boolean;
   /** Copied from the old system: `capturedAt` is a midnight nobody saw, so no pharmacy line reads it as a clock. */
@@ -76,12 +84,17 @@ export type DayDetailCounts = {
   /** Each pharmacy once, whatever the spelling, with where it came from and whether it is counted. */
   pharmacies: DayDetailPharmacy[];
   /**
-   * Visits saved on this day that are in NO figure because their customer is not validated yet. On a
-   * team that has just started that is every visit it has — a flat 0 with nothing to explain it is
-   * exactly what this number exists to prevent (`awaitingValidationNote` is the sentence).
+   * Visits saved on this day whose customer is not validated yet: COUNTED in AM · PM · Pharmacies above as
+   * visits (owner, 2026-11-27), and in no KPI until the customer is validated (`waitingCountedAsVisitsNote`).
    */
   awaitingValidation: number;
-  /** Off-plan visits still waiting for the manager and then SFE: in no figure either, and not refused. */
+  /**
+   * Visits whose customer is not validated yet that count in NO figure even as visits: history copied from the old
+   * system waits for a validated place before the countable view admits it, so the calendar cell has none of them
+   * either (`awaitingValidationNote` is their sentence — saved, waiting).
+   */
+  heldForValidation: number;
+  /** Off-plan visits still waiting for the manager and then SFE: in no figure, and not refused. */
   awaitingApproval: number;
   /** Copied history on a customer in the Archive: in no figure, and waiting for nobody (`archiveHistoryNote`). */
   archiveHistory: number;
@@ -102,19 +115,23 @@ export function dayDetailCounts(visits: readonly DayDetailVisit[]): DayDetailCou
   const counts = emptyVisitCountSplit();
 
   let awaitingValidation = 0;
+  let heldForValidation = 0;
   let awaitingApproval = 0;
   let archiveHistory = 0;
+  const countsAsVisit = (visit: DayDetailVisit) => visit.countsAsVisit ?? visit.countsInKpi;
   for (const visit of visits) {
     if (visit.countsInKpi) continue;
-    // Why it is not counted, in the order the predicate asks: validation first, because a visit
-    // whose customer is unvalidated is held back whatever its approval says. A copied visit to a
-    // customer in the Archive is the one unvalidated visit that is waiting for nobody.
+    // Why it is in no KPI. A copied visit to a customer in the Archive waits for nobody. A visit whose customer is
+    // still unvalidated COUNTS as a visit here and waits only for that validation (owner, 2026-11-27); a copied one
+    // waits for a validated place before it counts even as a visit; one that waits for an approval is with the
+    // approvers, and counted nowhere until they decide.
     if (visit.archiveHistory) archiveHistory += 1;
-    else if (!visit.customerValidated) awaitingValidation += 1;
+    else if (!visit.customerValidated && countsAsVisit(visit)) awaitingValidation += 1;
+    else if (!visit.customerValidated && visit.copiedFromOldSystem) heldForValidation += 1;
     else awaitingApproval += 1;
   }
 
-  const counting = visits.filter((visit) => visit.countsInKpi);
+  const counting = visits.filter(countsAsVisit);
   for (const visit of asToday(counting)) {
     // Through the golden rule's own helper, not an `=== "AM" ? am : pm` that files every third
     // list under the doctors. A pharmacy customer is a third list since 2026-10-02.
@@ -134,5 +151,5 @@ export function dayDetailCounts(visits: readonly DayDetailVisit[]): DayDetailCou
     name: entry.name,
   }));
   counts.pharmacies = pharmacies.filter((entry) => entry.counted).length;
-  return { archiveHistory, awaitingApproval, awaitingValidation, counts, pharmacies };
+  return { archiveHistory, awaitingApproval, awaitingValidation, counts, heldForValidation, pharmacies };
 }

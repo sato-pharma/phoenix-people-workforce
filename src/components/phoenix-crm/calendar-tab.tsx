@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { crmUrl, useCrmGet } from "@/components/phoenix-crm/api";
 import { useCrmSurface, type CrmSurface } from "@/components/phoenix-crm/surface";
 import { CrmBlock, CrmEmpty, CrmField, CrmLoadError, CrmLoading, CrmNote, CrmPanel, CrmSelect, CrmStat, CrmStatGrid, CrmTable } from "@/components/phoenix-crm/ui";
-import { awaitingValidationNote } from "@/lib/crm/call-rate";
+import { waitingCountedAsVisitsNote } from "@/lib/crm/call-rate";
 import { dayActivityLabel } from "@/lib/phoenix-crm/day-activities";
 import { opensForMissedRecords } from "@/lib/phoenix-crm/missed-records";
 import { phoenixCrmDayPath } from "@/lib/phoenix-crm/modules";
@@ -63,10 +63,12 @@ function privateCalendarText(entries: TeamCalendarDay["calendarEntries"] | undef
   return labels.length > 0 ? `On the private calendar: ${labels.join(", ")}` : null;
 }
 
-/** "1 visit to a customer still waiting for validation" — work on the day that no figure counts yet. */
+/** "of which 1 visit to a customer still waiting for validation" — counted in the cell as a visit, in no KPI (owner, 2026-11-27). */
 function waitingText(count: number): string | null {
   if (count <= 0) return null;
-  return count === 1 ? "1 visit to a customer still waiting for validation" : `${count} visits to customers still waiting for validation`;
+  return count === 1
+    ? "of which 1 visit to a customer still waiting for validation, in no KPI yet"
+    : `of which ${count} visits to customers still waiting for validation, in no KPI yet`;
 }
 
 /** His legend, as ink. Square edges, and one class string per shape so nothing is composed at runtime. */
@@ -384,12 +386,12 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
                 rep on (already in that rep&apos;s row), and a meeting, training or travel they recorded.
               </p>
             ) : null}
-            {/* A cell that looks empty because the customer is not validated yet, not because the
-                rep stayed home. The same sentence the reports and both call-rate boards print. */}
-            {awaitingValidationNote({ awaitingValidation: waitingThisMonth }) ? (
+            {/* A visit to a customer still waiting for validation is counted in the cells as a visit and in no KPI
+                (owner, 2026-11-27); the month says how many, in the one sentence the day pages print. */}
+            {waitingCountedAsVisitsNote(waitingThisMonth) ? (
               <div className="mt-3">
-                <CrmNote title="Some days look emptier than they were" tone="info">
-                  {awaitingValidationNote({ awaitingValidation: waitingThisMonth })}
+                <CrmNote title="Visits waiting for validation" tone="info">
+                  {waitingCountedAsVisitsNote(waitingThisMonth)}.
                 </CrmNote>
               </div>
             ) : null}
@@ -601,9 +603,9 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
                   Recorded as a day activity: {dayActivityLabel(chosen.day.activity)}.
                 </p>
               ) : null}
-              {waitingText(chosen.day.awaitingValidation ?? 0) ? (
+              {waitingCountedAsVisitsNote(chosen.day.awaitingValidation ?? 0) ? (
                 <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-600">
-                  {waitingText(chosen.day.awaitingValidation ?? 0)}: logged on the day, counted once the customer is validated.
+                  {waitingCountedAsVisitsNote(chosen.day.awaitingValidation ?? 0)}.
                 </p>
               ) : null}
               {(chosen.day.calendarEntries?.length ?? 0) > 0 ? (

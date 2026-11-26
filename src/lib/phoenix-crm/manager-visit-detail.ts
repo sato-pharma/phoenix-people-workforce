@@ -90,7 +90,10 @@ export type ManagerDayVisit = {
   products: string[];
   comment: string | null;
   pharmacyName: string | null;
-  /** A ride-along whose customer is not validated yet counts in no figure, exactly as on the rep's own row. */
+  /**
+   * A ride-along whose customer is not validated yet: counted as a visit, in no KPI, exactly as on the rep's own row
+   * (owner, 2026-11-27: "they count as visits but not count in KPIs").
+   */
   awaitingValidation: boolean;
   /**
    * `visitIsArchiveHistory`: also `awaitingValidation`, so in no figure, but copied from the old system to a customer in
@@ -233,7 +236,7 @@ export type ManagerDayFigures = {
   /**
    * The calendar cell's own figures, so the page the cell opens can never print a different number for the
    * same Tuesday. AM · PM · Pharmacies stay three figures apart (the golden rule); a ride-along whose customer
-   * is not validated is held out of them and counted in `awaitingValidation`.
+   * is not validated COUNTS in them as a visit (owner, 2026-11-27) and is also tallied in `awaitingValidation`.
    */
   am: number;
   pm: number;
@@ -254,11 +257,14 @@ export function managerDayFigures(visits: readonly ManagerDayVisit[]): ManagerDa
     else if (visit.kind === "product_manager") figures.productManagerVisits += 1;
     else figures.singles += 1;
 
-    if (visit.awaitingValidation) {
-      if (visit.archiveHistory) figures.archiveHistory += 1;
-      else figures.awaitingValidation += 1;
+    // Copied history on a customer in the Archive waits for nobody and is in no figure. A visit whose customer still
+    // waits for validation COUNTS AS A VISIT below and is said apart (owner, 2026-11-27: "they count as visits but not
+    // count in KPIs"), so the cell and the private calendar read one figure for one day.
+    if (visit.archiveHistory) {
+      figures.archiveHistory += 1;
       continue;
     }
+    if (visit.awaitingValidation) figures.awaitingValidation += 1;
     // Every visit by the customer's list — through the golden rule's own helper, so a pharmacy is never filed among the
     // doctors. 🔴 HIS OWN VISIT TOO (owner, 2026-10-23: "if a manager himself added a visit to a pharmacy, it should be
     // count … separate"): only a customer of Manager's own list, which carries no list, falls back to the half.

@@ -168,7 +168,7 @@ export function dayShape(input: {
   day: string;
   /** Private-calendar entries — a day with one and nothing else draws as Other activity, never blank. */
   entries?: number;
-  /** Visits saved on a customer still waiting for validation: work he did, counted in nothing yet — never blank. */
+  /** Visits saved on a customer still waiting for validation — already inside `counts` since 2026-11-27, so this only keeps an older caller's day from reading blank. */
   awaitingValidation?: number;
 }): DayShape {
   const { am, pm, pharmacies } = input.counts;

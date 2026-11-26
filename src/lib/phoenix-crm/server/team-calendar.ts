@@ -44,8 +44,9 @@ import { emptyVisitCountSplit, type VisitCountSplit } from "@/lib/crm/visit-coun
  * 2026-09-29; `team-calendar.ts` beside this file holds what that screen does and why the colour
  * here says WHICH HALVES of the day were worked rather than how busy the day was.
  *
- * 🔴 IT READS `phoenix_crm_countable_visits`, NEVER THE RAW TABLE, AND IT READS
- * `customer_validated = true` ON IT. Every KPI in this module reads the countable view — an off-plan
+ * 🔴 IT READS `phoenix_crm_countable_visits`, NEVER THE RAW TABLE. Since 2026-11-27 it COUNTS a visit whose
+ * `customer_validated` is false as a visit and says how many wait (owner: "they count as visits but not count in
+ * KPIs"; `foldVisitRow`) — the calendar is no KPI. The history of that line, before the ruling: Every KPI in this module reads the countable view — an off-plan
  * visit that is not yet approved counts in nothing — and a calendar built on the raw table would show
  * a manager work that no other screen agrees exists. The view answers only the APPROVAL half of
  * "does this count"; the other half is the customer's own admission to the list, which the owner
@@ -290,10 +291,9 @@ async function loadVisitDays(
           .from("phoenix_crm_countable_visits_with_history")
           .select("id, seat_id, visit_date, list_type, pharmacy_name, customer_validated")
           .eq("is_test", isTest)
-          // NOT filtered here any more. A visit to a customer nobody has validated is work the rep
-          // really did, and it still counts in none of the three figures — but the row is read so
-          // the day can SAY how many are waiting instead of showing the manager an empty cell. On a
-          // team that has just started that is every visit it has (owner's pick, 2026-10-02).
+          // NOT filtered on customer_validated. A visit to a customer nobody has validated is work the rep
+          // really did: it COUNTS AS A VISIT in AM · PM · Pharmacies (owner, 2026-11-27: "they count as visits
+          // but not count in KPIs"), and the column is read so the day can SAY how many are still waiting.
           .gte("visit_date", bounds.from)
           .lte("visit_date", bounds.to)
           .in("seat_id", part),
@@ -325,12 +325,15 @@ function newVisitFold(): VisitFold {
 /**
  * One countable visit into the day it belongs to — the SAME rules for a rep's row and for the visits a
  * manager rode, so the two can never count one visit two ways.
+ *
+ * 🔴 A VISIT TO A CUSTOMER STILL WAITING FOR VALIDATION COUNTS AS A VISIT HERE, AND IN NO KPI (owner, 2026-11-27:
+ * "they count as visits but not count in KPIs"). The private calendar counted it while this cell did not, so one
+ * rep's 15 November read PM 9 there and PM 8 here. It is counted AND tallied in `waiting`, so the cell still says
+ * how many of its visits wait for a validation. The team calendar is no KPI: every KPI reader keeps its own
+ * `customer_validated` (`tests/phoenix-crm-countable-visits.test.ts`, the exempt list).
  */
 function foldVisitRow(fold: VisitFold, at: string, row: Row): void {
-  if (row.customer_validated !== true) {
-    fold.waiting.set(at, (fold.waiting.get(at) ?? 0) + 1);
-    return;
-  }
+  if (row.customer_validated !== true) fold.waiting.set(at, (fold.waiting.get(at) ?? 0) + 1);
   const found = fold.amPm.get(at) ?? { am: 0, pm: 0 };
   // Through the golden rule's own helper: a pharmacy is a third list since 2026-10-02, and an
   // `=== "AM" ? am : pm` would have filed every one of them among the doctors.
@@ -590,9 +593,8 @@ async function loadActivityDays(
  *
  * 🔴 WHAT COUNTS AS WORK IS WHAT COLOURS A CELL. A visit or a recorded day activity; never leave,
  * never a Friday. Opening the month on a grid of F and dashes would answer the owner's request
- * with the letter and not the point. That is also why the visit probe carries
- * `customer_validated = true`: the grid it opens is built by `loadVisitDays`, which counts only
- * those, so a probe without it could open a manager on a month whose every cell then reads 0.
+ * with the letter and not the point. The visit probe asks no `customer_validated`: `loadVisitDays`
+ * counts a visit still waiting for its customer's validation as a visit (owner, 2026-11-27).
  *
  * Two one-row reads rather than the full month loaders: this runs before anything is known, on
  * every first open of the tab, and it needs a MAXIMUM rather than the rows themselves. It is
