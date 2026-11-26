@@ -126,6 +126,25 @@ node --env-file-if-exists=.env.local --experimental-strip-types --experimental-s
   so the original was set to `clinic` (audit row) before the merge. A desk entry uses one of the
   form's four kinds: `hospital`, `clinic`, `account`, `other`.
 
+### Take a pharmacy off a customer (one shop held twice)
+
+- **Run:** `owner-ops.ts remove-customer-pharmacy --customer <customer id> --pharmacy <the copy's pharmacy id> --reason "<why it comes off>"`
+  — a dry run first, then the same line with `--apply`. One pharmacy per run.
+- **What it calls:** `removePharmacyFromMarketingCustomer` in `src/lib/marketing-requests/customer-edit.ts`,
+  the Customer Check page's "Remove". Every live link from that customer to that pharmacy is switched
+  off (never deleted), the reason goes into the link's notes and one audit row. Adding the pharmacy back
+  switches the same row on again. A request already raised on it keeps its target.
+- **Finding the customers that hold one shop twice:** two live links on one customer, on two different
+  venue copies, whose codes are the same code at the same distributor
+  (`phx_marketing_code_match_key`). Keep the copy with the shop photo and the higher validation; take the other off.
+- **Done this way first, 26 Nov 2026 02:53 Cairo:** six customers, seven links (احمد محمد عبدالفتاح,
+  د.مصطفي شلش twice, ربى خضير, سيد البلاصي, صدر امبابة, ياسر جمعة المصري). The duplicate venues
+  themselves are still on file; folding them is `merge-venues`.
+- 🔴 **Same code, different name is NOT a copy.** د.سيد البلاصي holds "جميلة" and "ريهام" under one Ibn Sina
+  code (348325), and جميلة's code row was already switched off: a code typed against the wrong shop,
+  left for the owner.
+- **Proof:** the run reads the customer's live pharmacies back; the link's `active` is false.
+
 ### Put a map pin on a pharmacy already saved
 
 - **Run:** `owner-ops.ts pin-pharmacy --pharmacy <id> --lat <latitude> --lng <longitude> [--employee <hr id>]`

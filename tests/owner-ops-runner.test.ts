@@ -37,9 +37,10 @@ function dryRunIsTheDefault() {
   const pin = ["pin-pharmacy", "--pharmacy", PHARMACY, "--lat", "29.95", "--lng", "31.25"];
   const crm = ["load-crm-list", "--seat", "SEAT-PED-REP-D12", "--body", "body.json"];
   const customers = ["merge-customers", "--survivor", PHARMACY, "--retired", OTHER, "--reason", "same doctor saved twice"];
+  const unlink = ["remove-customer-pharmacy", "--customer", OTHER, "--pharmacy", PHARMACY, "--reason", "second copy of the same pharmacy"];
   const seat = ["seat-in-building", "--seat", "SEAT-PED-REP-D12", "--building", PHARMACY, "--customers", `${OTHER},${PHARMACY}`, "--reason", "his timetable names them"];
 
-  for (const argv of [link, merge, pin, crm, seat, customers]) {
+  for (const argv of [link, merge, pin, crm, seat, customers, unlink]) {
     assert.equal(plan(argv).apply, false, `${argv[0]} with no --apply is a DRY RUN`);
     assert.equal(plan([...argv, "--apply"]).apply, true, `${argv[0]} --apply writes`);
     assert.equal(plan([argv[0]!, "--apply", ...argv.slice(1)]).apply, true, "--apply counts wherever it stands");
@@ -74,6 +75,17 @@ function dryRunIsTheDefault() {
   refused(["merge-customers", "--survivor", PHARMACY, "--retired", OTHER], "a customer merge with no reason");
   refused(["merge-customers", "--survivor", PHARMACY, "--loser", OTHER, "--reason", "same doctor saved twice"], "--loser belongs to the pharmacy merge, never to the customer merge");
   refused(["merge-venues", "--survivor", PHARMACY, "--retired", OTHER, "--reason", "same shop, same codes"], "and --retired never to the pharmacy merge");
+  const unlinkPlan = plan(unlink);
+  assert.deepEqual(
+    unlinkPlan.job === "remove-customer-pharmacy" && [unlinkPlan.customerId, unlinkPlan.pharmacyId],
+    [OTHER, PHARMACY],
+    "--customer is the customer, --pharmacy the pharmacy coming off it",
+  );
+  refused(["remove-customer-pharmacy", "--customer", OTHER, "--pharmacy", PHARMACY, "--reason", "dup"], "a reason under 10 characters");
+  refused(["remove-customer-pharmacy", "--customer", OTHER, "--pharmacy", PHARMACY], "a removal with no reason");
+  refused(["remove-customer-pharmacy", "--pharmacy", PHARMACY, "--reason", "second copy of the same pharmacy"], "a removal that names no customer");
+  refused(["remove-customer-pharmacy", "--customer", "not-a-uuid", "--pharmacy", PHARMACY, "--reason", "second copy of the same pharmacy"], "a customer id that is not a uuid");
+  refused(["remove-customer-pharmacy", "--customers", OTHER, "--pharmacy", PHARMACY, "--reason", "second copy of the same pharmacy"], "--customers belongs to the seating, never to a removal");
   const seatPlan = plan(seat);
   assert.deepEqual(seatPlan.job === "seat-in-building" && seatPlan.customerIds, [OTHER, PHARMACY], "the customers are read from one comma-separated list, in order");
   refused(["seat-in-building", "--seat", "SEAT-PED-REP-D12", "--building", PHARMACY, "--customers", `${OTHER},${OTHER}`, "--reason", "his timetable names them"], "a customer named twice");
@@ -187,6 +199,12 @@ function theRunnerFencesBeforeItLoadsTheApp() {
   assert.match(customersJob, /carryEvidence: false/, "the retired copy's photo stays on the retired row unless asked");
   assert.doesNotMatch(customersJob, /\.(?:insert|update|upsert|delete|rpc)\(/, "and the runner itself writes no row");
   assert.doesNotMatch(customersJob, /assertRealSessionForDecision|devPreview|dev_preview/, "nor touches the real-session guard");
+  // remove-customer-pharmacy goes through the Customer Check page's own "Remove": switched off with
+  // the reason in the notes and the audit, never deleted, never written by the runner itself.
+  const unlinkJob = source.slice(source.indexOf("async function runRemoveCustomerPharmacy("), source.indexOf("async function runPinPharmacy("));
+  assert.ok(unlinkJob.length > 0, "the remove-customer-pharmacy job is found");
+  assert.match(unlinkJob, /removePharmacyFromMarketingCustomer\(owner, plan\.customerId, \{/, "handed to the page's own function, as the owner");
+  assert.doesNotMatch(unlinkJob, /\.(?:insert|update|upsert|delete|rpc)\(/, "and the runner itself writes no row");
 }
 
 export async function runOwnerOpsRunnerTests() {

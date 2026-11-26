@@ -16,6 +16,9 @@
 //                 The screen's merge asks "are you sure?" in a browser OK box, which the app's browser
 //                 pane closes unanswered, so the press never reached the server (26 Nov 2026). The owner's
 //                 word in chat is the decision; this sends it through the same function and its refusals.
+//   remove-customer-pharmacy removePharmacyFromMarketingCustomer (the Customer Check page's "Remove")
+//                 Switches one pharmacy off one customer, with the reason in the link's notes and the audit.
+//                 First used for the customers holding one pharmacy twice through two venue copies.
 //   pin-pharmacy  the desk-entry pin: captured_latitude/longitude/at on marketing_pharmacies with
 //                 evidence_status 'pending' (no shop photo). No route writes this; the 25 Nov pins were
 //                 one hand UPDATE, so it is done here with that UPDATE's own guard (no pin yet) plus a
@@ -329,6 +332,58 @@ async function runMergeCustomers(plan: Extract<OwnerOpsPlan, { job: "merge-custo
   if (plan.apply && after.get(plan.retiredId)?.merged_into_customer_id !== plan.survivorId) {
     // Exit 3, never a refusal: the write has already happened, and "refused" would read as "nothing changed".
     console.error("\nPROOF FAILED — the merge reported success but the retired row does not point at the one that stays.");
+    process.exitCode = 3;
+  }
+  return { employees: [], focus: {}, proofDone: true };
+}
+
+type CustomerLinkRow = { active: boolean; distributor_code_id: string | null; id: string; pharmacy_id: string; validation_status: string };
+
+async function readCustomerLinks(customerId: string) {
+  const { getSupabaseAdmin } = await import("@/lib/supabase/server");
+  const supabase = getSupabaseAdmin();
+  const customer = await supabase.from("marketing_customers").select("display_name, customer_code, active").eq("id", customerId).maybeSingle();
+  if (customer.error) throw customer.error;
+  const links = await supabase
+    .from("marketing_customer_pharmacies")
+    .select("id, pharmacy_id, distributor_code_id, validation_status, active")
+    .eq("customer_id", customerId)
+    .eq("active", true);
+  if (links.error) throw links.error;
+  const rows = (links.data ?? []) as CustomerLinkRow[];
+  const venues = rows.length
+    ? await supabase.from("marketing_pharmacies").select("id, display_name, pharmacy_code").in("id", [...new Set(rows.map((row) => row.pharmacy_id))])
+    : { data: [], error: null };
+  if (venues.error) throw venues.error;
+  const names = new Map(((venues.data ?? []) as Array<{ display_name: string; id: string; pharmacy_code: string }>).map((v) => [v.id, `${v.display_name} · ${v.pharmacy_code}`]));
+  return { customer: customer.data as { active: boolean; customer_code: string; display_name: string } | null, links: rows, names };
+}
+
+function describeCustomerLinks(read: Awaited<ReturnType<typeof readCustomerLinks>>, removedPharmacyId: string) {
+  if (!read.customer) return "  customer: not found";
+  const lines = [`  ${read.customer.display_name} · ${read.customer.customer_code} · ${read.links.length} live pharmacy link(s)`];
+  for (const link of read.links) {
+    lines.push(`    ${link.pharmacy_id === removedPharmacyId ? "→ " : "  "}${read.names.get(link.pharmacy_id) ?? link.pharmacy_id} · ${link.validation_status}`);
+  }
+  return lines.join("\n");
+}
+
+async function runRemoveCustomerPharmacy(plan: Extract<OwnerOpsPlan, { job: "remove-customer-pharmacy" }>, owner: AccessContext) {
+  const { removePharmacyFromMarketingCustomer } = await import("@/lib/marketing-requests/customer-edit");
+  const before = await readCustomerLinks(plan.customerId);
+  console.log("Before (→ is the pharmacy coming off):");
+  console.log(describeCustomerLinks(before, plan.pharmacyId));
+  console.log(`Reason: ${plan.reason}`);
+  const result = await removePharmacyFromMarketingCustomer(owner, plan.customerId, { pharmacyId: plan.pharmacyId, reason: plan.reason });
+  console.log(`\nThe app accepted it: ${result.linksRemoved} link(s) switched off`);
+
+  // PROOF — read back, not the function's own report.
+  const after = await readCustomerLinks(plan.customerId);
+  console.log("\nPROOF — the customer's live pharmacies now:");
+  console.log(describeCustomerLinks(after, plan.pharmacyId));
+  if (plan.apply && after.links.some((link) => link.pharmacy_id === plan.pharmacyId)) {
+    // Exit 3, never a refusal: the write has already happened, and "refused" would read as "nothing changed".
+    console.error("\nPROOF FAILED — the app reported the pharmacy removed but a live link to it is still on the customer.");
     process.exitCode = 3;
   }
   return { employees: [], focus: {}, proofDone: true };
@@ -657,6 +712,7 @@ async function main() {
     if (plan.job === "link-doctor") outcome = await runLinkDoctor(plan, owner.access);
     else if (plan.job === "merge-venues") outcome = await runMergeVenues(plan, owner.access);
     else if (plan.job === "merge-customers") outcome = await runMergeCustomers(plan, owner.access);
+    else if (plan.job === "remove-customer-pharmacy") outcome = await runRemoveCustomerPharmacy(plan, owner.access);
     else if (plan.job === "load-crm-list") outcome = await runLoadCrmList(plan, owner.access);
     else if (plan.job === "seat-in-building") outcome = await runSeatInBuilding(plan, owner.access);
     else outcome = await runPinPharmacy(plan, owner.access);
