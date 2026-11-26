@@ -317,6 +317,68 @@ async function runDetailTests() {
   );
 }
 
+function runNetworkQuietTests() {
+  // ── The mobile-data switch: not held, but NOTICED (26 Nov 2026) ────────────────────────────────────
+  // NOW is Monday 9 Nov 2026, 14:00 Cairo — inside the working day and past 12:00.
+  const cairo = (iso: string) => Date.parse(iso);
+  const quietAt = (nowIso: string, lastContactHoursBeforeNow: number) =>
+    findFleetFaults(
+      [watched({ deviceNumber: "PHX-TAB-0007", lastContactAt: new Date(cairo(nowIso) - lastContactHoursBeforeNow * HOUR).toISOString(), locatedAt: new Date(cairo(nowIso) - lastContactHoursBeforeNow * HOUR).toISOString() })],
+      cairo(nowIso),
+    ).map((fault) => fault.kind);
+
+  // BREAK-TEST: drop the network_quiet push in `findFleetFaults` and this first assertion fires.
+  assert.deepEqual(quietAt("2026-11-09T12:00:00Z", 4), ["network_quiet"], "a held tablet that has said nothing for four hours of a working afternoon is named");
+  // BREAK-TEST: drop TABLET_NETWORK_QUIET_LIMIT_HOURS to 1 and this fires. (0 breaks the launcher
+  // watch's first assertion instead, because then every tablet in this file reads quiet.)
+  assert.deepEqual(quietAt("2026-11-09T12:00:00Z", 2), [], "two hours is not a quiet tablet — the hourly sync has not even missed three turns");
+  // 🔴 THE WINDOW. BREAK-TEST: drop the `moment.hour >= CAIRO_WORK_FIRST_HOUR + …` half of
+  // `isCairoWorkingQuietHour` and the 11:00 and 17:00 assertions fire; drop the `weekday > 4` line
+  // and the Friday and Saturday ones fire.
+  assert.deepEqual(quietAt("2026-11-09T09:00:00Z", 4), [], "at 11:00 Cairo the three quiet hours would include the night, so nobody is named");
+  assert.deepEqual(quietAt("2026-11-09T10:00:00Z", 4), ["network_quiet"], "from 12:00 Cairo the whole three hours fell inside the working day");
+  assert.deepEqual(quietAt("2026-11-09T15:00:00Z", 4), [], "at 17:00 Cairo the working day is over");
+  assert.deepEqual(quietAt("2026-11-13T12:00:00Z", 4), [], "Friday is not a working day");
+  assert.deepEqual(quietAt("2026-11-14T12:00:00Z", 4), [], "nor is Saturday");
+  assert.deepEqual(quietAt("2026-11-15T12:00:00Z", 4), ["network_quiet"], "Sunday is");
+
+  // A tablet in a cupboard is meant to be quiet, and a tablet silent for days is named ONCE, for the silence.
+  const cupboard = findFleetFaults([watched({ deviceNumber: "PHX-TAB-0010", holderName: null, lastContactAt: ago(40), registerStatus: "in_stock" })], NOW);
+  assert.deepEqual(cupboard, [], "an unheld tablet is not named for being quiet");
+  const silentForDays = findFleetFaults([watched({ agentVersion: "6.48", deviceNumber: "PHX-TAB-0007", lastContactAt: ago(100), launcherVersion: "6.39", locatedAt: ago(100) })], NOW, new Map([["6.48", ago(100)]]));
+  assert.deepEqual(silentForDays.map((fault) => fault.kind), ["silent"], "days of silence is one line, not a quiet line beside it");
+
+  // The words: a fact about the tablet, and never a word about what the rep did.
+  const quiet = findFleetFaults([watched({ deviceNumber: "PHX-TAB-0007", lastContactAt: ago(4), locatedAt: ago(4) })], NOW);
+  const message = buildFleetWatchMessage({ faults: quiet, unregistered: 0 });
+  // BREAK-TEST: move the quiet block below the silence block in `buildFleetWatchMessage` and this fires.
+  assert.match(message, /^Nothing heard for over 3 hours of today's working day:/, "the quiet is the first thing the message says");
+  assert.match(message, /• TAG-PHX-TAB-0007, held by A Rep: last heard \d+ \w+, \d\d:\d\d Cairo\./, "with the tablet's name, its holder and when it was last heard");
+  assert.match(message, /Mobile data off, no signal, or a tablet that is not on all look the same from here\./, "and the three readings that look identical from the server, so nobody is accused of one");
+  assert.doesNotMatch(message, /switched off|disabled|tamper|refus|the rep (did|has|turned)/i, "never what a rep did");
+
+  // It is a daily line, like the silence — a standing quiet says it once a Cairo day, not once an hour.
+  assert.notEqual(
+    fleetWatchIdempotencyKey({ faults: quiet, unregistered: 0 }, "2026-11-09"),
+    fleetWatchIdempotencyKey({ faults: quiet, unregistered: 0 }, "2026-11-10"),
+    "once a day",
+  );
+  assert.equal(
+    fleetWatchIdempotencyKey({ faults: quiet, unregistered: 0 }, "2026-11-09"),
+    fleetWatchIdempotencyKey({ faults: quiet, unregistered: 0 }, "2026-11-09"),
+    "and not twice in the same day, however many times the hourly run finds it",
+  );
+
+  // 🔴 AND THE CLAIM IT REPLACES IS GONE: no page, rule or comment may say a launcher build closes the switch.
+  for (const relative of ["src/lib/devices/headwind/restrictions.ts", "docs/devices/headwind-rustdesk.md", ".claude/rules/devices.md"]) {
+    assert.doesNotMatch(
+      source(relative).replace(/MODIFY_PHONE_STATE[^\n]*/g, ""),
+      /launcher (that )?(turns|turning) it back on/i,
+      `${relative} no longer promises a launcher build can hold mobile data on — it cannot: that needs MODIFY_PHONE_STATE`,
+    );
+  }
+}
+
 function runLauncherWatchTests() {
   // ── F22: the watch names a held tablet whose launcher stays behind its rules for over 24 hours ─────
   const behind = watched({ agentVersion: "6.48", deviceNumber: "PHX-TAB-0007", launcherVersion: "6.39" });
@@ -444,6 +506,7 @@ export async function runHeadwindReadinessTests() {
   runTagDriftTests();
   await runDetailTests();
   runLauncherWatchTests();
+  runNetworkQuietTests();
   runAwaitingWatchTests();
   runSentNotDoneTests();
   runRegisterRouteTests();

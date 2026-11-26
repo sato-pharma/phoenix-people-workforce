@@ -2404,12 +2404,25 @@ wanted. `no_share_location` would hold location sharing off, the opposite of wha
 needs. All three are refused **by name, with the reason**, rather than left to be discovered on a fleet
 that has gone quiet.
 
-🔴 **And the one no Android lock can do: the mobile-data switch.** AOSP has no `DISALLOW_*` for it, and
-`no_config_mobile_networks` covers only the network's settings — so a rep can still turn mobile data off
-in quick settings. Only a launcher that turns it back on closes that, which is a launcher build
-(`Omar-3-xx/hmdm-android`, `patch-launcher.yml`), not a rules change. Saying "he cannot turn the network
-off" while only aeroplane mode and Wi-Fi are held is the half-truth that gets a tablet handed out
-believed sealed.
+🔴 **And the one NOTHING on these tablets can do: the mobile-data switch.** AOSP has no `DISALLOW_*` for
+it, and `no_config_mobile_networks` covers only the network's settings — so a rep can still turn mobile
+data off in quick settings.
+
+🔴 **A launcher build cannot close it either.** This section said one could until 26 Nov 2026, and that was
+wrong. Turning mobile data back on is `TelephonyManager.setDataEnabled` / `setDataEnabledForReason`, which
+require `MODIFY_PHONE_STATE` — `signature|privileged` — or carrier privileges, and `DevicePolicyManager`
+has **no API for mobile data at all**, so being device owner grants nothing here. The only code that can is
+platform-signed or sitting in `/system/priv-app`, a UICC-signed carrier app, or root (`svc data enable`);
+none of the three is reachable on a retail Lenovo TB328XU, and a launcher signed with the fork's own key
+(`Omar-3-xx/hmdm-android`, `patch-launcher.yml`) is an ordinary app whatever it is installed by. Reading the
+switch is free — `isDataEnabled()` needs only `ACCESS_NETWORK_STATE` — which is the shape of the real answer:
+**the switch is not closed, it is noticed.** `phoenix-tablet-fleet-watch` names a held tablet that has said
+nothing for three hours of the Cairo working day (Sunday to Thursday, 09:00–17:00, and only from 12:00 so the
+whole three hours fell inside the day), hourly, to the Super Admin alone — `network_quiet` in
+`src/lib/devices/headwind/fleet-watch.ts`. Mobile data off, no coverage and a tablet that is not on look
+identical from the server, so the line says all three and accuses nobody of any of them. Saying "he cannot
+turn the network off" while only aeroplane mode and Wi-Fi are held is the half-truth that gets a tablet
+handed out believed sealed; promising a launcher build will seal it is the same half-truth with a date on it.
 
 **The job.** `owner-ops.ts lock-rep-tablets` (`lockRepTablets` → `setHeadwindRestrictions`), behind the
 same `company_devices / approve` check the other tablet jobs use, audited per set with the locks only —

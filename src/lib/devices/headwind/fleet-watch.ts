@@ -28,6 +28,17 @@
  * held tablet still below a version its rules have wanted for over 24 hours is named. A tablet whose app list
  * names no launcher is not "behind" — that is not reported, and is never guessed either way.
  *
+ * 🔴 THE MOBILE-DATA SWITCH IS WATCHED, BECAUSE IT CANNOT BE HELD (26 Nov 2026). Every other way a rep could
+ * take a tablet off the network is locked on the rules — aeroplane mode, the Wi-Fi switch, the network's own
+ * settings, a network reset — and the mobile-data toggle in quick settings is the one that no Android lock
+ * reaches and no launcher build can reach either: turning it back on needs `MODIFY_PHONE_STATE`, which is
+ * granted only to a platform-signed build, a carrier app or root, and `DevicePolicyManager` has no API for it
+ * at all. So the switch is not closed; it is NOTICED. A tablet held by a person that has not said a word for
+ * over three hours of the Cairo working day (Sunday to Thursday, 09:00 to 17:00) is named within the hour, and
+ * only from 12:00, so the whole three hours fell inside the working day and a tablet left off overnight or over
+ * a weekend is never named for it. The line is a fact about the tablet — data off, no signal and a tablet that
+ * is not on all look identical from the server — and never a word about what the rep did.
+ *
  * A TABLET THAT NEVER SENT ITS HARDWARE REPORT IS COUNTED TOO. One with neither a serial nor an IMEI cannot be
  * added to custody, so `pendingRegistration` leaves it out — and the message used to leave it out with it. Its
  * first update run almost always stalled on an install link; it is said with the unregistered count, monthly.
@@ -41,7 +52,52 @@ const TABLET_SILENT_LIMIT_HOURS = 72;
 export const TABLET_NO_FIX_LIMIT_HOURS = 72;
 /** How long a held tablet may run an older launcher than its rules want before the watch names it. */
 export const TABLET_LAUNCHER_BEHIND_LIMIT_HOURS = 24;
+/** How long a held tablet may say nothing INSIDE the Cairo working day before the watch names it. */
+export const TABLET_NETWORK_QUIET_LIMIT_HOURS = 3;
+/** The Cairo working day the quiet is measured inside: Sunday to Thursday, 09:00 to 17:00. */
+const CAIRO_WORK_FIRST_HOUR = 9;
+const CAIRO_WORK_LAST_HOUR = 17;
 const FLEET_READ_BLIND_LIMIT_MS = 3 * HOUR_MS;
+
+/**
+ * The Cairo hour and weekday of a moment, read as NUMBERS.
+ *
+ * 🔴 NEVER A WEEKDAY OR MONTH NAME. `weekday: "short"` is engine-wording ("Sun" here, "Sun." elsewhere),
+ * so the day is taken from the Cairo calendar date instead: the numeric year, month and day are read out
+ * and handed to `Date.UTC`, whose `getUTCDay` then gives 0 for Sunday through 6 for Saturday with no
+ * timezone of its own left in it. `hour12: false` writes midnight as 24 in en-GB, which is hour 0.
+ */
+export function cairoHourAndWeekday(nowMs: number): { hour: number; weekday: number } | null {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    hour: "numeric",
+    hour12: false,
+    month: "numeric",
+    timeZone: "Africa/Cairo",
+    year: "numeric",
+  }).formatToParts(new Date(nowMs));
+  const read = (type: string) => Number(parts.find((part) => part.type === type)?.value);
+  const [year, month, day, rawHour] = [read("year"), read("month"), read("day"), read("hour")];
+  if (![year, month, day, rawHour].every((value) => Number.isFinite(value))) return null;
+  return { hour: rawHour === 24 ? 0 : rawHour, weekday: new Date(Date.UTC(year, month - 1, day)).getUTCDay() };
+}
+
+/**
+ * Whether now is far enough into a Cairo working day for three hours of silence to have fallen INSIDE it.
+ *
+ * 🔴 ONLY FROM 12:00, AND NEVER ON FRIDAY OR SATURDAY. A tablet left off overnight or over the weekend has
+ * done nothing worth a line, and naming it would teach the owner to ignore the alert that matters. So the
+ * window opens three hours after the working day does and closes at 17:00.
+ */
+export function isCairoWorkingQuietHour(nowMs: number): boolean {
+  const moment = cairoHourAndWeekday(nowMs);
+  if (!moment) return false;
+  // 0 Sunday … 4 Thursday are working days; 5 Friday and 6 Saturday are not.
+  if (moment.weekday > 4) return false;
+  return (
+    moment.hour >= CAIRO_WORK_FIRST_HOUR + TABLET_NETWORK_QUIET_LIMIT_HOURS && moment.hour < CAIRO_WORK_LAST_HOUR
+  );
+}
 
 /**
  * A launcher version string as one comparable number, or null when there is nothing to parse.
@@ -97,7 +153,7 @@ export type FleetWatchRead =
 export type FleetTabletFault = {
   deviceNumber: string;
   holderName: string;
-  kind: "silent" | "no_fix" | "never_fixed" | "launcher_behind";
+  kind: "silent" | "network_quiet" | "no_fix" | "never_fixed" | "launcher_behind";
   label: string;
   lastAt: string | null;
   /** `launcher_behind` only: the version the tablet runs, and the one its rules want. */
@@ -182,6 +238,7 @@ export function findFleetFaults(
   launcherWantedSince: ReadonlyMap<string, string> = new Map(),
 ): FleetTabletFault[] {
   const faults: FleetTabletFault[] = [];
+  const workingQuietHour = isCairoWorkingQuietHour(nowMs);
   for (const row of rows) {
     const holderName = row.holderName?.trim();
     if (row.registerStatus !== "assigned" || !holderName) continue;
@@ -189,6 +246,18 @@ export function findFleetFaults(
     if (olderThan(row.lastContactAt, nowMs, TABLET_SILENT_LIMIT_HOURS)) {
       // A silent tablet cannot update or locate itself; the silence is the one line worth saying.
       faults.push({ deviceNumber: row.deviceNumber, holderName, kind: "silent", label, lastAt: row.lastContactAt });
+      continue;
+    }
+    if (workingQuietHour && olderThan(row.lastContactAt, nowMs, TABLET_NETWORK_QUIET_LIMIT_HOURS)) {
+      // 🔴 THE ONE LINE THAT WATCHES THE MOBILE-DATA SWITCH (see the header). It carries, like the silence,
+      // because a tablet Phoenix cannot hear is not a tablet whose launcher or fix can be judged.
+      faults.push({
+        deviceNumber: row.deviceNumber,
+        holderName,
+        kind: "network_quiet",
+        label,
+        lastAt: row.lastContactAt,
+      });
       continue;
     }
     const running = row.launcherVersion?.trim() ?? "";
@@ -273,13 +342,14 @@ export function assessTabletFleet(input: {
   const wantedSince = nextLauncherWantedSince(input.read.rows, previousWanted, nowIso);
   const faults = findFleetFaults(input.read.rows, input.nowMs, wantedSince);
   const silent = faults.filter((fault) => fault.kind === "silent").length;
+  const quiet = faults.filter((fault) => fault.kind === "network_quiet").length;
   const noFix = faults.filter((fault) => fault.kind === "no_fix").length;
   const neverFixed = faults.filter((fault) => fault.kind === "never_fixed").length;
   const behind = faults.filter((fault) => fault.kind === "launcher_behind").length;
   const awaiting = input.read.awaitingHardwareReport ?? 0;
   return {
     awaitingHardwareReport: awaiting,
-    detail: `${input.read.rows.length} tablet(s), ${silent} silent, ${noFix} lost their location fix, ${neverFixed} never reported one, ${behind} on a launcher behind their rules, ${input.read.pendingRegistration} unregistered, ${awaiting} never sent their hardware report. ${marker(nowIso)}${wantedSinceMarker(wantedSince)}`,
+    detail: `${input.read.rows.length} tablet(s), ${silent} silent, ${quiet} quiet inside the working day, ${noFix} lost their location fix, ${neverFixed} never reported one, ${behind} on a launcher behind their rules, ${input.read.pendingRegistration} unregistered, ${awaiting} never sent their hardware report. ${marker(nowIso)}${wantedSinceMarker(wantedSince)}`,
     faults,
     outcome: "success",
     serverDown: false,
@@ -304,11 +374,22 @@ export function buildFleetWatchMessage(
 ): string {
   const lines: string[] = [];
   const silent = verdict.faults.filter((fault) => fault.kind === "silent");
+  const quiet = verdict.faults.filter((fault) => fault.kind === "network_quiet");
   const noFix = verdict.faults.filter((fault) => fault.kind === "no_fix");
   const neverFixed = verdict.faults.filter((fault) => fault.kind === "never_fixed");
   const behind = verdict.faults.filter((fault) => fault.kind === "launcher_behind");
   const awaiting = verdict.awaitingHardwareReport ?? 0;
+  if (quiet.length > 0) {
+    // 🔴 FIRST, because this is the only sign Phoenix gets of the one switch no lock on the rules can hold.
+    lines.push(`Nothing heard for over ${TABLET_NETWORK_QUIET_LIMIT_HOURS} hours of today's working day:`);
+    for (const fault of quiet) {
+      lines.push(
+        `• ${fault.label}, held by ${fault.holderName}: last heard ${fault.lastAt ? `${cairoStamp(fault.lastAt)} Cairo` : "never"}. Mobile data off, no signal, or a tablet that is not on all look the same from here.`,
+      );
+    }
+  }
   if (silent.length > 0) {
+    if (lines.length > 0) lines.push("");
     lines.push(`No check-in for over ${TABLET_SILENT_LIMIT_HOURS} hours:`);
     for (const fault of silent) {
       lines.push(`• ${fault.label}, held by ${fault.holderName}: ${fault.lastAt ? `last ${cairoStamp(fault.lastAt)} Cairo` : "never checked in"}.`);
