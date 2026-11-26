@@ -10,8 +10,8 @@ import { managerChain, managersInScope, personKey, territoryName } from "@/lib/p
 import { canEnterMissedRecords, readsCalendar, readWorldFor, resolvePhoenixCrmViewer, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { dayRouteVisitOf, loadDayRouteSafely, type DayRouteLoad } from "@/lib/phoenix-crm/server/day-route";
 import { loadDayActivityOn, type DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
-import { readDayHiringInterviews } from "@/lib/phoenix-crm/server/day-hiring-interviews";
-import type { HiringCalendarInterview } from "@/lib/phoenix-crm/team-calendar";
+import { readDayPrivateCalendarEntries } from "@/lib/phoenix-crm/server/day-private-calendar";
+import type { PrivateCalendarEntry } from "@/lib/phoenix-crm/team-calendar";
 import { computeManagerReports } from "@/lib/phoenix-crm/server/manager-plan-report";
 import { loadManagerVisitDetails } from "@/lib/phoenix-crm/server/manager-visit-details";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -89,10 +89,14 @@ export type PhoenixCrmManagerDayDetail = {
   dayActivity: DayActivityRow | null;
   /** That read failed: said on the page, never shown as a day with nothing recorded. */
   dayActivityUnread: boolean;
-  /** The hiring calendar's interviews he sits in that day — the private calendar's own list, shown, never counted. */
-  hiringInterviews: HiringCalendarInterview[];
-  /** That read failed: said on the page, never shown as a day without interviews. */
-  hiringInterviewsUnread: boolean;
+  /**
+   * The private calendar's own entries for his day — the trip, the excuse, the office attendance, the interview, the
+   * holiday, the correction — shown, never counted. Not the leave this page already says, nor the approved plan its
+   * Plan against actual table already draws.
+   */
+  privateCalendarEntries: PrivateCalendarEntry[];
+  /** The private-calendar sources that could not be read, by label: said on the page, never an empty day. */
+  privateCalendarUnread: string[];
 };
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -156,7 +160,7 @@ async function loadPhoenixCrmManagerDayDetail(
     return { plan, planUnread };
   })();
 
-  // His recorded day and his interviews: annotations like the leave, each with its own catch and its own sentence.
+  // His recorded day and his private-calendar entries: annotations like the leave, each with its own catch and its own sentence.
   const activityRead = (async () => {
     if (subject.productManager) return { dayActivity: null, dayActivityUnread: false };
     try {
@@ -166,9 +170,9 @@ async function loadPhoenixCrmManagerDayDetail(
       return { dayActivity: null, dayActivityUnread: true };
     }
   })();
-  const interviewsRead = readDayHiringInterviews(subject.hrId, date, isTest);
+  const privateCalendarRead = readDayPrivateCalendarEntries(subject.hrId, date, isTest);
 
-  const [visits, names, { onLeave, leaveUnread }, { plan, planUnread }, { dayActivity, dayActivityUnread }, hiring] = await Promise.all([
+  const [visits, names, { onLeave, leaveUnread }, { plan, planUnread }, { dayActivity, dayActivityUnread }, privateCalendar] = await Promise.all([
     loadManagerVisitDetails({
       end: date,
       isTest,
@@ -185,8 +189,11 @@ async function loadPhoenixCrmManagerDayDetail(
     leaveRead,
     planRead,
     activityRead,
-    interviewsRead,
+    privateCalendarRead,
   ]);
+  const privateCalendarEntries = privateCalendar.entries.filter(
+    (entry) => !(onLeave && entry.source === "vacation") && !(plan !== null && entry.source === "plan"),
+  );
 
   const above = subject.aboveHrId;
   return {
@@ -195,8 +202,6 @@ async function loadPhoenixCrmManagerDayDetail(
     dayActivity,
     dayActivityUnread,
     figures: managerDayFigures(visits),
-    hiringInterviews: hiring.interviews,
-    hiringInterviewsUnread: hiring.unread,
     isTest,
     leaveUnread,
     missedRecords: canEnterMissedRecords(viewer) && isMissedRecordDay(date, viewer.visitDay) ? { managerKey: subject.seatId, through: viewer.visitDay } : null,
@@ -207,6 +212,8 @@ async function loadPhoenixCrmManagerDayDetail(
       title: subject.title,
     },
     onLeave,
+    privateCalendarEntries,
+    privateCalendarUnread: privateCalendar.unread,
     plan,
     planUnread,
     visits,

@@ -5,11 +5,11 @@ import { buildExportRows } from "../src/lib/private-calendar/export.ts";
 import {
   everyInterviewAttendance,
   interviewAttendeesFor,
-  interviewDayEntriesOf,
   interviewHalfDaysFromAttendances,
   mapInterviewToPrivateCalendarItem,
 } from "../src/lib/private-calendar/interview-items.ts";
 import { describeInterviewHalfDay, interviewHalfOf } from "../src/lib/private-calendar/interview-halves.ts";
+import { phoenixCrmEntriesOf } from "../src/lib/private-calendar/phoenix-crm-entries.ts";
 import { halfDayReason, judgeHalfDay } from "../src/lib/deductions/half-day-rule.ts";
 import { selectPhoenixWorkedDays } from "../src/lib/deductions/phoenix-worked-days.ts";
 import { selectProvenWorkedDays } from "../src/lib/deductions/proven-worked-days.ts";
@@ -110,23 +110,51 @@ export function runPrivateCalendarInterviewsTests() {
   const [lead, panel] = both.map(mapInterviewToPrivateCalendarItem);
   assert.ok(lead && panel);
 
-  // ── 2b · The same interviews, for Phoenix CRM's calendar (owner, 2026-11-27: "must appear in both calendars") ──
-  const entries = interviewDayEntriesOf([panel, lead]);
-  assert.deepEqual(
-    entries.map((entry) => [entry.hrId.toUpperCase(), entry.date, entry.time, entry.title, entry.part]),
-    [
-      ["B-41", lead.startDate, lead.time, lead.title, "Panel"],
-      ["B-40", lead.startDate, lead.time, lead.title, "Lead interviewer"],
-    ].sort((left, right) => String(left[2]).localeCompare(String(right[2]))),
-    "Phoenix CRM's calendar gets the private calendar's own items, in its own words, with each person's part",
-  );
-  assert.deepEqual(interviewDayEntriesOf([{ ...lead, source: "attendance" }]), [], "only the interview items cross over");
-  const itemsSource = read("src/lib/private-calendar/interview-items.ts");
-  assert.match(
-    itemsSource.slice(itemsSource.indexOf("export async function loadInterviewDayEntries")),
-    /^[^]*?loadInterviewPrivateCalendarItems\(hrIds, start, end\)/,
-    "built from the private calendar's own loader, so the two calendars cannot list two sets",
-  );
+  // ── 2b · Every private-calendar entry, for Phoenix CRM's calendar (owner, 2026-11-27: "every single entry done
+  //         must be appear in both calendars") ──────────────────────────────────────────────────────────────────
+  {
+    const window = { end: "2026-10-31", start: "2026-10-01" };
+    const entries = phoenixCrmEntriesOf([panel, lead], window);
+    assert.deepEqual(
+      entries.map((entry) => [String(entry.hrId).toUpperCase(), entry.date, entry.source, entry.time, entry.title, entry.status]),
+      [
+        ["B-41", lead.startDate, "interview", lead.time, lead.title, "Panel"],
+        ["B-40", lead.startDate, "interview", lead.time, lead.title, "Lead interviewer"],
+      ],
+      "Phoenix CRM's calendar gets the private calendar's own items, in its own words, with each person's part",
+    );
+    const trip = { ...lead, endDate: "2026-11-02", source: "outstation" as const, startDate: "2026-10-30", time: "", title: "Mahalla" };
+    assert.deepEqual(
+      phoenixCrmEntriesOf([trip], window).map((entry) => entry.date),
+      ["2026-10-30", "2026-10-31"],
+      "a trip lands on every day it spans, and never outside the month asked for",
+    );
+    assert.deepEqual(
+      phoenixCrmEntriesOf([{ ...lead, source: "field_visit" }, { ...lead, source: "double_visit" }], window),
+      [],
+      "the visits Phoenix CRM draws from its own records are never copied back onto it",
+    );
+    assert.equal(
+      phoenixCrmEntriesOf([{ ...lead, source: "holiday", title: "Armed Forces Day" }], window)[0]?.hrId,
+      null,
+      "a national holiday belongs to no one person, even when the item names the person it was read for, so it reaches every row",
+    );
+    const service = read("src/lib/private-calendar/service.ts");
+    const loader = service.slice(service.indexOf("export async function loadPrivateCalendarEntriesForPhoenixCrm"));
+    for (const own of [
+      "loadAttendanceItems(people, start, end)",
+      "loadVacationItems(people, start, end)",
+      "loadExcuseItems(people, start, end)",
+      "loadPlanPrivateCalendarItems(people, start, end)",
+      "loadOutstationTripPrivateCalendarItems(people, start, end)",
+      "loadInterviewPrivateCalendarItems(people, start, end)",
+      "loadAcceptedReviewDays({ end, start })",
+      "loadAcceptedDeductionCorrections(",
+      "loadHolidayItems(year, month, start, end)",
+    ]) {
+      assert.ok(loader.includes(own), `built from the private calendar's own loader ${own}, so the two calendars cannot list two sets`);
+    }
+  }
   assert.equal(lead.source, "interview");
   assert.equal(lead.activityKind, "interview");
   assert.equal(lead.severity, "info");
@@ -210,8 +238,8 @@ export function runPrivateCalendarInterviewsTests() {
   const service = read("src/lib/private-calendar/service.ts");
   assert.equal(
     service.match(/loadInterviewPrivateCalendarItems\(/g)?.length,
-    3,
-    "the workspace, the day evidence and the company deductions pass all load the interviews",
+    4,
+    "the workspace, the day evidence, the company deductions pass and Phoenix CRM's calendar (2026-11-27) all load the interviews",
   );
   const deductionsPass = service.slice(service.indexOf("export async function getCompanyNoActivityDays"), service.indexOf("export async function getPrivateCalendarDayEvidence"));
   assert.match(

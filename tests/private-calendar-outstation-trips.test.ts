@@ -101,8 +101,8 @@ export function runPrivateCalendarOutstationTripsTests() {
   const service = read("src/lib/private-calendar/service.ts");
   assert.equal(
     service.match(/loadOutstationTripPrivateCalendarItems\(/g)?.length,
-    3,
-    "the workspace, the company no-activity engine and the day evidence all read the trips",
+    4,
+    "the workspace, the company no-activity engine, the day evidence and Phoenix CRM's calendar (2026-11-27) all read the trips",
   );
   assert.equal(service.match(/\.\.\.trips\.items,/g)?.length, 3, "all three passes put the trip items on the day");
   assert.match(service, /outstation: trips\.ready,/, "a trip read that failed says so, rather than showing a confident empty month");

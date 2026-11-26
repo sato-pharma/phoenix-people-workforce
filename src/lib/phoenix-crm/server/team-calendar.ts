@@ -31,8 +31,9 @@ import { loadScopeProductManagers, type ScopeProductManager } from "@/lib/phoeni
 import { seatTierTitle } from "@/lib/phoenix-crm/server/territory";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { loadApprovedLeaveDays, type ApprovedLeaveDay } from "@/lib/vacation/approved-leave-days";
-import { loadInterviewDayEntries } from "@/lib/private-calendar/interview-items";
-import type { HiringCalendarInterview } from "@/lib/phoenix-crm/team-calendar";
+import { loadPrivateCalendarEntriesForPhoenixCrm } from "@/lib/private-calendar/service";
+import { privateCalendarSourceLabels, type PrivateCalendarSource } from "@/lib/private-calendar/logic";
+import type { PrivateCalendarEntry } from "@/lib/phoenix-crm/team-calendar";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { emptyVisitCountSplit, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
 
@@ -99,10 +100,11 @@ export type TeamCalendarView = {
    */
   leaveUnread: boolean;
   /**
-   * The hiring calendar's interviews could not be read, so a day with only an interview is drawn blank here while
-   * the private calendar shows it. Said beside the grid, never swallowed — the same shape as `leaveUnread`.
+   * The private-calendar sources that could not be read ("Approved plan", "Outstation trip", ...), so a day with only
+   * one of their entries is drawn blank here while the private calendar shows it. Said beside the grid, never
+   * swallowed — the same shape as `leaveUnread`. Optional for older callers; absent means none.
    */
-  interviewsUnread?: boolean;
+  privateCalendarUnread?: string[];
 };
 
 type Row = Record<string, unknown>;
@@ -163,7 +165,7 @@ export async function loadTeamCalendar(
 
   const bounds = monthBounds(month);
   if (!bounds || seats.length === 0) {
-    return { days: monthDays(month), interviewsUnread: false, isTest, leaveUnread: false, missedRecords, month, rows: [], scope, totals: emptyVisitCountSplit() };
+    return { days: monthDays(month), isTest, leaveUnread: false, missedRecords, month, privateCalendarUnread: [], rows: [], scope, totals: emptyVisitCountSplit() };
   }
 
   // HR's leave is read beside the visits, not after them: it never throws (a failed read comes back
@@ -184,7 +186,7 @@ export async function loadTeamCalendar(
   const seatHolders = new Set(managers.map((member) => member.hrId));
   const productManagersOnGrid = productManagersRead.then((read) => read.filter((manager) => !seatHolders.has(manager.hrId)));
 
-  const [visits, activities, people, leave, managerPeople, productManagerPeople, managerVisits, interviews] = await Promise.all([
+  const [visits, activities, people, leave, managerPeople, productManagerPeople, managerVisits, calendar] = await Promise.all([
     loadVisitDays(seatIds, isTest, bounds),
     // 🔴 A MANAGER'S OWN SEAT TOO (owner, 2026-10-23: "if a manager chooses a meeting or anything … it must
     //    appear"). Since 2026-10-20 a district or regional manager records his meeting, training or travel on
@@ -205,14 +207,15 @@ export async function loadTeamCalendar(
     describeManagers(viewer, managers),
     productManagersOnGrid.then((productManagers) => describeProductManagers(viewer, productManagers)),
     productManagersOnGrid.then((productManagers) => loadManagerDays(managers, productManagers, new Set(seatIds), isTest, bounds)),
-    // 🔴 THE PRIVATE CALENDAR'S INTERVIEWS, ON EVERY ROW (owner, 2026-11-27: "every single entry … must appear in both
-    //    calendars"). Interviews were on a person's private calendar from the hiring calendar, and here only when he
-    //    had ALSO recorded an "Interviews" day — 8 of 50 interview days in November 2026. The test world draws none:
-    //    interviews belong to real people.
+    // 🔴 THE PRIVATE CALENDAR'S ENTRIES, ON EVERY ROW (owner, 2026-11-27: "every single entry … must appear in both
+    //    calendars"). The approved plan, the outstation trip, the excuse, the office attendance, the interview, the
+    //    national holiday and the admin-verified correction were on a person's private calendar and nowhere here —
+    //    November 2026: 14 blank squares on one National Sales Manager's row alone. The test world draws none: these
+    //    belong to real people.
     isTest
-      ? Promise.resolve({ days: [], unread: false })
+      ? Promise.resolve({ entries: [], unread: [] })
       : productManagersOnGrid.then((productManagers) =>
-          loadInterviewDays(
+          loadPrivateCalendarDays(
             [
               ...seats,
               ...managers.map((member) => member.seat),
@@ -225,17 +228,17 @@ export async function loadTeamCalendar(
 
   const rows = buildTeamCalendar(month, [...managerPeople, ...productManagerPeople, ...people], {
     activities,
-    interviews: interviews.days,
+    calendarEntries: calendar.entries,
     leave: leave.days,
     visits: [...visits, ...managerVisits],
   });
   return {
     days: monthDays(month),
-    interviewsUnread: interviews.unread,
     isTest,
     leaveUnread: leave.unread,
     missedRecords,
     month,
+    privateCalendarUnread: calendar.unread,
     rows,
     scope,
     totals: teamCalendarTotals(rows),
@@ -719,15 +722,15 @@ async function loadLeaveDays(
 }
 
 /**
- * The hiring calendar's interviews for the people on the grid, as rows — through the PRIVATE CALENDAR's own loader
- * (`loadInterviewDayEntries`), so a person's interviews read the same on both calendars by construction. The lead
- * (unless he declined) and every panel member; never a manager an interview was only shared with. Display only.
- * A failed read is said (`unread`), never shown as a month without interviews.
+ * The private calendar's entries for the people on the grid, as rows — through the PRIVATE CALENDAR's own loaders
+ * (`loadPrivateCalendarEntriesForPhoenixCrm`), so a person's day reads the same on both calendars by construction.
+ * A national holiday (no person) lands on every row. Display only. A source that could not be read is named in
+ * `unread`, never shown as a month without its entries.
  */
-async function loadInterviewDays(
+async function loadPrivateCalendarDays(
   seats: ReadonlyArray<Pick<OrgSeat, "seatId" | "occupantHrId">>,
   bounds: { from: string; to: string },
-): Promise<{ days: { seatId: string; day: string; interview: HiringCalendarInterview }[]; unread: boolean }> {
+): Promise<{ entries: { seatId: string; day: string; entry: PrivateCalendarEntry }[]; unread: string[] }> {
   const seatsByHrId = new Map<string, string[]>();
   for (const seat of seats) {
     const hrId = personKey(seat.occupantHrId);
@@ -736,19 +739,24 @@ async function loadInterviewDays(
     if (!held.includes(seat.seatId)) held.push(seat.seatId);
     seatsByHrId.set(hrId, held);
   }
-  if (seatsByHrId.size === 0) return { days: [], unread: false };
+  if (seatsByHrId.size === 0) return { entries: [], unread: [] };
 
-  const { entries, ready } = await loadInterviewDayEntries([...seatsByHrId.keys()], bounds.from, bounds.to);
-  if (!ready) {
-    logError("Phoenix CRM team calendar could not read the hiring calendar's interviews", {
-      labels: { event: "phoenix_crm_calendar_interviews_unread" },
+  const { entries, unreadable } = await loadPrivateCalendarEntriesForPhoenixCrm(
+    seats.map((seat) => seat.occupantHrId).filter((hrId): hrId is string => Boolean(hrId)),
+    bounds.from,
+    bounds.to,
+  );
+  if (unreadable.length > 0) {
+    logError("Phoenix CRM team calendar could not read a private-calendar source", {
+      labels: { event: "phoenix_crm_calendar_private_sources_unread", sources: unreadable.join(",") },
     });
   }
-  const out: { seatId: string; day: string; interview: HiringCalendarInterview }[] = [];
+  const everySeat = [...new Set([...seatsByHrId.values()].flat())];
+  const out: { seatId: string; day: string; entry: PrivateCalendarEntry }[] = [];
   for (const entry of entries) {
-    for (const seatId of seatsByHrId.get(personKey(entry.hrId) ?? "") ?? []) {
-      out.push({ day: entry.date, interview: { part: entry.part, time: entry.time, title: entry.title }, seatId });
-    }
+    const shown: PrivateCalendarEntry = { label: entry.label, source: entry.source, status: entry.status, time: entry.time, title: entry.title };
+    const onSeats = entry.hrId === null ? everySeat : (seatsByHrId.get(personKey(entry.hrId) ?? "") ?? []);
+    for (const seatId of onSeats) out.push({ day: entry.date, entry: shown, seatId });
   }
-  return { days: out, unread: !ready };
+  return { entries: out, unread: unreadable.map((source: PrivateCalendarSource) => privateCalendarSourceLabels[source]) };
 }

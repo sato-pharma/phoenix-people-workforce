@@ -170,32 +170,6 @@ export async function loadInterviewPrivateCalendarItems(
   }
 }
 
-/** One interview on one person's day, in the words the private calendar prints — for Phoenix CRM's calendar. */
-export type InterviewDayEntry = { hrId: string; date: string; time: string; title: string; part: string };
-
-/** The private calendar's own interview items, cut to what another calendar prints. Pure; sorted by time. */
-export function interviewDayEntriesOf(items: readonly PrivateCalendarItem[]): InterviewDayEntry[] {
-  return items
-    .flatMap((item) => (item.source === "interview" && item.employeeHrId ? [{ ...item, employeeHrId: item.employeeHrId }] : []))
-    .map((item) => ({ date: item.startDate, hrId: item.employeeHrId, part: item.status ?? "", time: item.time ?? "", title: item.title }))
-    .sort((left, right) => left.date.localeCompare(right.date) || left.time.localeCompare(right.time));
-}
-
-/**
- * 🔴 THE SAME INTERVIEWS THE PRIVATE CALENDAR SHOWS, FOR PHOENIX CRM'S CALENDAR (owner, 2026-11-27: "every single
- * entry … must appear in both calendars"). Built from `loadInterviewPrivateCalendarItems` itself, so the two
- * calendars cannot list two different sets. Display only: it proves no half day anywhere, and it writes nothing.
- * Best-effort like every calendar source — a failed read answers `ready: false` and the screen says so.
- */
-export async function loadInterviewDayEntries(
-  hrIds: readonly string[],
-  start: string,
-  end: string,
-): Promise<{ entries: InterviewDayEntry[]; ready: boolean }> {
-  const { items, ready } = await loadInterviewPrivateCalendarItems(hrIds, start, end);
-  return { entries: interviewDayEntriesOf(items), ready };
-}
-
 /** Everyone who sits in each interview — the lead unless he declined, and each panel member. Pure. */
 export function everyInterviewAttendance(interviews: readonly PrivateCalendarInterviewRow[]): InterviewAttendance[] {
   const hrIds = interviews.flatMap((interview) => [interview.leadHrId ?? "", ...interview.panelHrIds]).filter(Boolean);

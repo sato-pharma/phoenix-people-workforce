@@ -171,7 +171,7 @@ function testCrmPlanAndCalendar() {
   assert.equal(
     (load.match(/productManagersOnGrid\.then\(/g) ?? []).length,
     4,
-    "the leave, the product-manager rows, the manager days and the hiring calendar's interviews chain off it",
+    "the leave, the product-manager rows, the manager days and the private calendar's entries chain off it",
   );
 }
 

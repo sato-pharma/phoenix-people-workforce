@@ -1,6 +1,6 @@
 import { AdminDelete } from "@/components/phoenix-crm/admin-delete";
 import { cairoStamp, dayLabelLong } from "@/components/phoenix-crm/format";
-import { HIRING_INTERVIEWS_UNREAD_NOTE, HiringInterviewsList } from "@/components/phoenix-crm/hiring-interviews-list";
+import { PrivateCalendarEntriesList, privateCalendarUnreadNote } from "@/components/phoenix-crm/private-calendar-entries-list";
 import { ManagerMissedRecordPanel } from "@/components/phoenix-crm/manager-missed-record-panel";
 import { ManagerPlanActualTable } from "@/components/phoenix-crm/manager-plan-actual-table";
 import { CrmBlock, CrmEmpty, CrmNote, CrmPanel, CrmStat, CrmStatGrid } from "@/components/phoenix-crm/ui";
@@ -96,9 +96,9 @@ export function ManagerDayView({ view }: { view: PhoenixCrmManagerDayDetail }) {
               How this day was recorded could not be read just now, so a meeting, training or travel day is not shown here.
             </p>
           ) : null}
-          <HiringInterviewsList interviews={view.hiringInterviews} />
-          {view.hiringInterviewsUnread ? (
-            <p className="mt-2 break-words text-sm font-semibold leading-6 text-amber-800">{HIRING_INTERVIEWS_UNREAD_NOTE}</p>
+          <PrivateCalendarEntriesList entries={view.privateCalendarEntries} />
+          {view.privateCalendarUnread.length > 0 ? (
+            <p className="mt-2 break-words text-sm font-semibold leading-6 text-amber-800">{privateCalendarUnreadNote(view.privateCalendarUnread)}</p>
           ) : null}
         </CrmBlock>
 

@@ -97,14 +97,14 @@ export async function runPageChangeFewerWavesTests(): Promise<void> {
     for (const early of [
       "readDayLeave(address.seat.occupantHrId, address.date)",
       "readVisitsInFull(viewer, address)",
-      // The hiring calendar's interviews (owner, 2026-11-27) need only the seat and the date too.
-      "readDayHiringInterviews(address.seat.occupantHrId, address.date, address.isTest)",
+      // The private calendar's entries (owner, 2026-11-27) need only the seat and the date too.
+      "readDayPrivateCalendarEntries(address.seat.occupantHrId, address.date, address.isTest)",
     ]) {
       assertBefore(detail, early, "await loadVisitDay(viewer, raw)", `HEADLINE: ${early} starts beside the day, never after it`);
     }
     assert.match(
       detail,
-      /await Promise\.all\(\[leaveRead, visitsInFullRead, interviewsRead\]\)/,
+      /await Promise\.all\(\[leaveRead, visitsInFullRead, privateCalendarRead\]\)/,
       "and all three are awaited together once the day is in",
     );
     const visits = functionBody(source("src/lib/phoenix-crm/server/visits.ts"), "export async function loadVisitDay(");
