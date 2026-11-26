@@ -20,12 +20,20 @@ export function foldSearchText(text: string | null | undefined): string {
     .replace(/ة/g, "ه");
 }
 
-/** Every word typed appears somewhere in the parts, in any order, Arabic spelling folded on both sides. */
+/**
+ * Every word typed appears somewhere in the parts, in any order, Arabic spelling folded on both sides.
+ *
+ * 🔴 A SPACE IS A SPELLING TOO (26 Nov 2026): Hagar Abu zeid's list held محمد علي عبدالسلام and she typed
+ * عبد السلام-style names both ways — عبدالسلام / عبد السلام, عبدالله / عبد الله are one name. So when
+ * the words do not match one by one, the whole query with its spaces taken out is tried against the parts
+ * with theirs taken out. It only ever ADDS a match; nothing that matched before stops matching.
+ */
 export function foldedWordsMatch(query: string, parts: ReadonlyArray<string | null | undefined>): boolean {
   const words = foldSearchText(query.trim()).split(/\s+/).filter(Boolean);
   if (words.length === 0) return true;
   const text = foldSearchText(parts.filter((part): part is string => Boolean(part)).join(" "));
-  return words.every((word) => text.includes(word));
+  if (words.every((word) => text.includes(word))) return true;
+  return text.replace(/\s+/g, "").includes(words.join(""));
 }
 
 /** The honorifics `phoenix_crm_fold_name` drops, after the letter folds (so دكتورة arrives as دكتوره). */

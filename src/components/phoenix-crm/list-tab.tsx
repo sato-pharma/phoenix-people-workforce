@@ -91,6 +91,7 @@ import type { RepsListContact } from "@/lib/crm/reps-list";
 import type { RepsListBoard } from "@/lib/crm/reps-list-board";
 import { weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
 import { needsAddRequest, needsGradeText, type ListRowAction } from "@/lib/phoenix-crm/list-request-rules";
+import { foldedWordsMatch } from "@/lib/phoenix-crm/name-fold";
 import { addedPharmacyNote } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import {
   formatTimingWindow,
@@ -142,8 +143,8 @@ type FullNameHandoff = { seatId: string; test: boolean; customerId: string };
 const LIST_TYPES: readonly PhoenixCrmListType[] = ["AM", "PM"];
 
 function matchesQuery(query: string, parts: ReadonlyArray<string | null>): boolean {
-  if (!query) return true;
-  return parts.some((part) => part !== null && part.toLowerCase().includes(query));
+  // Spelling folded (علي / على, عبدالسلام / عبد السلام, 26 Nov 2026) — the module's one rule for a name typed two ways.
+  return foldedWordsMatch(query, parts);
 }
 
 function countByType<T extends { listType: PhoenixCrmListType }>(rows: ReadonlyArray<T>): Record<PhoenixCrmDoctorListType, number> {
