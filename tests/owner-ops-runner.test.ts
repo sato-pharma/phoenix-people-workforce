@@ -127,6 +127,21 @@ function dryRunIsTheDefault() {
   refused(["revoke-tablet-agent", "--install", OTHER], "a revoke with no reason");
   refused(["revoke-tablet-agent", "--install", OTHER, "--reason", "reset"], "a reason under 10 characters");
   refused(["revoke-tablet-agent", "--install", OTHER, "--tablet", "PHX-TAB-0008", "--reason", "the tablet was factory reset"], "--tablet belongs to the bind, never to the revoke");
+
+  // 🔴 AN APP IS NAMED BY ITS NUMBER, AND A VERSION ROW IS NOT ONE. Headwind's app 84 holds version
+  // row 10079; giving the row's number here would read a different app's rows and move them.
+  const matchPlan = plan(["match-app-version", "--app", "84"]);
+  assert.equal(matchPlan.job === "match-app-version" && matchPlan.applicationId, 84, "the app number is read as a number");
+  refused(["match-app-version"], "a match that does not say which app");
+  refused(["match-app-version", "--app", "org.telegram.messenger.web"], "a package name where the app's number belongs");
+  refused(["match-app-version", "--app", "-1"], "a negative app number");
+  refused(["match-app-version", "--app", "84", "--tablet", "PHX-TAB-0008"], "--tablet belongs to the tablet jobs, never to the app");
+
+  // 🔴 THE LOCK JOB TAKES NOTHING. It puts one named set on all three rep sets of rules, so there is no
+  // flag to choose a lock with — a chosen lock is how two lines silently miss one.
+  assert.equal(plan(["lock-rep-tablets"]).job, "lock-rep-tablets", "the lock job takes no flags at all");
+  refused(["lock-rep-tablets", "--app", "84"], "a flag of another job is a mistyped job, never ignored");
+  refused(["lock-rep-tablets", "--tablet", "PHX-TAB-0007"], "and it is never aimed at one tablet");
 }
 
 type Call = { url: string; method: string };
@@ -166,7 +181,42 @@ async function theFenceSendsNoWrite() {
     await fetch("https://api.telegram.org/bot0/sendMessage", { method: "POST", body: "{}" });
     await fetch("https://api.resend.com/emails", { method: "POST", body: "{}" });
 
-    const writesSent = calls.filter((call) => call.method !== "GET");
+    // 🔴 THE TABLET SERVER'S SIGN-IN IS THE ONE POST THAT PASSES — it mints the token every Headwind
+    // READ then carries, so fencing it made the dry run of every tablet job blind: it failed at the
+    // sign-in and reported a credential fault that was not there. It is matched by its exact pathname,
+    // so a configuration, a version row or a push to a device on the SAME host stays fenced.
+    await fetch("https://mdm-console.satopharma.com/rest/public/jwt/login", { method: "POST", body: "{}" });
+    await fetch("https://mdm-console.satopharma.com/rest/private/configurations", { method: "PUT", body: "{}" });
+    await fetch("https://mdm-console.satopharma.com/rest/public/jwt/login/extra", { method: "POST", body: "{}" });
+    // One method on one path. A DELETE to the sign-in address is not a sign-in, and the carve-out is
+    // not a licence for the address — measured: with the method clause dropped, nothing else here
+    // noticed.
+    await fetch("https://mdm-console.satopharma.com/rest/public/jwt/login", { method: "DELETE" });
+
+    const signIns = calls.filter((call) => call.url.endsWith("/rest/public/jwt/login"));
+    assert.deepEqual(
+      signIns.map((call) => call.method),
+      ["POST"],
+      "🔴 the sign-in POST went out as the read it is, and the DELETE to the same address did NOT — the carve-out is one method on one path, never a licence for the address",
+    );
+    assert.ok(
+      log.some((write) => write.method === "DELETE" && write.target.endsWith("/rest/public/jwt/login")),
+      "that DELETE was fenced and listed instead",
+    );
+    assert.ok(
+      !log.some((write) => write.method === "POST" && write.target.endsWith("/rest/public/jwt/login")),
+      "it is not listed as a write either — it changes nothing on the fleet",
+    );
+    assert.ok(
+      log.some((write) => write.method === "PUT" && write.target.includes("/rest/private/configurations")),
+      "🔴 but a configuration PUT to that very host is still fenced and listed",
+    );
+    assert.ok(
+      log.some((write) => write.target.endsWith("/rest/public/jwt/login/extra")),
+      "and the carve-out is the WHOLE pathname, never a prefix — a path that merely starts with it is fenced",
+    );
+
+    const writesSent = calls.filter((call) => call.method !== "GET" && !call.url.endsWith("/rest/public/jwt/login"));
     assert.deepEqual(writesSent, [], "NOTHING but a read reached the network — no table write, no Telegram, no e-mail");
     assert.equal(calls[0]?.url.includes("select=id"), true, "the read itself passed through untouched");
     assert.deepEqual(
@@ -177,6 +227,9 @@ async function theFenceSendsNoWrite() {
         "DELETE marketing_pharmacies",
         "POST api.telegram.org/bot0/sendMessage",
         "POST api.resend.com/emails",
+        "PUT mdm-console.satopharma.com/rest/private/configurations",
+        "POST mdm-console.satopharma.com/rest/public/jwt/login/extra",
+        "DELETE mdm-console.satopharma.com/rest/public/jwt/login",
       ],
       "every write is listed for the dry run's report, and the read is not",
     );

@@ -43,6 +43,7 @@
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { callHeadwind, HeadwindRequestError } from "@/lib/devices/headwind/client";
 import { deviceWriteBody, searchHeadwindDevices } from "@/lib/devices/headwind/devices";
+import { parseRestrictions, REP_TABLET_LOCK_SET, restrictionsWith } from "@/lib/devices/headwind/restrictions";
 
 /** Writes a REQUIRED audit row. A parameter only so a test can watch the rows without a database. */
 export type HeadwindAuditWriter = (input: Parameters<typeof writeRequiredAuditLog>[0]) => Promise<void>;
@@ -499,6 +500,113 @@ export async function setHeadwindBranding(
       "screen, not a sealed cage — the free agent's true pinning is not built, so Android's own " +
       "settings can still be reached by someone determined.",
   };
+}
+
+/**
+ * Put locks on one set of tablet rules — the `restrictions` string Android itself enforces.
+ *
+ * 🔴 IT READS THE LOCKS BACK OFF THE SERVER AND REFUSES IF ONE DID NOT STORE. A configuration PUT
+ * here has answered OK while keeping the old value before (RustDesk's `urlArm64`, runbook "A PUT that
+ * reports success and changes nothing"), and a lock believed to be on is worse than no lock: it is
+ * what gets reported to the owner as "he cannot turn it off".
+ *
+ * 🔴 ADDS ONLY, AND ONLY FROM THE VETTED LIST. `restrictionsWith` refuses `no_install_apps` (Android
+ * applies it to the device owner too, which would stop every install the fleet will ever get) and
+ * `no_config_wifi` (the rep could no longer join a network) — the two that read like exactly what was
+ * asked for. The vocabulary is Android's, so an unknown token is refused rather than stored: Android
+ * ignores one it does not know, which would leave the lock showing here and absent on the tablet.
+ */
+export async function setHeadwindRestrictions(
+  input: { configurationId: number; add: readonly string[]; proveStored?: boolean },
+  actor: string,
+  fetchImpl: typeof fetch = fetch,
+  env: NodeJS.ProcessEnv = process.env,
+  audit: HeadwindAuditWriter = writeRequiredAuditLog,
+): Promise<{ added: string[]; already: string[]; message: string; restrictions: string[] }> {
+  if (!Number.isInteger(input.configurationId)) {
+    throw new HeadwindConfigurationError("Say which set of tablet rules to lock.");
+  }
+  const before = await readHeadwindConfiguration(input.configurationId, fetchImpl, env);
+  const name = asText(before.name) ?? `configuration ${input.configurationId}`;
+  const { added, already, next } = restrictionsWith((before as { restrictions?: unknown }).restrictions, input.add);
+  if (!added.length) {
+    return {
+      added,
+      already,
+      message: `${name} already carries every one of those locks. Nothing was sent to any tablet.`,
+      restrictions: parseRestrictions(next),
+    };
+  }
+
+  await patchHeadwindConfiguration(input.configurationId, { restrictions: next }, fetchImpl, env);
+
+  // 🔴 `proveStored: false` IS ONLY FOR A CALLER WHOSE PUT WAS ANSWERED AND NEVER SENT — owner-ops'
+  // dry run, where the fence answers the write, so the read-back would find the old locks and refuse
+  // over a change nobody made. Everything that really writes leaves it alone: a lock believed to be on
+  // is worse than no lock, because it is what gets reported as "he cannot turn it off".
+  const stored = input.proveStored === false
+    ? parseRestrictions(next)
+    : parseRestrictions(((await readHeadwindConfiguration(input.configurationId, fetchImpl, env)) as { restrictions?: unknown }).restrictions);
+  const missing = input.proveStored === false ? [] : added.filter((token) => !stored.includes(token));
+  if (missing.length) {
+    throw new HeadwindConfigurationError(
+      `The tablet server took the change and did NOT store ${missing.join(", ")} on ${name} — so those locks are not on, ` +
+        "whatever this reads like. Read the set of rules in the console before telling anyone the tablet is protected.",
+    );
+  }
+
+  await audit({
+    actorLoginId: actor,
+    entityId: String(input.configurationId),
+    entityType: "headwind_configuration",
+    // 🔴 THE LOCKS ONLY — never the configuration object, which carries the plaintext device password.
+    newValues: { added, change: "restrictions", name, restrictions: stored },
+    oldValues: { restrictions: parseRestrictions((before as { restrictions?: unknown }).restrictions) },
+    summary: `Locked ${added.join(", ")} on ${name}`,
+  });
+
+  return {
+    added,
+    already,
+    message:
+      `${name} now carries ${stored.length} lock(s); ${added.length} new. Every tablet on that set picks them up at its ` +
+      "next check-in — they are applied by Android itself, not by a screen.",
+    restrictions: stored,
+  };
+}
+
+/**
+ * The rep tablets' own lock set, on all three rep sets of rules.
+ *
+ * 🔴 ALL THREE OR TWO LINES SILENTLY MISS IT. "Rep tablets", "— Anti Infective" and "— Pedia" are
+ * copies of one another; a lock put on one set protects one line's tablets and nobody notices the
+ * other two for weeks (AGENTS.md, the rep-rules rule). `applyToEachRules` refuses unless every set
+ * took it.
+ */
+export async function lockRepTablets(
+  actor: string,
+  fetchImpl: typeof fetch = fetch,
+  env: NodeJS.ProcessEnv = process.env,
+  audit: HeadwindAuditWriter = writeRequiredAuditLog,
+  proveStored = true,
+): Promise<{ reached: string[]; results: Array<{ added: string[]; name: string; restrictions: string[] }> }> {
+  const rules = await resolveHeadwindRules("rep", fetchImpl, env);
+  const results: Array<{ added: string[]; name: string; restrictions: string[] }> = [];
+  const reached = await applyToEachRules(
+    rules,
+    async (set) => {
+      const done = await setHeadwindRestrictions(
+        { add: REP_TABLET_LOCK_SET, configurationId: set.id, proveStored },
+        actor,
+        fetchImpl,
+        env,
+        audit,
+      );
+      results.push({ added: done.added, name: set.name, restrictions: done.restrictions });
+    },
+    "Locking the rep tablets",
+  );
+  return { reached, results };
 }
 
 /** One entry of `POST /rest/private/applications/configurations` — a link row to write. */

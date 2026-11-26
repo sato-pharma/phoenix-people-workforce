@@ -51,8 +51,21 @@ import {
   HEADWIND_DESKTOP_HEADERS,
   HEADWIND_ICON_SIZES,
   HeadwindConfigurationError,
+  setHeadwindRestrictions,
   writeHeadwindAppLink,
 } from "../src/lib/devices/headwind/configurations.ts";
+import { parseApkManifest, ApkReadError } from "../src/lib/devices/headwind/apk-build.ts";
+import {
+  describeTabletLock,
+  parseRestrictions,
+  restrictionsWith,
+  MOBILE_DATA_CANNOT_BE_HELD,
+  REFUSED_TABLET_LOCKS,
+  REP_TABLET_LOCK_SET,
+  TABLET_LOCKS,
+  TabletLockError,
+} from "../src/lib/devices/headwind/restrictions.ts";
+import { matchHeadwindVersionsToFiles, HeadwindVersionError } from "../src/lib/devices/headwind/versions.ts";
 import {
   fixesToPoints,
   fleetLauncherTarget,
@@ -2441,6 +2454,307 @@ async function runDeviceActorNameTests() {
   assert.doesNotMatch(enrollmentUi, /🔴/, "and the warning is an amber chip in words, never an emoji");
 }
 
+/**
+ * A binary `AndroidManifest.xml` built by hand, so the parser is measured against a layout this file
+ * states rather than against a fixture nobody can read.
+ *
+ * 🔴 ITS WHOLE POINT IS `attributeStart`. It counts from the attribute block — 16 bytes into the node,
+ * past the chunk header, the line number and the comment — and reading it from the chunk start instead
+ * lands 16 bytes early and returns a `<manifest>` whose every attribute is undefined. That reads
+ * exactly like an APK declaring no version, so the caller "finds" nothing to write and the fleet stays
+ * in the re-download loop with nothing reported. Asserting all three values pins the offset.
+ */
+function binaryManifest(strings: string[], attributes: Array<{ name: number; raw: number; dataType: number; data: number }>): Buffer {
+  const pool: Buffer[] = [];
+  const offsets: number[] = [];
+  for (const text of strings) {
+    const bytes = Buffer.from(text, "utf8");
+    offsets.push(pool.reduce((sum, part) => sum + part.length, 0));
+    pool.push(Buffer.concat([Buffer.from([bytes.length, bytes.length]), bytes, Buffer.from([0])]));
+  }
+  const poolBytes = Buffer.concat(pool);
+  const stringsStart = 28 + strings.length * 4;
+  const stringChunk = Buffer.alloc(stringsStart + poolBytes.length);
+  stringChunk.writeUInt16LE(0x0001, 0); // RES_STRING_POOL_TYPE
+  stringChunk.writeUInt16LE(28, 2);
+  stringChunk.writeUInt32LE(stringChunk.length, 4);
+  stringChunk.writeUInt32LE(strings.length, 8);
+  stringChunk.writeUInt32LE(0, 12);
+  stringChunk.writeUInt32LE(0x100, 16); // UTF8_FLAG
+  stringChunk.writeUInt32LE(stringsStart, 20);
+  stringChunk.writeUInt32LE(0, 24);
+  offsets.forEach((offset, index) => stringChunk.writeUInt32LE(offset, 28 + index * 4));
+  poolBytes.copy(stringChunk, stringsStart);
+
+  const element = Buffer.alloc(36 + attributes.length * 20);
+  element.writeUInt16LE(0x0102, 0); // RES_XML_START_ELEMENT_TYPE
+  element.writeUInt16LE(16, 2);
+  element.writeUInt32LE(element.length, 4);
+  element.writeUInt32LE(1, 8); // line number
+  element.writeUInt32LE(0xffffffff, 12); // comment: none
+  element.writeUInt32LE(0xffffffff, 16); // namespace: none
+  element.writeUInt32LE(0, 20); // name: strings[0], which must be "manifest"
+  element.writeUInt16LE(20, 24); // attributeStart — FROM THE ATTRIBUTE BLOCK at +16
+  element.writeUInt16LE(20, 26); // attributeSize
+  element.writeUInt16LE(attributes.length, 28);
+  attributes.forEach((attribute, index) => {
+    const at = 36 + index * 20;
+    element.writeUInt32LE(0xffffffff, at); // namespace
+    element.writeUInt32LE(attribute.name, at + 4);
+    element.writeInt32LE(attribute.raw, at + 8);
+    element.writeUInt16LE(8, at + 12); // value size
+    element.writeUInt8(0, at + 14); // res0
+    element.writeUInt8(attribute.dataType, at + 15);
+    element.writeUInt32LE(attribute.data, at + 16);
+  });
+
+  const header = Buffer.alloc(8);
+  header.writeUInt16LE(0x0003, 0); // RES_XML_TYPE
+  header.writeUInt16LE(8, 2);
+  header.writeUInt32LE(8 + stringChunk.length + element.length, 4);
+  return Buffer.concat([header, stringChunk, element]);
+}
+
+async function runApkBuildTests() {
+  // "manifest" must be string 0 — it is what the parser recognises the element by.
+  const strings = ["manifest", "package", "versionCode", "versionName", "org.telegram.messenger.web", "13.3.1"];
+  const read = parseApkManifest(
+    binaryManifest(strings, [
+      { data: 4, dataType: 0x03, name: 1, raw: 4 }, // package, a string
+      { data: 73469, dataType: 0x10, name: 2, raw: -1 }, // versionCode, an int
+      { data: 5, dataType: 0x03, name: 3, raw: 5 }, // versionName, a string
+    ]),
+  );
+  assert.deepEqual(
+    read,
+    { packageName: "org.telegram.messenger.web", version: "13.3.1", versionCode: 73469 },
+    "🔴 all three come out of the APK's own manifest — an offset read from the chunk start instead of the attribute block returns every one of them undefined, which reads as an APK that declares no version",
+  );
+
+  const noVersion = parseApkManifest(binaryManifest(strings, [{ data: 4, dataType: 0x03, name: 1, raw: 4 }]));
+  assert.deepEqual(
+    noVersion,
+    { packageName: "org.telegram.messenger.web", version: null, versionCode: null },
+    "an attribute that is not there reads as null, never as 0 — a row written with versionCode 0 makes the launcher compare by NAME instead",
+  );
+
+  assert.throws(
+    () => parseApkManifest(binaryManifest(["widget", "package"], [{ data: 1, dataType: 0x03, name: 1, raw: 1 }])),
+    ApkReadError,
+    "and a binary XML with no <manifest> element in it is refused, not read as a versionless APK",
+  );
+}
+
+function runTabletLockTests() {
+  // 🔴 THE TWO REFUSALS. Each reads like exactly what was asked for, which is why they are refused by
+  // name here rather than discovered on a fleet that has gone quiet.
+  // 🔴 THE REASON IS ASSERTED, NOT JUST THE REFUSAL. Both of these are absent from `TABLET_LOCKS` too,
+  // so deleting the explained refusal still throws — "`no_install_apps` is not a lock Phoenix knows",
+  // which sends the next reader to add it. Measured: with `REFUSED_TABLET_LOCKS` taken out of the path
+  // this section passed. Only the words prove the named refusal survived.
+  for (const [token, reason, because] of [
+    [
+      "no_install_apps",
+      /device owners and profile owners installing apps/,
+      "Android applies it to the DEVICE OWNER too, so no app, launcher or Phoenix update would ever reach the fleet again",
+    ],
+    [
+      "no_config_wifi",
+      /no_change_wifi_state` is the lock that was wanted/,
+      "it stops the rep joining a network at all, not just turning Wi-Fi off",
+    ],
+    [
+      "no_share_location",
+      /opposite of what the position agent needs/,
+      "it holds location sharing off for the whole tablet",
+    ],
+  ] as const) {
+    assert.throws(
+      () => restrictionsWith("no_factory_reset", [token]),
+      (error: unknown) => error instanceof TabletLockError && reason.test(error.message),
+      because,
+    );
+  }
+  assert.throws(
+    () => restrictionsWith("", ["no_wifi_off"]),
+    TabletLockError,
+    "🔴 and a token Android has never heard of is refused rather than stored — Android IGNORES an unknown one, so the lock would read as applied here and hold nothing on the tablet",
+  );
+
+  const added = restrictionsWith("no_factory_reset, no_safe_boot ,,no_factory_reset", ["no_safe_boot", "no_control_apps"]);
+  assert.equal(added.next, "no_factory_reset,no_safe_boot,no_control_apps", "blanks and repeats are dropped and the stored order is kept");
+  assert.deepEqual(added.added, ["no_control_apps"], "only what was really new");
+  assert.deepEqual(added.already, ["no_safe_boot"], "and what was already there is said, not re-added");
+  assert.equal(
+    restrictionsWith("no_config_location,no_debugging_features", []).next,
+    "no_config_location,no_debugging_features",
+    "🔴 it only ever ADDS — a save that passes no locks takes none off, so a routine write can never quietly unlock a tablet",
+  );
+  assert.deepEqual(parseRestrictions(null), [], "a set of rules the server sent no restrictions for reads as none, never as a crash");
+
+  for (const token of REP_TABLET_LOCK_SET) {
+    assert.ok(TABLET_LOCKS[token], `${token} is a lock Phoenix knows`);
+    assert.ok(!REFUSED_TABLET_LOCKS[token], `${token} is not one of the refused ones`);
+    assert.match(describeTabletLock(token), /stops: .+ Costs: .+/, `${token} says what it costs the rep, not just what it stops`);
+  }
+  assert.ok(
+    REP_TABLET_LOCK_SET.includes("no_change_wifi_state") && REP_TABLET_LOCK_SET.includes("no_airplane_mode"),
+    "the two that hold the network on are both in the set — aeroplane mode alone leaves the one tap that kills Wi-Fi and data together",
+  );
+  assert.match(
+    MOBILE_DATA_CANNOT_BE_HELD,
+    /mobile data off/,
+    "🔴 and what NO Android lock can do is written down — saying the network cannot be turned off while only Wi-Fi and aeroplane mode are held is how a tablet gets handed out believed sealed",
+  );
+}
+
+async function runVersionRowTests() {
+  const app = { id: 84, name: "Telegram", pkg: "org.telegram.messenger.web", version: "13.1.0", versionCode: 72299 };
+  const before = [{ id: 10079, url: "https://mdm.test.local/files/Telegram.apk", version: "13.1.0", versionCode: 72299 }];
+  const build = { bytes: 81653599, packageName: "org.telegram.messenger.web", version: "13.3.1", versionCode: 73469 };
+  const audits: string[] = [];
+  const audit = async (input: { summary: string }) => void audits.push(input.summary);
+
+  const after = [{ ...before[0]!, version: "13.3.1", versionCode: 73469 }];
+  const stub = makeFetch({
+    api: [
+      { body: { data: [app], status: "OK" }, status: 200 },
+      { body: { data: before, status: "OK" }, status: 200 },
+      { body: { status: "OK" }, status: 200 },
+      { body: { data: after, status: "OK" }, status: 200 },
+      { body: { status: "OK" }, status: 200 },
+    ],
+  });
+  const done = await matchHeadwindVersionsToFiles({ applicationId: 84 }, "B-10", stub.fetch, ENV, audit as never, async () => build);
+  assert.deepEqual(done.changed.map((row) => row.now), [{ version: "13.3.1", versionCode: 73469 }], "the row is moved to what its own file is");
+  const put = stub.calls.find((call) => call.url.endsWith("/applications/versions") && call.init.method === "PUT");
+  assert.ok(put, "a PUT went out");
+  const body = JSON.parse(String(put!.init.body));
+  assert.equal(
+    body.id,
+    10079,
+    "🔴 the row goes back WHOLE, with its own id — a partial body is how a SECOND version row appears beside the old one, and then two rows claim the same app",
+  );
+  assert.equal(body.versionCode, 73469, "carrying the file's real code");
+  assert.equal(audits.length, 1, "and the change is audited once");
+
+  // 🔴 THE READ-BACK IS THE PROOF. This endpoint has answered OK while storing nothing before, and a
+  // row believed level is exactly the state that leaves every tablet re-downloading the file for ever.
+  const liar = makeFetch({
+    api: [
+      { body: { data: [app], status: "OK" }, status: 200 },
+      { body: { data: before, status: "OK" }, status: 200 },
+      { body: { status: "OK" }, status: 200 },
+      { body: { data: before, status: "OK" }, status: 200 },
+    ],
+  });
+  await assert.rejects(
+    () => matchHeadwindVersionsToFiles({ applicationId: 84 }, "B-10", liar.fetch, ENV, audit as never, async () => build),
+    (error: unknown) => error instanceof HeadwindVersionError && /did NOT store/.test(String((error as Error).message)),
+    "a server that takes the change and keeps the old numbers is reported, never read as done",
+  );
+
+  // The dry run's writes are answered and never sent, so its read-back is told to stand down — the
+  // refusal above would otherwise fire over a change nobody made.
+  const fenced = makeFetch({
+    api: [
+      { body: { data: [app], status: "OK" }, status: 200 },
+      { body: { data: before, status: "OK" }, status: 200 },
+      { body: { status: "OK" }, status: 200 },
+    ],
+  });
+  const dry = await matchHeadwindVersionsToFiles(
+    { applicationId: 84, proveStored: false },
+    "B-10",
+    fenced.fetch,
+    ENV,
+    audit as never,
+    async () => build,
+  );
+  assert.equal(dry.changed.length, 1, "the dry run still says what it would move");
+  assert.ok(
+    !fenced.calls.some((call, index) => index > 2 && call.init.method !== "PUT" && call.url.includes("/versions")),
+    "and it never re-reads to prove a write it did not send",
+  );
+
+  // 🔴 A ROW POINTING AT THE WRONG FILE IS THE ONE CASE WHERE WRITING THE FILE'S NUMBERS WOULD BE
+  // ACTIVELY WRONG — it would hand the fleet another app under this app's name.
+  const wrongFile = makeFetch({
+    api: [
+      { body: { data: [app], status: "OK" }, status: 200 },
+      { body: { data: before, status: "OK" }, status: 200 },
+    ],
+  });
+  await assert.rejects(
+    () =>
+      matchHeadwindVersionsToFiles({ applicationId: 84 }, "B-10", wrongFile.fetch, ENV, audit as never, async () => ({
+        ...build,
+        packageName: "com.whatsapp",
+      })),
+    (error: unknown) => error instanceof HeadwindVersionError && /not org\.telegram\.messenger\.web/.test(String((error as Error).message)),
+    "a file that is a different app refuses and changes nothing",
+  );
+  assert.ok(
+    !wrongFile.calls.some((call) => call.init.method === "PUT"),
+    "and it refuses BEFORE any PUT — nothing reaches the tablets",
+  );
+
+  const absent = makeFetch({ api: [{ body: { data: [app], status: "OK" }, status: 200 }] });
+  await assert.rejects(
+    () => matchHeadwindVersionsToFiles({ applicationId: 99 }, "B-10", absent.fetch, ENV, audit as never, async () => build),
+    HeadwindVersionError,
+    "an app number the server does not hold is refused, never read as an app with no versions",
+  );
+}
+
+async function runRepTabletLockWriteTests() {
+  const rules = { id: 3, name: "Rep tablets", restrictions: "no_factory_reset,no_safe_boot" };
+  const locked = { ...rules, restrictions: `${rules.restrictions},${REP_TABLET_LOCK_SET.join(",")}` };
+  const audits: string[] = [];
+  const audit = async (input: { summary: string }) => void audits.push(input.summary);
+
+  // read current → (the write re-reads it, and reads the app links, so the PUT carries them) → PUT →
+  // read back. 🔴 The second read is `patchHeadwindConfiguration`'s own: a whole-configuration PUT that
+  // does not carry the app links DELETES every one of them, taking the home-screen app off the fleet.
+  const stub = makeFetch({
+    api: [
+      { body: { data: rules, status: "OK" }, status: 200 },
+      { body: { data: rules, status: "OK" }, status: 200 },
+      { body: { data: [], status: "OK" }, status: 200 },
+      { body: { status: "OK" }, status: 200 },
+      { body: { data: locked, status: "OK" }, status: 200 },
+    ],
+  });
+  const done = await setHeadwindRestrictions({ add: REP_TABLET_LOCK_SET, configurationId: 3 }, "B-10", stub.fetch, ENV, audit as never);
+  assert.ok(done.added.includes("no_change_wifi_state"), "the Wi-Fi lock went on");
+  assert.ok(!done.added.includes("no_factory_reset"), "and a lock already carried is not re-added");
+  for (const token of REP_TABLET_LOCK_SET) assert.ok(done.restrictions.includes(token), `${token} is on the rules it read back`);
+  assert.equal(audits.length, 1, "audited once, with the locks only");
+
+  // The PUT answers OK and the read-back still shows the OLD locks: the server that takes a change
+  // and keeps what it had.
+  const liar = makeFetch({
+    api: [
+      { body: { data: rules, status: "OK" }, status: 200 },
+      { body: { data: rules, status: "OK" }, status: 200 },
+      { body: { data: [], status: "OK" }, status: 200 },
+      { body: { status: "OK" }, status: 200 },
+      { body: { data: rules, status: "OK" }, status: 200 },
+    ],
+  });
+  await assert.rejects(
+    () => setHeadwindRestrictions({ add: ["no_control_apps"], configurationId: 3 }, "B-10", liar.fetch, ENV, audit as never),
+    (error: unknown) => error instanceof HeadwindConfigurationError && /did NOT store/.test(String((error as Error).message)),
+    "🔴 a server that answers OK and keeps the old locks is reported — a lock believed on is what gets said to the owner as 'he cannot turn it off'",
+  );
+
+  // Nothing to add: no PUT at all, so a routine save never touches a hundred tablets.
+  const level = makeFetch({ api: [{ body: { data: locked, status: "OK" }, status: 200 }] });
+  const already = await setHeadwindRestrictions({ add: REP_TABLET_LOCK_SET, configurationId: 3 }, "B-10", level.fetch, ENV, audit as never);
+  assert.deepEqual(already.added, [], "it already carried them all");
+  assert.ok(!level.calls.some((call) => call.init.method === "PUT"), "and nothing was sent");
+}
+
 function runShipsDarkTests() {
   // 🔴 THE WHOLE SECTION SHIPS DARK. Nothing renders and no request is made until the company's own
   // server exists and its settings are on Railway — which is what makes this safe to merge to
@@ -4664,6 +4978,10 @@ export async function runHeadwindBridgeTests() {
   runRecordingTests();
   await runRecordingUploadDoorTests();
   await runConfigurationTests();
+  await runApkBuildTests();
+  runTabletLockTests();
+  await runVersionRowTests();
+  await runRepTabletLockWriteTests();
   await runUploadTests();
   await runLocationTests();
   await runCustodyActionTests();

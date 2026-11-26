@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { isForbiddenError } from "@/lib/auth/server";
 import { HeadwindActionError } from "@/lib/devices/headwind/actions";
+import { ApkReadError } from "@/lib/devices/headwind/apk-build";
 import { HeadwindAppInputError } from "@/lib/devices/headwind/apps";
 import { HeadwindNotConfiguredError } from "@/lib/devices/headwind/auth";
 import { HeadwindRequestError } from "@/lib/devices/headwind/client";
@@ -11,8 +12,10 @@ import { HeadwindDeviceNotFoundError } from "@/lib/devices/headwind/devices";
 import { HeadwindEnrollmentError } from "@/lib/devices/headwind/enrollment";
 import { HeadwindLocationError } from "@/lib/devices/headwind/locations";
 import { HeadwindRemoteScreenIdError } from "@/lib/devices/headwind/remote-screen-id";
+import { TabletLockError } from "@/lib/devices/headwind/restrictions";
 import { HeadwindUploadError } from "@/lib/devices/headwind/uploads";
 import { HeadwindUserError } from "@/lib/devices/headwind/users";
+import { HeadwindVersionError } from "@/lib/devices/headwind/versions";
 import { HeadwindWipeError } from "@/lib/devices/headwind/wipe";
 import { RustDeskNotConfiguredError } from "@/lib/devices/rustdesk/config";
 
@@ -56,12 +59,18 @@ export function headwindErrorResponse(error: unknown, fallback: string): NextRes
     // 🔴 It was missing until 9 Nov 2026 (F15): a remote screen ID that is a sentence, or a tablet
     // nobody named, answered 500 — "the server broke" — for the person's own typo.
     error instanceof HeadwindRemoteScreenIdError ||
+    // A lock Android does not know, or one the server did not store, is said in a sentence — never
+    // "the server broke". Same for a version row that refuses because the file is a different app.
+    error instanceof TabletLockError ||
     error instanceof HeadwindUploadError ||
-    error instanceof HeadwindUserError
+    error instanceof HeadwindUserError ||
+    error instanceof HeadwindVersionError
   ) {
     return NextResponse.json({ message: error.message }, { status: 400 });
   }
-  if (error instanceof HeadwindRequestError) {
+  // 🔴 An APK that cannot be read is the FILE SERVER's answer, not the caller's mistake — 502, with
+  // the reason the reader gave (a range it would not serve, a zip it could not find the end of).
+  if (error instanceof HeadwindRequestError || error instanceof ApkReadError) {
     return NextResponse.json({ message: error.message }, { status: 502 });
   }
   return NextResponse.json({ message: error instanceof Error ? error.message : fallback }, { status: 500 });

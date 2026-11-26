@@ -23,6 +23,26 @@ const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 const OWNER_OPS_FENCE = Symbol.for("phoenix.ownerOps.dryRunFence");
 const DETAIL_MAX = 400;
 
+/**
+ * 🔴 THE TABLET SERVER'S SIGN-IN IS A POST THAT CHANGES NOTHING, AND FENCING IT MADE EVERY TABLET
+ * JOB'S DRY RUN BLIND. `POST /rest/public/jwt/login` mints the session token every Headwind read then
+ * carries (`src/lib/devices/headwind/auth.ts`), so with it fenced the dry run of a tablet job cannot
+ * even LIST the fleet: it fails at the sign-in and reports a credential fault that is not there.
+ * A dry run that cannot read is worse than no dry run — it says "could not reach the tablet server"
+ * about a server that is up, which is exactly the sentence that gets a real `--apply` run instead.
+ *
+ * So this ONE path passes through as the read it is. It is matched by its exact pathname, never by
+ * host or by prefix: every other POST or PUT to the tablet server — a configuration, a version row, a
+ * push to a device — stays fenced and listed, which is the whole point of the dry run.
+ */
+const PASS_THROUGH_PATHS = new Set(["/rest/public/jwt/login"]);
+
+function passesThroughAsRead(input: RequestInfo | URL, init?: RequestInit): boolean {
+  if (methodOf(input, init) !== "POST") return false;
+  const url = urlOf(input);
+  return !!url && PASS_THROUGH_PATHS.has(url.pathname);
+}
+
 function methodOf(input: RequestInfo | URL, init?: RequestInit): string {
   return String(init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
 }
@@ -69,6 +89,7 @@ export function installOwnerOpsDryRunFence(log: FencedWrite[], real: typeof fetc
   const current = globalThis.fetch as typeof fetch & Record<symbol, unknown>;
   if (current && current[OWNER_OPS_FENCE] === true) return false;
   const fenced = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (passesThroughAsRead(input, init)) return real(input as RequestInfo, init);
     if (!READ_METHODS.has(methodOf(input, init))) log.push(describeFencedWrite(input, init));
     return testDryRunFetch(input, init, real, async () => true);
   }) as typeof fetch & Record<symbol, unknown>;

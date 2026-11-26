@@ -8,6 +8,7 @@ import {
   takeHeadwindAction,
   HeadwindActionError,
 } from "../src/lib/devices/headwind/actions.ts";
+import { ApkReadError } from "../src/lib/devices/headwind/apk-build.ts";
 import { HeadwindAppInputError } from "../src/lib/devices/headwind/apps.ts";
 import { HeadwindNotConfiguredError, headwindPasswordHash, resetHeadwindTokenCache } from "../src/lib/devices/headwind/auth.ts";
 import { callHeadwind, HeadwindRequestError } from "../src/lib/devices/headwind/client.ts";
@@ -18,6 +19,7 @@ import { HeadwindEnrollmentError } from "../src/lib/devices/headwind/enrollment.
 import { headwindErrorResponse } from "../src/lib/devices/headwind/http.ts";
 import { HeadwindLocationError } from "../src/lib/devices/headwind/locations.ts";
 import { HeadwindRemoteScreenIdError } from "../src/lib/devices/headwind/remote-screen-id.ts";
+import { TabletLockError } from "../src/lib/devices/headwind/restrictions.ts";
 import { HeadwindCommandInputError } from "../src/lib/devices/headwind/target.ts";
 import { HeadwindUploadError } from "../src/lib/devices/headwind/uploads.ts";
 import {
@@ -26,6 +28,7 @@ import {
   removeHeadwindConsoleUser,
   HeadwindUserError,
 } from "../src/lib/devices/headwind/users.ts";
+import { HeadwindVersionError } from "../src/lib/devices/headwind/versions.ts";
 import { wipeHeadwindDevice, HeadwindWipeError } from "../src/lib/devices/headwind/wipe.ts";
 import { RustDeskNotConfiguredError } from "../src/lib/devices/rustdesk/config.ts";
 
@@ -430,6 +433,11 @@ function runErrorMappingSweepTests() {
   const mapped: Array<[Error, number]> = [
     [new HeadwindActionError("x"), 400],
     [new HeadwindAppInputError("x"), 400],
+    // 🔴 An APK the file server would not hand over is ITS answer, not a typo — 502 beside
+    // HeadwindRequestError. A refused lock name and a version row that refuses are sentences: 400.
+    [new ApkReadError("x"), 502],
+    [new TabletLockError("x"), 400],
+    [new HeadwindVersionError("x"), 400],
     [new HeadwindNotConfiguredError("x"), 400],
     [new HeadwindRequestError(500, "x"), 502],
     [new HeadwindCommandUnconfirmedError("x"), 501],

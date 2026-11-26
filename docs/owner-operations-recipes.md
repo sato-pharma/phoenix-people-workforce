@@ -247,9 +247,15 @@ node --env-file-if-exists=.env.local --experimental-strip-types --experimental-s
   row **in place** — `PUT /rest/private/applications/versions` with its `id` kept, never a configuration
   PUT (§8.14) — so the download becomes that address, which answers 200 by itself.
 - 🔴 **THE ROW'S `version` AND `versionCode` MUST MATCH THE FILE ON THE DISK, or every tablet
-  re-downloads it hourly for ever** — the launcher compares an app row by `versionCode`. Read the real
-  pair out of the APK's own binary manifest (`versionCode`, `versionName` on the `<manifest>` element);
-  26 Nov 2026 the disk held 13.1.0 / 72299 while the row claimed 13.2.1 / 72919.
+  re-downloads it hourly for ever** — the launcher compares an app row by `versionCode`. **Do not type
+  the pair in by hand any more:** `owner-ops.ts match-app-version --app <app number>` reads the real
+  `versionCode`/`versionName` out of the APK's own binary manifest and puts the row back level with it.
+  It reads the file by **ranged requests off the server** — about 100 KB over four reads of an 81 MB
+  APK — refuses when the file turns out to be a different package (that would hand the fleet another
+  app under this app's name), keeps the row's own `id` so no second row appears beside it, and reads the
+  row back afterwards, because this endpoint has answered OK while storing nothing before. Dry run
+  first, then `--apply`. A typed number is what put the fleet in the loop twice: 26 Nov 2026 the row
+  claimed 13.1.0 / 72299 while the file under it had become **13.3.1 / 73469**.
 - 🔴 **A BIG APK CANNOT BE UPLOADED FROM THE LAPTOP — CLOUDFLARE CUTS IT AT HTTP 524.** `mdm-console` sits
   behind Cloudflare Access, whose origin wait is about 100 seconds, and 81,653,599 bytes of Telegram 13.3.1
   died there (`uploadBytes`, 26 Nov 2026) having registered nothing. A file that big reaches the disk only
@@ -261,6 +267,45 @@ node --env-file-if-exists=.env.local --experimental-strip-types --experimental-s
 - **Proof:** read the sets back (`readHeadwindConfigurationApplications`) — one link per set, `action 1`,
   `remove false`, the version you sent — and then the link report showing **0 broken on all three**
   (measured 26 Nov 2026: 0 of 12, 0 of 13, 0 of 13).
+
+### Stop a rep turning the tablet's protections off ("protect the tablet")
+
+Owner, 26 Nov 2026: *"want to make sure he can't turn the location off. He can't turn the mobile network
+or the Wi-Fi off. He can't reset the tablet. He can't be developer mode. He can't install apps … but
+without irritating the usage."*
+
+- **Run:** `owner-ops.ts lock-rep-tablets` (dry run), then `--apply`. One job, all three rep sets of
+  rules; it prints every lock with **what it costs a rep** before it sends anything, and it only ever
+  ADDS — nothing is taken off, so a routine save can never quietly unlock a tablet.
+- 🔴 **THE VOCABULARY IS ANDROID'S, NOT HEADWIND'S.** The launcher splits a configuration's
+  `restrictions` string on commas and calls `DevicePolicyManager.addUserRestriction` for each piece
+  (`Utils.lockUserRestrictions`), so a token Android does not know is **silently ignored**: the lock
+  reads as applied on the server and holds nothing on the tablet. `src/lib/devices/headwind/restrictions.ts`
+  carries the vetted list with each token's Android version, and refuses anything else by name.
+- **Already carried before this:** `no_factory_reset`, `no_safe_boot`, `no_debugging_features`,
+  `no_add_user`, `no_config_location`, `no_uninstall_apps` — so factory reset, developer mode and the
+  location switch were his three that were already answered.
+- **Added 26 Nov 2026:** `no_change_wifi_state` (Wi-Fi cannot be switched off; joining and switching
+  networks still works), `no_airplane_mode` (the one tap that kills Wi-Fi and data together),
+  `no_config_mobile_networks`, `no_network_reset`, `no_install_unknown_sources` (nothing side-loads; the
+  agent still installs everything Phoenix sends, as the device owner) and `no_control_apps` (Settings >
+  Apps can no longer force-stop an app or clear its data — this is what stops the position agent being
+  stopped by hand).
+- 🔴 **THE TWO THAT MUST NEVER GO ON, BOTH OF WHICH READ LIKE EXACTLY WHAT WAS ASKED FOR.**
+  `no_install_apps` — AOSP: *"This user restriction also prevents device owners and profile owners
+  installing apps"* — would stop every app, launcher and Phoenix update ever reaching the fleet again;
+  `no_install_unknown_sources` is the one that was wanted. `no_config_wifi` stops the rep joining or
+  switching a network at all, not just turning Wi-Fi off; `no_change_wifi_state` is the one that was
+  wanted. Both are refused by name with the reason.
+- 🔴 **AND THE ONE THING NO ANDROID LOCK CAN DO: the mobile-data switch.** There is no `DISALLOW_*` for
+  it — `no_config_mobile_networks` covers only the network's settings — so a rep can still turn mobile
+  data off in quick settings. Only a launcher that turns it back on closes that, and that is a launcher
+  build (`Omar-3-xx/hmdm-android`, `patch-launcher.yml`), not a rules change. Say this plainly rather
+  than reporting "he cannot turn the network off".
+- 🔴 **The launcher never lifts the four protective blocks** (factory reset, safe boot, debugging, add
+  user) even if they are taken off the rules, so leave them in — see `.claude/rules/devices.md`.
+- **Proof:** every rep set of rules read back off the server with all twelve locks on it. Each tablet
+  picks them up at its next check-in; Android enforces them, not a screen.
 
 ## Phoenix CRM
 
