@@ -222,8 +222,11 @@ node --env-file-if-exists=.env.local --experimental-strip-types --experimental-s
 - 🔴 **A BIG APK CANNOT BE UPLOADED FROM THE LAPTOP — CLOUDFLARE CUTS IT AT HTTP 524.** `mdm-console` sits
   behind Cloudflare Access, whose origin wait is about 100 seconds, and 81,653,599 bytes of Telegram 13.3.1
   died there (`uploadBytes`, 26 Nov 2026) having registered nothing. A file that big reaches the disk only
-  from the server's own side — `phoenix-entrypoint.sh` fetches it at every start, the way WhatsApp is
-  fetched — never from here.
+  from the server's own side: `phoenix-entrypoint.sh` fetches the three everyday apps at every start and,
+  since 26 Nov 2026, re-fetches a floating source whose publisher is serving a different `content-length`.
+- 🔴 **A REFRESHED FILE ON THE DISK STILL REACHES NO TABLET THAT HOLDS THE OLD BUILD — THE VERSION ROW IS
+  THE TRIGGER.** The launcher compares what is installed against the row's `versionCode`, so bumping the
+  row to the file's real pair is the hand step that actually ships an update to the fleet.
 - **Proof:** read the sets back (`readHeadwindConfigurationApplications`) — one link per set, `action 1`,
   `remove false`, the version you sent — and then the link report showing **0 broken on all three**
   (measured 26 Nov 2026: 0 of 12, 0 of 13, 0 of 13).

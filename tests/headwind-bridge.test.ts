@@ -2527,14 +2527,10 @@ function runServerImageTests() {
   );
   assert.match(
     entrypoint,
-    /-ge "\$WHATSAPP_MIN_SIZE"[\s\S]*\[ "\$wa_magic" = "PK" \]/,
-    "a fetched file is moved into place only when it clears the size floor AND starts with the zip magic, so an error page is never served as an app",
+    /provision_official_apk "\$WHATSAPP_APK" "\$WHATSAPP_URL" "" "\$WHATSAPP_MIN_SIZE"/,
+    "and through the SAME helper as Telegram and WPS — a hand-rolled copy of it is how WhatsApp missed the staleness fix below",
   );
-  assert.match(
-    entrypoint,
-    /could not fetch a valid \$WHATSAPP_APK[\s\S]*it will retry next start/,
-    "a failed WhatsApp fetch logs and falls through — it never aborts startup, so WhatsApp's site being down cannot down the MDM",
-  );
+  assert.match(entrypoint, /^WHATSAPP_MIN_SIZE=83886080\b/m, "its floor stays 80 MiB, well under the ~150 MB universal APK");
   assert.ok(
     entrypoint.indexOf("WHATSAPP_APK=") < entrypoint.indexOf('exec /docker-entrypoint.sh "$@"'),
     "and it runs BEFORE the hand-over to Headwind's entrypoint, since nothing after an exec ever runs",
@@ -2570,6 +2566,45 @@ function runServerImageTests() {
   assert.ok(
     entrypoint.indexOf('provision_official_apk "wps_') < entrypoint.indexOf('exec /docker-entrypoint.sh "$@"'),
     "and both run BEFORE the hand-over to Headwind's entrypoint",
+  );
+
+  // 🔴 A FLOATING SOURCE IS REFRESHED WHEN ITS PUBLISHER MOVES — "BIG ENOUGH" IS NOT "CURRENT".
+  //
+  // The floor was the only test a present file had to pass, so the first build to land stayed for ever:
+  // measured 26 Nov 2026, /files/Telegram.apk was still the 70,867,407-byte build fetched on 22 October
+  // (13.1.0, versionCode 72299) while telegram.org served 13.3.1. The fleet cannot be given an update
+  // nobody fetches. So a floating source now reads the publisher's CURRENT size from headers and
+  // re-fetches on a difference — and an unreadable publisher leaves the working file alone, because the
+  // failure mode to avoid is deleting a good app on a blocked HEAD.
+  assert.match(
+    entrypoint,
+    /remote_apk_size\(\) \{[\s\S]*--spider -S "\$1"[\s\S]*content-length:/,
+    "the publisher's current size is read from headers only — one round trip, never the whole APK",
+  );
+  assert.match(
+    entrypoint,
+    /remote_apk_size\(\) \{[\s\S]*curl -fsSLI --connect-timeout 10 --max-time 60/,
+    "and curl, if it is the one present, follows the redirect chain with a hard ceiling — telegram.org answers 302",
+  );
+  assert.match(
+    entrypoint,
+    /if \[ -n "\$pa_exact" \]; then\n\s+echo "phoenix-entrypoint\(files\): \$pa_name already present/,
+    "a pinned asset (an exact size) is immutable, so present is current and its publisher is never asked",
+  );
+  assert.match(
+    entrypoint,
+    /pa_remote="\$\(remote_apk_size "\$pa_url"[\s\S]*\[ "\$pa_remote" = "\$pa_have" \][\s\S]*already present and current/,
+    "a floating source is kept when the publisher is serving the same size",
+  );
+  assert.match(
+    entrypoint,
+    /"" \| \*\[!0-9\]\*\)[\s\S]*could not read its publisher's current size — keeping it[\s\S]*return 0/,
+    "an unreadable publisher never costs the fleet a working app",
+  );
+  assert.match(
+    entrypoint,
+    /if ! apk_size_ok "\$pa_remote" "" "\$pa_min"; then[\s\S]*below the floor — keeping what we have/,
+    "and neither does a publisher answering with something too small to be an APK",
   );
 
   // 🔴 EVERY START-UP DOWNLOAD IS BOUNDED, AND THE EVERYDAY APPS NEVER HOLD THE SERVER DOWN.
