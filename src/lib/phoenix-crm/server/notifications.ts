@@ -147,6 +147,8 @@ export type PhoenixCrmNotice =
       note: string;
       /** When it was returned — a request can be returned again after the rep answers, so it keys the notice. */
       returnedAt: string;
+      /** The step the rep's comment goes back to: the district manager's when the Administrator returned that step (2026-11-27). */
+      backTo?: "manager" | "sfe" | null;
     }
   | {
       /** The rep answered a request SFE returned (owner, 2026-10-12). Told to the SFE who returned it. */
@@ -1354,7 +1356,7 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
       recipients: [notice.requesterHrId],
       eventType: "request_returned",
       title: `Comment needed: ${subject} for ${notice.customerName}`,
-      message: `${returner} sent your ${subject} for ${bidiIsolate(notice.customerName)} on ${territory} back for a comment. Note: ${notice.note} Open it in Phoenix CRM and write your comment — it then goes straight back to SFE.`,
+      message: `${returner} sent your ${subject} for ${bidiIsolate(notice.customerName)} on ${territory} back for a comment. Note: ${notice.note} Open it in Phoenix CRM and write your comment — it then goes straight back to ${notice.backTo === "manager" ? "the district manager" : "SFE"}.`,
       tab: "list",
       recordId: notice.requestId,
       idempotencyKey: `phoenix_crm:request:${notice.requestId}:returned:${notice.returnedAt}`,

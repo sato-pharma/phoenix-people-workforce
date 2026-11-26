@@ -1304,7 +1304,9 @@ export async function loadPlanReviews(
       exceptions,
       staleItems,
       farApartDays,
-      canApprove: plan?.status === "submitted" && canReviewTerritory(viewer, seat, isTest),
+      // The Administrator approves in the holder's place too, so his row offers the same primary
+      // "Review" its holder sees (owner, 2026-11-27); the waiting count above stays the holder's own.
+      canApprove: plan?.status === "submitted" && (canReviewTerritory(viewer, seat, isTest) || canOverrideDecision(viewer, isTest)),
       canReturn: weekOpen && (plan?.status === "submitted" || plan?.status === "approved") && canReturnTerritoryPlan(viewer, seat, isTest),
     };
   });

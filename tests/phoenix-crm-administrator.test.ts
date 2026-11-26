@@ -33,9 +33,9 @@ export function runPhoenixCrmAdministratorTests(): void {
   // ── 1. He approves or declines, at the step the row is at ───────────────────────────────────────
   {
     const list = source("src/lib/phoenix-crm/server/list.ts");
-    assert.match(list, /if \(!canOverrideDecision\(viewer, isTest\)\) assertListRequestApprover\(viewer, seat, isTest, rowStage\);/, "a list request: the approver check is skipped for him, and only for him");
+    assert.match(list, /const asAdministrator = canOverrideDecision\(viewer, isTest\);[\s\S]{0,700}?if \(!asAdministrator\) assertListRequestApprover\(viewer, seat, isTest, rowStage\);/, "a list request: the approver check is skipped for him, and only for him");
     assert.doesNotMatch(list, /can only decline/, "a list request: nothing refuses his approval");
-    assert.match(list, /This request is waiting for the rep's comment/, "but a request that is with the rep is approved by nobody, him included");
+    assert.match(list, /if \(withRep && decision === "approve" && !asAdministrator\) \{\s+throw validationError\("This request is waiting for the rep's comment/, "a request that is with the rep is approved by nobody but him (owner, 2026-11-27: any step, any status)");
 
     const unplanned = source("src/lib/phoenix-crm/server/unplanned.ts");
     assert.match(unplanned, /const asAdministrator = canOverrideDecision\(viewer, isTest\);\s+if \(!asAdministrator\) \{\s+assertUnplannedVisitApprover/, "an off-plan visit: the approver check is skipped for him");
