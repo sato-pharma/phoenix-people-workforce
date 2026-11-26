@@ -36,9 +36,10 @@ function dryRunIsTheDefault() {
   const merge = ["merge-venues", "--survivor", PHARMACY, "--loser", OTHER, "--reason", "same shop, same codes"];
   const pin = ["pin-pharmacy", "--pharmacy", PHARMACY, "--lat", "29.95", "--lng", "31.25"];
   const crm = ["load-crm-list", "--seat", "SEAT-PED-REP-D12", "--body", "body.json"];
+  const customers = ["merge-customers", "--survivor", PHARMACY, "--retired", OTHER, "--reason", "same doctor saved twice"];
   const seat = ["seat-in-building", "--seat", "SEAT-PED-REP-D12", "--building", PHARMACY, "--customers", `${OTHER},${PHARMACY}`, "--reason", "his timetable names them"];
 
-  for (const argv of [link, merge, pin, crm, seat]) {
+  for (const argv of [link, merge, pin, crm, seat, customers]) {
     assert.equal(plan(argv).apply, false, `${argv[0]} with no --apply is a DRY RUN`);
     assert.equal(plan([...argv, "--apply"]).apply, true, `${argv[0]} --apply writes`);
     assert.equal(plan([argv[0]!, "--apply", ...argv.slice(1)]).apply, true, "--apply counts wherever it stands");
@@ -62,6 +63,17 @@ function dryRunIsTheDefault() {
   refused(["load-crm-list", "--body", "body.json"], "a list load names its territory");
   refused(["load-crm-list", "--seat", "SEAT-PED-REP-D12"], "and its body");
   refused(["load-crm-list", "--seat", "SEAT-PED-REP-D12", "--body", "b.json", "--lat", "31"], "a flag of another job");
+  const customersPlan = plan(customers);
+  assert.deepEqual(
+    customersPlan.job === "merge-customers" && [customersPlan.survivorId, customersPlan.retiredId],
+    [PHARMACY, OTHER],
+    "--survivor is the customer that stays, --retired the copy",
+  );
+  refused(["merge-customers", "--survivor", PHARMACY, "--retired", PHARMACY, "--reason", "same doctor saved twice"], "a customer merged into itself");
+  refused(["merge-customers", "--survivor", PHARMACY, "--retired", OTHER, "--reason", "short"], "a reason under 10 characters, which the merge refuses");
+  refused(["merge-customers", "--survivor", PHARMACY, "--retired", OTHER], "a customer merge with no reason");
+  refused(["merge-customers", "--survivor", PHARMACY, "--loser", OTHER, "--reason", "same doctor saved twice"], "--loser belongs to the pharmacy merge, never to the customer merge");
+  refused(["merge-venues", "--survivor", PHARMACY, "--retired", OTHER, "--reason", "same shop, same codes"], "and --retired never to the pharmacy merge");
   const seatPlan = plan(seat);
   assert.deepEqual(seatPlan.job === "seat-in-building" && seatPlan.customerIds, [OTHER, PHARMACY], "the customers are read from one comma-separated list, in order");
   refused(["seat-in-building", "--seat", "SEAT-PED-REP-D12", "--building", PHARMACY, "--customers", `${OTHER},${OTHER}`, "--reason", "his timetable names them"], "a customer named twice");
@@ -167,6 +179,14 @@ function theRunnerFencesBeforeItLoadsTheApp() {
   assert.match(seatJob, /seatWaitingCustomersInVenue\(viewer, \{/, "handed to the door's own function");
   assert.doesNotMatch(seatJob, /\.(?:insert|update|upsert|delete)\(/, "and the runner itself writes no row");
   assert.doesNotMatch(seatJob, /validated_at\s*:/, "nor stamps a validation");
+  // merge-customers goes through the screen's own merge, as the owner in a real session: the
+  // dev-preview guard is passed, never bypassed, and the runner moves no row itself.
+  const customersJob = source.slice(source.indexOf("async function runMergeCustomers("), source.indexOf("async function runPinPharmacy("));
+  assert.ok(customersJob.length > 0, "the merge-customers job is found");
+  assert.match(customersJob, /mergeMarketingCustomers\(owner, \{/, "handed to the merge's own function, as the owner");
+  assert.match(customersJob, /carryEvidence: false/, "the retired copy's photo stays on the retired row unless asked");
+  assert.doesNotMatch(customersJob, /\.(?:insert|update|upsert|delete|rpc)\(/, "and the runner itself writes no row");
+  assert.doesNotMatch(customersJob, /assertRealSessionForDecision|devPreview|dev_preview/, "nor touches the real-session guard");
 }
 
 export async function runOwnerOpsRunnerTests() {
