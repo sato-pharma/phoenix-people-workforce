@@ -45,6 +45,7 @@
   "a-deregistered-worktree-folder-answers-git-from-the-primary": "sessions",
   "a-dm-never-receives-a-dm-cv": "recruitment",
   "a-docker-hub-429-silently-stopped-four-production-deploys": "engineering-deploys",
+  "a-docs-pointer-in-a-subfolder-does-not-count-for-the-long-bullet-gate": "devices",
   "a-documented-cadence-is-not-an-installed-job": "sessions",
   "a-dot-path-after-a-git-rev-colon-is-mangled-by-msys": "git-worktrees",
   "a-dot-path-plus-2-dev-null-certifies-a-check-nobody-ran": "git-worktrees",
