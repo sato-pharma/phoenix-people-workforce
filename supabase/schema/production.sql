@@ -8122,7 +8122,7 @@ begin
     raise exception 'phoenix_crm:not_returned';
   end if;
 
-  v_back_to := case when v_request.kind = 'grade' then null else 'sfe' end;
+  v_back_to := coalesce(v_request.returned_from_stage, case when v_request.kind = 'grade' then null else 'sfe' end);
 
   v_note := v_request.note;
   if v_request.kind = 'drop' then
@@ -8142,7 +8142,7 @@ begin
   returning q.* into v_request;
 
   insert into public.phoenix_crm_list_events (seat_id, customer_id, request_id, event_type, actor_hr_id, details, is_test)
-  values (v_seat, v_request.customer_id, v_request.id, 'request_answered', v_actor, jsonb_build_object('kind', v_request.kind), v_is_test);
+  values (v_seat, v_request.customer_id, v_request.id, 'request_answered', v_actor, jsonb_build_object('kind', v_request.kind, 'to_stage', v_back_to), v_is_test);
 
   return jsonb_build_object(
     'request_id', v_request.id,
@@ -10469,6 +10469,7 @@ declare
   v_stage_in text := nullif(p ->> 'stage', '');
   v_approved_in text := nullif(p ->> 'approved_grade', '');
   v_potential_in text := nullif(p ->> 'potential_grade', '');
+  v_as_administrator boolean := coalesce((p ->> 'as_administrator')::boolean, false);
   v_request public.phoenix_crm_list_requests%rowtype;
   v_customer public.phoenix_crm_customers%rowtype;
   v_status text;
@@ -10507,6 +10508,22 @@ begin
   -- Two people deciding at once: the second one's step has already moved on.
   if v_stage_in is not null and v_stage_in is distinct from v_request.stage then
     raise exception 'phoenix_crm:request_wrong_stage';
+  end if;
+  -- 🔴 2026-11-27 — a request WITH THE REP stands at the step it returns to (the step it was returned
+  -- from, else SFE, else none for a grade change: phoenix_crm_answer_request's own rule). Its holder may
+  -- refuse it there; only the Administrator may APPROVE it before the rep has answered (owner,
+  -- 2026-11-27: "any step any status"), and his decision takes that step and skips none. The row is first
+  -- stepped out of 'rep' (still pending), because phoenix_crm_list_requests_with_rep_guard — which cannot
+  -- know who is acting — refuses any approval of a row whose stage was 'rep'; for everyone else this
+  -- function refuses it itself, with the guard's own code.
+  if v_request.stage = 'rep' then
+    if v_decision = 'approve' and not v_as_administrator then
+      raise exception 'phoenix_crm:request_with_rep';
+    end if;
+    v_request.stage := coalesce(v_request.returned_from_stage, case when v_request.kind = 'grade' then null else 'sfe' end);
+    update public.phoenix_crm_list_requests q
+    set stage = v_request.stage
+    where q.id = v_request.id;
   end if;
 
   -- ── The district manager's step of a two-step request: approving hands it to SFE ──────────────
@@ -17101,6 +17118,7 @@ declare
   v_request_id uuid := nullif(p ->> 'request_id', '')::uuid;
   v_note text := nullif(regexp_replace(trim(coalesce(p ->> 'note', '')), '\s+', ' ', 'g'), '');
   v_stage_in text := nullif(p ->> 'stage', '');
+  v_as_administrator boolean := coalesce((p ->> 'as_administrator')::boolean, false);
   v_seat text;
   v_request public.phoenix_crm_list_requests%rowtype;
 begin
@@ -17138,12 +17156,15 @@ begin
   if v_stage_in is not null and v_stage_in is distinct from v_request.stage then
     raise exception 'phoenix_crm:request_wrong_stage';
   end if;
-  if v_request.stage = 'manager' then
+  -- The district manager's own step is never returned by him or by SFE; the Administrator, who may act
+  -- at any step in its holder's place, may (owner, 2026-11-27).
+  if v_request.stage = 'manager' and not v_as_administrator then
     raise exception 'phoenix_crm:cannot_return';
   end if;
 
   update public.phoenix_crm_list_requests q
-  set stage = 'rep',
+  set returned_from_stage = v_request.stage,
+      stage = 'rep',
       return_note = v_note,
       returned_by_hr_id = v_actor,
       returned_at = now(),
@@ -17153,7 +17174,11 @@ begin
   returning q.* into v_request;
 
   insert into public.phoenix_crm_list_events (seat_id, customer_id, request_id, event_type, actor_hr_id, details, is_test)
-  values (v_seat, v_request.customer_id, v_request.id, 'request_returned', v_actor, jsonb_build_object('kind', v_request.kind), v_is_test);
+  values (
+    v_seat, v_request.customer_id, v_request.id, 'request_returned', v_actor,
+    jsonb_build_object('kind', v_request.kind, 'from_stage', v_request.returned_from_stage, 'as_administrator', v_as_administrator),
+    v_is_test
+  );
 
   return jsonb_build_object(
     'request_id', v_request.id,
@@ -17161,6 +17186,7 @@ begin
     'kind', v_request.kind,
     'status', 'pending',
     'stage', 'rep',
+    'returned_from_stage', v_request.returned_from_stage,
     'returned_at', v_request.returned_at,
     'customer_id', v_request.customer_id,
     'customer_name', v_request.customer_name,
@@ -68410,6 +68436,7 @@ CREATE TABLE public.phoenix_crm_list_requests (
     returned_at timestamp with time zone,
     rep_reply text,
     replied_at timestamp with time zone,
+    returned_from_stage text,
     CONSTRAINT phoenix_crm_list_requests_approved_grade CHECK (((approved_grade IS NULL) OR (approved_grade = ANY (ARRAY['A'::text, 'B'::text, 'C'::text])))),
     CONSTRAINT phoenix_crm_list_requests_current_grade CHECK (((current_grade IS NULL) OR (current_grade = ANY (ARRAY['A'::text, 'B'::text, 'C'::text])))),
     CONSTRAINT phoenix_crm_list_requests_decided CHECK (((status = 'pending'::text) = (decided_at IS NULL))),
@@ -68423,6 +68450,7 @@ CREATE TABLE public.phoenix_crm_list_requests (
     CONSTRAINT phoenix_crm_list_requests_potential_grade CHECK (((potential_grade IS NULL) OR (potential_grade = ANY (ARRAY['AA'::text, 'AB'::text, 'AC'::text, 'BA'::text, 'BB'::text, 'BC'::text])))),
     CONSTRAINT phoenix_crm_list_requests_proposed_grade CHECK (((proposed_grade IS NULL) OR (proposed_grade = ANY (ARRAY['A'::text, 'B'::text, 'C'::text])))),
     CONSTRAINT phoenix_crm_list_requests_return_texts CHECK ((((return_note IS NULL) OR (char_length(return_note) <= 500)) AND ((rep_reply IS NULL) OR (char_length(rep_reply) <= 500)))),
+    CONSTRAINT phoenix_crm_list_requests_returned_from_stage_check CHECK (((returned_from_stage IS NULL) OR (returned_from_stage = ANY (ARRAY['manager'::text, 'sfe'::text])))),
     CONSTRAINT phoenix_crm_list_requests_stage CHECK (((stage IS NULL) OR (stage = ANY (ARRAY['manager'::text, 'sfe'::text, 'rep'::text])))),
     CONSTRAINT phoenix_crm_list_requests_stage_notes CHECK ((((manager_note IS NULL) OR (char_length(manager_note) <= 500)) AND ((sfe_note IS NULL) OR (char_length(sfe_note) <= 500)))),
     CONSTRAINT phoenix_crm_list_requests_stage_when_waiting CHECK ((((status = 'pending'::text) AND ((kind <> 'grade'::text) OR (stage = 'rep'::text))) = (stage IS NOT NULL))),
@@ -68449,6 +68477,12 @@ COMMENT ON COLUMN public.phoenix_crm_list_requests.return_note IS 'What SFE aske
 --
 
 COMMENT ON COLUMN public.phoenix_crm_list_requests.rep_reply IS 'The rep''s answer to the return. For a customer being dropped it is also added to `note`, so the Archive keeps the comment.';
+
+--
+-- Name: COLUMN phoenix_crm_list_requests.returned_from_stage; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.phoenix_crm_list_requests.returned_from_stage IS 'The step the request was at when it was returned to the rep for a comment; the rep''s answer sends it back there. Null: SFE for a two-step kind, no step for a grade change (the rule before 2026-11-27).';
 
 --
 -- Name: phoenix_crm_location_integrity; Type: TABLE; Schema: public; Owner: postgres

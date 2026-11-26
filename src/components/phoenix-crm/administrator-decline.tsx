@@ -4,13 +4,10 @@
  * Phoenix CRM — the Administrator's decline, on any approval (owner, 2026-10-08).
  *
  * He is not a step: nothing in the module waits for his approval, and no count of "waiting for you"
- * includes him. What he has is this — on a decision a manager or SFE is taking, or took, he may DECLINE
- * or RETURN it with a comment the rep reads. He is called the Administrator everywhere he is named —
- * never HR, and never an override.
- *
- * One component for every kind of approval (plan edits, list requests, off-plan visits, weekly and
- * monthly plans), so the words and the comment rule are one. The card that hosts it decides WHEN to show
- * it (`canOverride` from the server) and what the press does (`onSubmit`).
+ * includes him. On a waiting approval he takes the holder's own buttons — approve, refuse, return — at any
+ * step and status (owner, 2026-10-14 and 2026-11-27), with `AdministratorStepNote` saying whose place he
+ * is in. `AdministratorDecline` remains for reversing a decision already TAKEN (the reversals panel). He
+ * is called the Administrator everywhere he is named — never HR, and never an override.
  */
 
 import { useId, useState } from "react";

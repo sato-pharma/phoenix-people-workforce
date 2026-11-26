@@ -43,3 +43,14 @@ closed with them" (`repeatOfDropped`, `src/lib/phoenix-crm/bulk-drop.ts`).
 columns, the two stage constraints widened, one guard trigger, `phoenix_crm_return_request` and
 `phoenix_crm_answer_request`. The decide function is untouched. Pinned by
 `tests/phoenix-crm-return-for-comment.test.ts`.
+
+## The Administrator returns any step (owner, 2026-11-27)
+
+The Administrator returns a request from either step, the district manager's included. Nobody else may
+return the district manager's step (`phoenix_crm:cannot_return` without `as_administrator`).
+`20261127004142` added `returned_from_stage`, and every return now records the step it left. The rep's
+answer goes back to that step. A row returned before the column existed keeps the old rule: back to SFE,
+or to no step for a grade change. The notice to the rep says which step the answer goes to.
+`20261127004938` lets the Administrator approve a request that is still with the rep, at the step it
+returns to; everyone else is still refused (`phoenix_crm:request_with_rep`). Pinned by section E of
+`tests/phoenix-crm-return-for-comment.test.ts`.

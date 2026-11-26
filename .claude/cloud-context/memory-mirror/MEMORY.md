@@ -33,8 +33,7 @@
 
 ## Inbox — new notes land here
 
-- [His terminal cannot see the AppData\Roaming junctions](appdata-roaming-junctions-are-invisible-to-his-terminal.md) — hand him `D:\C-Offload\Roaming\npm\…`, never the `%APPDATA%\npm` spelling that works in Bash.
-- [owner-ops --apply refuses from a tree behind origin/main](owner-ops-refuses-to-apply-from-a-tree-behind-origin-main.md) — your own branch goes "behind" the second its PR squash-merges; `git checkout -B <new> origin/main`.
+- [A docs/ pointer in a SUBFOLDER does not satisfy the long-bullet gate](a-docs-pointer-in-a-subfolder-does-not-count-for-the-long-bullet-gate.md) — `docs/devices/…` is invisible to its regex, so keep the bullet under 1,200 bytes.
 
 
 

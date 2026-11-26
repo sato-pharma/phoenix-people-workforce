@@ -227,9 +227,10 @@ export function runPhoenixCrmGooglePlaceCheckTests() {
   const batch = /export async function pendingLocationReviewCustomers\([\s\S]*?\n\}/.exec(reviewsRead)?.[0] ?? "";
   assert.ok(batch.includes('.eq("status", "pending")'), "the batch reads the same waiting reviews as the single check");
   const card = stripComments(readFileSync("src/components/phoenix-crm/request-card.tsx", "utf8"));
-  assert.ok(card.includes("const heldOnPlaceChecks = request.placeCheckHold;"), "the card reads the server's hold");
+  assert.ok(card.includes("const heldOnPlaceChecks = canOverride ? null : request.placeCheckHold;"), "the card reads the server's hold — for everyone but the Administrator (owner, 2026-11-27)");
   assert.match(card, /\{heldOnPlaceChecks \? null : \(\s*<CrmButton[\s\S]{0,200}?decide\("approve"\)/, "and draws no Approve while it holds");
-  assert.ok(card.includes('<CrmNote tone="warn">{heldOnPlaceChecks}</CrmNote>'), "it says why instead");
+  assert.ok(card.includes('<CrmNote tone="warn">{placeCheckNote}</CrmNote>'), "it says why instead");
+  assert.match(card, /const placeCheckNote = canOverride && request\.placeCheckHold\s*\?[\s\S]{0,250}?: heldOnPlaceChecks;/, "the Administrator reads that the place waits, beside his Approve");
   assert.match(card, /<CrmButton[\s\S]{0,200}?decide\("refuse"\)/, "and Refuse stays");
 
   // ── Only the Super Admin and the SFE Manager decide ───────────────────────────

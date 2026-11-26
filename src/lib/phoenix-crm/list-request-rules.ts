@@ -89,10 +89,21 @@ export function stageAfterReply(kind: PhoenixCrmRequestKind): PhoenixCrmRequestS
 }
 
 /**
+ * The step a request returned to the rep goes back to once he answers: the step it was returned FROM
+ * (`returned_from_stage`, recorded since 2026-11-27 — the Administrator may return the district manager's
+ * own step), else `stageAfterReply`'s old rule for a row returned before the column existed. Mirrors
+ * `phoenix_crm_answer_request`, and `phoenix_crm_decide_request` reads a with-rep row at this step.
+ */
+export function stageAfterReturn(kind: PhoenixCrmRequestKind, returnedFromStage: unknown): PhoenixCrmRequestStage | null {
+  return isRequestStage(returnedFromStage) ? returnedFromStage : stageAfterReply(kind);
+}
+
+/**
  * Whether the viewer may return this request for a comment: only the step SFE holds, and only by someone
  * who decides it. That is the second step of a two-step kind, or a grade change on a territory with no
  * district manager at all (the only time SFE decides one). Never the district manager's own step, never a
- * request already with the rep, never one that is decided.
+ * request already with the rep, never one that is decided. The Administrator is the one exception: he
+ * returns any pending request not already with the rep, at whatever step it is (owner, 2026-11-27).
  */
 export function canReturnForComment(request: {
   kind: PhoenixCrmRequestKind;
@@ -103,8 +114,14 @@ export function canReturnForComment(request: {
   canDecide: boolean;
   /** The territory has a reviewing district manager. */
   hasReviewer: boolean;
+  /** The viewer is the Administrator acting in the holder's place (`canOverrideDecision`). */
+  asAdministrator?: boolean;
 }): boolean {
-  if (request.status !== "pending" || request.withRep || !request.canDecide) return false;
+  if (request.status !== "pending" || request.withRep) return false;
+  // 🔴 The Administrator (B-10) returns a request at ANY step it is waiting at, the district manager's
+  // own included (owner, 2026-11-27: "any step any status"); the database lets only him return that one.
+  if (request.asAdministrator) return true;
+  if (!request.canDecide) return false;
   if (request.kind === "grade") return request.stage === null && !request.hasReviewer;
   return request.stage === "sfe";
 }
