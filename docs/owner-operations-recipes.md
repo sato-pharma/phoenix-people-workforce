@@ -80,12 +80,24 @@ node --env-file-if-exists=.env.local --experimental-strip-types --experimental-s
   "completed" him instead: it re-stamped his validation and added one more copy of his contact on
   every save. That is how Dr Othman got a third identical contact when Salah El Hol was linked at
   00:06; the two copies were switched off (audit rows), and one contact stands.
-- **Distributor ids:** read `marketing_distributors` (25 Nov 2026: Ibn Sina 17, Overseas 19, Sofico 21).
+- **Distributor ids:** read `marketing_distributors` (25 Nov 2026: Ibn Sina 17, Overseas 19, Sofico 21;
+  26 Nov 2026: EGD 14, mec 18, POS 19, ramco 20). The vendor the screen calls POS is Overseas (`PS`).
+- **Refusal `pharmacy_too_far_from_customer`:** this is the owner's 4 km rule (2026-09-29). A new venue more
+  than 4 km from the doctor's point is refused before anything is written. Never route around it: drop
+  that shop from the body, save the rest, and tell him which shop was refused and its distance. An
+  `existingPharmacyId` is not measured.
+- **Getting the points:** for a new venue, take `lat`/`lng`/`area`/`governorate` from
+  `googlePlaceDetails(<placeId>)` (`src/lib/google-maps/server.ts`), the call the desk map search makes.
+  Find the place id with Places text search, then confirm the name and street match the distributor
+  master's address for the same code. For the doctor, use his validated Phoenix CRM place
+  (`phoenix_crm_places.lat/lon`) when he has one.
 - **Refusal "that pharmacy is not one you can attach":** the `existingPharmacyId` belongs to another
   seat. Send it as a new venue with its codes, then merge the old copy into it (below).
 - **Proof:** the employee's workspace lists the doctor, and `pharmaciesByCustomer[<customer id>]`
   holds every pharmacy.
-- First done for Dr Othman El Shewehy / Sahar ElGallad, 25 Nov 2026 (session 6c7fe3eb).
+- First done for Dr Othman El Shewehy / Sahar ElGallad, 25 Nov 2026 (session 6c7fe3eb). Also done for
+  Dr Reda Soliman / Mohamed Saad (Alex East, three pharmacies), 26 Nov 2026 17:14 Cairo; the Al-Dawaa
+  Asafra branch was refused at 4.1 km (session 1f502b6d).
 
 ### Merge duplicate pharmacy copies
 
