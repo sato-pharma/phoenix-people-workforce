@@ -94,13 +94,18 @@ export async function runPageChangeFewerWavesTests(): Promise<void> {
   {
     const detail = functionBody(source("src/lib/phoenix-crm/server/day-detail.ts"), "export async function loadPhoenixCrmDayDetail(");
     assertBefore(detail, "resolveVisitDayAddress(viewer, raw)", "readDayLeave(", "the day's address is settled first, with no read and the same refusal");
-    for (const early of ["readDayLeave(address.seat.occupantHrId, address.date)", "readVisitsInFull(viewer, address)"]) {
+    for (const early of [
+      "readDayLeave(address.seat.occupantHrId, address.date)",
+      "readVisitsInFull(viewer, address)",
+      // The private calendar's entries (owner, 2026-11-27) need only the seat and the date too.
+      "readDayPrivateCalendarEntries(address.seat.occupantHrId, address.date, address.isTest)",
+    ]) {
       assertBefore(detail, early, "await loadVisitDay(viewer, raw)", `HEADLINE: ${early} starts beside the day, never after it`);
     }
     assert.match(
       detail,
-      /await Promise\.all\(\[leaveRead, visitsInFullRead\]\)/,
-      "and both are awaited together once the day is in",
+      /await Promise\.all\(\[leaveRead, visitsInFullRead, privateCalendarRead\]\)/,
+      "and all three are awaited together once the day is in",
     );
     const visits = functionBody(source("src/lib/phoenix-crm/server/visits.ts"), "export async function loadVisitDay(");
     assert.match(visits, /resolveVisitDayAddress\(viewer, raw\)/, "the visit day clamps its date through the same helper, so the two never disagree on which day");

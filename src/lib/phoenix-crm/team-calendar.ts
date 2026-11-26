@@ -62,7 +62,17 @@ export type TeamCalendarDay = {
   /** HR's own approved leave covering this day. A fact, never derived from a gap in the visits. */
   onLeave: boolean;
   activity: PhoenixCrmDayActivity | null;
+  /**
+   * 🔴 EVERY OTHER PRIVATE-CALENDAR ENTRY, SHOWN HERE TOO (owner, 2026-11-27: "every single entry … must appear in
+   * both calendars"): the approved plan, the outstation trip, the excuse, the office attendance, the interview, the
+   * national holiday, a leave this grid does not already draw, an admin-verified correction. Read through the private
+   * calendar's own loaders, so the two calendars list the same entries. DISPLAY ONLY — never a figure, never a worked day.
+   */
+  calendarEntries: PrivateCalendarEntry[];
 };
+
+/** One private-calendar entry, in its own words: "Approved plan", "09:00", "Training", "Approved". */
+export type PrivateCalendarEntry = { source: string; label: string; time: string; title: string; status: string };
 
 export type TeamCalendarPerson = {
   seatId: string;
@@ -103,6 +113,7 @@ export type TeamCalendarRow = TeamCalendarPerson & {
 type DayInput = { seatId: string; day: string; counts: VisitCountSplit; awaitingValidation?: number };
 type ActivityInput = { seatId: string; day: string; activity: PhoenixCrmDayActivity };
 type LeaveInput = { seatId: string; day: string };
+type CalendarEntryInput = { seatId: string; day: string; entry: PrivateCalendarEntry };
 
 /** A product manager's row key: no seat, so a key that can never collide with one (a seat id is a uuid). */
 export function productManagerRowKey(hrId: string): string {
@@ -155,6 +166,10 @@ export function dayShape(input: {
   onLeave: boolean;
   activity: PhoenixCrmDayActivity | null;
   day: string;
+  /** Private-calendar entries — a day with one and nothing else draws as Other activity, never blank. */
+  entries?: number;
+  /** Visits saved on a customer still waiting for validation: work he did, counted in nothing yet — never blank. */
+  awaitingValidation?: number;
 }): DayShape {
   const { am, pm, pharmacies } = input.counts;
   if (am > 0 && pm > 0) return "both";
@@ -163,7 +178,7 @@ export function dayShape(input: {
   if (pharmacies > 0) return "pharmacy";
   if (isRestDay(input.day)) return "rest";
   if (input.onLeave) return "leave";
-  if (input.activity) return "activity";
+  if (input.activity || (input.entries ?? 0) > 0 || (input.awaitingValidation ?? 0) > 0) return "activity";
   return "none";
 }
 
@@ -181,6 +196,7 @@ export function buildTeamCalendar(
     visits?: readonly DayInput[];
     activities?: readonly ActivityInput[];
     leave?: readonly LeaveInput[];
+    calendarEntries?: readonly CalendarEntryInput[];
   } = {},
 ): TeamCalendarRow[] {
   const days = monthDays(month);
@@ -212,6 +228,15 @@ export function buildTeamCalendar(
     if (inMonth.has(row.day)) leave.add(key(row.seatId, row.day));
   }
 
+  const entries = new Map<string, PrivateCalendarEntry[]>();
+  for (const row of input.calendarEntries ?? []) {
+    if (!inMonth.has(row.day)) continue;
+    const at = key(row.seatId, row.day);
+    const held = entries.get(at) ?? [];
+    held.push(row.entry);
+    entries.set(at, held);
+  }
+
   return people.map((person) => {
     const totals = emptyVisitCountSplit();
     let amOnlyDays = 0;
@@ -223,12 +248,14 @@ export function buildTeamCalendar(
       const activity = activities.get(at) ?? null;
       const onLeave = leave.has(at);
       const dayWaiting = waiting.get(at) ?? 0;
-      const shape = dayShape({ activity, counts: dayCounts, day, onLeave });
+      // A leave this grid already draws is not listed a second time beside its own "On leave".
+      const dayEntries = (entries.get(at) ?? []).filter((entry) => !(onLeave && entry.source === "vacation"));
+      const shape = dayShape({ activity, awaitingValidation: dayWaiting, counts: dayCounts, day, entries: dayEntries.length, onLeave });
       mergeVisitCountSplits(totals, dayCounts);
       if (shape === "am") amOnlyDays += 1;
       else if (shape === "pm") pmOnlyDays += 1;
       else if (shape === "both") bothDays += 1;
-      return { activity, awaitingValidation: dayWaiting, counts: dayCounts, day, onLeave, shape };
+      return { activity, awaitingValidation: dayWaiting, calendarEntries: dayEntries, counts: dayCounts, day, onLeave, shape };
     });
     return { ...person, amOnlyDays, bothDays, days: rowDays, pmOnlyDays, totals };
   });
