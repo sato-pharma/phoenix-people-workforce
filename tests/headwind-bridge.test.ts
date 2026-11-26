@@ -107,6 +107,11 @@ import {
   HeadwindUploadError,
 } from "../src/lib/devices/headwind/uploads.ts";
 import {
+  startPositionAgentOnTablet,
+  POSITION_AGENT_PACKAGE,
+  POSITION_AGENT_START_MESSAGE,
+} from "../src/lib/devices/positions/start.ts";
+import {
   consoleRolesFrom,
   consoleUsersFrom,
   createHeadwindConsoleUser,
@@ -1084,6 +1089,83 @@ async function runAppRemovalTests() {
 }
 
 /**
+ * Starting the position agent — the one app on a rep tablet nobody can open.
+ *
+ * 🔴 WHY THIS EXISTS AT ALL, MEASURED ON PRODUCTION ON 26 NOV 2026: Phoenix Position 1.0.0 was
+ * installed on PHX-TAB-0007 and PHX-TAB-0008, both of which had checked in that morning, and
+ * `device_position_agents` held ZERO rows. The app has no icon, no notification and no screen (a rep
+ * tablet never shows its user any sign it is tracked), so nobody can start it by hand; Android keeps
+ * an app that has never run in the stopped state, where not even BOOT_COMPLETED arrives; and the
+ * application row's `runAfterInstall` — the one thing that would have started it — was FALSE. So the
+ * APK reached both tablets and never ran, which looks exactly like an app that does not work.
+ *
+ * Both halves are pinned here: `runAfterInstall` for every tablet that installs it from now on, and
+ * the `runApp` push for a tablet already holding it, where there is no install left to run after.
+ */
+async function runPositionAgentStartTests() {
+  assert.equal(POSITION_AGENT_PACKAGE, "com.satopharma.phoenixposition", "the :position module's own applicationId");
+  assert.equal(
+    POSITION_AGENT_START_MESSAGE,
+    "runApp",
+    "`PushMessage.TYPE_RUN_APP` → runApplication(context, payload) — one of the seventeen names the agent declares, never an invention",
+  );
+
+  const untouched = makeFetch({ api: [{ body: { status: "OK" }, status: 200 }] });
+  await assert.rejects(
+    () => startPositionAgentOnTablet({ deviceNumber: "   " }, "B-10", untouched.fetch, ENV, async () => {}),
+    HeadwindCommandInputError,
+    "a start with no tablet named is refused before anything happens",
+  );
+  assert.equal(untouched.calls.length, 0, "and nothing was sent — no sign-in, no push");
+
+  // The push itself resolves the custody register, so the wire shape is pinned at the source — the
+  // same reason the app removal's is (this suite reads the tablet server only).
+  const start = stripComments(source("src/lib/devices/positions/start.ts"));
+  assert.match(start, /messageType: POSITION_AGENT_START_MESSAGE/);
+  assert.match(
+    start,
+    /payload: JSON\.stringify\(\{ pkg: POSITION_AGENT_PACKAGE \}\)/,
+    "a STRING containing JSON, keyed `pkg` — the one key the agent reads out of a runApp payload",
+  );
+  assert.match(start, /deviceNumbers: \[target\.deviceNumber\]/, "addressed by device NUMBER, never the server's row id");
+  assert.match(start, /entityType: "tablet_position_agent"/, "and a start nobody can see writes a REQUIRED audit row");
+
+  // 🔴 THE TWO REFUSALS COME BEFORE THE PUSH, AND THEY ARE DIFFERENT SENTENCES. Headwind answers a
+  // runApp 200 whatever package it names, so a tablet that has not got the agent would otherwise read
+  // exactly like one that just started it — and the hello that never comes would be blamed on the app.
+  const noApps = start.indexOf("has not reported which apps");
+  const noAgent = start.indexOf("has not got the position agent yet");
+  const push = start.indexOf('"/rest/private/push"');
+  assert.ok(noApps > 0 && noAgent > 0 && push > 0, "both refusals and the push are present");
+  assert.ok(noApps < push, "a tablet that reported no apps at all is answered before anything is sent");
+  assert.ok(noAgent < push, "and so is a tablet whose app list does not carry the agent");
+  assert.ok(
+    noApps < noAgent,
+    "🔴 in this order: an empty app list is 'could not be read', never 'has not got it' — the two call for different acts",
+  );
+
+  // 🔴 `runAfterInstall` IS SENT ON EVERY REGISTER, FALSE INCLUDED. The register PUT writes the app
+  // row, so a field left out of it is one the next version upload can reset — an app that must start
+  // itself would silently stop doing so at its own upgrade.
+  const body = applicationRegisterBody("/files/a.apk", { pkg: "com.satopharma.phoenixposition", version: "1.0.0" }, false, true);
+  assert.equal(body.runAfterInstall, true, "an app that must start itself can be registered that way");
+  const quiet = applicationRegisterBody("/files/a.apk", { pkg: "com.phoenix.reps" }, true);
+  assert.equal(quiet.runAfterInstall, false, "and every other app is registered explicitly NOT starting itself");
+
+  const uploads = stripComments(source("src/lib/devices/headwind/uploads.ts"));
+  assert.match(
+    uploads,
+    /body: JSON\.stringify\(\{ \.\.\.current, runAfterInstall: input\.runAfterInstall \}\)/,
+    "🔴 turning it on sends the whole app row back with ONE field changed — a two-field patch is how an app loses its own download URL",
+  );
+  assert.match(
+    uploads,
+    /"\/rest\/private\/applications\/android"/,
+    "and it is written through the same endpoint that registers an app, which is the only one that writes the row",
+  );
+}
+
+/**
  * Phase 1 — the corporate wipe.
  *
  * 🔴 THE LIST IS THE OWNER'S OWN ANSWER AND IS NOT A SETTING. He was asked both questions in writing on
@@ -1416,7 +1498,18 @@ async function runUploadTests() {
   // 9 Nov 2026, the Sato Anti-Infective line app). The console copies fileDetails onto the app; so do we.
   assert.deepEqual(
     applicationRegisterBody("/tmp/x.apk.temp", { arch: null, name: "Sato Anti-Infective", pkg: "com.satopharma.antiinfective", version: "1.0.18", versionCode: 19 }, true),
-    { filePath: "/tmp/x.apk.temp", name: "Sato Anti-Infective", pkg: "com.satopharma.antiinfective", showIcon: true, type: "app", version: "1.0.18", versionCode: 19 },
+    {
+      filePath: "/tmp/x.apk.temp",
+      name: "Sato Anti-Infective",
+      pkg: "com.satopharma.antiinfective",
+      // 🔴 EXPLICITLY FALSE, NEVER ABSENT — the register PUT writes the row, so a field left out is one
+      // the next version upload can reset (`runPositionAgentStartTests`).
+      runAfterInstall: false,
+      showIcon: true,
+      type: "app",
+      version: "1.0.18",
+      versionCode: 19,
+    },
     "the package, label and version the server read from the file go into the register",
   );
   assert.equal(
@@ -2527,14 +2620,10 @@ function runServerImageTests() {
   );
   assert.match(
     entrypoint,
-    /-ge "\$WHATSAPP_MIN_SIZE"[\s\S]*\[ "\$wa_magic" = "PK" \]/,
-    "a fetched file is moved into place only when it clears the size floor AND starts with the zip magic, so an error page is never served as an app",
+    /provision_official_apk "\$WHATSAPP_APK" "\$WHATSAPP_URL" "" "\$WHATSAPP_MIN_SIZE"/,
+    "and through the SAME helper as Telegram and WPS — a hand-rolled copy of it is how WhatsApp missed the staleness fix below",
   );
-  assert.match(
-    entrypoint,
-    /could not fetch a valid \$WHATSAPP_APK[\s\S]*it will retry next start/,
-    "a failed WhatsApp fetch logs and falls through — it never aborts startup, so WhatsApp's site being down cannot down the MDM",
-  );
+  assert.match(entrypoint, /^WHATSAPP_MIN_SIZE=83886080\b/m, "its floor stays 80 MiB, well under the ~150 MB universal APK");
   assert.ok(
     entrypoint.indexOf("WHATSAPP_APK=") < entrypoint.indexOf('exec /docker-entrypoint.sh "$@"'),
     "and it runs BEFORE the hand-over to Headwind's entrypoint, since nothing after an exec ever runs",
@@ -2570,6 +2659,45 @@ function runServerImageTests() {
   assert.ok(
     entrypoint.indexOf('provision_official_apk "wps_') < entrypoint.indexOf('exec /docker-entrypoint.sh "$@"'),
     "and both run BEFORE the hand-over to Headwind's entrypoint",
+  );
+
+  // 🔴 A FLOATING SOURCE IS REFRESHED WHEN ITS PUBLISHER MOVES — "BIG ENOUGH" IS NOT "CURRENT".
+  //
+  // The floor was the only test a present file had to pass, so the first build to land stayed for ever:
+  // measured 26 Nov 2026, /files/Telegram.apk was still the 70,867,407-byte build fetched on 22 October
+  // (13.1.0, versionCode 72299) while telegram.org served 13.3.1. The fleet cannot be given an update
+  // nobody fetches. So a floating source now reads the publisher's CURRENT size from headers and
+  // re-fetches on a difference — and an unreadable publisher leaves the working file alone, because the
+  // failure mode to avoid is deleting a good app on a blocked HEAD.
+  assert.match(
+    entrypoint,
+    /remote_apk_size\(\) \{[\s\S]*--spider -S "\$1"[\s\S]*content-length:/,
+    "the publisher's current size is read from headers only — one round trip, never the whole APK",
+  );
+  assert.match(
+    entrypoint,
+    /remote_apk_size\(\) \{[\s\S]*curl -fsSLI --connect-timeout 10 --max-time 60/,
+    "and curl, if it is the one present, follows the redirect chain with a hard ceiling — telegram.org answers 302",
+  );
+  assert.match(
+    entrypoint,
+    /if \[ -n "\$pa_exact" \]; then\n\s+echo "phoenix-entrypoint\(files\): \$pa_name already present/,
+    "a pinned asset (an exact size) is immutable, so present is current and its publisher is never asked",
+  );
+  assert.match(
+    entrypoint,
+    /pa_remote="\$\(remote_apk_size "\$pa_url"[\s\S]*\[ "\$pa_remote" = "\$pa_have" \][\s\S]*already present and current/,
+    "a floating source is kept when the publisher is serving the same size",
+  );
+  assert.match(
+    entrypoint,
+    /"" \| \*\[!0-9\]\*\)[\s\S]*could not read its publisher's current size — keeping it[\s\S]*return 0/,
+    "an unreadable publisher never costs the fleet a working app",
+  );
+  assert.match(
+    entrypoint,
+    /if ! apk_size_ok "\$pa_remote" "" "\$pa_min"; then[\s\S]*below the floor — keeping what we have/,
+    "and neither does a publisher answering with something too small to be an APK",
   );
 
   // 🔴 EVERY START-UP DOWNLOAD IS BOUNDED, AND THE EVERYDAY APPS NEVER HOLD THE SERVER DOWN.
@@ -4530,6 +4658,7 @@ export async function runHeadwindBridgeTests() {
   await runCommandTests();
   runAppsTests();
   await runAppRemovalTests();
+  await runPositionAgentStartTests();
   await runRemoteScreenIdTests();
   await runCorporateWipeTests();
   runRecordingTests();

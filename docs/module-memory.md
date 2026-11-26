@@ -171,6 +171,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `report-it` — Report It (pharmacovigilance — patient data) | `src/lib/report-it/**` and 3 more |
 | `approvals` — Approvals and workflow | `src/lib/{approvals-hub,workflow-control,workflow-registry,approvals}/**` and 6 more |
 | `devices` — Devices and tablet management (Headwind MDM) | `src/lib/devices/**` and 4 more |
+| `devices-positions` — Devices — the tablets' own position agent and the location trail | `src/lib/devices/positions/**` and 4 more |
 | `platform` — Platform — auth, security, cron, data access and shared UI | `src/lib/{auth,security,platform,cron-control,background-jobs,observability,error-monitor,system-audit,share-links,share,http,imports,uploads,ai,validation,qr,operations,synthetic-journeys,admin,format,i18n,ui,utils}/**` and 9 more |
 | `platform-system-audit` — Platform — the System Audit board, its daily message and the error screenshots | `src/lib/system-audit/**` and 7 more |
 | `platform-access` — Platform — passwords and access control | `src/lib/auth/{permissions,password-strength,leaked-password,change-password,password-setup,password-setup-no-script,password-setup-whatsapp,password-reset-code,temporary-password,seat-page-fences,seat-page-guard,signed-out-refusal}.ts` and 7 more |

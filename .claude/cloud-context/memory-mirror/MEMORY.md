@@ -32,12 +32,6 @@
 
 
 ## Inbox — new notes land here
-- 🔴 [a HIDDEN browser pane is not "where he can watch"](a-hidden-browser-pane-is-not-where-he-can-watch.md) - tabs_context first; hidden or no window → show_pane, else SendUserFile every screenshot; never click a decision he has not seen
-- [phoenix-field-camera is public since 25 Nov 2026](phoenix-field-camera-is-public-since-2026-11-25.md) — the camera app repo went public on his word for free Actions minutes; its keystore lives only in repo secrets
-- [a restart that was a compute RESIZE shows in the checkpoint %](checkpoint-percent-reveals-a-compute-resize.md) - "wrote N buffers (P%)" is N ÷ shared_buffers; 25 Nov 17:33 went 1 GB → 4 GB, 18:59 back. Compare it before blaming the platform.
-- [A database restart can be a compute resize](a-database-restart-can-be-a-compute-resize.md) - compare db_host cpuCount/memTotalMb either side first; both 25 Nov restarts were resizes.
-- [Supabase MCP write confirmation is declined in the desktop app](supabase-mcp-write-confirmation-is-declined-in-the-desktop-app.md) - "SQL execution was declined." on a write = an unseen confirmation; use scripts/apply-sql-file.mjs at once
-- [25 Nov 17:26 CPU pin = KPI Coverage/Frequency plan scans](the-25-nov-cpu-pin-was-kpi-coverage-frequency-plan-scans.md) - each open re-reads the whole company's plans live (no shared copy); ~14 reps opened them together
 
 
 
