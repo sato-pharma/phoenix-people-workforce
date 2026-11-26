@@ -1,0 +1,182 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+import { stripComments } from "./support/comment-strip.ts";
+
+import {
+  filterByTeamRep,
+  inTeamRepScope,
+  teamCountsOf,
+  teamRepLabel,
+  teamRepManagerToOpen,
+  teamRepsOf,
+  teamRepScope,
+  teamWeeksForRep,
+} from "../src/lib/phoenix-crm/team-rep-filter.ts";
+
+/**
+ * Phoenix CRM — the Team tab's one Rep picker (owner, 2026-11-27: "i need 2 be able 2 filter by rep in
+ * all tabs", answered "Team's sections"). One choice narrows every section, and stays when he moves.
+ */
+
+const ROOT = new URL("../", import.meta.url);
+
+function source(path: string): string {
+  return stripComments(readFileSync(new URL(path, ROOT), "utf8"));
+}
+
+export function runPhoenixCrmTeamRepFilterTests(): void {
+  const territories = [
+    { seatId: "minia-2", name: "Minia 2", repHrId: "R-2", repName: "Mohamed Mehrez", reviewerHrId: "DM-1" },
+    { seatId: "minia-1", name: "Minia 1", repHrId: "R-1", repName: "Ahmed Samir", reviewerHrId: "DM-1" },
+    { seatId: "vacant", name: "Assiut 3", repHrId: null, repName: null, reviewerHrId: "DM-2" },
+    // A rep on two seats is ONE choice, with both places and both managers.
+    { seatId: "beni-suef-1", name: "Beni Suef 1", repHrId: "R-2", repName: "Mohamed Mehrez", reviewerHrId: "DM-3" },
+    // The same seat read twice (territories and the week's plans) is one seat.
+    { seatId: "minia-2", name: "Minia 2", repHrId: "R-2", repName: "Mohamed Mehrez", reviewerHrId: "DM-1" },
+  ];
+
+  // ── The choices ────────────────────────────────────────────────────────────────────────────────
+  {
+    const reps = teamRepsOf(territories);
+    assert.deepEqual(
+      reps.map((rep) => rep.hrId),
+      ["R-1", "R-2"],
+      "one choice per rep, A to Z by name, and a vacant territory offers no rep",
+    );
+    const mehrez = reps.find((rep) => rep.hrId === "R-2");
+    assert.deepEqual(mehrez?.seatIds, ["minia-2", "beni-suef-1"], "a rep on two seats is one choice holding both");
+    assert.deepEqual(mehrez?.managerHrIds, ["DM-1", "DM-3"]);
+    assert.equal(mehrez && teamRepLabel(mehrez), "Mohamed Mehrez · Minia 2 · Beni Suef 1", "the option names the rep, then his places");
+  }
+
+  // ── Whose an item is ───────────────────────────────────────────────────────────────────────────
+  {
+    const reps = teamRepsOf(territories);
+    assert.equal(teamRepScope(reps, null), null, "no choice is every rep");
+    assert.equal(teamRepScope(reps, "R-gone"), null, "a rep no longer on the team reads as every rep, never as an empty tab");
+    const scope = teamRepScope(reps, "R-2");
+    assert.ok(scope);
+
+    assert.equal(inTeamRepScope(null, { seatId: "anything" }), true, "every rep keeps every item");
+    assert.equal(inTeamRepScope(scope, { repHrId: "R-2", seatId: "elsewhere" }), true, "an item naming him is his, wherever it sits");
+    assert.equal(inTeamRepScope(scope, { seatId: "beni-suef-1" }), true, "an item naming only a seat is his on any of his seats");
+    assert.equal(inTeamRepScope(scope, { seatId: "minia-1" }), false, "another rep's seat is not his");
+    assert.equal(
+      inTeamRepScope(scope, { repHrId: "R-old", seatId: "minia-2" }),
+      false,
+      "an item naming ANOTHER rep stays that rep's, even on his seat — the rep who held it before keeps his own",
+    );
+    assert.equal(inTeamRepScope(scope, { repHrId: null, seatId: null }), false, "an item that names nobody is not his");
+
+    const requests = [
+      { id: "a", seatId: "minia-2" },
+      { id: "b", seatId: "minia-1" },
+      { id: "c", seatId: "beni-suef-1" },
+    ];
+    assert.deepEqual(
+      filterByTeamRep(scope, requests, (request) => ({ seatId: request.seatId })).map((request) => request.id),
+      ["a", "c"],
+    );
+    assert.equal(filterByTeamRep(null, requests, (request) => ({ seatId: request.seatId })).length, 3);
+  }
+
+  // ── The manager sections open on his manager, only one this viewer reads ────────────────────────
+  {
+    const choices = [{ hrId: "DM-3" }, { hrId: "DM-9" }];
+    assert.equal(teamRepManagerToOpen(["DM-1", "DM-3"], choices, null), "DM-3", "the first of his managers the viewer reads");
+    assert.equal(teamRepManagerToOpen(["DM-1"], choices, null), null, "a manager out of reach is never asked for");
+    assert.equal(teamRepManagerToOpen(["DM-3"], choices, "DM-3"), null, "already showing him: nothing to change");
+    assert.equal(teamRepManagerToOpen(["DM-3"], null, null), null, "a district manager reading his own has no choice to make");
+  }
+
+  // ── The counts follow the rep (owner, 2026-11-27: "rep has 2, make the request count 2") ──────────
+  {
+    const counts = teamCountsOf({
+      territories: [
+        { territory: { repHrId: "R-2" }, readiness: { ready: true } },
+        { territory: { repHrId: null }, readiness: { ready: false } },
+        // A test world carries no readiness: neither ready nor not ready.
+        { territory: { repHrId: "R-1" }, readiness: null },
+      ],
+      requests: [{ canDecide: true }, { canDecide: false }],
+      unplannedVisits: [{ canDecide: true }],
+      planEdits: [],
+    });
+    assert.deepEqual(counts, {
+      territories: 3,
+      vacant: 1,
+      ready: 1,
+      notReady: 1,
+      requestsWaiting: 2,
+      waitingForYou: 1,
+      unplannedWaiting: 1,
+      unplannedWaitingForYou: 1,
+      planEditsWaiting: 0,
+      planEditsWaitingForYou: 0,
+    });
+
+    const scope = teamRepScope(teamRepsOf(territories), "R-2");
+    const weeks = [
+      { weekStart: "2026-11-28", waiting: 3, waitingSeatIds: ["minia-2", "minia-1", "beni-suef-1"] },
+      { weekStart: "2026-12-05", waiting: 1, waitingSeatIds: ["minia-1"] },
+    ];
+    assert.deepEqual(
+      teamWeeksForRep(scope, weeks).map((week) => week.waiting),
+      [2, 0],
+      "each week counts only the sent plans on the chosen rep's seats",
+    );
+    assert.deepEqual(teamWeeksForRep(null, weeks).map((week) => week.waiting), [3, 1], "with every rep the server's count stands");
+
+    const tab = source("src/components/phoenix-crm/team-tab.tsx");
+    assert.match(
+      tab,
+      /const summary = team\.data && teamShown \? \(repScope \? \{ \.\.\.team\.data\.summary, \.\.\.teamCountsOf\(teamShown\) \} : team\.data\.summary\) : null;/,
+      "the sentence and the Look at tiles read the rep's own rows once a rep is chosen",
+    );
+    assert.match(tab, /const repWeeks = reviews\.data \? teamWeeksForRep\(repScope, reviews\.data\.weeks\) : null;/, "and so does the week strip");
+    assert.match(tab, /const plansWaiting = repWeeks \?/, "and the plans tile");
+    assert.match(tab, /const monthsWaiting = monthsShown \?/, "and the months tile");
+    assert.match(tab, /onChange=\{\(event\) => \{\s*setSection\(current\);\s*setRepHrId\(/, "choosing a rep keeps the section open, even as its counts change");
+    const team = source("src/lib/phoenix-crm/server/team.ts");
+    assert.match(team, /\.\.\.teamCountsOf\(\{ territories, requests, unplannedVisits, planEdits \}\)/, "the server counts the whole team with the same function");
+    const plans = source("src/lib/phoenix-crm/server/plans.ts");
+    assert.match(plans, /waitingSeatIds: waitingSeatsByWeek\.get\(week\) \?\? \[\]/, "each week names the seats whose plan waits");
+  }
+
+  // ── The screen: ONE picker above the sections, and every section fed the narrowed data ─────────
+  {
+    const tab = source("src/components/phoenix-crm/team-tab.tsx");
+    assert.match(tab, /const \[repHrId, setRepHrId\] = useState<string \| null>\(null\);/, "the choice lives in the tab, so it survives a section change");
+    assert.match(tab, /<CrmSelect\s+id=\{`\$\{idPrefix\}-team-rep`\}/, "the admin's picker is the module's combo box, never a bare select");
+    // A field of its own, "Rep", under "Look at" and above whichever section is open (owner, 2026-11-27:
+    // "make the rep separate field and filter and combo box") — never a word inside a section's search.
+    const repAt = tab.indexOf("-team-rep`");
+    assert.ok(tab.indexOf('title="Look at"') < repAt && repAt < tab.indexOf('current === "plans" ? ('), "the Rep field sits under Look at, above every section");
+    assert.match(tab, /title="Filter by rep"/, "it is titled as the filter it is");
+    assert.match(tab, /label="Rep">\s*<CrmSelect/, "the field is labelled Rep and is the module's dropdown");
+    for (const hint of tab.matchAll(/placeholder="([^"]*)"/g)) {
+      assert.ok(!/\brep\b/i.test(hint[1]), `a section's search no longer offers the rep, who has his own field: "${hint[1]}"`);
+    }
+    for (const fed of [
+      "view={reviewsShown}",
+      "view={monthsShown}",
+      "team={teamShown}\n",
+      "items={reversibleShown}",
+      "repScope={repScope}",
+      "repManagerHrIds={repScope?.managerHrIds}",
+    ]) {
+      assert.ok(tab.includes(fed.trim()), `a section is fed the rep's data: ${fed.trim()}`);
+    }
+    for (const raw of ["view={reviews.data}", "view={months.data}", "team={team.data}", "items={reversible}"]) {
+      assert.ok(!tab.includes(raw), `no section reads the whole team past the picker: ${raw}`);
+    }
+    for (const kind of ["territories:", "requests:", "planEdits:", "unplannedVisits:"]) {
+      assert.ok(tab.includes(`${kind} filterByTeamRep(repScope`), `the team payload's ${kind} is narrowed to the rep`);
+    }
+
+    const asks = source("src/components/phoenix-crm/visit-asks.tsx");
+    assert.match(asks, /filterByTeamRep\(repScope, view\.waiting/, "the double-visit asks waiting are the rep's");
+    assert.match(asks, /filterByTeamRep\(repScope, view\.others/, "and so are the rest");
+  }
+}

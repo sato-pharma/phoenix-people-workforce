@@ -36,6 +36,7 @@ import {
   type CrmChoiceOption,
   type PillTone,
 } from "@/components/phoenix-crm/ui";
+import { filterByTeamRep, type TeamRepScope } from "@/lib/phoenix-crm/team-rep-filter";
 import {
   VISIT_ASK_CHOICE_LABELS,
   visitAskInboxText,
@@ -339,12 +340,15 @@ export function VisitAskInbox({
   cairoToday,
   onChanged,
   place,
+  repScope = null,
   test,
 }: {
   cairoToday: string;
   /** An answer went through: the page's "waiting for you" counts read again. */
   onChanged?: () => void;
   place: "team" | "reports";
+  /** The Team tab's Rep picker (owner, 2026-11-27): only that rep's asks; null for every rep. */
+  repScope?: TeamRepScope;
   test: boolean;
 }) {
   const resource = useCrmGet<VisitAskInboxView>(crmUrl("/api/phoenix-crm/visit-asks/inbox", { test }), "inbox");
@@ -398,13 +402,16 @@ export function VisitAskInbox({
   // A product manager who has never been asked sees nothing of this above his Reports.
   if (place === "reports" && nothing) return null;
 
-  const others = view.others.slice(0, limit);
+  const waiting = filterByTeamRep(repScope, view.waiting, (ask) => ({ seatId: ask.seatId }));
+  const otherAsks = filterByTeamRep(repScope, view.others, (ask) => ({ seatId: ask.seatId }));
+  const noneFromRep = !nothing && waiting.length === 0 && otherAsks.length === 0;
+  const others = otherAsks.slice(0, limit);
   const title =
     view.mode === "all"
       ? "Visit asks in your scope"
       : place === "reports"
-        ? `Visit asks${view.waiting.length > 0 ? ` · ${countText(view.waiting.length)} waiting for you` : ""}`
-        : `Asked by your reps${view.waiting.length > 0 ? ` · ${countText(view.waiting.length)} waiting for you` : ""}`;
+        ? `Visit asks${waiting.length > 0 ? ` · ${countText(waiting.length)} waiting for you` : ""}`
+        : `Asked by your reps${waiting.length > 0 ? ` · ${countText(waiting.length)} waiting for you` : ""}`;
 
   const body = (
     <>
@@ -415,9 +422,11 @@ export function VisitAskInbox({
       ) : null}
       {nothing ? (
         <p className="px-4 pb-4 text-sm font-medium text-slate-500 sm:px-5">Nothing asked yet. When a rep asks, it shows here.</p>
+      ) : noneFromRep ? (
+        <p className="px-4 pb-4 text-sm font-medium text-slate-500 sm:px-5">Nothing asked by this rep. Choose every rep to see the rest.</p>
       ) : (
         <div className="divide-y divide-slate-100 border-t border-slate-100">
-          {view.waiting.map((ask) => {
+          {waiting.map((ask) => {
             const acceptingThis = accepting?.askId === ask.askId ? accepting : null;
             const locked = busy !== null;
             return (
@@ -528,7 +537,7 @@ export function VisitAskInbox({
           ))}
         </div>
       )}
-      <CrmShowMore left={view.others.length - others.length} onMore={() => setLimit((value) => value + PAGE)} page={PAGE} />
+      <CrmShowMore left={otherAsks.length - others.length} onMore={() => setLimit((value) => value + PAGE)} page={PAGE} />
     </>
   );
 

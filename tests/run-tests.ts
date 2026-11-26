@@ -2221,6 +2221,7 @@ import { runPhoenixCrmPlanCopyTests } from "./phoenix-crm-plan-copy.test.ts";
 import { runPhoenixCrmStartGuideTests } from "./phoenix-crm-start-guide.test.ts";
 import { runPhoenixCrmPortalIntentTests } from "./phoenix-crm-portal-intent.test.ts";
 import { runPhoenixCrmTeamShorterTests } from "./phoenix-crm-team-shorter.test.ts";
+import { runPhoenixCrmTeamRepFilterTests } from "./phoenix-crm-team-rep-filter.test.ts";
 import { runPhoenixCrmTeamTodayTests } from "./phoenix-crm-team-today.test.ts";
 import { runPhoenixCrmPlanNeverBlockedTests } from "./phoenix-crm-plan-never-blocked.test.ts";
 import { runPhoenixCrmPlanPendingVacationTests } from "./phoenix-crm-plan-pending-vacation.test.ts";
@@ -3099,6 +3100,7 @@ import { runPrivateCalendarNoticePeriodTests } from "./private-calendar-notice-p
 import { runPrivateCalendarReadsStartTogetherTests } from "./private-calendar-reads-start-together.test.ts";
 import { runPhoenixCrmOffplanDayTests } from "./phoenix-crm-offplan-day.test.ts";
 import { runPhoenixCrmBulkDropTests } from "./phoenix-crm-bulk-drop.test.ts";
+import { runPhoenixCrmBulkRespondTests } from "./phoenix-crm-bulk-respond.test.ts";
 import { runPhoenixCrmReturnForCommentTests } from "./phoenix-crm-return-for-comment.test.ts";
 import { runPhoenixCrmTeamReadinessTests } from "./phoenix-crm-team-readiness.test.ts";
 import { runShareLinkDeadTokenPollingTests } from "./share-link-dead-token-polling.test.ts";
@@ -8692,6 +8694,11 @@ await runTest(
 );
 
 await runTest(
+  "Phoenix CRM Team tab Rep picker (owner, 2026-11-27: filter by rep in all tabs): one choice above the sections narrows every section to that rep - by his HR id, or by his seat for the kinds that name only a seat - stays chosen across sections, and opens the manager sections on his own manager",
+  runPhoenixCrmTeamRepFilterTests,
+);
+
+await runTest(
   "Phoenix CRM Team tab, shorter and smarter (owner, 2026-10-02: the page is very long): measured at 3,335px and 4.1 phone screens for a district manager, it said 'Nothing waiting' ten times and printed her own name on every row - so the six tiles became one sentence that NAMES what waits, a zero prints no note at all, the reviewer is named only when it is somebody else, and the nine-week strip shows the weeks with something in them with every week one press away",
   runPhoenixCrmTeamShorterTests,
 );
@@ -12395,6 +12402,10 @@ await runTest(
 await runTest(
   "Phoenix CRM bulk drop (owner, 2026-10-12): a rep's request to drop a customer always carries a written comment — on every reason, refused on the server and on the screen — while the SFE Manager's own drop keeps it optional; the Team tab lets the viewer tick the drops waiting at HIS step or select them all (never an add, a grade, a bring-back, another manager's or a decided one), behind a confirm, and approves each through the one decide route one at a time with the step the screen showed, naming any that fail while the rest stand",
   runPhoenixCrmBulkDropTests,
+);
+await runTest(
+  "Phoenix CRM bulk respond (owner, 2026-11-27): every list request the viewer answers from its own card, the Administrator's included, can be ticked or selected all and approved, refused or returned for a comment together, each through the card's own route one at a time, leaving out and naming what the card would not do (an add still to grade, a place on Place checks, a step that cannot go back to the rep), and a decision never scrolls the page or moves the open section",
+  runPhoenixCrmBulkRespondTests,
 );
 await runTest(
   "Phoenix CRM return for comment (owner, 2026-10-12): SFE can send the step it holds — a drop, an add, a bring-back, or a grade change on a territory with no manager — back to the rep with a required note; it stays pending with the rep (stored stage rep), nothing can approve it until the rep answers, the answer goes straight back to SFE, no manager is nudged meanwhile, and the bulk drop closes a rep's repeat ask with its customer instead of sending a call that is refused",
