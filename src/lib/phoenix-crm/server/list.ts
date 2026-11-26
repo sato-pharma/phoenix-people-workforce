@@ -3989,7 +3989,7 @@ export async function decideListRequest(
   const requestId = String(body.requestId).toLowerCase();
   const { data, error } = await getSupabaseAdmin()
     .from("phoenix_crm_list_requests")
-    .select("id, seat_id, is_test, kind, status, stage, manager_decided_at, customer_id, decided_by_hr_id, manager_decided_by_hr_id, admin_decided_by_hr_id, returned_from_stage")
+    .select("id, seat_id, is_test, kind, status, stage, manager_decided_at, customer_id, returned_from_stage, decided_by_hr_id, manager_decided_by_hr_id, admin_decided_by_hr_id")
     .eq("id", requestId)
     .maybeSingle();
   throwIfError(error);
