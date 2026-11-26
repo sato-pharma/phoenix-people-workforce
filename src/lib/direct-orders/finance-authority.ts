@@ -67,6 +67,16 @@ export function canRecordDirectOrderCollection(access: DirectOrderFinanceAccess)
 }
 
 /**
+ * Who hands out the delivery-receipt books, takes them back, records one lost, cancels a spoiled
+ * receipt and audits the register (owner, 26 Nov 2026: "Finance"). A third predicate rather than a
+ * reuse: custody of paper is a different duty from booking a month or recording cash, and the owner
+ * may give it to someone else.
+ */
+export function canManageDirectOrderReceiptBooks(access: DirectOrderFinanceAccess): boolean {
+  return isSystemAdmin(access) || isDirectOrderFinanceOfficer(access);
+}
+
+/**
  * Who may raise AND execute a service-fee marketing request against an order in one click.
  *
  * The Administrator alone (owner, 2026-10-15: the only Super Admin, recording the whole chain as
