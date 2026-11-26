@@ -407,6 +407,35 @@ login row instead of fabricating one. A new desk job becomes a new subcommand th
   correct.
 - **Proof:** the customer is `active` with `validated_at`, the place is `active`, the review is `approved` by `B-10`.
 
+- **A place seated in a REJECTED building:** `restoreValidation` brings the building back first through
+  `restoreSharedPlace` (`src/lib/phoenix-crm/server/shared-places.ts`). When the refused place's review is
+  already `approved` (the building's rejection retired it, not his own), call `restoreSharedPlace(viewer,
+  { sharedPlaceId })` alone: it restores every place that rejection retired and answers `validated` /
+  `stillWaiting` by name. Read first who else is seated in that building: every one of them comes back.
+- **A customer with two refused places:** take back ONE review (the newest). Taking back both makes two
+  active places for him.
+- **Dry run:** install `installOwnerOpsDryRunFence` (`scripts/lib/owner-ops-fence.ts`) before importing any
+  domain module. The RPC then runs inside the rolled-back transaction.
+- Done for Mariam Wagdy (`SEAT-PED-REP-CA2`), 26 Nov 2026 15:20 Cairo: seven reviews taken back and the
+  Tabark Anwar El-Mofty building restored (Ola Adel and both Maher Moatamed rows). All nine are active.
+
+### Merge a Phoenix CRM doctor saved twice on one rep's list
+
+- **Not** `merge-customers` above. That one merges MARKETING customers. A rep's list row is merged by
+  `public.phoenix_crm_merge_duplicate_customer({ p: { actor_hr_id, keeper_id, loser_ids, note } })`. It
+  re-checks every guard under the seat's lock and archives the copy as `dropped`, never deleting it. Places,
+  plan items, reviews and requests move to the keeper.
+- **The keeper** comes from `planMerge` (`src/lib/phoenix-crm/duplicate-merge-rules.ts`), the bulk script's
+  own rule. Its `notCopied` lists what the keeper does not take: grade, potential, phone and primary pharmacy.
+  The names need not match; the RPC does not compare them. The bulk script
+  (`scripts/phoenix-crm-merge-same-seat-duplicates.ts`) sweeps EVERY seat, so never use it for one pair.
+- **Backup first:** copy the customer rows and their places, visits, reviews, plan items, unplanned
+  visits, asks and list requests into a revoked `phoenix_crm_merge_backup_<date>` schema.
+- **Proof:** the copy is `dropped`, and the keeper holds the places, visits and plan items.
+- Done for Mariam Wagdy, 26 Nov 2026 (backup `phoenix_crm_merge_backup_20261126.mariam_*`): Essam Mohamed
+  was kept as his October row, grade B (the copy's A and AB were not copied). Maher Moatamed was kept as
+  the row that has his visit, and it now holds both Tabark places.
+
 ### A one-time location-only exception (no photo kept)
 
 - **Only on his word for the named cases.** The standing rule is "no customer is validated without a photo"
