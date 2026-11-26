@@ -2381,6 +2381,7 @@ import { runCrmSwitchOffSafetyTests } from "./crm-switch-off-safety.test.ts";
 import { runCrmNewHireKeyingTests } from "./crm-new-hire-keying.test.ts";
 import { runCrmReportsReadPhoenixTests } from "./crm-reports-read-phoenix.test.ts";
 import { runDirectOrdersBasketLabelTests } from "./direct-orders-basket-label.test.ts";
+import { runDirectOrderReceiptBooksTests } from "./direct-order-receipt-books.test.ts";
 
 import { runDirectOrdersSheetEditableColumnsTests } from "./direct-orders-sheet-editable-columns.test.ts";
 
@@ -9148,6 +9149,11 @@ await runTest(
 await runTest(
   "direct orders basket label (a multi-product order names EVERY product against its whole-basket value, quantities summed; a one-product order stays byte-identical for the owner's Google Sheet; the card renders one line per product rather than truncating a joined string)",
   runDirectOrdersBasketLabelTests,
+);
+
+await runTest(
+  "direct order receipt books (an invented page is refused by its printed code; one paper never proves two orders — the claim is a compare-and-set on an unused receipt; a page from a book not in the requester's hands is refused; flagged 14 days after approval, cut over at each book's issue date; a lost book cancels only its unused receipts)",
+  runDirectOrderReceiptBooksTests,
 );
 
 await runTest(

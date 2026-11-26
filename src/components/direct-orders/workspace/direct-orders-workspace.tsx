@@ -116,7 +116,7 @@ const PHARMACY_CONTROL_DESKS = ["/validations", "/held", "/pharmacies", "/pharma
 // not about pharmacies at all — it monitors the health of the approval chain itself, alongside
 // reconciliation. It is also the one desk whose queue nobody else can see: a stuck rung appears in
 // no approver's Needs Action, by definition.
-const REPORT_DESKS = ["/report", "/rep-counters", "/reconciliation", "/approval-exceptions"] as const;
+const REPORT_DESKS = ["/report", "/rep-counters", "/reconciliation", "/approval-exceptions", "/receipts"] as const;
 const CONTROL_DESKS = ["/caps"] as const;
 
 const ORDERS_FILTERS: readonly { key: DirectOrderOrdersFilterKey; label: string }[] = [
