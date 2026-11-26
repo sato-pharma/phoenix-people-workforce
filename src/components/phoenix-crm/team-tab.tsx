@@ -632,9 +632,36 @@ export function TeamTab({
             <CrmLoading label="Loading your team" />
           )}
 
+          {current ? (
+            <CrmBlock className="border-t border-slate-100" title="Look at">
+              <CrmChoice
+                className={lookAtLastTile(sectionOptions.length, !test)}
+                columns={test ? 2 : 3}
+                label="Look at"
+                onChange={chooseSection}
+                options={sectionOptions}
+                value={current}
+              />
+            </CrmBlock>
+          ) : null}
+
+          {/* The rep is a field of its own, apart from each section's search (owner, 2026-11-27: "make the rep
+              separate field and filter and combo box"). It sits under "Look at" so it reads as the filter of
+              whichever section is open, and the choice lives in the tab, so it stays when the section changes.
+              CrmSelect is the combo box he types into on the admin account. */}
           {current && reps.length > 1 ? (
-            <CrmBlock className="border-t border-slate-100" title="Rep">
-              <CrmField className="sm:max-w-md" htmlFor={`${idPrefix}-team-rep`} label="Show the work of">
+            <CrmBlock
+              actions={
+                repScope ? (
+                  <CrmButton onClick={() => setRepHrId(null)} size="sm" variant="ghost">
+                    Every rep
+                  </CrmButton>
+                ) : undefined
+              }
+              className="border-t border-slate-100"
+              title="Filter by rep"
+            >
+              <CrmField className="sm:max-w-md" htmlFor={`${idPrefix}-team-rep`} label="Rep">
                 <CrmSelect
                   id={`${idPrefix}-team-rep`}
                   onChange={(event) => {
@@ -653,22 +680,9 @@ export function TeamTab({
               </CrmField>
               {repScope ? (
                 <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-500">
-                  Every section below shows this rep alone. The manager sections open on the manager of this rep.
+                  Every section shows this rep alone. The manager sections open on the manager of this rep.
                 </p>
               ) : null}
-            </CrmBlock>
-          ) : null}
-
-          {current ? (
-            <CrmBlock className="border-t border-slate-100" title="Look at">
-              <CrmChoice
-                className={lookAtLastTile(sectionOptions.length, !test)}
-                columns={test ? 2 : 3}
-                label="Look at"
-                onChange={chooseSection}
-                options={sectionOptions}
-                value={current}
-              />
             </CrmBlock>
           ) : null}
 
@@ -877,7 +891,7 @@ function PlansSection({
               id={`${idPrefix}-plans-search`}
               label="Find a territory"
               onChange={(next) => filterBy(() => setQuery(next))}
-              placeholder="Territory, rep or manager"
+              placeholder="Territory or manager"
               value={query}
             />
           ) : null}
@@ -1167,7 +1181,7 @@ function PlanEditsSection({
               setLimit(PAGE);
               setOthersLimit(PAGE);
             }}
-            placeholder="Rep, territory or week"
+            placeholder="Territory or week"
             value={query}
           />
         </CrmBlock>
@@ -1274,7 +1288,7 @@ function UnplannedSection({
               setLimit(PAGE);
               setOthersLimit(PAGE);
             }}
-            placeholder="Customer, territory, rep or reason"
+            placeholder="Customer, territory or reason"
             value={query}
           />
         </CrmBlock>
@@ -1478,7 +1492,7 @@ function RequestsSection({
               setLimit(PAGE);
               setOthersLimit(PAGE);
             }}
-            placeholder="Customer, territory or rep"
+            placeholder="Customer or territory"
             value={query}
           />
         </CrmBlock>
@@ -1635,7 +1649,7 @@ function ListsSection({ idPrefix, onOpenList, team }: { idPrefix: string; onOpen
               id={`${idPrefix}-lists-search`}
               label="Find a territory"
               onChange={(next) => filterBy(() => setQuery(next))}
-              placeholder="Territory, rep or manager"
+              placeholder="Territory or manager"
               value={query}
             />
           ) : null}

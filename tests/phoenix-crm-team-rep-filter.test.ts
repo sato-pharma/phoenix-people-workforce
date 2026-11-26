@@ -93,7 +93,15 @@ export function runPhoenixCrmTeamRepFilterTests(): void {
     const tab = source("src/components/phoenix-crm/team-tab.tsx");
     assert.match(tab, /const \[repHrId, setRepHrId\] = useState<string \| null>\(null\);/, "the choice lives in the tab, so it survives a section change");
     assert.match(tab, /<CrmSelect\s+id=\{`\$\{idPrefix\}-team-rep`\}/, "the admin's picker is the module's combo box, never a bare select");
-    assert.ok(tab.indexOf("-team-rep`") < tab.indexOf('title="Look at"'), "the Rep picker sits above the sections, not inside one");
+    // A field of its own, "Rep", under "Look at" and above whichever section is open (owner, 2026-11-27:
+    // "make the rep separate field and filter and combo box") — never a word inside a section's search.
+    const repAt = tab.indexOf("-team-rep`");
+    assert.ok(tab.indexOf('title="Look at"') < repAt && repAt < tab.indexOf('current === "plans" ? ('), "the Rep field sits under Look at, above every section");
+    assert.match(tab, /title="Filter by rep"/, "it is titled as the filter it is");
+    assert.match(tab, /label="Rep">\s*<CrmSelect/, "the field is labelled Rep and is the module's dropdown");
+    for (const hint of tab.matchAll(/placeholder="([^"]*)"/g)) {
+      assert.ok(!/\brep\b/i.test(hint[1]), `a section's search no longer offers the rep, who has his own field: "${hint[1]}"`);
+    }
     for (const fed of [
       "view={reviewsShown}",
       "view={monthsShown}",
