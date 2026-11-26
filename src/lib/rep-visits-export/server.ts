@@ -124,7 +124,7 @@ export async function loadRepVisitsExportOptions(access: AccessContext): Promise
       name: nameOf(names, hrId, hrId),
       territory: territoryName(seat),
       line: seat.lineName || lineName(seat.lineCode) || "No line",
-      hireDate: hireDates.get(personKey(hrId)) ?? null,
+      hireDate: hireDates.get(personKey(hrId) ?? hrId) ?? null,
       probation: probation ? (probation.get(personKey(hrId)) ?? "none") : "unread",
     });
   }
