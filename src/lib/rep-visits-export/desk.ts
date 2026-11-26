@@ -73,6 +73,14 @@ export function reviewPeriodFor(
   return { from, to };
 }
 
+/**
+ * Where the rep works, for the chosen-rep chip: the territory, then the line — unless the territory's name
+ * already says the line ("Kafr El-Sheikh 1 · Pedia"), which read "Pedia · Pedia" on 26 Nov 2026.
+ */
+export function repPlaceLabel(territory: string, line: string): string {
+  return !line || territory.toLowerCase().split(" · ").includes(line.toLowerCase()) ? territory : `${territory} · ${line}`;
+}
+
 /** The file name the route gave, from its `content-disposition`. */
 export function fileNameOf(disposition: string | null): string | null {
   const match = /filename="([^"]+)"/.exec(disposition ?? "");

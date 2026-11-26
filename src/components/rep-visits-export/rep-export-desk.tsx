@@ -15,6 +15,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   fileNameOf,
   probationMatches,
+  repPlaceLabel,
   retryWaitSeconds,
   reviewPeriodFor,
   REP_PROBATION_FILTERS,
@@ -260,7 +261,7 @@ export function RepExportDesk({
                   <span className="font-semibold text-slate-900">{rep.name}</span>
                   <span className="text-slate-500">
                     {" "}
-                    · {rep.territory} · {rep.line}
+                    · {repPlaceLabel(rep.territory, rep.line)}
                     {rep.hireDate ? ` · hired ${dayLabel(rep.hireDate)}` : " · no hire date on record"}
                     {PROBATION_WORDS[rep.probation] ? ` · ${PROBATION_WORDS[rep.probation]}` : ""}
                   </span>
