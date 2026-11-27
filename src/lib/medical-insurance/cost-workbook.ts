@@ -9,6 +9,9 @@
 //     their family in full; EGP 85 life insurance a person).
 //   * "Details": one row per person covered — the employee and each spouse and child — with their plan,
 //     age band, cover start and month of cover, and who carries it.
+//   * Both sheets open with the insurer's Principal ID (the employee's Libano card number), the HR ID in
+//     Phoenix and the Libano staff number (30, and 30-1 for that employee's family) — owner, 27 Nov 2026:
+//     "add another column that have the principal ID … the HR ID in Phoenix … their ID with dashes".
 //
 // 🔴 It carries amounts, so its route asserts medical_insurance_invoices (Super Admin only) before
 // anything is read, like the Medical Cover Statement. It shows amounts, never the split's percentages
@@ -50,6 +53,14 @@ function rowNote(row: MonthlySplitRow): string {
   return notes.join(". ");
 }
 
+/** The insurer's numbers for one person on the register, by member id (getMedicalInsuranceMonthlyCost). */
+export type MonthlyCostMemberNumbers = {
+  /** The employee's Libano card number: their own, or, for a spouse or child, their employee's. */
+  principalNumber: string | null;
+  /** Libano's staff number as the register holds it: 30 for the employee, 30-1 for their family. */
+  staffNumber: string | null;
+};
+
 /** What a row costs the company and the employee together, a month. */
 export function monthlyCostRowTotal(row: Pick<MonthlySplitRow, "companyPays" | "employeePays">): number {
   return round(row.companyPays + row.employeePays);
@@ -61,8 +72,18 @@ export async function buildMedicalInsuranceMonthlyCostWorkbook(input: {
   generatedAtIso: string;
   policy: { insurer: string; policyNumber: string | null; startsOn: string; endsOn: string };
   split: MonthlySplit;
+  numbers?: ReadonlyMap<string, MonthlyCostMemberNumbers>;
 }): Promise<ArrayBuffer> {
   const { split } = input;
+  const numbersOf = (person: MonthlySplitPerson | null | undefined): MonthlyCostMemberNumbers =>
+    (person ? input.numbers?.get(person.memberId) : undefined) ?? { principalNumber: null, staffNumber: null };
+  /** A row speaks for its employee, or, when the employee left the register, for the relative it holds. */
+  const rowNumbers = (row: MonthlySplitRow): MonthlyCostMemberNumbers => numbersOf(row.employee ?? row.family[0]);
+  const ID_COLUMNS = [
+    { label: "Principal ID", width: 12 },
+    { label: "HR ID in Phoenix", width: 11 },
+    { label: "Libano staff number", width: 12 },
+  ];
   const rows = [...split.rows].sort((a, b) => rowName(a).localeCompare(rowName(b)));
   const workbook = new ExcelJS.Workbook();
   workbook.created = new Date(input.generatedAtIso);
@@ -95,7 +116,7 @@ export async function buildMedicalInsuranceMonthlyCostWorkbook(input: {
   summary.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
   writeHouseTable(summary, 1, {
     columns: [
-      { label: "HR ID", width: 10 },
+      ...ID_COLUMNS,
       { label: "Employee", width: 32 },
       { label: "Plan", width: 7 },
       { label: "Age band", width: 11 },
@@ -111,7 +132,9 @@ export async function buildMedicalInsuranceMonthlyCostWorkbook(input: {
       { label: "Notes", width: 44 },
     ],
     rows: rows.map((row): CellValue[] => [
+      text(rowNumbers(row).principalNumber),
       text(row.hrId),
+      text(rowNumbers(row).staffNumber),
       text(rowName(row)),
       row.employee?.category ?? "",
       row.employee?.band ?? "",
@@ -128,6 +151,8 @@ export async function buildMedicalInsuranceMonthlyCostWorkbook(input: {
     ]),
     title: `${rows.length} ${rows.length === 1 ? "row" : "rows"}, as of ${day(input.asOf)}`,
     totals: [
+      "",
+      "",
       "",
       "Total a month",
       "",
@@ -158,7 +183,7 @@ export async function buildMedicalInsuranceMonthlyCostWorkbook(input: {
   };
   writeHouseTable(details, 1, {
     columns: [
-      { label: "HR ID", width: 10 },
+      ...ID_COLUMNS,
       { label: "Employee", width: 30 },
       { label: "Person covered", width: 30 },
       { label: "Relation", width: 10 },
@@ -174,7 +199,9 @@ export async function buildMedicalInsuranceMonthlyCostWorkbook(input: {
     rows: people.map(({ person, row }): CellValue[] => {
       const own = person.memberType === "employee";
       return [
+        text(numbersOf(person).principalNumber),
         text(row.hrId),
+        text(numbersOf(person).staffNumber),
         text(row.employee?.name ?? "Not on the register"),
         text(person.name),
         MEMBER_TYPE_WORDS[person.memberType],

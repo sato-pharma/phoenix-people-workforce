@@ -753,6 +753,13 @@ async function testTheMonthlyCostWorkbookIsTheCostTabsSplit() {
     asOf: "2026-11-27",
     exportedByName: "Test Exporter",
     generatedAtIso: "2026-11-27T10:00:00.000Z",
+    numbers: new Map([
+      ["e-1", { principalNumber: "51905339", staffNumber: "30" }],
+      ["s-1", { principalNumber: "51905339", staffNumber: "30-1" }],
+      ["c-1", { principalNumber: "51905339", staffNumber: "30-2" }],
+      ["e-3", { principalNumber: "52739707", staffNumber: "1028" }],
+      ["c-9", { principalNumber: null, staffNumber: "77-1" }],
+    ]),
     policy: { endsOn: POLICY.endsOn, insurer: "Libano-Suisse Takaful Egypt", policyNumber: "50048950", startsOn: POLICY.startsOn },
     split,
   });
@@ -788,6 +795,13 @@ async function testTheMonthlyCostWorkbookIsTheCostTabsSplit() {
   assert.equal(value(rowOf("Family Employee"), "Employee's own share"), family.employeeOwnShare, "and their 30%");
   assert.match(String(value(rowOf("Minimum Employee"), "Notes")), /raised to EGP 120/, "a share raised to the minimum says so");
   assert.match(String(value(rowOf("Stray Child"), "Notes")), /not on the register/);
+  // The insurer's numbers beside Phoenix's (owner, 2026-11-27): the Principal ID is the employee's card number,
+  // the staff number is Libano's own with its dash for family, and the HR ID is Phoenix's.
+  assert.deepEqual(headers.slice(0, 4), ["Principal ID", "HR ID in Phoenix", "Libano staff number", "Employee"], "the three ids open the sheet");
+  assert.equal(value(rowOf("Family Employee"), "Principal ID"), "51905339");
+  assert.equal(value(rowOf("Family Employee"), "HR ID in Phoenix"), "T-1");
+  assert.equal(value(rowOf("Family Employee"), "Libano staff number"), "30", "a staff number stays text, never the number 30");
+  assert.equal(value(rowOf("Stray Child"), "Libano staff number"), "77-1", "a row with no employee speaks for the relative it holds");
 
   const totalRow = rowOf("Total a month");
   assert.equal(value(totalRow, "Company pays"), split.totals.companyPays, "the company's total is the tab's tile");
@@ -796,8 +810,17 @@ async function testTheMonthlyCostWorkbookIsTheCostTabsSplit() {
 
   const details = workbook.getWorksheet("Details")!;
   const people: string[] = [];
-  for (let r = 3; r <= details.rowCount; r += 1) people.push(String(details.getCell(r, 3).value ?? ""));
+  const detailHeaders = (details.getRow(2).values as unknown[]).slice(1).map(String);
+  const detailColumn = (label: string) => detailHeaders.indexOf(label) + 1;
+  const ids = new Map<string, [unknown, unknown, unknown]>();
+  for (let r = 3; r <= details.rowCount; r += 1) {
+    const name = String(details.getCell(r, detailColumn("Person covered")).value ?? "");
+    people.push(name);
+    ids.set(name, [details.getCell(r, detailColumn("Principal ID")).value, details.getCell(r, detailColumn("HR ID in Phoenix")).value, details.getCell(r, detailColumn("Libano staff number")).value]);
+  }
   assert.deepEqual(people.filter(Boolean).sort(), ["Family Employee", "Minimum Employee", "Stray Child", "Their Child", "Their Spouse"], "every person covered has a line of their own");
+  assert.deepEqual(ids.get("Their Spouse"), ["51905339", "T-1", "30-1"], "a spouse carries their employee's Principal ID and HR ID, and their own staff number");
+  assert.deepEqual(ids.get("Family Employee"), ["51905339", "T-1", "30"]);
 
   const route = readFileSync("app/api/medical-insurance/cost/export/route.ts", "utf8");
   const assertAt = route.indexOf(`assertPermission(access, "medical_insurance_invoices", "read")`);
