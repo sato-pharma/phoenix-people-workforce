@@ -49,7 +49,6 @@ Phoenix Workforce/
 *.xlsm
 *.csv
 *.bas
-!Source of sales area database.xlsx
 # The insurer's own Additions and Deletions workbook, emptied of every person; the export fills a copy of it.
 !assets/medical-insurance/libano-additions-deletions.xlsx
 !.env.*.example
