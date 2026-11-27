@@ -5,7 +5,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 
 | file | bytes | sha256 |
 | --- | --- | --- |
-| `CLAUDE.md` | 16030 | `4c4fcfadd3aceb06` |
+| `CLAUDE.md` | 16327 | `07792f626818b5c3` |
 | `docs/standing-rules-account.md` | 22427 | `cfb128ad8322e052` |
 | `hooks/cloud-first-router.mjs` | 5388 | `38817a5603e0abe6` |
 | `hooks/compact-summary-log.mjs` | 4793 | `3a0a55fdeba8da84` |
@@ -64,6 +64,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/fix-task-windows-elevated.ps1` | 3598 | `a364c9143b0638c2` |
 | `scripts/github-hosts-france.ps1` | 4038 | `8b159a1d744580ab` |
 | `scripts/heavy-queue.mjs` | 2631 | `3cb03b2b1503aad1` |
+| `scripts/hr-names.mjs` | 3410 | `6fbab418449bb3ed` |
 | `scripts/hw-0007-watch.mjs` | 3288 | `ee103abbcc26ab72` |
 | `scripts/hw-0008-watch.mjs` | 3327 | `e57cc2ccf5358d79` |
 | `scripts/hw-rep-tablet-location-watch.mjs` | 4557 | `9e4ba6a595ad8897` |

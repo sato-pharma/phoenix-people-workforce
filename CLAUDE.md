@@ -26,7 +26,9 @@ every golden rule is listed in AGENTS.md §4, "THE GOLDEN RULES".
   `mcp__ccd_turn__wrap_up`, ship them verbatim as `actions[0].message`. `next-step-capture.mjs` WARNS, never
   blocks — 🔴 **never restore `{decision:"block"}`** (it ate the suggestion it exists to fill).
 - Track multi-step work visibly; **finish every phase**; never silently drop anything.
-- **Names, never codes or IDs; times in Cairo local.**
+- **Names, never codes or IDs; times in Cairo local.** 🔴 **A NAME FOR AN HR ID IS READ, NEVER WRITTEN FROM MEMORY**
+  (owner, 2026-11-27: "train yourself on all HRIDs and names") — `node ~/.claude/scripts/hr-names.mjs <ids>` (production
+  only) in the same turn, skill `employee-names`; not found = "not an employee", never a guess. AA = the CEO.
 - 🥇 **EVERY QUESTION TO HIM IS A MULTIPLE-CHOICE QUESTION, NEVER PROSE** (owner, 2026-10-18) — `AskUserQuestion`,
   2–4 short options, recommended first "(Recommended)". Never end with an open question or an offer in prose; if
   no choice is his, decide and report. The `Next step:` line is not a place to ask.
