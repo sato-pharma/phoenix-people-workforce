@@ -138,6 +138,7 @@ import {
   canAssignDirectOrderSalesMonth,
   canSettleServiceFeeAsAdministrator,
   deriveDirectOrderSalesMonthChange,
+  ownsDirectOrderBookingQueue,
 } from "@/lib/direct-orders/finance-authority";
 import {
   assertSalesMonthBookingAllowed,
@@ -5671,6 +5672,16 @@ async function notifyDirectOrderConversation(input: {
 function viewerCanActOnStep(access: AccessContext, step: DirectOrderStepState | null): boolean {
   if (!step) return false;
   if (access.role === "Super Admin" || access.scope === "system") return true;
+  return viewerHoldsStep(access, step);
+}
+
+/**
+ * Whether this rung is the viewer's OWN — named to him, or to his role — with no stand-in power. What a
+ * badge counts; `viewerCanActOnStep` above is what the screen lets him do, and it is this rule plus the
+ * Super Admin's stand-in, so the two can never drift apart.
+ */
+function viewerHoldsStep(access: AccessContext, step: DirectOrderStepState | null): boolean {
+  if (!step) return false;
   return step.kind === "role"
     ? Boolean(step.role) && access.role === step.role
     : canonicalHrIdKey(access.hrId) === canonicalHrIdKey(step.approverHrId ?? "");
@@ -6025,9 +6036,12 @@ export async function countDirectOrderAwaitingFast(access: AccessContext): Promi
     }
   }
 
+  // `viewerHoldsStep`, NOT `viewerCanActOnStep`: the Super Admin may act on every rung, and counting that
+  // power put every pending order company-wide on his badge although none was waiting on him (owner, 27 Nov
+  // 2026: "only mine"). The badge counts the rungs that are the viewer's own; the screen still lets him act.
   let count = 0;
   for (const id of ids) {
-    if (viewerCanActOnStep(access, resolveActiveStep(stepsByRequest.get(id) ?? []))) count += 1;
+    if (viewerHoldsStep(access, resolveActiveStep(stepsByRequest.get(id) ?? []))) count += 1;
   }
   return count;
 }
@@ -7820,7 +7834,9 @@ export async function getDirectOrderUnbookedBadge(
   access: AccessContext,
 ): Promise<{ count: number; overdue: boolean }> {
   await assertPermission(access, "direct_orders", "read");
-  if (!canSetDirectOrderSalesMonth(access)) return { count: 0, overdue: false };
+  // Finance's queue, so Finance's number — never the Super Admin's, who may book a month but does not own
+  // the queue (owner, 27 Nov 2026: his rail read 67 for a list that was never his).
+  if (!ownsDirectOrderBookingQueue(access)) return { count: 0, overdue: false };
 
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase

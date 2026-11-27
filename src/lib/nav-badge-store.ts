@@ -56,7 +56,12 @@ type BatchKey =
   | "marketing"
   | "marketAwareness"
   | "calendarDisputes"
-  | "deductionDisputes";
+  | "deductionDisputes"
+  | "placeChecks"
+  | "sfeRecommendedChecks"
+  | "cameraReviews"
+  | "lateVisits"
+  | "recordedVisits";
 
 /** Maps each legacy per-src badge URL to its key in the batched response. */
 const BATCH_KEY_BY_SRC: Record<string, BatchKey> = {
@@ -88,6 +93,13 @@ const BATCH_KEY_BY_SRC: Record<string, BatchKey> = {
   // Deduction Disputes, its own inbox under the Approvals tab since 2026-10-08. Its own slot too:
   // "hub" has never counted a deduction comment either.
   "/api/deductions/disputes/pending-count": "deductionDisputes",
+  // The Super Admin's own Phoenix CRM queues (owner, 27 Nov 2026), one slot each so every row carries its
+  // own number. One route answers all five by `queue`, for a consumer outside the batch.
+  "/api/approvals/crm-queues/pending-count?queue=place-checks": "placeChecks",
+  "/api/approvals/crm-queues/pending-count?queue=sfe-recommended-checks": "sfeRecommendedChecks",
+  "/api/approvals/crm-queues/pending-count?queue=camera-reviews": "cameraReviews",
+  "/api/approvals/crm-queues/pending-count?queue=late-visits": "lateVisits",
+  "/api/approvals/crm-queues/pending-count?queue=recorded-visits": "recordedVisits",
 };
 
 /**

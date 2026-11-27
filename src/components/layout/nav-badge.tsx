@@ -18,7 +18,7 @@
 // was omitted from one hand-written copy and rejected 59 of 65 customers.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { alarmGlowRef } from "@/components/layout/alarm-glow";
 import { type NavigationSectionItem } from "@/config/system-navigation";
@@ -152,6 +152,65 @@ export function NavBadge({
   );
 }
 
+/**
+ * The ONE map from a nav item's `navBadge` key to the endpoint that counts it. Every surface — the sidebar's
+ * label row, its icon rail, the horizontal rows and a collapsed heading's total — reads its src from here,
+ * so a new kind is wired once.
+ */
+export function navBadgeSrc(navBadge: NavigationSectionItem["navBadge"]): string | null {
+  switch (navBadge) {
+    case "approvals-hub-pending":
+      return "/api/approvals-hub/pending-count";
+    case "vacation-approvals-pending":
+      return "/api/approvals/vacation/pending-count";
+    case "excuse-approvals-pending":
+      return "/api/approvals/excuse/pending-count";
+    case "plan-approvals-pending":
+      return "/api/approvals/plan/pending-count";
+    // The ONE Direct Orders row. Sums the approval queue, Finance's unbooked queue and the pharmacy claims,
+    // each counted only for the person who clears it — see the endpoint's note.
+    case "direct-orders-needs-action":
+      return "/api/direct-orders/needs-action-count";
+    case "direct-orders-approvals-pending":
+      return "/api/approvals/direct-orders/pending-count";
+    // Approved orders with no sales month — Finance's queue, not an approval queue. Rides the same
+    // batched poll (BATCH_KEY_BY_SRC) and the same overdue alarm as its siblings; the threshold is
+    // APPROVALS_SLA_THRESHOLDS.directOrderMonth.
+    case "direct-orders-unbooked":
+      return "/api/direct-orders/unbooked-count";
+    case "marketing-approvals-pending":
+      return "/api/marketing-requests/pending-count";
+    // Calendar Disputes became its own inbox on 2026-10-08 (owner: "separate the disputes inbox into
+    // a separate dispute inbox"), so it needs its own slot too — the hub's count has never covered a
+    // review request, and now the hub does not render one either.
+    case "calendar-disputes-pending":
+      return "/api/private-calendar/disputes/pending-count";
+    // Deduction Disputes — a published deduction an employee is contesting, waiting on an HR reply.
+    // Its own kind for the same reason as its neighbours: the consolidated hub has never counted a
+    // deduction comment, so "approvals-hub-pending" would count everything except this inbox.
+    case "deduction-disputes-pending":
+      return "/api/deductions/disputes/pending-count";
+    // Market Awareness keeps its own inbox for the same reason marketing does — the owner asked for
+    // a separate queue — so the hub's count can never cover it.
+    case "market-awareness-approvals-pending":
+      return "/api/market-awareness/pending-count";
+    // The Super Admin's own Phoenix CRM queues (owner, 27 Nov 2026: a queue that is his alone shows its
+    // number on the row). One route, one batched slot each.
+    case "place-checks-pending":
+      return "/api/approvals/crm-queues/pending-count?queue=place-checks";
+    case "sfe-recommended-checks-pending":
+      return "/api/approvals/crm-queues/pending-count?queue=sfe-recommended-checks";
+    case "camera-reviews-pending":
+      return "/api/approvals/crm-queues/pending-count?queue=camera-reviews";
+    case "late-visits-pending":
+      return "/api/approvals/crm-queues/pending-count?queue=late-visits";
+    case "recorded-visits-pending":
+      return "/api/approvals/crm-queues/pending-count?queue=recorded-visits";
+    default:
+      return null;
+  }
+}
+
 // Shared between the sidebar's expanded label row, its collapsed icon-rail and the horizontal nav
 // rows, so every surface recognizes the same set of navBadge values without duplicating the switch.
 export function ApprovalNavBadge({
@@ -166,43 +225,75 @@ export function ApprovalNavBadge({
   /** Compact mode only: the number on the icon corner instead of a dot. See NavBadge. */
   showCount?: boolean;
 }): ReactNode {
-  switch (navBadge) {
-    case "approvals-hub-pending":
-      return <NavBadge compact={compact} dark={dark} showCount={showCount} src="/api/approvals-hub/pending-count" />;
-    case "vacation-approvals-pending":
-      return <NavBadge compact={compact} dark={dark} showCount={showCount} src="/api/approvals/vacation/pending-count" />;
-    case "excuse-approvals-pending":
-      return <NavBadge compact={compact} dark={dark} showCount={showCount} src="/api/approvals/excuse/pending-count" />;
-    case "plan-approvals-pending":
-      return <NavBadge compact={compact} dark={dark} showCount={showCount} src="/api/approvals/plan/pending-count" />;
-    // The ONE Direct Orders row. Sums the approval queue and Finance's unbooked queue because a
-    // nav item carries one badge and the two audiences barely overlap — see the endpoint's note.
-    case "direct-orders-needs-action":
-      return <NavBadge compact={compact} dark={dark} showCount={showCount} src="/api/direct-orders/needs-action-count" />;
-    case "direct-orders-approvals-pending":
-      return <NavBadge compact={compact} dark={dark} showCount={showCount} src="/api/approvals/direct-orders/pending-count" />;
-    // Approved orders with no sales month — Finance's queue, not an approval queue. Rides the same
-    // batched poll (BATCH_KEY_BY_SRC) and the same overdue alarm as its siblings; the threshold is
-    // APPROVALS_SLA_THRESHOLDS.directOrderMonth.
-    case "direct-orders-unbooked":
-      return <NavBadge compact={compact} dark={dark} showCount={showCount} src="/api/direct-orders/unbooked-count" />;
-    case "marketing-approvals-pending":
-      return <NavBadge compact={compact} dark={dark} showCount={showCount} src="/api/marketing-requests/pending-count" />;
-    // Calendar Disputes became its own inbox on 2026-10-08 (owner: "separate the disputes inbox into
-    // a separate dispute inbox"), so it needs its own slot too — the hub's count has never covered a
-    // review request, and now the hub does not render one either.
-    case "calendar-disputes-pending":
-      return <NavBadge compact={compact} dark={dark} showCount={showCount} src="/api/private-calendar/disputes/pending-count" />;
-    // Deduction Disputes — a published deduction an employee is contesting, waiting on an HR reply.
-    // Its own kind for the same reason as its neighbours: the consolidated hub has never counted a
-    // deduction comment, so "approvals-hub-pending" would count everything except this inbox.
-    case "deduction-disputes-pending":
-      return <NavBadge compact={compact} dark={dark} showCount={showCount} src="/api/deductions/disputes/pending-count" />;
-    // Market Awareness keeps its own inbox for the same reason marketing does — the owner asked for
-    // a separate queue — so the hub's count can never cover it.
-    case "market-awareness-approvals-pending":
-      return <NavBadge compact={compact} dark={dark} showCount={showCount} src="/api/market-awareness/pending-count" />;
-    default:
-      return null;
+  const src = navBadgeSrc(navBadge);
+  if (!src) return null;
+  return <NavBadge compact={compact} dark={dark} showCount={showCount} src={src} />;
+}
+
+/**
+ * The total of every pending badge inside a CLOSED group — a collapsed section heading or a closed domain
+ * (owner, 27 Nov 2026: "if I collapse a title and something inside needs approval, I must see it from
+ * outside"). Before this a closed group showed nothing, so a number that lived on a row inside it vanished
+ * the moment the group was folded.
+ *
+ * It subscribes to the SAME store channels the rows do (subscribeNavBadge), so it costs no request of its
+ * own and can never disagree with the rows it sums. Each src is counted once even when two rows share it.
+ * Drawn with the row badge's own pill, so the escalation (tinted, then solid red when any part is overdue)
+ * reads the same inside and outside the group. Nothing is drawn while the total is zero.
+ */
+export function GroupNavBadge({
+  dark = false,
+  navBadges,
+}: {
+  dark?: boolean;
+  navBadges: ReadonlyArray<NavigationSectionItem["navBadge"]>;
+}): ReactNode {
+  const srcs = useMemo(() => {
+    const unique = new Set<string>();
+    for (const kind of navBadges) {
+      const src = navBadgeSrc(kind);
+      if (src) unique.add(src);
+    }
+    return Array.from(unique).sort();
+  }, [navBadges]);
+  const srcKey = srcs.join("|");
+  const [counts, setCounts] = useState<Record<string, { count: number; overdue: boolean }>>({});
+  useEffect(() => {
+    const list = srcKey ? srcKey.split("|") : [];
+    const unsubscribers = list.map((src) =>
+      subscribeNavBadge(src, (nextCount, nextOverdue) => {
+        setCounts((previous) => ({ ...previous, [src]: { count: nextCount ?? 0, overdue: nextOverdue } }));
+      }),
+    );
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
+  }, [srcKey]);
+  let total = 0;
+  let overdue = false;
+  for (const src of srcs) {
+    const slot = counts[src];
+    if (!slot) continue;
+    total += slot.count;
+    if (slot.count > 0 && slot.overdue) overdue = true;
   }
+  if (total <= 0) return null;
+  const label = `${total} pending inside — action required${overdue ? ", overdue" : ""}`;
+  return (
+    <span
+      aria-label={label}
+      className={cn(
+        "min-w-[18px] shrink-0 px-1 py-0.5 text-center text-phx-2xs font-black leading-none tabular-nums",
+        overdue
+          ? "bg-red-600 text-white ring-1 ring-red-400/50"
+          : dark
+            ? "bg-orange-400/20 text-orange-200 ring-1 ring-orange-400/45"
+            : "bg-orange-100 text-orange-700 ring-1 ring-orange-300/80",
+        overdue ? "nav-badge-alarm-overdue" : "nav-badge-alarm",
+        !overdue && dark && "nav-badge-alarm-glass",
+      )}
+      ref={alarmGlowRef}
+      role="status"
+    >
+      {total > 99 ? "99+" : total}
+    </span>
+  );
 }

@@ -10017,10 +10017,8 @@ export async function getMarketingInboxQueueLink(
       .select("request_id")
       .eq("status", "current")
       .eq("is_cc", false);
-    // The same gate as the badge below and the inbox's oversight section.
-    const gatingResult = await (canViewMarketingOversightQueue(access)
-      ? gatingQuery
-      : gatingQuery.in("assigned_hr_id", hrIdLookupKeys(actorHrId)));
+    // The same gate as the badge below: the viewer's own steps only (owner, 27 Nov 2026: "only mine").
+    const gatingResult = await gatingQuery.in("assigned_hr_id", hrIdLookupKeys(actorHrId));
     if (gatingResult.error) throw gatingResult.error;
     const gatingRows = (gatingResult.data ?? []) as Array<{ request_id: string }>;
 
@@ -10097,17 +10095,13 @@ export function summarizeMarketingApproverBadge(input: {
 
 /**
  * Sidebar badge for the Marketing Approval Inbox: how many marketing requests are stopped at this
- * person's own gating step — or, for a Super Admin, at ANYONE's.
+ * person's OWN gating step — for every role, the Super Admin included.
  *
- * Scoped by `assigned_hr_id` for every approver, so they can only ever count their own rung. The one
- * exception is the oversight viewer (canViewMarketingOversightQueue), for whom the filter is dropped
- * and the badge counts every open gating step in the company.
- *
- * Owner instruction, 2026-08-18, made knowingly against the objection that a badge counting other
- * people's work sits permanently lit. The reason it is nonetheless coherent: the badge must never
- * show a number the inbox cannot explain, and since #2187 the inbox CAN explain it — a Super Admin's
- * "Everything in approval" section lists exactly the steps counted here. The two move together, so
- * a future change to one is wrong unless it changes the other.
+ * Scoped by `assigned_hr_id` for every approver, so they can only ever count their own rung. Until
+ * 27 Nov 2026 the oversight viewer (canViewMarketingOversightQueue) was the exception and his badge
+ * counted every open gating step in the company — his 2026-08-18 instruction. He reversed it on
+ * 27 Nov 2026 ("only mine"): the badge read 23 with none waiting on him. The inbox keeps its
+ * "Everything in approval" section for oversight; the number counts only what waits on the viewer.
  *
  * Deliberately does NOT call getApproverPendingRequests: that builds full display rows (employee
  * directory, customers, request types, the whole upcoming chain) for a number that is polled every
@@ -10125,10 +10119,10 @@ export async function getMarketingApproverBadge(access: AccessContext): Promise<
     .select("request_id, step_code, sequence, workflow_step_id, created_at, updated_at")
     .eq("status", "current")
     .eq("is_cc", false);
-  // Same gate as the inbox's oversight section, so the badge and that section always agree.
-  const gatingResult = await (canViewMarketingOversightQueue(access)
-    ? gatingQuery
-    : gatingQuery.in("assigned_hr_id", actorHrKeys));
+  // ONLY THE VIEWER'S OWN STEPS, for every role (owner, 27 Nov 2026: "only mine"). Until then the Super
+  // Admin's badge counted the whole oversight section (his 2026-08-18 instruction) and read 23 with none
+  // waiting on him. The oversight section stays on the inbox page; it no longer lights the badge.
+  const gatingResult = await gatingQuery.in("assigned_hr_id", actorHrKeys);
   if (gatingResult.error) throw gatingResult.error;
   const gatingRows = (gatingResult.data ?? []) as Array<{
     created_at?: string | null;

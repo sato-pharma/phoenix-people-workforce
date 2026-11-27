@@ -248,7 +248,7 @@ export function runMarketingApprovalInboxNavBadgeTests() {
   // for a change it has no opinion about.
   assert.match(
     navBadge,
-    /case "marketing-approvals-pending":\s*\n\s*return <NavBadge[^>]*compact=\{compact\}[^>]*src="\/api\/marketing-requests\/pending-count"[^>]*\/>;/,
+    /case "marketing-approvals-pending":\s*\n\s*return "\/api\/marketing-requests\/pending-count";/,
     "10: the shared badge switch must resolve the marketing badge to its count API",
   );
   const portalLayout = readFileSync("src/components/employee-portal/employee-portal-layout.tsx", "utf8");

@@ -84,7 +84,7 @@ export function runNavBadgeRestyleTests() {
   );
   assert.ok(sizer.includes("new ResizeObserver"), "a count that changes width (9 -> 10) must re-measure, or the glow is sized for the old width");
   const pulsingBadges: Record<string, number> = {
-    "src/components/layout/nav-badge.tsx": 3,
+    "src/components/layout/nav-badge.tsx": 4,
     "src/components/layout/in-app-notifications-bell.tsx": 1,
     "src/components/employee-portal/employee-portal-layout.tsx": 2,
     "src/components/employee-portal/portal-chrome-widgets.tsx": 1,

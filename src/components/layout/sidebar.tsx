@@ -53,7 +53,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { type CSSProperties, Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
-import { ApprovalNavBadge } from "@/components/layout/nav-badge";
+import { ApprovalNavBadge, GroupNavBadge } from "@/components/layout/nav-badge";
 import { useIsNavItemLocked } from "@/components/layout/module-lock-context";
 import {
   getNavigationSections,
@@ -683,6 +683,7 @@ function SortableSectionBlock({
   // left in localStorage from before the label was removed would hide its items permanently.
   const collapsed = Boolean(section.label) && !query && collapsedSectionIds.has(section.id) && !hasActive;
   const sectionContentId = `${navInstanceId}-${section.id}-items`;
+  const sectionNavBadges = useMemo(() => section.items.map((item) => item.navBadge), [section.items]);
 
   const orderedItems = useMemo(
     () => applyOrder(section.items, (item) => item.href, itemOrder),
@@ -798,6 +799,10 @@ function SortableSectionBlock({
             >
               {section.label}
             </span>
+            {/* A folded heading carries the total of its rows' numbers (owner, 27 Nov 2026: "if I collapse
+                a title and something needs approval, I must see it from outside"). Open, the rows show
+                their own and the heading shows none, so nothing is counted twice. */}
+            {collapsed && <GroupNavBadge dark={isAdmin} navBadges={sectionNavBadges} />}
           </button>
         </div>
       </div>
@@ -1433,6 +1438,14 @@ function SidebarNav({
                     <span className="min-w-0 flex-1 text-phx-md font-bold tracking-[-0.01em] text-phx-accent">
                       {domain.name}
                     </span>
+                    {/* A closed domain carries the total of every number inside it, so a pending item is
+                        seen without opening it (owner, 27 Nov 2026). Open, its headings and rows say it. */}
+                    {!open && (
+                      <GroupNavBadge
+                        dark
+                        navBadges={domain.groups.flatMap((group) => group.sections.flatMap((section) => section.items.map((item) => item.navBadge)))}
+                      />
+                    )}
                     <span className="shrink-0 border border-white/[0.07] bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-semibold tabular-nums leading-none text-slate-400">
                       {domain.rowCount}
                     </span>

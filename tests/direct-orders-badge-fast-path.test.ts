@@ -117,7 +117,7 @@ export function runDirectOrderBadgeFastPathTests() {
   );
   assert.match(
     fastFn,
-    /viewerCanActOnStep\(/,
+    /viewerHoldsStep\(/,
     "THE BADGE HAS ITS OWN ELIGIBILITY RULE: a second copy of a visibility rule is exactly how `reverse` became reachable by every rep in the company (audit F5)",
   );
   assert.match(
