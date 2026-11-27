@@ -15,8 +15,8 @@
  * THE FIX IT NAMES. git fetch origin, then
  *   git rebase --onto origin/main 2369952b0d60f657fed65eb73aca30e40c0fe708 <branch>
  * (old main 2369952b0 maps to new main bff23828c; a branch cut from an earlier main needs that
- * commit's new id from the commit map in "C:/Users/satoh/Phoenix History Purge 2026-11-27/
- * rewrite.git/filter-repo/commit-map").
+ * commit from the commit map in "C:/Users/satoh/Phoenix History Purge 2026-11-27 - kept map/
+ * commit-map"; the 1.3 GB backup itself was deleted on 27 Nov 13:19 on the owner's word).
  *
  * FAILS OPEN on its own bugs and on a clone that does not hold the old root (a fresh clone).
  * Stand-down, the owner's own words only:  PHX_OLD_HISTORY_PUSH_OK=1 <the same command>
@@ -66,7 +66,7 @@ function main(raw) {
         : [s];
       for (const r of refs) {
         if (git(dir, 'merge-base', '--is-ancestor', OLD_ROOT, r).status === 0) {
-          deny(`Refused: \`${r}\` in ${dir} is on the OLD history of phoenix-people-workforce, the history purged on 27 Nov 2026 (the payroll copy and 39 data files). Pushing it would put those files back on public GitHub.\n\nMove it onto the new history first:\n  git -C "${dir}" fetch origin\n  git -C "${dir}" rebase --onto origin/main 2369952b0d60f657fed65eb73aca30e40c0fe708 <branch>\n(2369952b0 is the old main, and it maps to the new main bff23828c. A branch cut from an earlier main needs that commit's new id from C:/Users/satoh/Phoenix History Purge 2026-11-27/rewrite.git/filter-repo/commit-map.)\nThen check that \`git merge-base --is-ancestor ${OLD_ROOT} HEAD\` FAILS before pushing.`);
+          deny(`Refused: \`${r}\` in ${dir} is on the OLD history of phoenix-people-workforce, the history purged on 27 Nov 2026 (the payroll copy and 39 data files). Pushing it would put those files back on public GitHub.\n\nMove it onto the new history first:\n  git -C "${dir}" fetch origin\n  git -C "${dir}" rebase --onto origin/main 2369952b0d60f657fed65eb73aca30e40c0fe708 <branch>\n(2369952b0 is the old main, and it maps to the new main bff23828c. A branch cut from an earlier main needs that commit's new id from C:/Users/satoh/Phoenix History Purge 2026-11-27 - kept map/commit-map.)\nThen check that \`git merge-base --is-ancestor ${OLD_ROOT} HEAD\` FAILS before pushing.`);
         }
       }
     }

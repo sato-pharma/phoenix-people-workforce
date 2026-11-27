@@ -22,7 +22,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `hooks/next-step-capture.mjs` | 75971 | `933a4def2ad423c4` |
 | `hooks/phoenix-context-anywhere.mjs` | 8491 | `f60fbc78be048f19` |
 | `hooks/plan-mode-auto-approve.mjs` | 3356 | `b21cbb7a72bb3135` |
-| `hooks/purged-history-push-guard.mjs` | 4622 | `88a9d3d0c544c96e` |
+| `hooks/purged-history-push-guard.mjs` | 4661 | `b8948e247bd41377` |
 | `hooks/python-repl-guard.mjs` | 27239 | `8efac615462f3676` |
 | `hooks/relay-capture.mjs` | 16966 | `1755b4c845483f71` |
 | `hooks/relay-cli.mjs` | 7305 | `ce153d5b858b69e1` |
