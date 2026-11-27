@@ -1,6 +1,8 @@
 import { getSalaryFlags } from "@/lib/admin/service";
-import { hrIdsMatch, type AccessContext } from "@/lib/auth/permissions";
+import { getPlanAwaitingBadge, getVacationAwaitingBadge } from "@/lib/approvals-hub/service";
+import { assertPermission, hrIdsMatch, type AccessContext } from "@/lib/auth/permissions";
 import { getAttendanceAnalytics } from "@/lib/attendance/analytics";
+import { loadPublishedClosingSales, type PublishedClosingSales } from "@/lib/ceo/published-closing-sales";
 import { getApprovedLeaveDayMap } from "@/lib/attendance/working-days";
 import { addDaysIso, cairoTodayIso } from "@/lib/crm/dates";
 import { getSfeCrmFieldAnalytics, type SfeCrmFieldAnalytics } from "@/lib/crm/sfe-field-analytics";
@@ -9,6 +11,7 @@ import { getDoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
 import { getDoubleVisitDashboardData } from "@/lib/double-visit-analytics/service";
 import type { DoubleVisitIdleManager, DoubleVisitManagerSummary } from "@/lib/double-visit-analytics/types";
 import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { getFinanceCommandCenterData, type FinanceCommittedMonth } from "@/lib/finance/command-center";
 import { normalizeHrIdForAccess } from "@/lib/hr-id";
 import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
 import { adaptersFor } from "@/lib/needs-you/sources";
@@ -18,13 +21,9 @@ import {
   type NeedsYouSourceId,
   type NeedsYouSourceResult,
 } from "@/lib/needs-you/types";
-import { isDistrictManagerPlanTitle } from "@/lib/weekly-planning/plan-v1";
-import { planHasSecondApprover } from "@/lib/weekly-planning/second-approver";
-import { ceoHrIdOf } from "@/lib/phoenix-crm/manager-plan-rules";
-import { loadManagerPlanQueue } from "@/lib/phoenix-crm/server/manager-plan-queue";
-import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import { getOutstationExpenseCommandData } from "@/lib/outstation/expense-command";
 import { getPlatformMetrics, type PlatformMetrics, type UncomputedRate } from "@/lib/platform/metrics";
+import { canDecideProbation } from "@/lib/probation/intelligence/decision";
 import { getResignationsDashboardData } from "@/lib/resignations/service";
 import { loadSourceOfSalesDashboard } from "@/lib/sales/monthly-distributor-import";
 import { loadSalesReleaseKeys, newestCompanyPublishedPeriod } from "@/lib/sales/unpublished-sales-access";
@@ -39,9 +38,8 @@ import {
   getSalesMarketingDashboard,
   parseSalesMarketingDashboardFilters,
 } from "@/lib/sales-marketing-intelligence/service";
-import { fetchAllRows } from "@/lib/supabase/paginated";
+import type { SalesMarketingRoiTrendPoint } from "@/lib/sales-marketing-intelligence/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { getVacationPendingApprovalCounts } from "@/lib/vacation/service";
 
 /**
  * Bespoke executive data layer for the CEO Command Center, split for streaming.
@@ -78,9 +76,12 @@ export type CeoCommandCenterData = {
   health: {
     score: number | null;
     employeeHealthRate: UncomputedRate;
+    employeeLinkageRate: UncomputedRate;
     salesLinkageRate: UncomputedRate;
     attendanceReadinessRate: UncomputedRate;
     salesAchievementRate: UncomputedRate;
+    /** The published months `salesAchievementRate` covers, e.g. "2026-07 to 2026-10"; null when unmeasured. */
+    salesAchievementWindow: string | null;
   };
   headcount: {
     active: number;
@@ -99,7 +100,14 @@ export type CeoCommandCenterData = {
     available: boolean;
   };
   attention: CeoAttentionItem[];
+  /** Each counts only what waits on THIS VIEWER'S own turn (owner, 27 Nov 2026), never the company queue. */
   approvals: { leavePending: number | null; plansPending: number | null };
+  /**
+   * The sales card's figures: the PUBLISHED Monthly Closing (owner, 27 Nov 2026), never the raw
+   * upload book in `sos`. Value only, so no unit total can be added across products. Null when no
+   * month is published on every line, the read failed, or this viewer has no company-wide scope.
+   */
+  publishedSales: PublishedClosingSales | null;
   sos: {
     period: string | null;
     /**
@@ -242,87 +250,114 @@ function healthScore(health: CeoAdminSignals["health"]) {
  * changing the window or the filters.
  */
 
+/**
+ * People who STARTED in the last 30 Cairo days. Both ends: a hire is keyed in before the start
+ * date, and with only a lower bound the people starting next month counted as hired already
+ * (27 Nov 2026: 31 read, 26 real).
+ */
 async function getCeoRecentHiresCount(): Promise<number> {
-  const since = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
+  const today = cairoTodayIso();
   const { count, error } = await getSupabaseAdmin()
     .from("employees")
     .select("hr_id", { count: "exact", head: true })
-    .gte("hire_date", since);
+    .gte("hire_date", addDaysIso(today, -30))
+    .lte("hire_date", today);
   if (error) throw error;
   return count ?? 0;
 }
 
-async function getCeoPendingPlansCount(): Promise<number> {
-  // Not a head-only count: a District Manager plan resting at manager_approved under a manager with
-  // a second approver (second-approver.ts) is waiting on THAT approver, never on the CEO, so it
-  // must not be counted here — and only the rows themselves say which plans those are.
-  // Paged, every plan at this step: a fixed ceiling would silently under-count the CEO's tile.
-  const [legacyRows, crm] = await Promise.all([
-    fetchAllRows<{ manager_hr_id: string | null; employee_job_title: string | null }>(
-      () => getSupabaseAdmin().from("employee_plan_headers").select("id,manager_hr_id,employee_job_title").eq("status", "manager_approved"),
-      "id",
-    ),
-    getCeoCrmManagerPlansWaiting(),
-  ]);
-  const legacyCount = legacyRows.filter(
-    (row) => !planHasSecondApprover(row.manager_hr_id, isDistrictManagerPlanTitle(row.employee_job_title)),
-  ).length;
-  return legacyCount + crm;
-}
-
-/**
- * The Phoenix CRM manager weeks, asks to edit and own-list removals waiting at the CEO's own step (owner,
- * 2026-10-17): a regional, national or product manager's week goes to the CEO "as today", where his
- * legacy plan went. Read by the CEO seat's occupant, the person stored on each row — so it counts what
- * waits on HIM whoever opens this page. A failed read throws: the tile says it could not be read.
- */
-async function getCeoCrmManagerPlansWaiting(): Promise<number> {
-  const ceoHrId = ceoHrIdOf(await loadPhoenixCrmOrg());
-  if (!ceoHrId) return 0;
-  return (await loadManagerPlanQueue(ceoHrId, false)).awaiting.length;
-}
-
-function buildCeoHealth(
+export function buildCeoHealth(
   platformMetrics: PlatformMetrics | null,
   salesLinkageRate: UncomputedRate,
+  published: PublishedClosingSales | null,
 ): CeoAdminSignals["health"] {
   // `?? null`, never `?? 0`: no platform metrics at all means nothing was measured, and a zero
   // here reads as a real, alarming figure rather than as the absence of one.
+  const workforce = platformMetrics?.workforce ?? null;
+  const achievement = published?.achievement ?? null;
   return {
     attendanceReadinessRate: safeRate(platformMetrics?.attendance.mappingReadinessRate ?? null),
-    employeeHealthRate: safeRate(platformMetrics?.workforce.employeeHealthRate ?? null),
-    salesAchievementRate: safeRate(platformMetrics?.sales.achievementRate ?? null),
+    employeeHealthRate: safeRate(workforce?.employeeHealthRate ?? null),
+    employeeLinkageRate: safeRate(employeeManagerLinkageRate(workforce)),
+    // The PUBLISHED closing's achievement, graded per line over the months that carry a target.
+    // `platformMetrics.sales.achievementRate` set January-to-October sales against the months that
+    // have a target and read 100% (27 Nov 2026).
+    salesAchievementRate: safeRate(achievement?.rate ?? null),
+    salesAchievementWindow: achievement ? ceoPeriodWindowLabel(achievement.fromPeriod, achievement.toPeriod) : null,
     salesLinkageRate: safeRate(salesLinkageRate),
   };
 }
 
-function buildCeoTrends(
-  platformMetrics: PlatformMetrics | null,
-  sos: CeoCommandCenterData["sos"] | null,
-  departuresLast30d: number,
-  hiresLast30d = 0,
-): CeoCommandCenterData["trends"] {
-  const salesValue = sos?.totalValue ?? platformMetrics?.sales.salesValue ?? 0;
-  const targetValue = platformMetrics?.sales.targetValue ?? 0;
-  const payrollCost = platformMetrics?.payroll.gross ?? 0;
-  const payrollLabel = platformMetrics?.payroll.batchLabel && platformMetrics.payroll.batchLabel !== "No batch"
-    ? platformMetrics.payroll.batchLabel
-    : "Current";
-  const periodLabel = sos?.period ?? payrollLabel;
+/** "2026-07 to 2026-10", or the one month when the window is a single month. */
+export function ceoPeriodWindowLabel(fromPeriod: string, toPeriod: string): string {
+  return fromPeriod === toPeriod ? toPeriod : `${fromPeriod} to ${toPeriod}`;
+}
 
+/**
+ * Share of the employees read who are attached to a manager. The "Employee linkage" bar printed
+ * `employeeHealthRate` (a headcount ratio) under this name, so it could never show a record missing
+ * its manager. Null when no employee was read.
+ */
+export function employeeManagerLinkageRate(
+  workforce: Pick<PlatformMetrics["workforce"], "employeesWithoutManagers" | "totalEmployees"> | null,
+): UncomputedRate {
+  if (!workforce || !workforce.totalEmployees) return null;
+  const attached = Math.max(0, workforce.totalEmployees - workforce.employeesWithoutManagers);
+  return attached / workforce.totalEmployees;
+}
+
+/** Resignation statuses that end in nobody leaving. */
+const NON_EXIT_RESIGNATION_STATUSES: ReadonlySet<string> = new Set(["cancelled", "rejected"]);
+
+/**
+ * Departures in the last 30 days: resignations effective in [today - 30, today]. A cancelled or
+ * rejected resignation is nobody leaving; counting it read 13 exits for 12 real ones (27 Nov 2026).
+ */
+export function ceoDeparturesLast30d(
+  records: ReadonlyArray<{ effectiveDate: string | null | undefined; status?: string | null }>,
+  now: Date = new Date(),
+): number {
+  return records.filter((record) => {
+    if (NON_EXIT_RESIGNATION_STATUSES.has(String(record.status ?? "").trim().toLowerCase())) return false;
+    if (!record.effectiveDate) return false;
+    const time = new Date(record.effectiveDate).getTime();
+    if (!Number.isFinite(time)) return false;
+    const delta = Math.floor((time - now.getTime()) / 86_400_000);
+    return delta <= 0 && delta >= -30;
+  }).length;
+}
+
+/**
+ * The three trend series, each a REAL series.
+ *
+ * Until 27 Nov 2026 each series held ONE point, so the sparklines always read "Not enough history
+ * yet", and the point was wrong: "Monthly sales" drew the platform's year-to-date total as one
+ * month, and the payroll line ignored every closed month but the newest.
+ *
+ *   sales     the published closing's own months (`PublishedClosingSales.monthly`).
+ *   financial gross pay of each closed salary batch, the source the Finance command centre's
+ *             payroll chart reads (`payroll.committed`); a month after the current Cairo month is
+ *             never drawn. Revenue is that month's published sales, 0 where none is published.
+ *   hireExit  the last 30 days, one labelled bar pair.
+ */
+export function buildCeoTrends(input: {
+  published: PublishedClosingSales | null;
+  payrollMonths: readonly FinanceCommittedMonth[];
+  hiresLast30d: number;
+  exitsLast30d: number;
+  todayCairo?: string;
+}): CeoCommandCenterData["trends"] {
+  const currentMonth = (input.todayCairo ?? cairoTodayIso()).slice(0, 7);
+  const monthly = input.published?.monthly ?? [];
+  const salesByPeriod = new Map(monthly.map((month) => [month.period, month.value] as const));
   return {
-    sales: salesValue > 0 || targetValue > 0
-      ? [{ label: periodLabel, sales: salesValue, target: targetValue }]
-      : [],
-    financial: salesValue > 0 || payrollCost > 0
-      ? [{ label: payrollLabel, revenue: salesValue, cost: payrollCost }]
-      : [],
-    hireExit: departuresLast30d > 0 || hiresLast30d > 0
-      ? [{
-          label: "Current",
-          hires: hiresLast30d,
-          exits: departuresLast30d,
-        }]
+    sales: monthly.map((month) => ({ label: month.period, sales: month.value, target: month.target })),
+    financial: [...input.payrollMonths]
+      .filter((month) => month.period <= currentMonth && Number.isFinite(month.gross) && month.gross > 0)
+      .sort((left, right) => left.period.localeCompare(right.period))
+      .map((month) => ({ label: month.period, revenue: salesByPeriod.get(month.period) ?? 0, cost: month.gross })),
+    hireExit: input.hiresLast30d > 0 || input.exitsLast30d > 0
+      ? [{ label: "Last 30 days", hires: input.hiresLast30d, exits: input.exitsLast30d }]
       : [],
   };
 }
@@ -337,7 +372,10 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
   // metrics (only needed for the health/trends fallback at the very end), so
   // gating them behind platformPromise resolving first serialized two rounds
   // of executive-signal fetching that could run concurrently.
-  const adminSignalsPromise = getCeoAdminSignals(access, platformPromise);
+  // The published closing is read ONCE per page and shared: the sales card reads it here, and the
+  // health and trend figures read it inside getCeoAdminSignals.
+  const publishedPromise = loadPublishedClosingSales(access);
+  const adminSignalsPromise = getCeoAdminSignals(access, platformPromise, publishedPromise);
 
   // Which month this card shows: the last PUBLISHED closing, not the newest upload.
   //
@@ -367,12 +405,16 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
     .catch(() => null);
   const closingPeriod = await closingPeriodPromise;
 
-  const [sosR, platformR, adminSignalsR, pendingPlansR] =
+  const [sosR, platformR, adminSignalsR, pendingPlansR, publishedR] =
     await Promise.allSettled([
       closingPeriod ? loadSourceOfSalesDashboard(closingPeriod, { role: access.role }) : Promise.resolve(null),
       platformPromise,
       adminSignalsPromise,
-      getCeoPendingPlansCount(),
+      // The plans waiting on THIS VIEWER's own step (owner, 27 Nov 2026), the sidebar badge's own
+      // count. It replaced a company-wide count of every plan at manager_approved plus the CEO
+      // seat's Phoenix CRM queue, which put other approvers' plans on the Super Admin's tile.
+      getPlanAwaitingBadge(access),
+      publishedPromise,
     ]);
 
   const sos = sosR.status === "fulfilled" && sosR.value?.period === closingPeriod ? sosR.value : null;
@@ -383,16 +425,15 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
   const adminSignals = adminSignalsR.status === "fulfilled" ? adminSignalsR.value : null;
   if (!adminSignals) dataUnavailable.push("Executive risk signals");
   if (adminSignals?.dataUnavailable.length) dataUnavailable.push(...adminSignals.dataUnavailable);
-  const plansPending = pendingPlansR.status === "fulfilled" ? pendingPlansR.value : null;
-  if (pendingPlansR.status === "rejected") dataUnavailable.push("Pending weekly-plan approvals");
+  const plansBadge = pendingPlansR.status === "fulfilled" ? pendingPlansR.value : null;
+  const plansPending = plansBadge?.available ? plansBadge.count : null;
+  if (plansPending === null) dataUnavailable.push("Pending weekly-plan approvals");
+  const publishedSales = publishedR.status === "fulfilled" ? publishedR.value : null;
+  if (publishedR.status === "rejected") dataUnavailable.push("Published Monthly Closing sales");
 
-  // Leave was moved out of "Other Approvals" onto the dedicated vacation approvals page, so
-  // getAwaitingMyActionItems filters module==="leave" out of its own feed by design (see
-  // action-center/service.ts). This CEO tile must source its count from the same vacation-report
-  // aggregate the "leaveSla" attention signal already uses (via adminSignals), not from that
-  // feed — filtering it here always returned zero, which read as "no leave waiting" even when
-  // requests were pending. Null (not 0) when the underlying vacation fetch failed, so the tile
-  // renders "unavailable" instead of a false all-clear.
+  // The leave requests on THIS VIEWER's turn (owner, 27 Nov 2026), the sidebar badge's own count,
+  // read once inside getCeoAdminSignals. Null (not 0) when that read failed, so the tile renders
+  // "unavailable" instead of a false all-clear.
   const leavePending = adminSignals ? adminSignals.leavePendingTotal : null;
 
   // The period actually rendered is whatever loadSourceOfSalesDashboard settled on, which is the
@@ -428,9 +469,9 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
     : null;
   const workforce = platformMetrics?.workforce;
   const platformPayroll = platformMetrics?.payroll;
-  const fallbackHealth = buildCeoHealth(platformMetrics, platformMetrics?.sales.dataQualityRate ?? null);
+  const fallbackHealth = buildCeoHealth(platformMetrics, platformMetrics?.sales.dataQualityRate ?? null, publishedSales);
   const health = adminSignals?.health ?? fallbackHealth;
-  const trends = adminSignals?.trends ?? buildCeoTrends(platformMetrics, sosOut, 0);
+  const trends = adminSignals?.trends ?? buildCeoTrends({ published: publishedSales, payrollMonths: [], hiresLast30d: 0, exitsLast30d: 0 });
 
   return {
     generatedAt: new Date().toISOString(),
@@ -463,6 +504,7 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
     },
     attention: adminSignals?.attention ?? [],
     approvals: { leavePending, plansPending },
+    publishedSales: adminSignals?.publishedSales ?? publishedSales,
     sos: sosOut,
     trends,
     adminSignals,
@@ -477,6 +519,7 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
 async function getCeoAdminSignals(
   access: AccessContext,
   platformMetrics?: PlatformMetrics | Promise<PlatformMetrics>,
+  publishedSales?: Promise<PublishedClosingSales | null>,
 ): Promise<CeoAdminSignals> {
   // Kick off the 5 independent aggregates and the platform-metrics resolution
   // together — platformMetrics is only consumed at the bottom of this function
@@ -487,9 +530,11 @@ async function getCeoAdminSignals(
   const [signalResults, resolvedPlatformMetrics] = await Promise.all([
     Promise.allSettled([
       getResignationsDashboardData(access),
-      // The two approval counts only — never the whole leave report, which enriches every request
-      // ever filed and was the slowest read behind /admin (11.7 s measured 2026-09-21).
-      getVacationPendingApprovalCounts(access),
+      // The leave requests on THIS VIEWER's own turn (owner, 27 Nov 2026), the sidebar badge's own
+      // count. It replaced the company's whole pending queue by stage, which put every manager's
+      // and HR's waiting requests on the Super Admin's tile. Never the whole leave report either,
+      // which enriches every request ever filed (11.7 s measured 2026-09-21).
+      assertPermission(access, "leave", "read").then(() => getVacationAwaitingBadge(access)),
       // 🔴 CONTRACTS, PROBATION AND COACHING ARE NO LONGER COMPUTED HERE. They are three of the
       // sources `src/lib/needs-you` already owns, and until this change both files carried
       // their own copy of each rule — which had already drifted: this file's probation count filters
@@ -503,14 +548,22 @@ async function getCeoAdminSignals(
       loadNeedsYouSources(access, adaptersFor(["contract-renewals", "probation-decisions", "coaching-red-zone"])),
       getSalaryFlags(),
       getCeoRecentHiresCount(),
+      publishedSales ?? loadPublishedClosingSales(access),
+      // Closed salary batches, month by month: the Finance command centre's own payroll series.
+      getFinanceCommandCenterData(access).then((view) => view.data.payroll.committed),
     ]),
     platformMetrics ?? getPlatformMetrics(access),
   ]);
-  const [resignationsR, leavePendingR, sharedSourcesR, flagsR, recentHiresR] = signalResults;
+  const [resignationsR, leavePendingR, sharedSourcesR, flagsR, recentHiresR, publishedR, payrollMonthsR] = signalResults;
   const dataUnavailable: string[] = [];
   if (resignationsR.status === "rejected") dataUnavailable.push("Resignation risk signals");
-  if (leavePendingR.status === "rejected") dataUnavailable.push("Leave SLA risk signals");
+  const leaveBadge = leavePendingR.status === "fulfilled" && leavePendingR.value.available ? leavePendingR.value : null;
+  if (!leaveBadge) dataUnavailable.push("Leave SLA risk signals");
   if (flagsR.status === "rejected") dataUnavailable.push("Salary flag risk signals");
+  const published = publishedR.status === "fulfilled" ? publishedR.value : null;
+  if (publishedR.status === "rejected") dataUnavailable.push("Published Monthly Closing sales");
+  const payrollMonths = payrollMonthsR.status === "fulfilled" ? payrollMonthsR.value : [];
+  if (payrollMonthsR.status === "rejected") dataUnavailable.push("Payroll cost trend");
 
   /**
    * The three shared signals, read out of the board's own source results.
@@ -533,31 +586,17 @@ async function getCeoAdminSignals(
     return result.state.items.find((item) => item.key === itemKey)?.count ?? 0;
   };
 
-  const daysFromNow = (iso: string | null | undefined): number | null => {
-    if (!iso) return null;
-    const time = new Date(iso).getTime();
-    if (!Number.isFinite(time)) return null;
-    return Math.floor((time - Date.now()) / 86_400_000);
-  };
   const pendingResignations =
     resignationsR.status === "fulfilled" ? resignationsR.value.summary.pending : 0;
   const departuresLast30d =
-    resignationsR.status === "fulfilled"
-      ? resignationsR.value.records.filter((record) => {
-          const delta = daysFromNow(record.effectiveDate);
-          return delta !== null && delta <= 0 && delta >= -30;
-        }).length
-      : 0;
-  const overdueLeaveSla =
-    leavePendingR.status === "fulfilled"
-      ? leavePendingR.value.overdueBySla.total || leavePendingR.value.pendingByStage.total
-      : 0;
-  // Total requests actually awaiting a decision (HR or manager stage), independent of the
-  // SLA-prioritized `overdueLeaveSla` figure above — this is what the CEO's "Leave requests"
-  // approval tile shows. Null (not 0) on fetch failure so the tile can render "unavailable"
-  // rather than a false zero; the rejection is already recorded in dataUnavailable below.
-  const leavePendingTotal =
-    leavePendingR.status === "fulfilled" ? leavePendingR.value.pendingByStage.total : null;
+    resignationsR.status === "fulfilled" ? ceoDeparturesLast30d(resignationsR.value.records) : 0;
+  // OVERDUE requests on the viewer's own turn only. The old `overdueBySla.total ||
+  // pendingByStage.total` fell back to the whole company queue whenever nothing was overdue, so
+  // the URGENT row read "Pending leave approvals" with every waiting request in it.
+  const overdueLeaveSla = leaveBadge?.overdueCount ?? 0;
+  // Every request waiting on the viewer's turn: the "Leave requests" approval tile. Null (not 0)
+  // on a failed read so the tile renders "unavailable" rather than a false zero.
+  const leavePendingTotal = leaveBadge ? leaveBadge.count : null;
   // 🔴 THE FALLBACK TO `resolvedPlatformMetrics.lifecycleRisk.expiringContracts` IS GONE, ON
   // PURPOSE. It turned a failed contract read into a number from a different query, which is the
   // precise defect the Needs You module was built to remove: a figure a failure was allowed to
@@ -566,7 +605,11 @@ async function getCeoAdminSignals(
   // fallback — that field is a payroll figure this screen publishes elsewhere, not an attention
   // tile, and changing it is a separate decision.)
   const expiringContracts = sharedCount("contract-renewals", "contract-renewals:expiring");
-  const probationDueSoon = sharedCount("probation-decisions", "probation-decisions:due");
+  // Only a viewer who DECIDES probation (the CEO, a probation administrator, a National Sales
+  // Manager) is shown the decisions due: to anyone else it is not a queue of his.
+  const probationDueSoon = canDecideProbation(access)
+    ? sharedCount("probation-decisions", "probation-decisions:due")
+    : null;
   // PEOPLE, not reports — enforced in the adapter now. `zoneCounts` is a distribution over REPORTS,
   // and adding its two red buckets up under the label "Coaching red-zone reps" read 35 on production
   // against 45 reps ever coached and 18 ever red. The honest figure is 7.
@@ -582,7 +625,7 @@ async function getCeoAdminSignals(
   if (probationDueSoon !== null && probationDueSoon > 0) {
     signalAttention.push({
       key: "probationDue",
-      label: `Probation decisions due (${lifecycleRiskWindows.probationCriticalDays}d)`,
+      label: `Probation decisions due within ${lifecycleRiskWindows.probationCriticalDays} days`,
       count: probationDueSoon,
       href: "/probation",
       tone: "amber",
@@ -592,7 +635,7 @@ async function getCeoAdminSignals(
     signalAttention.push({ key: "resignations", label: "Pending resignations", count: pendingResignations, href: "/resignations", tone: "rose" });
   }
   if (overdueLeaveSla > 0) {
-    signalAttention.push({ key: "leaveSla", label: "Pending leave approvals", count: overdueLeaveSla, href: "/admin/approvals/vacation", tone: "rose" });
+    signalAttention.push({ key: "leaveSla", label: "Overdue leave approvals waiting on you", count: overdueLeaveSla, href: "/admin/approvals/vacation", tone: "rose" });
   }
   if (unresolvedSalaryFlags > 0) {
     signalAttention.push({ key: "salaryFlags", label: "Unresolved salary flags", count: unresolvedSalaryFlags, href: "/admin/m-payroll", tone: "rose" });
@@ -601,8 +644,8 @@ async function getCeoAdminSignals(
     signalAttention.push({ key: "coaching", label: "Coaching red-zone reps", count: coachingRedZone, href: "/coaching", tone: "amber" });
   }
 
-  const health = buildCeoHealth(resolvedPlatformMetrics, resolvedPlatformMetrics.sales.dataQualityRate);
-  const trends = buildCeoTrends(resolvedPlatformMetrics, null, departuresLast30d, hiresLast30d);
+  const health = buildCeoHealth(resolvedPlatformMetrics, resolvedPlatformMetrics.sales.dataQualityRate, published);
+  const trends = buildCeoTrends({ published, payrollMonths, hiresLast30d, exitsLast30d: departuresLast30d });
   const payroll = resolvedPlatformMetrics.payroll;
 
   return {
@@ -611,6 +654,7 @@ async function getCeoAdminSignals(
     departuresLast30d,
     health,
     leavePendingTotal,
+    publishedSales: published,
     trends,
     payroll: {
       batchLabel: payroll.batchLabel,
@@ -645,8 +689,12 @@ export type CeoDvManagerRow = {
 export function ceoDvManagerRows(
   managerSummaries: readonly DoubleVisitManagerSummary[],
   idleManagers: readonly DoubleVisitIdleManager[],
+  leaverManagerHrIds: readonly string[] = [],
 ): CeoDvManagerRow[] {
-  const rows: CeoDvManagerRow[] = managerSummaries.map((s) => ({
+  // A manager who has LEFT is not a manager to grade: his visits stay in the module's own history,
+  // but a row here asked the CEO to chase someone no longer employed (owner, 27 Nov 2026).
+  const isLeaver = (hrId: string) => leaverManagerHrIds.some((leaver) => hrIdsMatch(leaver, hrId));
+  const rows: CeoDvManagerRow[] = managerSummaries.filter((s) => !isLeaver(s.managerHrId)).map((s) => ({
     managerHrId: s.managerHrId,
     managerName: s.managerName,
     role: s.role ?? null,
@@ -664,6 +712,7 @@ export function ceoDvManagerRows(
     coveragePct: s.coveragePct ?? null,
   }));
   for (const idle of idleManagers) {
+    if (isLeaver(idle.hrId)) continue;
     if (rows.some((row) => hrIdsMatch(row.managerHrId, idle.hrId))) continue;
     const team = idle.teamMrCount ?? null;
     const hasTeam = team != null && team > 0;
@@ -735,23 +784,60 @@ export type CeoRoiSignal = {
   startedStrong: number;
   startedWeak: number;
   stillZero: number;
+  /** Marketing requests in `lastPeriod`, the trend's own `requestCount`. */
+  requestCount: number;
   lastPeriod: string | null;
   trend: Array<{ period: string; onTrack: number; behind: number; noData: number }>;
 };
+
+/**
+ * The ROI tile's figures from the marketing trend. The trend runs to the newest month holding a
+ * request, which can be a FUTURE month (a request raised for December): its last point read
+ * 0 on track / 0 behind / 0 no data off one request (27 Nov 2026). The tile reads the latest month
+ * that is not after the current Cairo month, and "total requests" is that month's own `requestCount`
+ * rather than the sum of the three buckets, which leaves out requests not yet graded.
+ */
+export function ceoRoiSignalFromTrend(
+  trend: readonly SalesMarketingRoiTrendPoint[],
+  todayCairo: string = cairoTodayIso(),
+): CeoRoiSignal {
+  const currentMonth = todayCairo.slice(0, 7);
+  const settled = [...trend]
+    .filter((point) => String(point.period).slice(0, 7) <= currentMonth)
+    .sort((left, right) => String(left.period).localeCompare(String(right.period)));
+  const last = settled.length > 0 ? settled[settled.length - 1] : null;
+  return {
+    startedStrong: last?.onTrackCount ?? 0,
+    startedWeak: last?.behindCount ?? 0,
+    stillZero: last?.noDataCount ?? 0,
+    requestCount: last?.requestCount ?? 0,
+    lastPeriod: last?.period ?? null,
+    trend: settled.slice(-6).map((point) => ({
+      period: point.period,
+      onTrack: point.onTrackCount,
+      behind: point.behindCount,
+      noData: point.noDataCount,
+    })),
+  };
+}
 
 export type CeoAdminSignals = {
   attention: CeoAttentionItem[];
   dataUnavailable: string[];
   /** Rolling 30-day departures (resignations effective within the last 30 days); 0 if resignation data is unavailable. */
   departuresLast30d: number;
-  /** Leave/vacation requests pending a decision (HR or manager stage); null if the vacation-report fetch failed. */
+  /** Leave requests on THIS VIEWER's own turn (the sidebar badge's count); null if that read failed. */
   leavePendingTotal: number | null;
+  /** The published Monthly Closing, read once and shared with the sales card. */
+  publishedSales: PublishedClosingSales | null;
   /** `null` on any rate means it was never measured — see `CeoCommandCenterData["health"]`. */
   health: {
     salesLinkageRate: UncomputedRate;
     attendanceReadinessRate: UncomputedRate;
     salesAchievementRate: UncomputedRate;
+    salesAchievementWindow: string | null;
     employeeHealthRate: UncomputedRate;
+    employeeLinkageRate: UncomputedRate;
   };
   trends: {
     sales: Array<{ label: string; sales: number; target: number }>;
@@ -914,7 +1000,7 @@ export async function getCeoLandingDeferred(
   // Double-visit manager rows — the managers with zero double visits included (ceoDvManagerRows).
   const dvOut = dv
     ? {
-        managerRows: ceoDvManagerRows(dv.managerSummaries, dv.executiveSummary.idleManagers),
+        managerRows: ceoDvManagerRows(dv.managerSummaries, dv.executiveSummary.idleManagers, dv.leaverManagerHrIds ?? []),
         dateFrom: dv.dateFrom,
         dateTo: dv.dateTo,
       }
@@ -964,25 +1050,8 @@ export async function getCeoLandingDeferred(
       }
     : null;
 
-  // ROI signal — bucket by most recent period's counts
-  const roiSignalOut: CeoRoiSignal | null = marketing
-    ? (() => {
-        const trend = marketing.roiTrend ?? [];
-        const last = trend.length > 0 ? trend[trend.length - 1] : null;
-        return {
-          startedStrong: last?.onTrackCount ?? 0,
-          startedWeak: last?.behindCount ?? 0,
-          stillZero: last?.noDataCount ?? 0,
-          lastPeriod: last?.period ?? null,
-          trend: trend.slice(-6).map((p) => ({
-            period: p.period,
-            onTrack: p.onTrackCount,
-            behind: p.behindCount,
-            noData: p.noDataCount,
-          })),
-        };
-      })()
-    : null;
+  // ROI signal — the latest period that is not in the future (ceoRoiSignalFromTrend).
+  const roiSignalOut: CeoRoiSignal | null = marketing ? ceoRoiSignalFromTrend(marketing.roiTrend ?? []) : null;
 
   // Attendance
   const attendanceOut = attendance

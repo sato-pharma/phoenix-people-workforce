@@ -33,7 +33,6 @@ import { getCeoLandingDeferred, sosPeriodDisplayLabel } from "@/lib/ceo/command-
 import { formatStartMinutes, type SfeCrmFieldAnalytics } from "@/lib/crm/sfe-field-analytics";
 import { formatPharmacyFigure } from "@/lib/crm/visit-count-buckets";
 import type { UncomputedRate } from "@/lib/platform/metrics";
-import { SALES_ACHIEVEMENT_WINDOW_LABEL } from "@/lib/sales/metrics";
 import type { SfeImsContribution, SfeImsRow, SfeTargetPerformance } from "@/lib/sales/sfe-performance";
 
 function egp(v: number) {
@@ -112,7 +111,8 @@ function HealthBreakdown({
     salesLinkageRate: UncomputedRate;
     attendanceReadinessRate: UncomputedRate;
     salesAchievementRate: UncomputedRate;
-    employeeHealthRate: UncomputedRate;
+    salesAchievementWindow: string | null;
+    employeeLinkageRate: UncomputedRate;
   };
 }) {
   // `note` names the WINDOW a rate covers, and only one of these four has one. Linkage, readiness
@@ -125,7 +125,8 @@ function HealthBreakdown({
       value: health.salesAchievementRate,
       target: 0.9,
       color: "#F97316",
-      note: SALES_ACHIEVEMENT_WINDOW_LABEL,
+      // The published closing's months that carry a target, e.g. "2026-07 to 2026-10".
+      note: health.salesAchievementWindow ? `Published closing · ${health.salesAchievementWindow}` : "No published target",
     },
     // Attendance readiness scores fingerprint device mappings — HR plumbing, not sales or CRM.
     ...(includeAttendanceReadiness
@@ -134,9 +135,20 @@ function HealthBreakdown({
     // Employee linkage scores the HR employee master (records correctly attached to a manager).
     // The SFE Manager owns none of that data and cannot open any page that would fix it.
     ...(includeEmployeeLinkage
-      ? [{ label: "Employee linkage", value: health.employeeHealthRate, target: 1, color: "#10B981" }]
+      // Employees attached to a manager (employeeLinkageRate). It printed employeeHealthRate, a
+      // headcount ratio, under this name until 27 Nov 2026.
+      ? [{ label: "Employee linkage", value: health.employeeLinkageRate, target: 1, color: "#10B981" }]
       : []),
-    { label: "Sales linkage rate", value: health.salesLinkageRate, target: 1, color: "#8B5CF6" },
+    // What `sales.dataQualityRate` really measures: of the district managers named on the sales
+    // rows, the share that match a directory district manager on the same line. It was called
+    // "Sales linkage rate", which read as the share of sales linked to anyone.
+    {
+      label: "District managers matched",
+      value: health.salesLinkageRate,
+      target: 1,
+      color: "#8B5CF6",
+      note: "Named on sales, found in the directory",
+    },
   ];
   return (
     <div className={`grid divide-x divide-slate-200 ${metrics.length >= 4 ? "sm:grid-cols-4" : metrics.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
@@ -169,6 +181,12 @@ function HealthBreakdown({
 }
 
 // ── Trends ────────────────────────────────────────────────────────────────────
+
+/** "Latest 1 published closing month" / "Latest 4 published closing months" — never "1 periods". */
+export function trendPeriodsLabel(count: number, kind: string): string {
+  if (count === 0) return `No ${kind} months yet`;
+  return `Latest ${count} ${kind} ${count === 1 ? "month" : "months"}`;
+}
 
 function TrendsSection({
   trends,
@@ -204,11 +222,11 @@ function TrendsSection({
           stroke="#F97316"
           gradId="pb-trend-sales-grad"
         />
-        <p className="mt-2 text-phx-xs text-slate-400">Latest {trends.sales.length} periods</p>
+        <p className="mt-2 text-phx-xs text-slate-400">{trendPeriodsLabel(trends.sales.length, "published closing")}</p>
       </div>
       {includeFinancial ? <div className="px-5 py-5">
         <div className="mb-1 flex items-baseline justify-between">
-          <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">Payroll cost</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">Payroll cost (gross)</p>
           {trends.financial.length > 0 ? (
             <p className="text-xs font-bold text-slate-900">
               {egp(trends.financial[trends.financial.length - 1]?.cost ?? 0)}
@@ -220,7 +238,7 @@ function TrendsSection({
           stroke="#8B5CF6"
           gradId="pb-trend-cost-grad"
         />
-        <p className="mt-2 text-phx-xs text-slate-400">Latest {trends.financial.length} periods</p>
+        <p className="mt-2 text-phx-xs text-slate-400">{trendPeriodsLabel(trends.financial.length, "closed salary batch")}</p>
       </div> : null}
       {/* Hires vs exits is employee-lifecycle data (hire dates, resignations). The SFE Manager
           holds no `employees` or `resignations` grant, so it is dropped from his overview. */}
@@ -363,6 +381,8 @@ function RoiBrief({
 }: {
   data: NonNullable<Awaited<ReturnType<typeof getCeoLandingDeferred>>["roiSignal"]>;
 }) {
+  // The three buckets' share is of the GRADED requests; "total requests" is the month's own count,
+  // which also holds requests not graded yet.
   const total = data.startedStrong + data.startedWeak + data.stillZero;
   const buckets = [
     { label: "Started Strong", count: data.startedStrong, color: "bg-emerald-500", textColor: "text-emerald-700", borderColor: "border-emerald-200 bg-emerald-50", icon: <TrendingUp className="h-4 w-4 text-emerald-600" /> },
@@ -372,7 +392,7 @@ function RoiBrief({
   return (
     <div className="p-5 space-y-4">
       {data.lastPeriod && (
-        <p className="text-phx-sm text-slate-400">Latest period: {data.lastPeriod} · {total} total requests</p>
+        <p className="text-phx-sm text-slate-400">Latest period: {data.lastPeriod} · {data.requestCount} total requests</p>
       )}
       <div className="grid grid-cols-3 gap-2">
         {buckets.map((b) => (
@@ -949,7 +969,7 @@ export async function CeoPhaseBWidgets({
         description={
           isSfe
             ? "Weighted signal across sales achievement and sales data coverage."
-            : "Weighted signal across sales achievement, attendance, employee linkage, and data coverage."
+            : "Weighted signal across sales achievement, attendance, employee linkage, and district managers matched."
         }
       >
         {landing.adminSignals ? (
@@ -1058,7 +1078,7 @@ export async function CeoPhaseBWidgets({
       {/* ── Monthly Source of Sales (prefetched from fast path) ───────────── */}
       <Section
         title="Monthly Sales Intelligence"
-        description="Company-wide source of sales — sortable by region or product."
+        description="Regions from the published Monthly Closing; products from the same month's Source of Sales — sortable."
         action={
           <Link
             href="/sales/monthly-closing"
@@ -1068,13 +1088,19 @@ export async function CeoPhaseBWidgets({
           </Link>
         }
       >
-        {sosPrefetched ? (
+        {sosPrefetched || landing.adminSignals?.publishedSales ? (
           <CeoSosTables
-            byRegion={sosPrefetched.byRegion}
-            byProduct={sosPrefetched.byProduct}
+            // Regions read the PUBLISHED closing (owner, 27 Nov 2026), value only: a region's
+            // units would add different products together.
+            byRegion={(landing.adminSignals?.publishedSales?.byRegion ?? []).map((region) => ({
+              key: region.name,
+              label: region.name,
+              totalValue: region.value,
+            }))}
+            byProduct={sosPrefetched?.byProduct ?? []}
             /* The qualified label, not the bare period, so these tables and their exports name
                the same month the same way the hero above them does. Both read the one helper. */
-            period={sosPeriodDisplayLabel(sosPrefetched)}
+            period={sosPrefetched ? sosPeriodDisplayLabel(sosPrefetched) : `${landing.adminSignals?.publishedSales?.period ?? ""} closing`}
           />
         ) : (
           <UnavailableChip label="Monthly SoS" />
@@ -1089,7 +1115,7 @@ export async function CeoPhaseBWidgets({
           "Full Expense Dashboard" button are off his overview. */}
       {!isSfe ? <Section
         title="Expense Snapshot"
-        description="Last 30 days — outstation spend by region + top spenders."
+        description="Last 30 days — outstation spend by area + top spenders."
         action={
           <Link
             href="/admin/outstation/expense-command"

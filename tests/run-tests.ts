@@ -3348,6 +3348,20 @@ import { runExpenseDeskAmountBoxTests } from "./expense-desk-amount-box.test.ts"
 import { runExpenseRequestDeleteOwnerOnlyTests } from "./expense-request-delete-owner-only.test.ts";
 import { runExpenseDeskOrphanTripsTests } from "./expense-desk-orphan-trips.test.ts";
 import { runCodeqlHardeningTests } from "./codeql-hardening.test.ts";
+import { runCeoPublishedClosingSalesTests } from "./ceo-published-closing-sales.test.ts";
+import { runFinanceOverviewOwnTurnTests } from "./finance-overview-own-turn.test.ts";
+import {
+  runOverviewApprovalsOwnTurnTests,
+  runOverviewCoachingLeaverTests,
+  runOverviewDoubleVisitAgeTests,
+  runOverviewDoubleVisitLeaverTests,
+  runOverviewHeadcountTests,
+  runOverviewHealthTests,
+  runOverviewLabelTests,
+  runOverviewRoiTests,
+  runOverviewSalesCardTests,
+  runOverviewTrendsTests,
+} from "./admin-overview-numbers.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -13171,6 +13185,18 @@ await runTest("Expense Approvals, changing a decided claim (owner, 2026-11-23: m
 await runTest("Rep visits export (owner, 2026-11-24: one rep and a range as the workbook he reviewed, plus a Cover): the range stops at today and at 186 days, the Cover reads name, area, line, salary, hiring date, birth date and an age right around the birthday with a missing figure in words never 0, Every day is an Excel table with one record row per day and Visits summing to visits only, Visits per day lists every day with its type, two customers never share a repeat colour in one month, and the export is the Super Admin's alone, rate-limited and audited", runRepVisitsExportTests);
 await runTest("Rep effectiveness review (owner, 2026-11-25: the questions the managers asked on one rep as Excel and PDF, the customer count first): one pharmacy is one distributor customer that bought net above zero, a return, a direct order and a wholesaler shared across areas are not buyers, no total adds units of different products, the growth bridge adds up to the change, the months the rep held stand apart from the area's history, the PDF keeps the ink rule, and the review is for the Super Admin alone, rate-limited and audited", runRepEffectivenessExportTests);
 await runTest("Code-scanning hardening (27 Nov 2026): every inline boot script writes its values through one escaper that never closes the script, a Brevo message id and a speciality are trimmed in linear time, the LinkedIn slug is cut after an anchored host, and a download button follows only a path under /api/ on this site", runCodeqlHardeningTests);
+await runTest("CEO overview sales from the published closing: the headline is the newest month published on every tracked line and already over, a partly published month leaves monthly[] whole, Head Office never appears, shares sum to 1, the result carries no unit field, and achievement grades each line only on months it carries a target", runCeoPublishedClosingSalesTests);
+await runTest("Finance overview, own turn only (27 Nov 2026): the Super Admin's Finance band counts the Finance Manager's own queue, payroll-eligible and cost to company read v_payroll_eligible_employees, spend to pay includes the Finance Execution step and no deliberate hold, the oldest unbooked order is clocked on collection_date, and net payroll names the people that batch paid", runFinanceOverviewOwnTurnTests);
+await runTest("System Administrator overview, approvals (owner, 27 Nov 2026): leave and weekly plans count only the viewer's own turn through the sidebar badges' reads, the URGENT leave row is his overdue requests alone with no fallback to the company queue, and probation decisions show only to a viewer who decides them", runOverviewApprovalsOwnTurnTests);
+await runTest("System Administrator overview, sales card (owner, 27 Nov 2026): the headline, Top Lines, Top Regions and the region table read the published Monthly Closing read once per page, and no unit total or region Qty adds units of different products", runOverviewSalesCardTests);
+await runTest("System Administrator overview, company health (27 Nov 2026): employee health is active over total structure, employee linkage is the share attached to a manager, sales achievement is the published closing's and names its months, and the district-manager match is no longer called the sales linkage rate", runOverviewHealthTests);
+await runTest("System Administrator overview, trends (27 Nov 2026): Monthly Sales is the published closing month by month, payroll cost is each closed salary batch's gross oldest first with no future month, headcount movement is labelled Last 30 days, and one month never reads 1 periods", runOverviewTrendsTests);
+await runTest("System Administrator overview, headcount movement (27 Nov 2026): a cancelled or rejected resignation is not an exit, a start date after today is not a hire, and the bars print their figures", runOverviewHeadcountTests);
+await runTest("System Administrator overview, ROI tile (27 Nov 2026): the latest period is never after the current Cairo month and total requests is that month's own request count", runOverviewRoiTests);
+await runTest("System Administrator overview, coaching red zone (27 Nov 2026): a rep who has left is not counted in the red zone, and the report distribution stays whole", runOverviewCoachingLeaverTests);
+await runTest("System Administrator overview, double visits (27 Nov 2026): Last DV on a range running past today is measured to today, a closed range keeps its own end", runOverviewDoubleVisitAgeTests);
+await runTest("System Administrator overview, double visits (27 Nov 2026): a manager who has left is dropped from the CEO table as a leaderboard row and as an idle manager", runOverviewDoubleVisitLeaverTests);
+await runTest("System Administrator overview, labels (27 Nov 2026): Staffed areas, Reps double-visited and Spend by Area name what each figure counts", runOverviewLabelTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

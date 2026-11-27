@@ -32,7 +32,6 @@ import type {
 } from "@/lib/ceo/command-center";
 import { sosPeriodDisplayLabel } from "@/lib/ceo/command-center";
 import type { UncomputedRate } from "@/lib/platform/metrics";
-import { SALES_ACHIEVEMENT_WINDOW_LABEL } from "@/lib/sales/metrics";
 import { cn } from "@/lib/utils";
 
 /**
@@ -250,9 +249,15 @@ export function TwoSeriesBars({
   if (!data.length) return <p className="text-xs text-slate-400">No data yet.</p>;
   const max = Math.max(...data.flatMap((row) => [row.a, row.b]), 1);
   return (
-    <div className="flex h-20 items-end gap-1.5">
+    <div className="flex items-end gap-1.5">
       {data.map((row, index) => (
         <div key={`${row.label}-${index}`} className="flex flex-1 flex-col items-center gap-0.5">
+          {/* The figures themselves, over their bars: two bars with no number read as a shape, and
+              "how many" is the only question this chart answers (27 Nov 2026). */}
+          <div className="flex w-full justify-center gap-0.5 text-phx-xs font-black leading-tight">
+            <span className="w-1/2 text-center" style={{ color: colorA }}>{row.a.toLocaleString("en-US")}</span>
+            <span className="w-1/2 text-center" style={{ color: colorB }}>{row.b.toLocaleString("en-US")}</span>
+          </div>
           <div className="flex h-16 w-full items-end justify-center gap-0.5">
             <div
               className="w-1/2"
@@ -466,17 +471,16 @@ export function CeoCommandCenter({
   access: AccessContext;
   variant?: "admin" | "ceo" | "sfe";
 }) {
-  const { attention, approvals, dataUnavailable, headcount, health, payroll, sos } = data;
+  const { attention, approvals, dataUnavailable, headcount, health, payroll, publishedSales, sos } = data;
+  // The sales card's month: the PUBLISHED Monthly Closing (owner, 27 Nov 2026), named as one.
+  const publishedLabel = publishedSales ? `${publishedSales.period} closing` : null;
+  const publishedTopLines = (publishedSales?.byLine ?? []).slice(0, 5).map((line) => ({ label: line.name, value: line.value }));
+  const publishedTopRegions = (publishedSales?.byRegion ?? []).slice(0, 5).map((region) => ({ label: region.name, value: region.value }));
   // Name the month AND say what it is, everywhere the month appears. This card shows the last
   // published closing rather than the newest upload (see getCeoCommandCenterData), so a bare
   // "2026-07" read in August would look like a stale page; the word "closing" is what turns it
   // into a deliberate figure.
   const sosPeriodLabel = sosPeriodDisplayLabel(sos);
-  // "August is loading" — the one thing a reader of a deliberately-last-month figure still needs.
-  const sosNewerLabel =
-    sos && sos.newerPeriods.length > 0 && sos.periodBasis === "published-closing"
-      ? `${sos.newerPeriods[0]} is still loading`
-      : null;
   const isSfe = variant === "sfe";
   const surfaceLabel =
     variant === "sfe"
@@ -617,9 +621,9 @@ export function CeoCommandCenter({
             <MetricTile
               icon={<Wallet className="h-3.5 w-3.5" />}
               label="Monthly sales"
-              value={sos ? egp(sos.totalValue) : "—"}
-              sub={sosPeriodLabel ? `Source of Sales · ${sosPeriodLabel}` : "No monthly sales loaded"}
-              tone={sos && sos.totalValue > 0 ? "emerald" : "amber"}
+              value={publishedSales ? egp(publishedSales.totalValue) : "—"}
+              sub={publishedLabel ? `Monthly Closing · ${publishedLabel}` : "No published closing"}
+              tone={publishedSales && publishedSales.totalValue > 0 ? "emerald" : "amber"}
             />
           )}
           {/* Total structure and Vacancies both read the Organogram / AU seat model, which the
@@ -642,17 +646,16 @@ export function CeoCommandCenter({
             icon={<Target className="h-3.5 w-3.5" />}
             label="Sales achievement"
             value={pct(health.salesAchievementRate)}
-            // The window has to be on the tile. This rate is cumulative from the engine's 2026-01
-            // floor, and it sits two tiles from "Monthly sales", which is stamped with a single
-            // closing month — so unlabelled it read as that month's achievement.
-            sub={`Company sales vs target · ${SALES_ACHIEVEMENT_WINDOW_LABEL}`}
+            // The window has to be on the tile: the published months that carry a target, which sit
+            // two tiles from "Monthly sales" and its single closing month.
+            sub={health.salesAchievementWindow ? `Published closing vs target · ${health.salesAchievementWindow}` : "No published target"}
             tone={health.salesAchievementRate !== null && health.salesAchievementRate >= 0.9 ? "emerald" : "amber"}
           /> : null}
           {!isSfe ? <MetricTile
             icon={<ShieldCheck className="h-3.5 w-3.5" />}
             label="Employee health"
             value={pct(health.employeeHealthRate)}
-            sub="Active/total quality"
+            sub="Active / total structure"
             tone={health.employeeHealthRate !== null && health.employeeHealthRate >= 0.9 ? "emerald" : "amber"}
           /> : null}
           {/* Lines/Areas from the employee directory are gated by canReadCompanyWorkforceAggregates
@@ -687,9 +690,9 @@ export function CeoCommandCenter({
             tone={sos && sos.byProduct.length > 0 ? "slate" : "amber"}
           /> : <MetricTile
             icon={<MapPinned className="h-3.5 w-3.5" />}
-            label="Areas"
+            label="Staffed areas"
             value={workforceWasRead ? n(headcount.uniqueAreas) : "—"}
-            sub="Lookup-backed count"
+            sub="Areas with an active employee"
           />}
           {!isSfe ? <MetricTile
             icon={<Wallet className="h-3.5 w-3.5" />}
@@ -828,8 +831,8 @@ export function CeoCommandCenter({
         title="Sales & marketing performance"
         description={
           isSfe
-            ? "Source of Sales (monthly, live) — your lines and regions, plus the company field-sales dashboards."
-            : "Source of Sales (monthly, live) — plus one-click access to Weekly Sales and Marketing ROI dashboards."
+            ? "The published Monthly Closing — lines and regions, plus the company field-sales dashboards."
+            : "The published Monthly Closing — plus one-click access to Weekly Sales and Marketing ROI dashboards."
         }
       >
         {/* Three columns, but only ever TWO cards in them - so the Source of Sales card spans two
@@ -851,13 +854,10 @@ export function CeoCommandCenter({
             className="lg:col-span-2"
             title="Source of Sales"
             icon={<BarChart3 className="h-3.5 w-3.5" />}
-            headline={sos ? egp(sos.totalValue) : "—"}
-            headlineSub={sosPeriodLabel ? `Monthly · ${sosPeriodLabel}` : "Monthly"}
-            badge={sos ? (
-              <span className="whitespace-nowrap text-phx-sm text-slate-400">
-                {n(sos.totalQty)} units{sosNewerLabel ? ` · ${sosNewerLabel}` : ""}
-              </span>
-            ) : null}
+            // VALUE ONLY. The badge here added every product's units into one total ("466,375
+            // units"), and units of different products are never added (owner rule).
+            headline={publishedSales ? egp(publishedSales.totalValue) : "—"}
+            headlineSub={publishedLabel ? `Monthly Closing · ${publishedLabel}` : "No published closing"}
           >
             {/* Full-width on the SFE page, so the two tables sit side by side instead of one
                 stacked under the other across the whole screen. */}
@@ -865,30 +865,28 @@ export function CeoCommandCenter({
               <div>
                 <p className="mb-2 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-400">Top Lines</p>
                 <CeoTopMoversTable
-                  movers={sos?.topLines ?? []}
-                  title="SoS Top Lines"
-                  exportTitle="Source of Sales — Top Lines"
-                  subtitle={sos?.period ?? undefined}
+                  movers={publishedTopLines}
+                  title="Top Lines"
+                  exportTitle="Monthly Closing — Top Lines"
+                  subtitle={publishedLabel ?? undefined}
                   labelHeader="Product Line"
-                  // `topLines` is the top FIVE (topMoversFromSos slices it), so Share must divide by
-                  // EVERY line carrying sales this period — not by the handful listed here.
-                  total={(sos?.byLine ?? []).reduce((sum, line) => sum + line.totalValue, 0)}
-                  empty="No monthly sales loaded yet."
+                  // The top FIVE, so Share divides by the month's WHOLE published value.
+                  total={publishedSales?.totalValue ?? 0}
+                  empty="No published closing yet."
                 />
               </div>
               <div>
                 <p className="mb-2 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-400">Top Regions</p>
                 <CeoTopMoversTable
-                  movers={sos?.topRegions ?? []}
-                  title="SoS Top Regions"
-                  exportTitle="Source of Sales — Top Regions"
-                  subtitle={sos?.period ?? undefined}
+                  movers={publishedTopRegions}
+                  title="Top Regions"
+                  exportTitle="Monthly Closing — Top Regions"
+                  subtitle={publishedLabel ?? undefined}
                   labelHeader="Region"
-                  // Same slice, and this is where it actually bit: 13 regions carried sales in
-                  // August and the five listed are 90.4% of their value, so every share here read
-                  // about 11% high until this denominator was passed.
-                  total={(sos?.byRegion ?? []).reduce((sum, region) => sum + region.totalValue, 0)}
-                  empty="No regional sales data yet."
+                  // Same slice: Share divides by the month's whole published value, never by the
+                  // five listed (13 regions in August, the five were 90.4% of it).
+                  total={publishedSales?.totalValue ?? 0}
+                  empty="No published closing yet."
                 />
               </div>
             </div>

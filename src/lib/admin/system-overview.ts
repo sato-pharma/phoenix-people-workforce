@@ -29,7 +29,10 @@ export async function getSystemAdminOverviewData(access: AccessContext): Promise
   // serialize them. `allSettled` rather than `all` so a finance failure cannot reject the pair.
   const [ceoResult, financeResult] = await Promise.allSettled([
     getCeoCommandCenterData(access),
-    getFinanceCommandCenterData(access),
+    // The Finance band is "The Finance Manager's headline figures", so its queue is HIS — counted
+    // for the Finance Manager's own HR id, never the Super Admin reading it (owner, 27 Nov 2026:
+    // every number counts only what is truly that person's own turn).
+    getFinanceCommandCenterData(access, { queueOwner: "finance-manager" }),
   ]);
 
   if (ceoResult.status === "rejected") {

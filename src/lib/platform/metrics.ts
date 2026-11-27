@@ -395,9 +395,11 @@ export function buildCompanyWorkforceAggregateMetrics(directory: WorkforceMetric
 
   return {
     activeEmployees: structure.activeEmployees,
-    // No employees read means no health to report. 1 here would have said "every employee is
-    // fine" about a population nobody counted.
-    employeeHealthRate: totalEmployees ? activeEmployees / totalEmployees : null,
+    // ACTIVE ÷ TOTAL STRUCTURE (employees plus open seats) — the two tiles beside it on the
+    // overview. It was active ÷ every employee read, but the directory holds only active people, so
+    // it was active ÷ active and read 100% whatever happened (owner, 27 Nov 2026: 131 of 155 is not
+    // 100%). No structure read means no rate: 1 would claim health about a population nobody counted.
+    employeeHealthRate: structure.totalStructure ? structure.activeEmployees / structure.totalStructure : null,
     employeesWithoutManagers: employees.filter((employee) => !employee.managerHrId).length,
     openVacancies: structure.openVacancies,
     totalEmployees,

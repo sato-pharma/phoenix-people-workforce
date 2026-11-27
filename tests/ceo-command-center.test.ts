@@ -317,14 +317,14 @@ export function runCeoCommandCenterTests() {
     /trends:\s*\{\s*sales:\s*\[\],\s*financial:\s*\[\],\s*hireExit:\s*\[\]\s*\}/,
     "CEO trend metrics must not be hardcoded empty placeholders",
   );
-  assert.match(ceoComponentSource, /const \{ attention, approvals, dataUnavailable, headcount, health, payroll, sos \} = data/);
+  assert.match(ceoComponentSource, /const \{ attention, approvals, dataUnavailable, headcount, health, payroll, publishedSales, sos \} = data/);
   assert.match(ceoComponentSource, /Active employees/);
   assert.match(ceoComponentSource, /Total structure/);
   assert.match(ceoComponentSource, /Lookup-backed count/);
   assert.match(
     ceoCommandCenterSource,
-    /const plansPending = pendingPlansR\.status === "fulfilled" \? pendingPlansR\.value : null/,
-    "CEO weekly-plan failures must render unavailable instead of zero",
+    /const plansPending = plansBadge\?\.available \? plansBadge\.count : null/,
+    "CEO weekly-plan failures must render unavailable instead of zero, and the count is the viewer's own turn",
   );
   assert.match(
     ceoCommandCenterSource,
@@ -357,8 +357,8 @@ export function runCeoCommandCenterTests() {
   );
   assert.match(
     ceoCommandCenterSource,
-    /const leavePendingTotal =\s*\n\s*leavePendingR\.status === "fulfilled" \? leavePendingR\.value\.pendingByStage\.total : null;/,
-    "leavePendingTotal must read pendingByStage.total from getVacationPendingApprovalCounts (the leave report's own count), and be null (not 0) when that fetch fails",
+    /const leavePendingTotal = leaveBadge \? leaveBadge\.count : null;/,
+    "leavePendingTotal must read the viewer's-turn count from getVacationAwaitingBadge, and be null (not 0) when that read fails",
   );
   assert.match(
     ceoCommandCenterSource,
@@ -829,8 +829,8 @@ function assertCeoManagerCoverage() {
   const source = stripComments(readFileSync("src/lib/ceo/command-center.ts", "utf8"));
   assert.match(
     source,
-    /managerRows: ceoDvManagerRows\(dv\.managerSummaries, dv\.executiveSummary\.idleManagers\)/,
-    "the CEO double-visit table must be built with the idle managers",
+    /managerRows: ceoDvManagerRows\(dv\.managerSummaries, dv\.executiveSummary\.idleManagers, dv\.leaverManagerHrIds \?\? \[\]\)/,
+    "the CEO double-visit table must be built with the idle managers, and without the managers who left",
   );
   assert.match(
     source,

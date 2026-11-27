@@ -468,12 +468,16 @@ export async function isVacationAwaitingOverdue(access: AccessContext): Promise<
  */
 export async function getVacationAwaitingBadge(
   access: AccessContext,
-): Promise<{ count: number; overdue: boolean; available: boolean }> {
+): Promise<{ count: number; overdue: boolean; overdueCount: number; available: boolean }> {
   try {
     const awaiting = await getVacationAwaitingForBadge(access);
+    // `overdueCount` is additive, for the executive landing's URGENT row (owner, 27 Nov 2026: every
+    // approval number counts only the viewer's own turn). The badge itself still reads `overdue`.
+    const overdueCount = awaiting.filter((row) => slaTone(row.slaAgeDays, APPROVALS_SLA_THRESHOLDS.leave) === "overdue").length;
     return {
       count: awaiting.length,
-      overdue: awaiting.some((row) => slaTone(row.slaAgeDays, APPROVALS_SLA_THRESHOLDS.leave) === "overdue"),
+      overdue: overdueCount > 0,
+      overdueCount,
       available: true,
     };
   } catch (error) {
@@ -481,7 +485,7 @@ export async function getVacationAwaitingBadge(
       labels: { event: "approvals_hub_vacation_awaiting_badge_failed", hrId: access.hrId, role: access.role, scope: access.scope },
       error,
     });
-    return { count: 0, overdue: false, available: false };
+    return { count: 0, overdue: false, overdueCount: 0, available: false };
   }
 }
 

@@ -313,7 +313,19 @@ export function buildTrainingManagerCoachingComparison({
 
 export function buildCoachingReportAnalytics(
   reports: CoachingReportSummaryRow[],
+  options: {
+    /**
+     * HR ids of reps who have LEFT the company (resigned, terminated, not renewed). They are dropped
+     * from `redZoneRepCount` ONLY — a person who has left is not "in" the red zone, and on 27 Nov
+     * 2026 all 7 reps the CEO and System Administrator overviews counted there had resigned. Every
+     * other figure here (scores, zone distribution) is a record of reports and stays whole.
+     */
+    leaverRepHrIds?: ReadonlySet<string> | readonly string[];
+  } = {},
 ): CoachingReportAnalyticsSummary {
+  const leaverKeys = new Set(
+    [...(options.leaverRepHrIds ?? [])].map((hrId) => canonicalHrIdKey(hrId)).filter((key): key is string => Boolean(key)),
+  );
   const completed = reports.filter((report) => completedReportStatuses.has(report.status));
   const scores = completed.map((report) => report.finalScorePercent).filter(Number.isFinite);
   const zoneCounts = completed.reduce<Record<string, number>>((accumulator, report) => {
@@ -323,7 +335,8 @@ export function buildCoachingReportAnalytics(
   }, {});
 
   let redZoneRepCount = 0;
-  for (const report of latestCompletedReportByRep(completed).values()) {
+  for (const [repKey, report] of latestCompletedReportByRep(completed)) {
+    if (leaverKeys.has(repKey)) continue;
     if (report.performanceZone && redPerformanceZones.has(report.performanceZone)) redZoneRepCount += 1;
   }
 

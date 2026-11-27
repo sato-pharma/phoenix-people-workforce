@@ -11,7 +11,7 @@ function egp(v: number) {
 
 /**
  * Premium sortable + filterable + XLSX-exportable pair of tables for the CEO
- * Expense Snapshot: spend by region and top-spender managers.
+ * Expense Snapshot: spend by area (the claimant's area, else his region) and top-spender managers.
  */
 export function CeoExpenseTables({
   byRegion,
@@ -35,18 +35,18 @@ export function CeoExpenseTables({
     <div className="grid gap-5 p-5 lg:grid-cols-2">
       <div>
         <p className="mb-3 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-400">
-          Spend by Region
+          Spend by Area
         </p>
         <CeoTopMoversTable
           movers={regionRows}
-          title="Spend by Region"
-          exportTitle="Expense Snapshot — By Region"
+          title="Spend by Area"
+          exportTitle="Expense Snapshot — By Area"
           subtitle={windowLabel}
-          labelHeader="Region"
+          labelHeader="Area"
           valueHeader="Amount (EGP)"
           format={egp}
           total={totalAmount}
-          empty="No regional data yet."
+          empty="No area data yet."
         />
       </div>
       <div>

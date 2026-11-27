@@ -51,7 +51,7 @@ import { assertPermission, canAccessSystemAdministratorWorkspace, type AccessCon
 import { buildCoachingReportAnalytics } from "@/lib/coaching/analytics";
 import { getCoachingReports } from "@/lib/coaching/service";
 import { getContractRenewalDashboardData } from "@/lib/contracts/service";
-import { isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
+import { getEmployeeDirectoryRows, isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
 import {
   loadPublicationDriftWithoutSplitLayer,
   loadPublishedPeriods,
@@ -753,7 +753,16 @@ const probationDecisions: NeedsYouAdapter = {
 const coachingRedZone: NeedsYouAdapter = {
   id: "coaching-red-zone",
   load: async (access) => {
-    const analytics = buildCoachingReportAnalytics(await getCoachingReports({}, access));
+    // A rep who has LEFT is not in the red zone (owner, 27 Nov 2026: all 7 counted had resigned).
+    // The full directory, because the default read drops exactly the leavers this has to name.
+    const [reports, directory] = await Promise.all([
+      getCoachingReports({}, access),
+      getEmployeeDirectoryRows({ includeInactive: true }),
+    ]);
+    const leaverRepHrIds = directory
+      .filter((employee) => !isActiveLifecycleStatus(employee.employmentStatus))
+      .map((employee) => employee.hrId);
+    const analytics = buildCoachingReportAnalytics(reports, { leaverRepHrIds });
     return countItem({
       id: "coaching-red-zone",
       key: "coaching-red-zone:reps",
