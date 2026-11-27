@@ -144,6 +144,9 @@ function dryRunIsTheDefault() {
   refused(["lock-rep-tablets", "--tablet", "PHX-TAB-0007"], "and it is never aimed at one tablet");
   assert.equal(plan(["sync-insurance-master"]).job, "sync-insurance-master", "the Employee Master sync takes no flags: it reads the whole register");
   refused(["sync-insurance-master", "--employee", "B-10"], "and it is never aimed at one person");
+  assert.deepEqual(plan(["end-insurance-cover", "--employee", "PD-0042, OF-0005,PD-0042"]), { apply: false, hrIds: ["PD-0042", "OF-0005"], job: "end-insurance-cover" }, "ending cover names the people, each once, and is a dry run until --apply");
+  refused(["end-insurance-cover"], "ending cover is never aimed at everyone");
+  refused(["end-insurance-cover", "--employee", "Aya Tarek"], "an HR id, never a name");
 }
 
 type Call = { url: string; method: string };

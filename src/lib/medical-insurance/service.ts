@@ -477,6 +477,29 @@ export async function getMedicalInsuranceMoney(): Promise<MedicalInsuranceMoneyV
 }
 
 /**
+ * The Cost tab's monthly split, with the policy it belongs to, for the monthly cost workbook (owner,
+ * 2026-11-27: "export XLX sheet with the employee and the monthly cost on him"). The same split the tab
+ * shows, read the same day. Callers assert medical_insurance_invoices first: it carries amounts.
+ */
+export async function getMedicalInsuranceMonthlyCost(exporterHrId: string | null): Promise<{
+  asOf: string;
+  exporterName: string | null;
+  policy: { endsOn: string; id: string; insurer: string; policyNumber: string | null; startsOn: string };
+  split: ReturnType<typeof buildMonthlySplit>;
+} | null> {
+  const asOf = todayInCairo();
+  const policy = await loadPolicy(asOf);
+  if (!policy) return null;
+  const state = await loadState(policy, asOf);
+  return {
+    asOf,
+    exporterName: state.employees.find((employee) => employee.hrId === exporterHrId)?.name ?? null,
+    policy: { endsOn: policy.endsOn, id: policy.id, insurer: policy.insurer, policyNumber: policy.policyNumber, startsOn: policy.startsOn },
+    split: buildMonthlySplit({ asOf, members: state.members, rateCard: policy.rateCard }),
+  };
+}
+
+/**
  * One employee's Medical Cover Statement (owner, 2026-11-21), from the same monthly split the Cost tab shows,
  * so the paper and the tab can never disagree. `memberId` is the employee's own row on the register. Callers
  * assert medical_insurance_invoices first: it carries amounts.

@@ -12,6 +12,7 @@ import {
   deletionRefund,
   instalmentNumber,
   lastQuarterStart,
+  MEDICAL_INSURANCE_CATEGORIES,
   openingInstalment,
   openingStatement,
   parseRateCard,
@@ -34,7 +35,8 @@ import {
   type MemberFacts,
 } from "../src/lib/medical-insurance/eligibility.ts";
 import { LIBANO_TABLE_OF_BENEFITS } from "../src/lib/medical-insurance/benefits.ts";
-import { buildMonthlySplit, EMPLOYEE_MINIMUM_OWN_SHARE_MONTHLY, LIFE_INSURANCE_PER_PERSON_MONTHLY, monthlyCoverPiastres, splitOwnCover } from "../src/lib/medical-insurance/monthly-split.ts";
+import { buildMedicalInsuranceMonthlyCostWorkbook } from "../src/lib/medical-insurance/cost-workbook.ts";
+import { buildMonthlySplit, EMPLOYEE_MINIMUM_OWN_SHARE_MONTHLY, LIFE_INSURANCE_PER_PERSON_MONTHLY, monthlyCoverPiastres, quoteMonthlyCost, splitOwnCover } from "../src/lib/medical-insurance/monthly-split.ts";
 import { employeeRecordWords } from "../src/lib/medical-insurance/view.ts";
 import {
   buildLibanoMemberFileWorkbook,
@@ -685,6 +687,124 @@ function testTheCompanyCarries70PercentOfTheEmployeeAndTheFamilyIsTheEmployees()
   assert.equal(split.totals.total, Math.round((split.totals.companyPays + split.totals.employeesPay) * 100) / 100);
 }
 
+/**
+ * The cost calculator (owner, 2026-11-27: "a cost calculator in the module … employee or family of employee … the
+ * birth year and the grade, and it calculates the cost") prices a person exactly as the monthly split does.
+ */
+function testTheCalculatorPricesAsTheSplitDoes() {
+  const start = POLICY.startsOn;
+  const split = buildMonthlySplit({
+    asOf: start,
+    members: [
+      member({ birthDate: "1990-01-01", category: "C", coverageStart: start, hrId: "T-1", id: "e-1", name: "Quoted Employee" }),
+      member({ birthDate: "1992-01-01", category: "C", coverageStart: start, hrId: null, id: "s-1", memberType: "spouse", name: "Quoted Spouse", principalMemberId: "e-1" }),
+      member({ birthDate: "1998-01-01", category: "C", coverageStart: start, hrId: "T-2", id: "e-2", name: "Minimum Employee" }),
+    ],
+    rateCard: CARD,
+  });
+  const employeeRow = split.rows.find((row) => row.hrId === "T-1")!;
+  const minimumRow = split.rows.find((row) => row.hrId === "T-2")!;
+
+  const employee = quoteMonthlyCost({ birthYear: 1990, category: "C", coverageStart: start, memberType: "employee", rateCard: CARD });
+  assert.ok(employee.priced);
+  assert.equal(employee.monthly, employeeRow.ownMonthly, "the month of cover is the split's");
+  assert.equal(employee.companyPays, employeeRow.companyPays, "the company's 70% is the split's");
+  assert.equal(employee.employeeCover, employeeRow.employeeOwnShare, "the employee's 30% is the split's");
+  assert.equal(employee.employeePays, Math.round((employeeRow.employeeOwnShare + LIFE_INSURANCE_PER_PERSON_MONTHLY) * 100) / 100, "their 30% and EGP 85 life insurance");
+
+  const spouse = quoteMonthlyCost({ birthYear: 1992, category: "C", coverageStart: start, memberType: "spouse", rateCard: CARD });
+  assert.ok(spouse.priced);
+  assert.equal(spouse.companyPays, 0, "the company carries nothing of a spouse or child");
+  assert.equal(spouse.employeeCover, employeeRow.familyMonthly, "a spouse is the employee's in full, as on the split");
+  assert.equal(spouse.employeePays, Math.round((employeeRow.familyMonthly + LIFE_INSURANCE_PER_PERSON_MONTHLY) * 100) / 100);
+  assert.equal(employee.employeePays + spouse.employeePays, employeeRow.employeePays, "the two quotes add up to the employee's row");
+
+  const minimum = quoteMonthlyCost({ birthYear: 1998, category: "C", coverageStart: start, memberType: "employee", rateCard: CARD });
+  assert.ok(minimum.priced && minimum.raisedToMinimum, "a 30% under EGP 120 is raised to it");
+  assert.equal(minimum.employeeCover, EMPLOYEE_MINIMUM_OWN_SHARE_MONTHLY);
+  assert.equal(minimum.companyPays, minimumRow.companyPays);
+
+  const plans = MEDICAL_INSURANCE_CATEGORIES.map((category) => quoteMonthlyCost({ birthYear: 1985, category, coverageStart: start, memberType: "employee", rateCard: CARD }));
+  for (const [index, quote] of plans.entries()) {
+    assert.ok(quote.priced, `plan ${MEDICAL_INSURANCE_CATEGORIES[index]} is priced`);
+    assert.equal(quote.annual, CARD.plans[MEDICAL_INSURANCE_CATEGORIES[index]!].rates[CARD.ageBands.findIndex((band) => 41 >= band.from && (band.to === null || 41 <= band.to))], "each plan reads its own rate");
+  }
+
+  const unknown = quoteMonthlyCost({ birthYear: 3000, category: "A", coverageStart: start, memberType: "employee", rateCard: CARD });
+  assert.equal(unknown.priced, false, "a year after cover starts is refused in words, never priced at zero");
+  const oldChild = quoteMonthlyCost({ birthYear: 1990, category: "A", coverageStart: start, memberType: "child", rateCard: CARD });
+  if (oldChild.priced) assert.match(oldChild.ageNote ?? "", /children up to/, "a child past the contract's limit is flagged for review");
+}
+
+/**
+ * The monthly cost workbook (owner, 2026-11-27: "export XLX sheet with the employee and the monthly cost on him
+ * … cost for the company and for him, and the details") is the Cost tab's split, cell for cell.
+ */
+async function testTheMonthlyCostWorkbookIsTheCostTabsSplit() {
+  const members: MemberFacts[] = [
+    member({ birthDate: "1990-01-01", category: "C", hrId: "T-1", id: "e-1", name: "Family Employee" }),
+    member({ birthDate: "1992-03-01", category: "C", hrId: null, id: "s-1", memberType: "spouse", name: "Their Spouse", principalMemberId: "e-1" }),
+    member({ birthDate: "2015-05-01", category: "C", hrId: null, id: "c-1", memberType: "child", name: "Their Child", principalMemberId: "e-1" }),
+    member({ birthDate: "1998-01-01", category: "C", hrId: "T-3", id: "e-3", name: "Minimum Employee" }),
+    member({ birthDate: "2010-01-01", category: "C", hrId: null, id: "c-9", memberType: "child", name: "Stray Child", principalMemberId: "gone" }),
+  ];
+  const split = buildMonthlySplit({ asOf: "2026-11-27", members, rateCard: CARD });
+  const buffer = await buildMedicalInsuranceMonthlyCostWorkbook({
+    asOf: "2026-11-27",
+    exportedByName: "Test Exporter",
+    generatedAtIso: "2026-11-27T10:00:00.000Z",
+    policy: { endsOn: POLICY.endsOn, insurer: "Libano-Suisse Takaful Egypt", policyNumber: "50048950", startsOn: POLICY.startsOn },
+    split,
+  });
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), ["Cover", "Monthly cost", "Details"]);
+
+  const sheet = workbook.getWorksheet("Monthly cost")!;
+  const headers = (sheet.getRow(2).values as unknown[]).slice(1).map(String);
+  const column = (label: string) => {
+    const index = headers.findIndex((header) => header.startsWith(label));
+    assert.ok(index >= 0, `the sheet has a "${label}" column`);
+    return index + 1;
+  };
+  const rowOf = (name: string): number => {
+    for (let r = 3; r <= sheet.rowCount; r += 1) if (sheet.getCell(r, column("Employee")).value === name) return r;
+    assert.fail(`${name} is on the sheet`);
+  };
+  const value = (r: number, label: string) => sheet.getCell(r, column(label)).value;
+
+  for (const row of split.rows) {
+    const name = row.employee?.name ?? row.family[0]!.name;
+    const r = rowOf(name);
+    assert.equal(value(r, "HR ID"), row.hrId ?? "", `${name}: their HR id`);
+    assert.equal(value(r, "Company pays"), row.employee ? row.companyPays : "", `${name}: what the company pays is the tab's (blank with no employee)`);
+    assert.equal(value(r, "Employee pays a month"), row.employeePays, `${name}: what the employee pays is the tab's`);
+    assert.equal(value(r, "Company and employee a month"), Math.round((row.companyPays + row.employeePays) * 100) / 100, `${name}: the two together`);
+    assert.equal(value(r, "Life insurance"), row.lifeInsurance);
+    assert.equal(value(r, "People covered"), row.people);
+  }
+  const family = split.rows.find((row) => row.hrId === "T-1")!;
+  assert.equal(value(rowOf("Family Employee"), "Family a month"), family.familyMonthly, "the details of the employee's figure: the family in full");
+  assert.equal(value(rowOf("Family Employee"), "Employee's own share"), family.employeeOwnShare, "and their 30%");
+  assert.match(String(value(rowOf("Minimum Employee"), "Notes")), /raised to EGP 120/, "a share raised to the minimum says so");
+  assert.match(String(value(rowOf("Stray Child"), "Notes")), /not on the register/);
+
+  const totalRow = rowOf("Total a month");
+  assert.equal(value(totalRow, "Company pays"), split.totals.companyPays, "the company's total is the tab's tile");
+  assert.equal(value(totalRow, "Employee pays a month"), split.totals.employeesPay, "the employees' total is the tab's tile");
+  assert.equal(value(totalRow, "Company and employee a month"), split.totals.total);
+
+  const details = workbook.getWorksheet("Details")!;
+  const people: string[] = [];
+  for (let r = 3; r <= details.rowCount; r += 1) people.push(String(details.getCell(r, 3).value ?? ""));
+  assert.deepEqual(people.filter(Boolean).sort(), ["Family Employee", "Minimum Employee", "Stray Child", "Their Child", "Their Spouse"], "every person covered has a line of their own");
+
+  const route = readFileSync("app/api/medical-insurance/cost/export/route.ts", "utf8");
+  const assertAt = route.indexOf(`assertPermission(access, "medical_insurance_invoices", "read")`);
+  assert.ok(assertAt > 0 && assertAt < route.indexOf("getMedicalInsuranceMonthlyCost("), "the sheet carries amounts, so the money seat is asserted before anything is read");
+  assert.doesNotMatch(route, /"medical_insurance", "export"/, "never the register's seat");
+}
+
 /** The table of benefits is the signed one (Rev 1.3, pages 7 to 9): each plan's limit, network, room and shares. */
 function testTheTableOfBenefitsIsTheSignedOne() {
   const find = (category: "A" | "B" | "C", section: string, benefit: string, part?: string) => {
@@ -750,7 +870,7 @@ function testASeatNeverHoldsAnAmount() {
 }
 
 function testNothingHereSendsOrPays() {
-  for (const file of ["src/lib/medical-insurance/service.ts", "src/lib/medical-insurance/workbooks.ts", "src/lib/medical-insurance/compare.ts", "src/lib/medical-insurance/cost.ts", "src/lib/medical-insurance/monthly-split.ts"]) {
+  for (const file of ["src/lib/medical-insurance/service.ts", "src/lib/medical-insurance/workbooks.ts", "src/lib/medical-insurance/compare.ts", "src/lib/medical-insurance/cost.ts", "src/lib/medical-insurance/monthly-split.ts", "src/lib/medical-insurance/cost-workbook.ts"]) {
     const source = readFileSync(file, "utf8");
     assert.doesNotMatch(source, /from "@\/lib\/email|sendEmail|resend|from "@\/lib\/payroll/i, `${file} must not send mail or reach payroll`);
   }
@@ -771,6 +891,8 @@ export async function runMedicalInsuranceTests() {
   testEachEmployeeShowsTheirHrNumberHireDayLineAndArea();
   testTheContractsAgeLimitsAreReviewed();
   testTheCompanyCarries70PercentOfTheEmployeeAndTheFamilyIsTheEmployees();
+  testTheCalculatorPricesAsTheSplitDoes();
+  await testTheMonthlyCostWorkbookIsTheCostTabsSplit();
   testTheTableOfBenefitsIsTheSignedOne();
   testEachBillIsComparedWithThePlan();
   await testTheMemberFileIsTheInsurersOwnSheet();
