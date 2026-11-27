@@ -72,6 +72,7 @@ comment on table public.direct_order_receipt_releases is
 create index if not exists direct_order_receipt_releases_request_idx on public.direct_order_receipt_releases (request_id);
 
 alter table public.direct_order_receipt_releases enable row level security;
+drop policy if exists direct_order_receipt_releases_service_role on public.direct_order_receipt_releases;
 create policy direct_order_receipt_releases_service_role
   on public.direct_order_receipt_releases for all to service_role using (true) with check (true);
 revoke all on table public.direct_order_receipt_releases from public, anon, authenticated;
