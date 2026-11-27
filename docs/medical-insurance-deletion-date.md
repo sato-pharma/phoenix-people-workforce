@@ -45,6 +45,13 @@ far as you can". He then shared the signed policy and the renewal offer: "audit 
    - The blank template as Libano-Suisse issued it holds 31.
    - The workbook's own rules page (English I11, Arabic I10) accepts a deletion only from the request day.
 
+## His decision
+
+After the audit (27 November 2026): "consider the backdate is 14 days and always use the maximum backdate, but
+take care of the policy start, which is the 22nd … you always go back 14 days, but never before 22 November".
+The default is therefore 14 days behind the sending day, floored at the policy's first day and the person's own
+cover start; `earliestDeletionDay` is the one place that says so.
+
 ## So
 
 - **The 14 days are the most Libano-Suisse's own file marks "Checked".** They are not a refund the contract

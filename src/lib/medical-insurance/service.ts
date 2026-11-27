@@ -1503,7 +1503,7 @@ export async function prepareLibanoMemberFile(
     for (const action of actions) {
       const member = action.memberId ? rowsById.get(action.memberId) : undefined;
       if (!member) continue;
-      const window = { coverStart: member.coverage_starts_on, sendingDay: asOf };
+      const window = { coverStart: member.coverage_starts_on, policyStartsOn: policy.startsOn, sendingDay: asOf };
       const typed = typedDays[action.key];
       const day = typed === undefined || typed === null || typed === "" ? defaultDeletionDay(action, window) : typed;
       const problem = deletionDayProblem(day, { ...window, formatDay: formatLeftDay, name: action.name, policyEndsOn: policy.endsOn });

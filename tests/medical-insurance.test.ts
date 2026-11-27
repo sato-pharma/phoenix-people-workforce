@@ -998,12 +998,12 @@ function testADeletionGoesWithTheTypedDayAndAsFarBackAsAllowed() {
   assert.equal(LIBANO_MOST_DAYS_BACK, 14, "fewer than 15 days behind the sending day passes the sheet's check");
 
   // Salim: the policy began on 22 November, so on the 27th the furthest back is the policy's first day.
-  const salim = { coverStart: "2026-11-22", sendingDay: "2026-11-27" };
+  const salim = { coverStart: "2026-11-22", policyStartsOn: "2026-11-22", sendingDay: "2026-11-27" };
   assert.equal(earliestDeletionDay(salim), "2026-11-22", "never before cover began");
   assert.equal(defaultDeletionDay({ effectiveOn: "2026-11-23", memberType: "employee", timing: "now" }, salim), "2026-11-22", "a leaver goes as far back as allowed, before the exit day");
 
   // Later in the year the sheet's 14 days bind.
-  const december = { coverStart: "2026-11-22", sendingDay: "2026-12-20" };
+  const december = { coverStart: "2026-11-22", policyStartsOn: "2026-11-22", sendingDay: "2026-12-20" };
   assert.equal(earliestDeletionDay(december), "2026-12-06");
   assert.equal(defaultDeletionDay({ effectiveOn: "2026-12-15", memberType: "employee", timing: "now" }, december), "2026-12-06");
   assert.equal(defaultDeletionDay({ effectiveOn: "2026-11-30", memberType: "employee", timing: "now" }, december), "2026-12-06", "an exit older than 14 days moves up to what the sheet accepts");
@@ -1014,7 +1014,20 @@ function testADeletionGoesWithTheTypedDayAndAsFarBackAsAllowed() {
   assert.equal(check("2026-12-06"), null, "the earliest day passes");
   assert.equal(check("2026-12-20"), null, "the sending day passes");
   assert.match(check("2026-12-05") ?? "", /more than 14 days before today[\s\S]*15-day grace period[\s\S]*earliest is 2026-12-06/, "15 days back is refused, naming the earliest");
-  assert.match(check("2026-11-21", salim) ?? "", /cannot be before their cover began, on 2026-11-22/);
+  assert.match(check("2026-11-21", salim) ?? "", /cannot be before the policy began, on 2026-11-22/);
+
+  // Never before the policy began on 22 November, even for a row that reads an earlier start (owner, 27 Nov 2026:
+  // "always go back 14 days, but never before 22 November").
+  const strayStart = { coverStart: "2026-11-15", policyStartsOn: "2026-11-22", sendingDay: "2026-11-27" };
+  assert.equal(earliestDeletionDay(strayStart), "2026-11-22", "the policy's first day is the floor");
+  assert.equal(defaultDeletionDay({ effectiveOn: "2026-11-25", memberType: "employee", timing: "now" }, strayStart), "2026-11-22");
+  assert.match(check("2026-11-20", strayStart) ?? "", /cannot be before the policy began, on 2026-11-22/);
+  // A joiner whose own cover began later is never deleted before it.
+  const laterJoiner = { coverStart: "2026-12-01", policyStartsOn: "2026-11-22", sendingDay: "2026-12-05" };
+  assert.equal(earliestDeletionDay(laterJoiner), "2026-12-01");
+  assert.match(check("2026-11-30", laterJoiner) ?? "", /cannot be before their cover began, on 2026-12-01/);
+  // Months on, it is always 14 days back.
+  assert.equal(earliestDeletionDay({ coverStart: "2026-11-22", policyStartsOn: "2026-11-22", sendingDay: "2027-03-10" }), "2027-02-24");
   assert.match(check("2027-11-27") ?? "", /after the policy ends/);
   for (const bad of ["2026-02-30", "27/11/2026", "", null, 20261127]) assert.match(check(bad) ?? "", /Give a deletion date for Salim Gomha/, `${String(bad)} is not a day`);
 

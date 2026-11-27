@@ -42,9 +42,15 @@ function later(a: string, b: string): string {
   return a > b ? a : b;
 }
 
-/** The earliest deletion date Libano-Suisse's sheet accepts on the sending day, and never before cover began. */
-export function earliestDeletionDay(input: { coverStart: string; sendingDay: string }): string {
-  return later(addDays(input.sendingDay, -LIBANO_MOST_DAYS_BACK), input.coverStart);
+/** Where a deletion date is measured from: the sending day, the person's own cover start and the policy's start. */
+export type DeletionWindow = { coverStart: string; policyStartsOn: string; sendingDay: string };
+
+/**
+ * The earliest deletion date: 14 days behind the sending day, and never before the policy began (22 November 2026)
+ * nor before the person's own cover began (owner, 27 Nov 2026: "always go back 14 days, but never before 22 November").
+ */
+export function earliestDeletionDay(input: DeletionWindow): string {
+  return later(later(addDays(input.sendingDay, -LIBANO_MOST_DAYS_BACK), input.coverStart), input.policyStartsOn);
 }
 
 /**
@@ -54,7 +60,7 @@ export function earliestDeletionDay(input: { coverStart: string; sendingDay: str
  */
 export function defaultDeletionDay(
   action: { timing: "now" | "soon"; effectiveOn: string; memberType: "employee" | "spouse" | "child" },
-  input: { coverStart: string; sendingDay: string },
+  input: DeletionWindow,
 ): string {
   const earliest = earliestDeletionDay(input);
   if (action.timing === "soon") return later(action.effectiveOn, earliest);
@@ -65,12 +71,13 @@ export function defaultDeletionDay(
 /** Why a typed deletion date cannot go on the file, in words naming the person; null when it can. */
 export function deletionDayProblem(
   day: unknown,
-  input: { coverStart: string; sendingDay: string; policyEndsOn: string; name: string; formatDay: (day: string) => string },
+  input: DeletionWindow & { policyEndsOn: string; name: string; formatDay: (day: string) => string },
 ): string | null {
-  const { coverStart, formatDay, name, policyEndsOn, sendingDay } = input;
+  const { coverStart, formatDay, name, policyEndsOn, policyStartsOn, sendingDay } = input;
   if (!isRealDay(day)) return `Give a deletion date for ${name}.`;
+  if (day < policyStartsOn) return `${name}'s deletion date cannot be before the policy began, on ${formatDay(policyStartsOn)}.`;
   if (day < coverStart) return `${name}'s deletion date cannot be before their cover began, on ${formatDay(coverStart)}.`;
-  const earliest = earliestDeletionDay({ coverStart, sendingDay });
+  const earliest = earliestDeletionDay({ coverStart, policyStartsOn, sendingDay });
   if (day < earliest) {
     return `${name}'s deletion date, ${formatDay(day)}, is more than ${LIBANO_MOST_DAYS_BACK} days before today. Libano-Suisse's sheet accepts a deletion at most ${LIBANO_MOST_DAYS_BACK} days back (its ${LIBANO_GRACE_PERIOD_DAYS}-day grace period); the earliest is ${formatDay(earliest)}.`;
   }

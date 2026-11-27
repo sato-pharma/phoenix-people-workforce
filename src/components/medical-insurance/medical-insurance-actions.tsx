@@ -68,7 +68,7 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
 
   function deletionWindow(action: MedicalInsuranceAction) {
     const coverStart = view.members.find((member) => member.id === action.memberId)?.coverageStart ?? action.effectiveOn;
-    return { coverStart, sendingDay: view.asOf };
+    return { coverStart, policyStartsOn: view.policy.startsOn, sendingDay: view.asOf };
   }
   function deletionDayOf(action: MedicalInsuranceAction): string {
     return deletionDays[action.key] ?? defaultDeletionDay(action, deletionWindow(action));
