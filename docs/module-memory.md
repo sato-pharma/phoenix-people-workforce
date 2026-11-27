@@ -361,7 +361,7 @@ the one detail needed to obey it, never the evidence. **Adding a rule? If it bel
 it goes in that module's memory (`.claude/rules/<module>.md`, §2.2) — only a rule true everywhere
 goes here — and the account goes in `docs/`, never here.** A section is the half that regrows and nothing gates
 one: measure it before you add to it (`docs/memory-index-budget.md`). 🔴 **A session-level trap now
-goes in [docs/agents-session-traps-clusters.md](docs/agents-session-traps-clusters.md), under its
+goes in [docs/agents-session-traps-clusters.md](agents-session-traps-clusters.md), under its
 cluster — never back into §2.1**, which the 2026-09-12 trim reduced to a pointer and a slug roster;
 writing one here re-charges every request for it and the hook will never deliver it.
 
