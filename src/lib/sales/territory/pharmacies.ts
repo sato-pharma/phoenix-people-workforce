@@ -2,6 +2,7 @@ import { normalizeLineKey } from "@/lib/sales/access-scope";
 import { expandAreaCodeForLine } from "@/lib/sales/closing-area-merges";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
+import { loadTerritoryPharmacyDirections } from "./pharmacy-directions-sources";
 import { isReconciled } from "./reconciliation";
 import { resolveAuLineCode } from "./skeleton";
 import type { TerritoryAreaPayload, TerritoryPharmacy } from "./types";
@@ -61,11 +62,17 @@ export async function fetchTerritoryAreaPharmacies(
   // RPC, or the folded area would render with only half its pharmacies. Every other area, and every
   // other line, expands to just itself. The RPC's scope_total is a single window-sum across all
   // requested codes, so reconciliation still holds. The payload keeps the caller's `areaCode` (GZ6).
-  const { data, error } = await supabase.rpc("phx_territory_area_pharmacies", {
-    p_area_codes: expandAreaCodeForLine(resolveAuLineCode(officialLine), areaCode),
-    p_periods: periods,
-    p_lines: [officialLine],
-  });
+  const areaCodes = expandAreaCodeForLine(resolveAuLineCode(officialLine), areaCode);
+  // Where each pharmacy's name sends a rep (pharmacy-directions.ts), read beside the figures. It
+  // never throws, so a failed read leaves the names plain text and the figures untouched.
+  const [{ data, error }, directionsByCode] = await Promise.all([
+    supabase.rpc("phx_territory_area_pharmacies", {
+      p_area_codes: areaCodes,
+      p_periods: periods,
+      p_lines: [officialLine],
+    }),
+    loadTerritoryPharmacyDirections(areaCodes, periods, officialLine),
+  ]);
   if (error) throw error;
 
   const rawRows = (data ?? []) as RawPharmacyRow[];
@@ -93,6 +100,7 @@ export async function fetchTerritoryAreaPharmacies(
         totalUnits: 0,
         totalValue: 0,
         months: periods.map((period) => ({ period, hasSales: false, value: 0, products: [] })),
+        directions: directionsByCode.get(clientCode.trim()) ?? null,
       });
     }
     const pharmacy = byClient.get(clientCode)!;

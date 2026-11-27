@@ -15,6 +15,7 @@ import type {
   TerritoryRegionNode,
 } from "@/lib/sales/territory/types";
 
+import { PharmacyDirectionsNote, PharmacyNameLink } from "./pharmacy-name-link";
 import { PharmacyTrendSparkline } from "./pharmacy-trend-sparkline";
 import { TerritoryClosingTotal } from "./territory-closing-total";
 import { MonthChipLegend, MonthChipRow } from "./territory-month-chips";
@@ -40,8 +41,9 @@ function PharmacyRecord({ pharmacy }: { pharmacy: TerritoryPharmacy }) {
       accent="orange"
       meta={<MonthChipRow pharmacy={pharmacy} />}
       status={<span className="text-xs font-bold tabular-nums text-slate-700">{formatEgp(pharmacy.totalValue)}</span>}
-      title={pharmacy.clientName}
+      title={<PharmacyNameLink pharmacy={pharmacy} />}
     >
+      <PharmacyDirectionsNote className="mb-1" pharmacy={pharmacy} />
       <button
         aria-expanded={showTrend}
         className="inline-flex min-h-10 items-center text-phx-xs font-bold text-orange-700 underline underline-offset-2"

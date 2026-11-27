@@ -94,6 +94,18 @@ export type TerritoryMonthPresence = {
   products: TerritoryProductBreakdown[];
 };
 
+/**
+ * Where tapping a pharmacy's name sends a rep (pharmacy-directions.ts). `confirmed_on_site` goes to a
+ * point a rep captured at the shop; `distributor_address` routes to the Ibn Sina family or POS sheet
+ * address, which is shown so the rep knows it is an address and not a pin.
+ */
+export type TerritoryPharmacyDirections = {
+  kind: "confirmed_on_site" | "distributor_address";
+  url: string;
+  /** The address the link routes to — null for a confirmed point. */
+  address: string | null;
+};
+
 export type TerritoryPharmacy = {
   clientCode: string;
   clientName: string;
@@ -101,6 +113,8 @@ export type TerritoryPharmacy = {
   totalUnits: number;
   totalValue: number;
   months: TerritoryMonthPresence[];
+  /** Null when Phoenix has no location it can trust — the name is then plain text, never a guess. */
+  directions: TerritoryPharmacyDirections | null;
 };
 
 type TerritoryBrickPharmacies = {

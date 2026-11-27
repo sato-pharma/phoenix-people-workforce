@@ -41,6 +41,17 @@ The fits-the-screen rule is unchanged and still pinned by
 `tests/territory-tree-desktop-fits-the-screen.test.ts`: no `overflow-x-auto`, no `min-w-[…]` floor,
 names wrap and are never cut.
 
+## The pharmacy name opens Google Maps (27 Nov 2026)
+
+The owner asked for the pharmacy name to open directions, and for it never to send a rep to the wrong place. When told that only about 157 pharmacies had a location confirmed on site, he ruled: "depend on ibnsina family and pos address to route through google maps". So a name is a link in two cases only, best first:
+
+1. **Confirmed on site** — a point a rep captured at the shop (a validated marketing pharmacy, an approved direct-order venue with its live photo GPS first, or an active Phoenix CRM pharmacy place) tied to that distributor customer code. Directions go to the exact point.
+2. **Distributor address** — the Ibn Sina family (IS, IS-S, IS-L) or POS (PS) sheet address. Those sheets cut addresses at about 30 characters, so the brick town is appended (unless the address already names it), then Egypt. A small note under the name shows the address, so the rep knows it is an address and not a pin.
+
+Every other pharmacy name is plain text. Three refusals keep a link from being wrong: a customer code from two distributors (the Ibn Sina channels count as one), a confirmed point more than 25 km from its brick centre (a mistyped code), and confirmed points more than 300 m apart. An address with fewer than six letters or digits is not routed.
+
+The rule is `src/lib/sales/territory/pharmacy-directions.ts` (pure). The read is `pharmacy-directions-sources.ts`: one call to `phx_territory_area_pharmacy_locations`, run beside the figures. It never throws, so a failure leaves the names plain text and the figures untouched. Production, May to October: Giza 1 Pedia 94 of 116 names linked, Cairo 1 CNS 204 of 404. Opening Cairo 1 costs about 0.17 s more than the figures alone. `phx_territory_area_pharmacy_sources` (20261127081222) is an earlier version left unused. Pinned by `tests/territory-pharmacy-directions.test.ts`.
+
 ## The data sync panel
 
 Pinned by `tests/territory-sync-panel-role-scoping.test.ts` and

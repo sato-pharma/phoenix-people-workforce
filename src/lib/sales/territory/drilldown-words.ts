@@ -132,3 +132,18 @@ export function trendChartLabel(periods: readonly string[]): string {
   const last = name(periods[periods.length - 1]);
   return first === last ? `Sales value by month, ${first}` : `Sales value by month, ${first} to ${last}`;
 }
+
+/** What a screen reader hears on a pharmacy name that opens directions. */
+export function directionsLinkLabel(pharmacyName: string): string {
+  return `Open Google Maps directions to ${pharmacyName}`;
+}
+
+/**
+ * The line under a pharmacy's name, saying where its link goes, so a rep knows before he drives
+ * whether it is a point a rep stood at or a distributor's address to check against the shop sign.
+ */
+export function directionsNote(directions: { kind: "confirmed_on_site" | "distributor_address"; address: string | null } | null): string {
+  if (!directions) return "No confirmed location yet";
+  if (directions.kind === "confirmed_on_site") return "Directions to the spot a rep confirmed on site";
+  return `Directions to the distributor's address, check the shop sign: ${directions.address ?? ""}`.trim();
+}
