@@ -19,15 +19,25 @@ const ExcelJS = require("exceljs");
 
 const OUT = process.argv[2];
 const SAMPLE = process.argv.includes("--sample");
+// --sample-codes=AAAAAA,BBBBBB keeps a rebuilt sample on the codes the guides and videos already show (throwaway codes only).
+const SAMPLE_CODES = (process.argv.find((a) => a.startsWith("--sample-codes=")) ?? "").slice(15).split(",").filter(Boolean);
+if (SAMPLE_CODES.some((c) => !/^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}$/.test(c))) { console.error("--sample-codes takes six-character codes from the receipt alphabet"); process.exit(1); }
 if (!OUT || OUT.startsWith("--")) { console.error("Usage: node build.mjs <outDir> [--sample]"); process.exit(1); }
 fs.mkdirSync(OUT, { recursive: true });
 
 const PER_BOOK = 50;
 const SPARE_BOOKS = 2;
+// Two originals and a copy (owner, 27 Nov 2026): the set is bound at the stub with Original 1 on top.
+// Original 1 — the manager's custody of the goods: it stays in the book, its photo goes on Phoenix within 3 days.
+// Original 2 — the customer's page, with no manager details: the customer signs and stamps it; the manager tears it
+//   out, keeps it, puts its photo on Phoenix within 6 working days and sends it to Finance.
+// The customer copy — the carbon of Original 2, torn out and left with the customer.
+// Everything written in the shared block (date, customer, items, value) copies down to all three. The custody zone
+// of plies 2 and 3 is DESENSITIZED by the printer, so the manager's name, ID and signature never reach the customer.
 const PARTS = [
-  { key: "O", ar: "الأصل", note: "يبقى في الدفتر", en: "ORIGINAL" },
-  { key: "C1", ar: "الصورة الأولى", note: "تُسلَّم لجهة التوصيل", en: "COPY 1" },
-  { key: "C2", ar: "الصورة الثانية", note: "تبقى في الدفتر", en: "COPY 2" },
+  { key: "O1", kind: "custody", ar: "الأصل الأول — إقرار العهدة", note: "يبقى في الدفتر · يُرفع على فينكس خلال 3 أيام", en: "ORIGINAL 1" },
+  { key: "O2", kind: "customer", ar: "الأصل الثاني — استلام العميل", note: "يُنزع ويُرفع على فينكس خلال 6 أيام عمل ثم يُرسَل للمالية", en: "ORIGINAL 2" },
+  { key: "C", kind: "customer", ar: "صورة العميل", note: "تُنزع وتُسلَّم للعميل", en: "CUSTOMER COPY" },
 ];
 const C = { deep: "#0A527D", blue: "#0A6BA6", light: "#1482C2", tint: "#F2F6FA", hair: "#B9C7D4", muted: "#5A6B7C", body: "#1A1A1A", ghost: "#DCE6EF" };
 const FONT = '"Tahoma", "Segoe UI", "Traditional Arabic", "Noto Sans Arabic", Arial, sans-serif';
@@ -59,7 +69,7 @@ if (!SAMPLE && fs.existsSync(regPath)) {
       first, last: first + PER_BOOK - 1,
       receipts: Array.from({ length: PER_BOOK }, (_, k) => ({
         serial: first + k,
-        code: Array.from({ length: 6 }, () => ALPHA[randomInt(ALPHA.length)]).join(""),
+        code: (SAMPLE && SAMPLE_CODES[k]) || Array.from({ length: 6 }, () => ALPHA[randomInt(ALPHA.length)]).join(""),
       })),
     };
   });
@@ -226,6 +236,18 @@ p { margin: 0; text-align: justify; }
 .signer { margin-top: 7mm; font-size: 11pt; line-height: 2.4; }
 .signer b { color: ${C.deep}; }
 .thumb { display: inline-block; width: 26mm; height: 30mm; border: 0.3mm dashed ${C.deep}; vertical-align: top; margin-inline-start: 3mm; }
+/* the two zones: the custody zone (A) and the customer zone (B) sit at the same place on every ply */
+.zoneA { height: 84mm; margin-top: 2.6mm; padding: 2mm 3mm 2mm; border: 0.3mm solid ${C.hair}; border-inline-start: 0.9mm solid ${C.deep}; display: flex; flex-direction: column; }
+.zoneA h3, .zoneB h3 { margin: 0 0 1mm; font-size: 9.6pt; color: ${C.deep}; }
+.zoneA p { font-size: 8.2pt; line-height: 1.55; margin-top: 0.8mm; }
+.zoneA .law { font-size: 7.6pt; line-height: 1.5; color: ${C.body}; }
+.zoneA .sig { margin-top: auto; }
+.zoneA--quiet { border-style: dashed; border-inline-start: 0.3mm dashed ${C.hair}; }
+.zoneA--quiet .nocopy { margin-top: auto; font-size: 7pt; color: ${C.muted}; text-align: center; }
+.zoneB { margin-top: 2.4mm; height: 44mm; padding: 2mm 3mm; border: 0.3mm solid ${C.hair}; border-inline-start: 0.9mm solid ${C.deep}; display: flex; gap: 4mm; }
+.zoneB .client__text { flex: 1; display: flex; flex-direction: column; }
+.zoneB .client__text .sig { margin-top: auto; }
+.zoneB--quiet { border-style: dashed; border-inline-start: 0.3mm dashed ${C.hair}; align-items: center; justify-content: center; color: ${C.muted}; font-size: 8.6pt; text-align: center; }
 `;
 
 // the house engine-turned band, identical to house-identity.ts
@@ -236,6 +258,15 @@ function band() {
 }
 const css = CSS.replace("BAND", band());
 
+// ⚖️ DRAFT FOR THE LAWYER'S APPROVAL — the articles named are the ones the research found (Labour Law 14 of 2025:
+// art. 134 the duty to keep what the employer hands over, art. 151 paying for what is lost or damaged in custody,
+// art. 148 dismissal; Penal Code art. 341 breach of trust). Never add an article number nobody has checked.
+const CUSTODY_TEXT = [
+  "أقر أنا الموقع أدناه بأنني استلمت من مخازن شركة ساتو فارما، في تاريخ خروجها من المخزن، البضاعة المبينة أعلاه بحالة سليمة ومطابقة للأصناف والتشغيلات والكميات المدونة، بقيمة إجمالية قدرها <span class=\"blank\"></span> جنيه مصري، وذلك على سبيل الأمانة وبصفتي وكيلًا عن الشركة لتسليمها إلى العميل المبين أعلاه دون غيره. وتظل البضاعة ملكًا للشركة وفي عهدتي الشخصية إلى أن أسلّمها للعميل وأسلّم الإدارة المالية الأصل الثاني من هذا الإذن موقعًا ومختومًا منه.",
+  "وأتعهد بتسليمها كاملة، وبإعادة ما لم يُسلَّم منها إلى مخزن الشركة، وبرفع صورة هذا الأصل على نظام فينكس خلال ثلاثة أيام، وصورة الأصل الثاني خلال ستة أيام عمل، تبدأ من اليوم التالي لخروج البضاعة من المخزن.",
+];
+const CUSTODY_LAW = "وأقر بعلمي أن عدم تسليم البضاعة أو ردها أو أداء قيمتها، أو التصرف فيها على غير الوجه المحدد، يُعد اختلاسًا أو تبديدًا لمال سُلِّم إليّ على سبيل الوكالة، يُعاقب عليه بالمادة 341 من قانون العقوبات (خيانة الأمانة) أو غيرها من الجرائم المقررة قانونًا؛ وإخلالًا جسيمًا بالتزامي بالمحافظة على ما تسلّمه إليّ الشركة (المادة 134 من قانون العمل رقم 14 لسنة 2025)، يجيز للشركة مطالبتي بقيمة ما فُقد أو تلف واقتطاعها من أجري في الحدود المقررة بالمادة 151 من القانون ذاته، واتخاذ الإجراءات التأديبية حتى الفصل وفقًا للمادة 148 منه، وذلك كله دون إخلال بحقها في اتخاذ الإجراءات الجنائية والمدنية قِبلي.";
+
 function holderLine(h) {
   if (!h) return `<span class="f__v"></span>`;
   return `<span class="f__v">${esc(h.name)} <small>— ${esc(TITLE_AR[h.title] ?? "مدير منطقة")} · ${esc(h.area)} · ${esc(h.line)}</small></span>`;
@@ -244,6 +275,33 @@ function holderLine(h) {
 function receiptPage(book, r, idx, part) {
   const s = r.serial, code = r.code;
   const rows = [1, 2, 3, 4, 5].map((n) => `<tr><td class="n">${n}</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`).join("");
+  const h = book.holder;
+  const custody = part.kind === "custody";
+  // Zone A: on Original 1 the manager's custody, with the law; on Original 2 and the copy the printer desensitizes
+  // it, so nothing the manager writes there comes through — it carries only the customer's printed undertaking.
+  const zoneA = custody
+    ? `<div class="zoneA">
+    <h3>إقرار عهدة واستلام بضاعة على سبيل الأمانة — مدير المنطقة</h3>
+    <p><b>صاحب العهدة:</b> ${h ? `${esc(h.name)} — ${esc(TITLE_AR[h.title] ?? "مدير منطقة")} · ${esc(h.area)} · ${esc(h.line)}` : `<span class="blank" style="min-width:90mm"></span>`}</p>
+    ${CUSTODY_TEXT.map((t) => `<p>${t}</p>`).join("")}
+    <p class="law">${CUSTODY_LAW}</p>
+    <div class="sig"><div><b>الاسم</b><span></span></div><div><b>الرقم القومي</b><span></span></div><div><b>التوقيع</b><span></span></div></div>
+  </div>`
+    : `<div class="zoneA zoneA--quiet">
+    <h3>إقرار العميل</h3>
+    <p>أقر أنا العميل المبين أعلاه (صيدلية / مخزن / حضانة / مستشفى) بأنني استلمت الأصناف المبينة أعلاه كاملة وبحالة سليمة ومطابقة للكميات والتشغيلات المدونة، وأتعهد بسداد قيمتها المبينة أعلاه في حساب الشركة أو لمندوبها المفوض، وفي حالة عدم السداد أُعد خائنًا ومبددًا للأمانة. ويُعد توقيعي وختم المنشأة على هذا الأصل إقرارًا باستلام البضاعة.</p>
+    <p class="nocopy">هذا الجزء لا يُنسخ من الأصل الأول</p>
+  </div>`;
+  const zoneB = custody
+    ? `<div class="zoneB zoneB--quiet"><p>يوقّع العميل ويختم على الأصل الثاني (تحت هذه الورقة)، ويحتفظ بالصورة.<br>لا يُنزع هذا الأصل من الدفتر.</p></div>`
+    : `<div class="zoneB">
+    <div class="client__text">
+      <h3>توقيع العميل وختمه (عند التسليم)</h3>
+      <div class="sig"><div><b>اسم المستلم</b><span></span></div><div><b>الصفة</b><span></span></div></div>
+      <div class="sig"><div><b>التوقيع</b><span></span></div><div><b>تاريخ الاستلام</b><span></span></div></div>
+    </div>
+    <div class="stamp">ختم المنشأة</div>
+  </div>`;
   return `<section class="sheet">
   ${voidPantograph()}
   ${groundSvg(code, s, part.en)}
@@ -259,8 +317,7 @@ function receiptPage(book, r, idx, part) {
     <div class="f__row f__row--half"><span class="f__l">رقم الإذن:</span><span class="f__v f__v--serial" dir="ltr">${pad(s)}</span></div>
     <div class="f__row f__row--half"><span class="f__l">التاريخ:</span><span class="date">..... / ..... / 20.....</span></div>
     <div class="f__row"><span class="f__l">جهة الصرف (المخزن)</span><span class="f__v">ساتو فارما</span></div>
-    <div class="f__row"><span class="f__l">اسم المستلم</span>${holderLine(book.holder)}</div>
-    <div class="f__row"><span class="f__l">جهة التوصيل (العميل / الصيدلية / المخزن/حضانة/مستشفى)</span><span class="f__v"></span></div>
+    <div class="f__row"><span class="f__l">العميل (صيدلية / مخزن / حضانة / مستشفى) والعنوان</span><span class="f__v"></span></div>
   </div>
   <div class="sec">بيان الأصناف المسلمة:</div>
   <table>
@@ -268,22 +325,9 @@ function receiptPage(book, r, idx, part) {
     <thead><tr><th>م</th><th>اسم الصنف</th><th>رقم التشغيلة (Batch)</th><th>تاريخ الصلاحية (EXP)</th><th>الوحدة (علبة / كرتونة)</th><th>الكمية</th><th>القيمة</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
-  <div class="total"><span>إجمالي عدد الكراتين: (</span><span class="gap"></span><span>) فقط وقدره</span><span class="wide"></span></div>
-  <div class="sec">إقرار الاستلام:</div>
-  <p>أقر أنا الموقع أدناه بأنني قد استلمت الأصناف الموضحة أعلاه بحالة جيدة وسليمة، ومطابقة للكميات والتشغيلات المدونة بالإذن، وأتعهد بتسليمها للجهة المحددة أعلاه.</p>
-  <div class="box">
-    <h3>توقيع المستلم (مدير المنطقة)</h3>
-    <p>وأتعهد بسداد قيمة البضاعة المذكورة والمقدرة بمبلغ اجمالى وقدره : <span class="blank"></span> وفى حالة عدم السداد الى خزينة او حساب الشركة فى موعد اقصاه <span class="blank" style="min-width:26mm"></span> اعتبر خائنا ومبددا للامانه.</p>
-    <div class="sig"><div><b>الاسم</b><span></span></div><div><b>رقم البطاقة</b><span></span></div><div><b>التوقيع</b><span></span></div></div>
-  </div>
-  <div class="box client">
-    <div class="client__text">
-      <h3>توقيع العميل (عند التسليم النهائي):</h3>
-      <p>اقر أنا (العميل / الصيدلية / المخزن/حضانة/مستشفى): <span class="blank" style="min-width:40mm"></span> أننى قد قمت باستلام الاصناف المذكوره عاليه وأتعهد بسداد المبالغ المطلوبة نظير تلك البضاعة المقدرة بمبلغ اجمالى وقدره <span class="blank"></span> وفى حالة عدم السداد سواء فى حساب الشركة او للمندوب اعتبر خائنا ومبددا للأمانه ويعتبر ختم المنشأة إفادة على استلام البضاعة</p>
-      <div class="sig"><div><b>الاسم :</b><span></span></div><div><b>التاريخ:</b><span></span></div></div>
-    </div>
-    <div class="stamp">الختم :</div>
-  </div>
+  <div class="total"><span>إجمالي عدد الكراتين: (</span><span class="gap"></span><span>) — القيمة الإجمالية فقط وقدرها</span><span class="wide"></span></div>
+  ${zoneA}
+  ${zoneB}
   <div class="foot"><span>${part.ar} — ${part.note}</span><span>رقم الإذن <bdi>${pad(s)}</bdi> · رمز التحقق <bdi>${code}</bdi></span></div>
 </section>`;
 }
@@ -297,7 +341,7 @@ function coverPage(book) {
   <p class="sub">عهدة شخصية مستردة — يُسلَّم بكامل كعوبه وأوراقه عند إخلاء الطرف</p>
   <table class="kv"><tbody>
     <tr><td>رقم الدفتر</td><td><bdi>${pad(book.book, 2)}</bdi></td></tr>
-    <tr><td>عدد الإيصالات</td><td><bdi>${PER_BOOK}</bdi> إيصال — كل إيصال أصل وصورتان</td></tr>
+    <tr><td>عدد الإيصالات</td><td><bdi>${PER_BOOK}</bdi> إيصال — كل إيصال أصلان وصورة</td></tr>
     <tr><td>من رقم</td><td><bdi>${pad(book.first)}</bdi></td></tr>
     <tr><td>إلى رقم</td><td><bdi>${pad(book.last)}</bdi></td></tr>
     <tr><td>صاحب العهدة</td><td>${h ? esc(h.name) : ""}</td></tr>
@@ -308,9 +352,10 @@ function coverPage(book) {
   <ol class="rules">
     <li>كل إيصال يحمل رقم إذن مسلسلاً ورمز تحقق وختماً هندسياً خاصاً به لا يتكرر في أي إيصال آخر، وتطبع العلامة المائية نفسها في خلفية الإيصال.</li>
     <li>الإيصال الذي لا يطابق رقمه ورمزه وختمه سجل الشركة، أو به كشط أو تعديل في رقم الإذن، لا يُعتد به إثباتاً للتسليم.</li>
-    <li>لا يُنزع الأصل ولا الصورة الثانية من الدفتر؛ تُسلَّم الصورة الأولى وحدها لجهة التوصيل.</li>
-    <li>الإيصال الملغى يبقى في الدفتر بأصله وصورتيه ويُكتب عليه «ملغى» بتوقيع صاحب العهدة.</li>
-    <li>توقيع مدير المنطقة وتوقيع جهة التوصيل وختمها شرط لاعتماد الإيصال إثباتاً للتسليم.</li>
+    <li>الأصل الأول (إقرار العهدة) لا يُنزع من الدفتر. الأصل الثاني يوقّعه العميل ويختمه، وينزعه مدير المنطقة ويرسله للمالية. صورة العميل تُنزع وتُسلَّم للعميل.</li>
+    <li>يُرفع الأصل الأول على فينكس خلال 3 أيام، والأصل الثاني خلال 6 أيام عمل (عدا الجمعة)، من اليوم التالي لخروج البضاعة من المخزن.</li>
+    <li>الإيصال الملغى يبقى في الدفتر بأصليه وصورته ويُكتب عليه «ملغى» بتوقيع صاحب العهدة.</li>
+    <li>توقيع مدير المنطقة على الأصل الأول، وتوقيع العميل وختمه على الأصل الثاني، شرط لاعتماد الإيصال إثباتاً للتسليم.</li>
   </ol>
   <div class="foot"><span>دفتر رقم <bdi>${pad(book.book, 2)}</bdi></span><span>من <bdi>${pad(book.first)}</bdi> إلى <bdi>${pad(book.last)}</bdi></span></div>
 </section>`;
@@ -378,7 +423,7 @@ for (const book of books) {
   const body = [coverPage(book), ...receipts.flatMap((r, i) => PARTS.map((p) => receiptPage(book, r, i, p)))].join("\n");
   const who = book.holder ? `${book.holder.area} - ${book.holder.line}` : "Spare";
   const file = path.join(OUT, `Receipt Book ${pad(book.book, 2)} - ${who} - ${pad(book.first)}-${pad(book.last)}.pdf`);
-  const shots = !SAMPLE && book.book === 1 ? [[0, path.join(OUT, "preview-cover.png")], [1, path.join(OUT, "preview-original.png")], [2, path.join(OUT, "preview-copy1.png")], [4, path.join(OUT, "preview-next-receipt.png")]] : [];
+  const shots = !SAMPLE && book.book === 1 ? [[0, path.join(OUT, "preview-cover.png")], [1, path.join(OUT, "preview-original1.png")], [2, path.join(OUT, "preview-original2.png")], [4, path.join(OUT, "preview-next-receipt.png")]] : [];
   const spill = await toPdf(doc(`دفتر ${book.book}`, body), file, shots);
   report.push({ book: book.book, file: path.basename(file), pages: 1 + receipts.length * 3, spill });
 }
