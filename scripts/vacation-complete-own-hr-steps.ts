@@ -13,6 +13,15 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { completeOwnHrStep } from "@/lib/vacation/service";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "vacation-complete-own-hr-steps",
+  entry: import.meta.url,
+  known: ["--apply"],
+});
+
 const apply = process.argv.includes("--apply");
 const key = (value: unknown) => String(value ?? "").trim().toUpperCase();
 
