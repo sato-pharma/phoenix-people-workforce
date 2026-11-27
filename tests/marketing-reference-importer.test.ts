@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import path from "node:path";
 
 import {
@@ -9,37 +10,15 @@ import {
 } from "@/lib/marketing-requests/reference-importer";
 
 export async function runMarketingReferenceImporterTests() {
-  const parsed = await parseMarketingReferenceWorkbooks({
-    pharmacyDatabasePath: path.resolve("Phoenix Pharmacy Database.xlsx"),
-    productsPath: path.resolve("phoenix products.xlsx"),
-  });
-
-  assert.equal(parsed.summary.products, 21);
-  assert.equal(parsed.summary.pharmacyCodeReferences, 20097);
-  assert.equal(parsed.summary.skippedPharmacyRows, 5);
-  assert.equal(parsed.summary.skippedProductRows, 0);
-  assert.equal(parsed.summary.distributors, 12);
-  assert.equal(parsed.summary.duplicateDistributorCodePairs, 488);
-
-  const saginko = parsed.products.find((product) =>
-    normalizeMarketingLookupKey(product.productName).includes("saginko"),
-  );
-  assert.ok(saginko, "Saginko should be parsed from the product workbook.");
-  assert.equal(saginko?.line, "Anti infective");
-  assert.ok((saginko?.factoryPrice ?? 0) > 0);
-
-  const ibnSina = parsed.distributors.find(
-    (distributor) => distributor.normalizedName === "ibn sina",
-  );
-  assert.ok(ibnSina, "Ibn Sina should be normalized as a distributor.");
-  assert.equal(ibnSina?.distributorCode, "DST_IBN_SINA");
-
-  const firstReference = parsed.pharmacyCodeReferences[0];
-  assert.equal(firstReference.sourceFile, "Phoenix Pharmacy Database.xlsx");
-  assert.equal(firstReference.sourceRow, 2);
-  assert.equal(firstReference.rawDistributorName, "EGD");
-  assert.equal(firstReference.normalizedDistributorName, "egd");
-  assert.equal(firstReference.rawPharmacyCode, "24417");
+  // The two source workbooks are business data kept on the machine, not in the repository.
+  // Where they are present the parser is checked against them; the reconciliation below needs no file.
+  const pharmacyDatabasePath = path.resolve("Phoenix Pharmacy Database.xlsx");
+  const productsPath = path.resolve("phoenix products.xlsx");
+  if (existsSync(pharmacyDatabasePath) && existsSync(productsPath)) {
+    await checkParsedWorkbooks(pharmacyDatabasePath, productsPath);
+  } else {
+    console.log("  marketing reference workbooks not present: parser check skipped, reconciliation still runs");
+  }
 
   /* ---------------------------------------------------------------------- */
   /* Product-code reconciliation: sales is the reference for product codes. */
@@ -82,4 +61,35 @@ export async function runMarketingReferenceImporterTests() {
   assert.equal(reconciled[0].productCode, "SA001", "exact name+line match takes the sales product_code");
   assert.equal(reconciled[1].productCode, "TE001", "a known name-drift alias still resolves to the sales product_code");
   assert.equal(reconciled[2].productCode, "MKT_PRD0099", "a product with no sales match keeps its generated code");
+}
+
+async function checkParsedWorkbooks(pharmacyDatabasePath: string, productsPath: string) {
+  const parsed = await parseMarketingReferenceWorkbooks({ pharmacyDatabasePath, productsPath });
+
+  assert.equal(parsed.summary.products, 21);
+  assert.equal(parsed.summary.pharmacyCodeReferences, 20097);
+  assert.equal(parsed.summary.skippedPharmacyRows, 5);
+  assert.equal(parsed.summary.skippedProductRows, 0);
+  assert.equal(parsed.summary.distributors, 12);
+  assert.equal(parsed.summary.duplicateDistributorCodePairs, 488);
+
+  const saginko = parsed.products.find((product) =>
+    normalizeMarketingLookupKey(product.productName).includes("saginko"),
+  );
+  assert.ok(saginko, "Saginko should be parsed from the product workbook.");
+  assert.equal(saginko?.line, "Anti infective");
+  assert.ok((saginko?.factoryPrice ?? 0) > 0);
+
+  const ibnSina = parsed.distributors.find(
+    (distributor) => distributor.normalizedName === "ibn sina",
+  );
+  assert.ok(ibnSina, "Ibn Sina should be normalized as a distributor.");
+  assert.equal(ibnSina?.distributorCode, "DST_IBN_SINA");
+
+  const firstReference = parsed.pharmacyCodeReferences[0];
+  assert.equal(firstReference.sourceFile, "Phoenix Pharmacy Database.xlsx");
+  assert.equal(firstReference.sourceRow, 2);
+  assert.equal(firstReference.rawDistributorName, "EGD");
+  assert.equal(firstReference.normalizedDistributorName, "egd");
+  assert.equal(firstReference.rawPharmacyCode, "24417");
 }

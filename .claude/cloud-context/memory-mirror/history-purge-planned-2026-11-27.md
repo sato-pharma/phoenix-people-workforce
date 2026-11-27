@@ -17,3 +17,9 @@ Full plan: Appendix D of `~/.claude/plans/pasted-content-id-4b53-phoenix-enginee
 **How to apply:** every commit id changes after the purge. Re-seat every worktree from the new `origin/main`, and never push a branch made before the purge; it would bring the files back.
 
 **DONE 27 Nov 11:36 Cairo:** main is `bff23828c` (tree identical to old `2369952b0`), production serves it, and 452 old branches are deleted. Commit map: `C:/Users/satoh/Phoenix History Purge 2026-11-27/rewrite.git/filter-repo/commit-map`. Guard: `~/.claude/hooks/purged-history-push-guard.mjs` refuses old-history pushes. Owner SENT the GitHub Support request on 27 Nov (about 12:00 Cairo); its reply is what clears the old pull-request copies.
+
+**After the purge (27 Nov, 11:56 Cairo, PR 830):** the three reference workbooks still on main (`Phoenix Pharmacy Database.xlsx`,
+`phoenix products.xlsx`, `Source of sales area database.xlsx`) left the repository on his "Off GitHub, keep local". They sit in
+the primary's root, untracked and covered by `*.xlsx` (the `!Source of sales area database.xlsx` re-include is gone). Never
+re-track them. `tests/marketing-reference-importer.test.ts` checks the parser only where they are present, so CI skips that half.
+Their old versions stay in the history (no second purge, his choice).

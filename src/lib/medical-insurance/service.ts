@@ -49,6 +49,7 @@ import { LIBANO_DELETIONS_SHEET_ROWS } from "./libano-movement-sheet";
 import { buildCostLetter, CostLetterError, type CostLetter } from "./cost-letter";
 import { cleanCostLetterCc, COST_LETTER_EMAIL_BATCH, sendCostLetterEmails, type CostLetterEmailOutcome } from "./cost-letter-email";
 import { buildMonthlySplit, payrollChargesForWindow, type PayrollMedicalInsuranceCharge } from "./monthly-split";
+import type { MonthlyCostMemberNumbers } from "./cost-workbook";
 import { libanoLineGaps, type LibanoMemberFileKind, type LibanoMemberLine } from "./workbooks";
 import {
   describeMasterSyncAmountChange,
@@ -486,13 +487,22 @@ export async function getMedicalInsuranceMonthlyCost(exporterHrId: string | null
   exporterName: string | null;
   policy: { endsOn: string; id: string; insurer: string; policyNumber: string | null; startsOn: string };
   split: ReturnType<typeof buildMonthlySplit>;
+  numbers: Map<string, MonthlyCostMemberNumbers>;
 } | null> {
   const asOf = todayInCairo();
   const policy = await loadPolicy(asOf);
   if (!policy) return null;
   const state = await loadState(policy, asOf);
+  const byId = new Map(state.memberRows.map((row) => [row.id, row]));
+  const numbers = new Map(
+    state.memberRows.map((row): [string, MonthlyCostMemberNumbers] => {
+      const principal = row.member_type === "employee" ? row : row.principal_member_id ? byId.get(row.principal_member_id) : undefined;
+      return [row.id, { principalNumber: principal?.certificate_number ?? null, staffNumber: row.staff_number }];
+    }),
+  );
   return {
     asOf,
+    numbers,
     exporterName: state.employees.find((employee) => employee.hrId === exporterHrId)?.name ?? null,
     policy: { endsOn: policy.endsOn, id: policy.id, insurer: policy.insurer, policyNumber: policy.policyNumber, startsOn: policy.startsOn },
     split: buildMonthlySplit({ asOf, members: state.members, rateCard: policy.rateCard }),
