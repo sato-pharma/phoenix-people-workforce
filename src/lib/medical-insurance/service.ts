@@ -4,8 +4,8 @@
 // `employees.medical_insurance_status`. Nothing here sends anything or pays anything. Payroll READS one thing
 // from here from the December 2026 payroll month on: each employee's monthly share
 // (getPayrollMedicalInsuranceCharges), owner, 2026-11-24. The one write into `employees` is
-// syncEmployeeMasterFromMedicalInsurance (owner, 2026-11-27): the card number, and blank identity fields
-// (./master-sync.ts); never the card-received answer, never an amount.
+// syncEmployeeMasterFromMedicalInsurance (owner, 2026-11-27): the card number, blank identity fields and the
+// monthly cost payroll charges (./master-sync.ts); never the card-received answer.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
@@ -50,7 +50,16 @@ import { buildCostLetter, CostLetterError, type CostLetter } from "./cost-letter
 import { cleanCostLetterCc, COST_LETTER_EMAIL_BATCH, sendCostLetterEmails, type CostLetterEmailOutcome } from "./cost-letter-email";
 import { buildMonthlySplit, payrollChargesForWindow, type PayrollMedicalInsuranceCharge } from "./monthly-split";
 import { libanoLineGaps, type LibanoMemberFileKind, type LibanoMemberLine } from "./workbooks";
-import { describeMasterSyncChange, planEmployeeMasterSync, type MasterSyncDifference, type MasterSyncEmployee, type MasterSyncUpdate } from "./master-sync";
+import {
+  describeMasterSyncAmountChange,
+  describeMasterSyncChange,
+  planEmployeeMasterSync,
+  planMedicalInsuranceAmounts,
+  type MasterSyncAmountChange,
+  type MasterSyncAmountPlan,
+  type MasterSyncDifference,
+  type MasterSyncUpdate,
+} from "./master-sync";
 import type {
   MedicalInsuranceDocumentKind,
   MedicalInsuranceDocumentRow,
@@ -1500,58 +1509,88 @@ export async function prepareLibanoMemberFile(
 
 // ── The register feeds the Employee Master what it is missing (owner, 27 Nov 2026) ──────────────────────
 
+export type EmployeeMasterSyncUpdate = { hrId: string; name: string; lines: string[] };
+
 export type EmployeeMasterSyncResult = {
   policyNumber: string | null;
-  updated: MasterSyncUpdate[];
+  /** The payroll month whose figure the master now holds: the first the module charges, or the current one after it. */
+  costMonth: string;
+  updated: EmployeeMasterSyncUpdate[];
   failed: Array<{ hrId: string; name: string; error: string }>;
   differences: MasterSyncDifference[];
+  unpriced: MasterSyncAmountPlan["unpriced"];
 };
 
-const MASTER_SYNC_EMPLOYEE_COLUMNS = "hr_id, full_name, nickname, national_id, birth_date, gender, mobile_number, medical_insurance_number";
+/** The first payroll month the module charges (automated-payroll/medical-insurance-month.ts, owner 2026-11-24). */
+const MASTER_SYNC_FIRST_COST_MONTH = "2026-12";
+
+const MASTER_SYNC_EMPLOYEE_COLUMNS =
+  "hr_id, full_name, nickname, employment_status, national_id, birth_date, gender, mobile_number, medical_insurance_number, medical_insurance";
 
 type MasterSyncEmployeeDbRow = {
   hr_id: string;
   full_name: string | null;
   nickname: string | null;
+  employment_status: string | null;
   national_id: string | null;
   birth_date: string | null;
   gender: string | null;
   mobile_number: string | null;
   medical_insurance_number: string | null;
+  medical_insurance: number | string | null;
+};
+
+function costMonthWindow(today: string): { month: string; from: string; to: string } {
+  const current = today.slice(0, 7);
+  const month = current > MASTER_SYNC_FIRST_COST_MONTH ? current : MASTER_SYNC_FIRST_COST_MONTH;
+  const [year, monthNumber] = month.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(year!, monthNumber!, 0)).getUTCDate();
+  return { from: `${month}-01`, month, to: `${month}-${String(lastDay).padStart(2, "0")}` };
+}
+
+const amountOrNull = (value: number | string | null): number | null => {
+  if (value === null || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 };
 
 /**
- * Writes the register's card number, and the identity the Employee Master is blank on, into `employees`
- * (the rule: ./master-sync.ts). Each person is one guarded update — every field is written only while it
- * still holds the value the plan read, so something typed in between is never overwritten — named to the
- * history log as the person running it, and audited. One person's refusal is reported and the rest go on.
+ * Writes into `employees` what the medical insurance module holds for each person (the rules: ./master-sync.ts):
+ * the register's card number, the identity the Employee Master is blank on, and the monthly cost payroll will
+ * charge. Each person is ONE guarded update — every field is written only while it still holds the value the
+ * plan read, so something typed in between is never overwritten — named to the history log as the person
+ * running it, and audited. One person's refusal is reported and the rest go on.
  */
 export async function syncEmployeeMasterFromMedicalInsurance(access: AccessContext): Promise<EmployeeMasterSyncResult> {
   await assertPermission(access, "medical_insurance", "read");
+  await assertPermission(access, "medical_insurance_invoices", "read");
   await assertPermission(access, "employees", "update");
-  const policy = await requirePolicy(todayInCairo());
+  const today = todayInCairo();
+  const policy = await requirePolicy(today);
   const admin = getSupabaseAdmin();
+  const window = costMonthWindow(today);
 
-  const memberRows = await loadMembers(policy.id);
-  const hrIds = [...new Set(memberRows.filter((row) => row.member_type === "employee" && row.hr_id).map((row) => row.hr_id!.trim()))];
+  const [memberRows, charges] = await Promise.all([loadMembers(policy.id), getPayrollMedicalInsuranceCharges({ from: window.from, to: window.to })]);
   const employeeRows: MasterSyncEmployeeDbRow[] = [];
-  for (let start = 0; start < hrIds.length; start += 200) {
-    const { data, error } = await admin.from("employees").select(MASTER_SYNC_EMPLOYEE_COLUMNS).in("hr_id", hrIds.slice(start, start + 200));
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await admin.from("employees").select(MASTER_SYNC_EMPLOYEE_COLUMNS).order("hr_id").range(from, from + 999);
     fail(error);
-    employeeRows.push(...((data ?? []) as MasterSyncEmployeeDbRow[]));
+    const page = (data ?? []) as MasterSyncEmployeeDbRow[];
+    employeeRows.push(...page);
+    if (page.length < 1000) break;
   }
+  const nameOf = (row: MasterSyncEmployeeDbRow) => (row.nickname ?? "").trim() || (row.full_name ?? "").trim() || row.hr_id;
 
-  const employees: MasterSyncEmployee[] = employeeRows.map((row) => ({
-    birthDate: row.birth_date,
-    gender: row.gender,
-    hrId: row.hr_id,
-    medicalInsuranceNumber: row.medical_insurance_number,
-    mobileNumber: row.mobile_number,
-    name: (row.nickname ?? "").trim() || (row.full_name ?? "").trim() || row.hr_id,
-    nationalId: row.national_id,
-  }));
   const plan = planEmployeeMasterSync({
-    employees,
+    employees: employeeRows.map((row) => ({
+      birthDate: row.birth_date,
+      gender: row.gender,
+      hrId: row.hr_id,
+      medicalInsuranceNumber: row.medical_insurance_number,
+      mobileNumber: row.mobile_number,
+      name: nameOf(row),
+      nationalId: row.national_id,
+    })),
     members: memberRows.map((row) => ({
       birthDate: row.birth_date,
       certificateNumber: row.certificate_number,
@@ -1564,35 +1603,57 @@ export async function syncEmployeeMasterFromMedicalInsurance(access: AccessConte
       phone: row.phone,
     })),
   });
+  const amounts = planMedicalInsuranceAmounts({
+    charges: charges.map((charge) => ({ amount: charge.amount, hrId: charge.hrId, unpriced: charge.unpriced })),
+    employees: employeeRows.map((row) => ({
+      active: isActiveEmploymentStatus(row.employment_status),
+      hrId: row.hr_id,
+      medicalInsurance: amountOrNull(row.medical_insurance),
+      name: nameOf(row),
+    })),
+  });
 
-  const updated: MasterSyncUpdate[] = [];
+  // One write per person: their text changes and their amount together.
+  type PersonWrite = { name: string; text: MasterSyncUpdate["changes"]; amount: MasterSyncAmountChange | null };
+  const writes = new Map<string, PersonWrite>();
+  for (const update of plan.updates) writes.set(update.hrId, { amount: null, name: update.name, text: update.changes });
+  for (const change of amounts.changes) {
+    const held = writes.get(change.hrId);
+    if (held) held.amount = change;
+    else writes.set(change.hrId, { amount: change, name: change.name, text: [] });
+  }
+
+  const updated: EmployeeMasterSyncUpdate[] = [];
   const failed: EmployeeMasterSyncResult["failed"] = [];
-  for (const update of plan.updates) {
-    const patch: Record<string, string> = { updated_at: new Date().toISOString() };
-    for (const change of update.changes) patch[change.field] = change.to;
-    let query = admin.from("employees").update(patch).eq("hr_id", update.hrId);
-    for (const change of update.changes) query = change.from === null ? query.is(change.field, null) : query.eq(change.field, change.from);
+  const actorHrId = access.hrId ? hrIdForStorage(access.hrId) : null;
+  for (const [hrId, write] of [...writes.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name))) {
+    const patch: Record<string, string | number> = { updated_at: new Date().toISOString() };
+    for (const change of write.text) patch[change.field] = change.to;
+    if (write.amount) patch.medical_insurance = write.amount.to;
+    let query = admin.from("employees").update(patch).eq("hr_id", hrId);
+    for (const change of write.text) query = change.from === null ? query.is(change.field, null) : query.eq(change.field, change.from);
+    if (write.amount) query = write.amount.from === null ? query.is("medical_insurance", null) : query.eq("medical_insurance", write.amount.from);
     // A script has no request to carry the actor, so the person is named here (src/lib/supabase/request-actor.ts).
     if (access.loginId) query = query.setHeader("x-phoenix-actor-login-id", access.loginId);
-    const actorHrId = access.hrId ? hrIdForStorage(access.hrId) : null;
     if (actorHrId) query = query.setHeader("x-phoenix-actor-hr-id", actorHrId);
     const { data, error } = await query.select("hr_id");
     if (error) {
-      failed.push({ error: error.message, hrId: update.hrId, name: update.name });
+      failed.push({ error: error.message, hrId, name: write.name });
       continue;
     }
     if ((data ?? []).length !== 1) {
-      failed.push({ error: "the Employee Master changed since it was read; nothing written for this person", hrId: update.hrId, name: update.name });
+      failed.push({ error: "the Employee Master changed since it was read; nothing written for this person", hrId, name: write.name });
       continue;
     }
+    const lines = [...write.text.map(describeMasterSyncChange), ...(write.amount ? [describeMasterSyncAmountChange(write.amount)] : [])];
     await writeRequiredAuditLog({
       actorLoginId: access.loginId ?? null,
-      entityId: update.hrId,
+      entityId: hrId,
       entityType: "medical_insurance_master_sync",
-      summary: `Filled ${update.name}'s Employee Master from the medical insurance register (policy ${policy.policyNumber ?? "not numbered yet"}): ${update.changes.map(describeMasterSyncChange).join("; ")}`,
+      summary: `Filled ${write.name}'s Employee Master from the medical insurance module (policy ${policy.policyNumber ?? "not numbered yet"}, cost of ${window.month}): ${lines.join("; ")}`,
     });
-    updated.push(update);
+    updated.push({ hrId, lines, name: write.name });
   }
   if (updated.length > 0) invalidateEmployeeDirectoryCache();
-  return { differences: plan.differences, failed, policyNumber: policy.policyNumber, updated };
+  return { costMonth: window.month, differences: plan.differences, failed, policyNumber: policy.policyNumber, unpriced: amounts.unpriced, updated };
 }

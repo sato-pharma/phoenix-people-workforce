@@ -14,8 +14,12 @@
 //     written: the difference is listed for a person to settle, never decided here.
 //   - "Card Received (Yes-No)" and its date are NOT the register's to say — the register knows the card
 //     was issued, never that the employee holds it. They are never written.
-//   - No amount: the monthly medical insurance figure is money, and NO AMOUNT EVER REACHES AN HR SEAT
-//     (.claude/rules/medical-insurance.md). Payroll reads it from the module itself.
+//   - "Medical Insurance" (the monthly figure) is the module's cost — what the employee pays for the
+//     payroll month on the Cost and Invoices tabs (planMedicalInsuranceAmounts, below; owner, 27 Nov 2026:
+//     "cost in module in cost and invoices"). An active employee the module charges nothing holds 0; a
+//     leaver keeps the figure history holds; an unpriced row is listed, never guessed. Payroll reads the
+//     module itself from December 2026, so the figure cannot charge twice, and the column stays hidden
+//     from seats that cannot see pay.
 //
 // Pure: the reads and the writes are `syncEmployeeMasterFromMedicalInsurance` in ./service.ts.
 // Pinned by tests/medical-insurance-master-sync.test.ts.
@@ -168,4 +172,59 @@ export function planEmployeeMasterSync(input: { members: readonly MasterSyncMemb
 export function describeMasterSyncChange(change: MasterSyncChange): string {
   const from = blank(change.from) ? "(blank)" : change.from!.trim();
   return `${MASTER_SYNC_FIELD_LABELS[change.field]}: ${from} → ${change.to}`;
+}
+
+// ── The monthly cost (owner, 27 Nov 2026: "cost in module in cost and invoices") ────────────────────────
+//
+// The Employee Master's "Medical Insurance" (PAYROLL REFERENCE INFORMATION, a money column, hidden from every
+// seat that cannot see pay) is the module's own monthly figure: `employeePays` of the employee's row of the
+// Cost tab's "Who pays each month" — their share of their own cover (never under EGP 120), their spouse and
+// children in full, and EGP 85 life insurance a person. It is the very figure payroll charges from the
+// December 2026 payroll month (payrollChargesForWindow), so the master and the payslip say the same thing.
+// An active employee the module charges nothing (excluded, or not on the register) holds 0. A leaver's figure
+// is history and is left alone; a person the module cannot price is listed, never guessed.
+
+export type MasterSyncCharge = { hrId: string; amount: number; unpriced: number };
+
+export type MasterSyncAmountEmployee = { hrId: string; name: string; active: boolean; medicalInsurance: number | null };
+
+export type MasterSyncAmountChange = { hrId: string; name: string; from: number | null; to: number; why: "module" | "not covered" };
+
+export type MasterSyncAmountPlan = { changes: MasterSyncAmountChange[]; unpriced: Array<{ hrId: string; name: string; people: number }> };
+
+const piastres = (value: number): number => Math.round(value * 100);
+
+export function planMedicalInsuranceAmounts(input: {
+  charges: readonly MasterSyncCharge[];
+  employees: readonly MasterSyncAmountEmployee[];
+}): MasterSyncAmountPlan {
+  const charges = new Map(input.charges.map((charge) => [charge.hrId, charge]));
+  const changes: MasterSyncAmountChange[] = [];
+  const unpriced: MasterSyncAmountPlan["unpriced"] = [];
+  for (const employee of input.employees) {
+    const charge = charges.get(employee.hrId);
+    if (charge) {
+      if (charge.unpriced > 0) {
+        unpriced.push({ hrId: employee.hrId, name: employee.name, people: charge.unpriced });
+        continue;
+      }
+      const to = piastres(charge.amount) / 100;
+      if (employee.medicalInsurance === null || piastres(employee.medicalInsurance) !== piastres(to)) {
+        changes.push({ from: employee.medicalInsurance, hrId: employee.hrId, name: employee.name, to, why: "module" });
+      }
+      continue;
+    }
+    if (employee.active && (employee.medicalInsurance === null || piastres(employee.medicalInsurance) !== 0)) {
+      changes.push({ from: employee.medicalInsurance, hrId: employee.hrId, name: employee.name, to: 0, why: "not covered" });
+    }
+  }
+  const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
+  return { changes: changes.sort(byName), unpriced: unpriced.sort(byName) };
+}
+
+const egp = (value: number): string => value.toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 });
+
+export function describeMasterSyncAmountChange(change: MasterSyncAmountChange): string {
+  const from = change.from === null ? "(blank)" : egp(change.from);
+  return `Medical Insurance: ${from} → ${egp(change.to)}${change.why === "not covered" ? " (not on the policy)" : ""}`;
 }

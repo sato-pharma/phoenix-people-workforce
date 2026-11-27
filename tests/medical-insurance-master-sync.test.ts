@@ -3,14 +3,15 @@ import assert from "node:assert/strict";
 import {
   masterMobile,
   planEmployeeMasterSync,
+  planMedicalInsuranceAmounts,
   type MasterSyncEmployee,
   type MasterSyncMember,
 } from "../src/lib/medical-insurance/master-sync.ts";
 
 // Owner, 27 Nov 2026: "synchronize from medical insurance module to employee master the needed data for employee
 // master". These pin what the register may write into the Employee Master: the insurer's card number always, the
-// identity ONLY where the master is blank, a difference on both sides never — and never the card-received answer
-// or an amount. Invented names and numbers only (NAMES AND NATIONAL IDS NEVER GO IN THE REPO).
+// identity ONLY where the master is blank, a difference on both sides never, the module's monthly cost into
+// "Medical Insurance" — and never the card-received answer. Invented names and numbers only (NAMES AND NATIONAL IDS NEVER GO IN THE REPO).
 
 function member(overrides: Partial<MasterSyncMember>): MasterSyncMember {
   return {
@@ -141,6 +142,38 @@ export async function runMedicalInsuranceMasterSyncTests() {
     });
     const fields = new Set(plan.updates.flatMap((update) => update.changes.map((change) => change.field)));
     assert.deepEqual([...fields].sort(), ["birth_date", "gender", "medical_insurance_number", "mobile_number", "national_id"], "only the card number and the four identity fields");
+  }
+
+  // The monthly cost (owner, 27 Nov 2026: "cost in module in cost and invoices"): the module's employeePays.
+  {
+    const plan = planMedicalInsuranceAmounts({
+      charges: [
+        { amount: 260.72, hrId: "T-1", unpriced: 0 },
+        { amount: 868.57, hrId: "T-2", unpriced: 0 },
+        { amount: 205, hrId: "T-3", unpriced: 0 },
+        { amount: 400, hrId: "T-4", unpriced: 1 },
+      ],
+      employees: [
+        { active: true, hrId: "T-1", medicalInsurance: 321, name: "A Old Figure" },
+        { active: true, hrId: "T-2", medicalInsurance: null, name: "B Blank Figure" },
+        { active: true, hrId: "T-3", medicalInsurance: 205.004, name: "C Same Figure" },
+        { active: true, hrId: "T-4", medicalInsurance: 300, name: "D Unpriced Relative" },
+        { active: true, hrId: "T-5", medicalInsurance: 214, name: "E Excluded" },
+        { active: true, hrId: "T-6", medicalInsurance: 0, name: "F Already Zero" },
+        { active: false, hrId: "T-7", medicalInsurance: 169, name: "G Leaver" },
+      ],
+    });
+    assert.deepEqual(
+      plan.changes.map((change) => [change.hrId, change.from, change.to, change.why]),
+      [
+        ["T-1", 321, 260.72, "module"],
+        ["T-2", null, 868.57, "module"],
+        ["T-5", 214, 0, "not covered"],
+      ],
+      "the module's monthly figure replaces the master's, an active employee the module charges nothing holds 0, the same figure to the piastre is left alone",
+    );
+    assert.deepEqual(plan.unpriced, [{ hrId: "T-4", name: "D Unpriced Relative", people: 1 }], "a row the module cannot price is listed, its figure never guessed");
+    assert.ok(!plan.changes.some((change) => change.hrId === "T-7"), "a leaver the module does not charge keeps the figure history holds");
   }
 
   assert.equal(masterMobile("1012345678"), "01012345678", "the insurer's ten digits gain the leading zero");

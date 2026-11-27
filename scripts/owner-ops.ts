@@ -903,11 +903,15 @@ async function runLockRepTablets(plan: Extract<OwnerOpsPlan, { job: "lock-rep-ta
 
 async function runSyncInsuranceMaster(plan: Extract<OwnerOpsPlan, { job: "sync-insurance-master" }>, owner: AccessContext) {
   const { syncEmployeeMasterFromMedicalInsurance } = await import("@/lib/medical-insurance/service");
-  const { describeMasterSyncChange, MASTER_SYNC_FIELD_LABELS } = await import("@/lib/medical-insurance/master-sync");
+  const { MASTER_SYNC_FIELD_LABELS } = await import("@/lib/medical-insurance/master-sync");
   const result = await syncEmployeeMasterFromMedicalInsurance(owner);
   const verb = plan.apply ? "Filled" : "Would fill";
-  console.log(`\nPolicy ${result.policyNumber ?? "(not numbered yet)"}. ${verb} ${result.updated.length} employee record(s):`);
-  for (const update of result.updated) console.log(`  ${update.name} (${update.hrId}) — ${update.changes.map(describeMasterSyncChange).join("; ")}`);
+  console.log(`\nPolicy ${result.policyNumber ?? "(not numbered yet)"}, monthly cost of ${result.costMonth}. ${verb} ${result.updated.length} employee record(s):`);
+  for (const update of result.updated) console.log(`  ${update.name} (${update.hrId}) — ${update.lines.join("; ")}`);
+  if (result.unpriced.length > 0) {
+    console.log(`\nCost not written — the module cannot price someone on their row (${result.unpriced.length}):`);
+    for (const item of result.unpriced) console.log(`  ${item.name} (${item.hrId}) — ${item.people} person(s) unpriced`);
+  }
   if (result.failed.length > 0) {
     console.log(`\nNot written (${result.failed.length}):`);
     for (const item of result.failed) console.log(`  ${item.name} (${item.hrId}) — ${item.error}`);
@@ -924,7 +928,7 @@ async function runSyncInsuranceMaster(plan: Extract<OwnerOpsPlan, { job: "sync-i
   if (hrIds.length > 0) {
     const { data, error } = await getSupabaseAdmin()
       .from("employees")
-      .select("hr_id, medical_insurance_number, national_id, birth_date, gender, mobile_number")
+      .select("hr_id, medical_insurance, medical_insurance_number, national_id, birth_date, gender, mobile_number")
       .in("hr_id", hrIds);
     if (error) throw new Error(`the proof read failed: ${error.message}`);
     console.log(`\nPROOF — the Employee Master rows as they are now${plan.apply ? "" : " (the dry run changed nothing)"}:`);

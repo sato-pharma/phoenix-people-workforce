@@ -5643,7 +5643,7 @@ await runTest(
   runMedicalInsuranceCostLetterTests,
 );
 await runTest(
-  "medical insurance: the register fills the Employee Master's card number, and its national ID, birth date, gender and mobile only where blank, never over a value it holds",
+  "medical insurance: the register fills the Employee Master's card number, and its national ID, birth date, gender and mobile only where blank, never over a value it holds, and its Medical Insurance with the module's monthly cost",
   runMedicalInsuranceMasterSyncTests,
 );
 await runTest(
