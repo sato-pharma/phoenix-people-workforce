@@ -1,6 +1,6 @@
 ---
 name: direct-order-receipt-books-everything
-description: "The full record of the 26–27 Nov 2026 receipt-books session lives in the `direct-order-receipt-books` skill (PR 827) — the printed books, security marks, guides, sample book, proposal email, never-email rules, open items."
+description: "The full record of the 26–27 Nov 2026 receipt-books session lives in the `direct-order-receipt-books` skill (PR 829) — the printed books, security marks, guides, sample book, proposal email, never-email rules, open items."
 metadata:
   node_type: memory
   type: project
@@ -10,7 +10,7 @@ metadata:
 
 The owner said on 27 Nov 2026: "never forget anything done in this chat make it a skill". So everything about the
 direct-order delivery-receipt books is written down in the project skill
-`.claude/skills/direct-order-receipt-books/SKILL.md`, opened as PR 827 on branch `codex/receipt-books-skill-v2` (PR 818 was closed after its branch was rewritten on GitHub).
+`.claude/skills/direct-order-receipt-books/SKILL.md`, opened as PR 829 on branch `codex/receipt-books-skill-v3` (PRs 818 and 827 were closed: both sat on the history from before the 27 Nov purge).
 Until that PR merges, read the skill from that branch, or from worktree `F:\Phoenix Workforce\_wt-receipt-books-skill`.
 
 The files themselves are in `F:\Phoenix Workforce\Direct Order Receipt Books\`: the 16 books, the custody

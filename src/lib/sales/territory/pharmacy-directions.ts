@@ -130,7 +130,8 @@ function tidy(value: string | null | undefined): string {
  * carries it. Null when too little of a name is left to search for.
  */
 export function pharmacySearchText(name: string | null | undefined, brickName: string | null | undefined): string | null {
-  const words = tidy(String(name ?? "").replace(/[-–—_/\\|]+/g, " "))
+  // Dashes and the sheets' own symbols ("هانى اسعد عمار $$ السلام") are no part of a name.
+  const words = tidy(String(name ?? "").replace(/[-–—_/\\|$*#@+=~^]+/g, " "))
     .split(" ")
     .filter((word) => word && !SHEET_NAME_MARKS.has(word));
   const core = words.join(" ");
