@@ -195,12 +195,15 @@ the browser on another machine.
 
 ## Still open (when he asks)
 
-- 🔴 **The 16 book PDFs, the custody PDF and the sample book's cover were built BEFORE two fixes (27 Nov 2026).**
-  - Old cover rules 2 and 5 said a sale "is not counted" without the receipt. That is the management's undecided
-    money question. The generator now says the receipt proves delivery.
-  - The dates were fixed to 2026; they are now `20.....`.
-  - Rebuild both from this skill's `generator/build.mjs`, with `managers.json` beside it, into the books folder
-    BEFORE they go to the printer. The folder's `register.json` keeps every code unchanged.
+- ✅ **Rebuilt on 27 Nov 2026, 11:55 Cairo, with the cover fix.**
+  - Cover rules 2 and 5 now say the receipt proves delivery, not that a sale "is not counted"; the money question
+    stays with the management. The year on the date lines is blank (`20.....`).
+  - What was rebuilt: the 16 books, the custody PDF, the register workbook and the sample book.
+  - `register.json` is unchanged (sha256 `34abe243…`), and all 800 codes were found in the new books.
+  - The new sample's 2 codes match no real code.
+  - The old files are in `_superseded v2 - old cover wording\` and `Guides\_superseded - old cover wording\`.
+    Never print them.
+  - The copier test still carries a receipt page from the OLD sample. That page is unaffected (no cover, fake codes).
 
 - The physical copier test. Two ways to do it:
   - on an office printer, now: `اختبار العلامة المخفية - ماكينة التصوير.pdf`, page 2, printed at 100% then

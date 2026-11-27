@@ -347,9 +347,10 @@ const doc = (title, body) => `<!doctype html><html lang="ar" dir="rtl"><head><me
 const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ["--no-first-run", "--disable-extensions"] });
 async function toPdf(html, file, shots = []) {
   const page = await browser.newPage();
-  await page.setContent(html, { waitUntil: "load" });
+  // a 150-page book with 450 seals can take minutes on a busy laptop: Puppeteer's 30 s default stopped book 10 on 27 Nov
+  await page.setContent(html, { waitUntil: "load", timeout: 300000 });
   await page.evaluateHandle("document.fonts.ready");
-  await page.pdf({ path: file, preferCSSPageSize: true, printBackground: true });
+  await page.pdf({ path: file, preferCSSPageSize: true, printBackground: true, timeout: 300000 });
   if (shots.length) {
     await page.emulateMediaType("print");
     await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 2 });
