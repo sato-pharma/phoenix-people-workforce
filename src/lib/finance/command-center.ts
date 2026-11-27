@@ -1,6 +1,7 @@
 import { unstable_cache } from "next/cache.js";
 
 import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
+import { isAutomatedPayrollFinanceActor } from "@/lib/automated-payroll/permissions";
 import { getFinanceAvailability } from "@/lib/automated-payroll/run-service";
 import { FINANCE_DASHBOARD_CACHE_TAG } from "@/lib/dashboard/invalidation";
 import { ownsDirectOrderBookingQueue } from "@/lib/direct-orders/finance-authority";
@@ -356,9 +357,16 @@ export async function getFinanceCommandCenterData(
   // A throw here would take out a landing page; a named unavailable source is honest and
   // recoverable. Never swallow into a zero — a confident zero on a money figure is worse than
   // an error, which is the same rule getOutstationExpenseCommandData's callers follow.
+  //
+  // The sheet status is asked ONLY of a viewer who may open the Automated Payroll finance sheet — the
+  // same check getFinanceAvailability enforces. Anyone else holding payroll:read (the SFE Manager,
+  // reaching here through the CEO command centre's payroll trend) gets `sheets: null`, which the screen
+  // already reads as "not authorised", and nothing is logged or named unavailable: a section that does
+  // not apply to him did not fail. Asked regardless, the service's refusal was logged as "Finance sheet
+  // availability failed" (production, 27 Nov 2026 19:09 Cairo).
   const [payloadResult, sheetsResult] = await Promise.allSettled([
     cachedFinanceCommandCenter({ actorHrId, trendMonths }),
-    getFinanceAvailability(access, currentBusinessPeriod()),
+    isAutomatedPayrollFinanceActor(access) ? getFinanceAvailability(access, currentBusinessPeriod()) : Promise.resolve(null),
   ]);
 
   let data: FinanceCommandCenterData;
@@ -375,7 +383,7 @@ export async function getFinanceCommandCenterData(
 
   let sheets: FinanceSheetAvailability | null = null;
   if (sheetsResult.status === "fulfilled") {
-    sheets = { period: currentBusinessPeriod(), ...sheetsResult.value };
+    if (sheetsResult.value) sheets = { period: currentBusinessPeriod(), ...sheetsResult.value };
   } else {
     unavailable.push("Automated Payroll finance sheets");
     logError("Finance sheet availability failed", {

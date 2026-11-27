@@ -13,6 +13,8 @@ import { rpcCalls, withPostgrestStandIn, type StandIn } from "./support/postgres
 //   2. It re-checks payroll:read itself (the page's gate is not the only one), and a seat without it
 //      is refused before any figure is read.
 //   3. The aggregate is asked for the caller's own figures over a trend window held to 1–24 months.
+//   4. A payroll reader who may not open the finance sheet gets no sheets section, and that is not an
+//      error: the sheet status is never asked for him, so nothing is logged or named unavailable.
 
 const FINANCE = createAccessContext({ hrId: "FM-2", loginId: "fm.two", role: "Finance Manager", source: "session" });
 const PAYLOAD = {
@@ -87,6 +89,24 @@ export async function runFinanceCommandCenterBehaviourTests(): Promise<void> {
       );
       assert.equal(rpcCalls(seen, "phx_finance_command_center").length, 0, "no aggregate was asked for");
       assert.equal(seen.filter((entry) => entry.table === "automated_payroll_runs").length, 0, "no payroll run was read");
+    });
+  }
+
+  // ── 4. A payroll reader who is not a payroll finance actor gets no sheets section — and no error ──
+  // Production, 27 Nov 2026 19:09 Cairo: the SFE Command Center (through the CEO command centre's
+  // payroll-trend read) called this as the SFE Manager, who holds payroll:read but may not open the
+  // Automated Payroll finance sheet. The sheet service refused him — correctly — and that refusal was
+  // logged as "Finance sheet availability failed" and named "unavailable": an error for a section that
+  // simply does not apply to him. `sheets: null` is the screen's own "not authorised" (no button).
+  {
+    const sfeManager = createAccessContext({ hrId: "SFE-1", loginId: "sfe.one", role: "SFE Manager", source: "session" });
+    const standIn: StandIn = { rpc: { phx_finance_command_center: () => PAYLOAD }, tables: { automated_payroll_runs: [] } };
+    await withPostgrestStandIn(standIn, async (seen) => {
+      const view = await getFinanceCommandCenterData(sfeManager);
+      assert.deepEqual(view.unavailable, [], "HEADLINE: a section the viewer may not open is not 'unavailable' — nothing failed");
+      assert.equal(view.sheets, null, "no sheets section for a viewer who may not open the finance sheet");
+      assert.equal(seen.filter((entry) => entry.table === "automated_payroll_runs").length, 0, "the payroll run is never read for him");
+      assert.deepEqual(view.data, PAYLOAD, "the aggregate he may read still comes through");
     });
   }
 }
