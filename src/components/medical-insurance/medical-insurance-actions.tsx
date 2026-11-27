@@ -1,6 +1,6 @@
 "use client";
 
-import { Download } from "lucide-react";
+import { Download, Send } from "lucide-react";
 import * as React from "react";
 
 import { AdminTableShell } from "@/components/admin/admin-design-system";
@@ -10,10 +10,11 @@ import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-
 import { formatLeftDay } from "@/lib/employees/left-flag";
 import { MEDICAL_INSURANCE_CATEGORIES, type MedicalInsuranceCategory } from "@/lib/medical-insurance/cost";
 import { additionCategory, type MedicalInsuranceAction, type MedicalInsuranceActionKind } from "@/lib/medical-insurance/eligibility";
+import { LIBANO_MOVEMENT_EMAIL_CC, LIBANO_MOVEMENT_EMAIL_TO, LIBANO_MOVEMENT_TEST_TO } from "@/lib/medical-insurance/libano-movement-recipients";
 import { DECLINED_REASON, employeeRecordWords, type MedicalInsuranceView } from "@/lib/medical-insurance/view";
 import { cn } from "@/lib/utils";
 
-import { cellClassName, downloadPosted, headerClassName, SaveError, sendJson, textLinkClassName, useSave } from "./medical-insurance-parts";
+import { cellClassName, downloadPosted, headerClassName, postJsonAnswer, SaveError, sendJson, textLinkClassName, useSave } from "./medical-insurance-parts";
 
 type Props = { canCreate: boolean; canEdit: boolean; canExport: boolean; view: MedicalInsuranceView };
 
@@ -26,6 +27,17 @@ const FILTERS: Array<{ id: MedicalInsuranceActionKind | "all"; label: string }> 
   { id: "review", label: "To check" },
 ];
 const MEMBER_FILE_URL = "/api/medical-insurance/movement-file";
+const MEMBER_FILE_SEND_URL = "/api/medical-insurance/movement-file/send";
+
+type MovementKind = "additions" | "deletions";
+type SendRequest = { kind: MovementKind; test: boolean };
+type SendOutcome = { status: "sent" | "queued" | "not_sent"; test: boolean; subject: string; to: string[]; cc: string[]; people: number; message: string };
+
+/** "Addition 27/11/2026": what the subject will read, the day in Cairo, exactly as the server writes it. */
+function movementSubject(request: SendRequest): string {
+  const day = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "2-digit", timeZone: "Africa/Cairo", year: "numeric" }).format(new Date());
+  return `${request.test ? "TEST - " : ""}${request.kind === "additions" ? "Addition" : "Deletion"} ${day}`;
+}
 const toolButtonClassName = "border border-phx-line bg-white px-3 py-2 text-phx-xs font-bold text-phx-ink hover:border-phx-accent disabled:opacity-50";
 
 function timingWords(action: MedicalInsuranceAction): string {
@@ -44,6 +56,10 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
   const [ticked, setTicked] = React.useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = React.useState<"additions" | "deletions" | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  // Both Send buttons open a confirm panel first: each is a real email (owner, 27 Nov 2026: "make send and test send").
+  const [confirming, setConfirming] = React.useState<SendRequest | null>(null);
+  const [sending, setSending] = React.useState(false);
+  const [sent, setSent] = React.useState<SendOutcome | null>(null);
   const visible = view.actions.filter((action) => filter === "all" || action.kind === filter);
 
   // Only people still on today's list count as ticked; someone who dropped off since the page loaded does not.
@@ -89,6 +105,28 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
       setError(caught instanceof Error ? caught.message : "The file could not be built. Try again.");
     } finally {
       setBusy(null);
+    }
+  }
+
+  function askToSend(request: SendRequest) {
+    setSent(null);
+    setError(null);
+    setConfirming(request);
+  }
+
+  async function sendFile(request: SendRequest) {
+    const chosen = request.kind === "additions" ? tickedAdds : tickedRemoves;
+    setSending(true);
+    setError(null);
+    setSent(null);
+    try {
+      const { outcome } = await postJsonAnswer<{ outcome: SendOutcome }>(MEMBER_FILE_SEND_URL, { keys: chosen.map((action) => action.key), kind: request.kind, test: request.test });
+      setSent(outcome);
+      setConfirming(null);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The email could not be sent. Try again.");
+    } finally {
+      setSending(false);
     }
   }
 
@@ -172,11 +210,12 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
             <EdiPanel
               busy={busy === "deletions"}
               count={tickedRemoves.length}
-              disabled={busy !== null}
+              disabled={busy !== null || sending}
               listCount={removeCount}
               note="An employee's spouse and children on the policy are listed with them, one row each, as the insurer's sheet has a row per person."
               onClear={() => clearKind("remove")}
               onExport={() => void exportFile("deletions")}
+              onSend={(test) => askToSend({ kind: "deletions", test })}
               onTickAll={() => tickAll("remove")}
               title="Deletions"
             />
@@ -184,14 +223,39 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
               blocked={addsWithoutCategory.length > 0 ? `Choose a plan for ${addsWithoutCategory.map((action) => action.name).join(", ")}.` : null}
               busy={busy === "additions"}
               count={tickedAdds.length}
-              disabled={busy !== null}
+              disabled={busy !== null || sending}
               listCount={addCount}
               note="Date of birth, ID number, sex and mobile come from each employee's record. Their staff number is their HR number."
               onClear={() => clearKind("add")}
               onExport={() => void exportFile("additions")}
+              onSend={(test) => askToSend({ kind: "additions", test })}
               onTickAll={() => tickAll("add")}
               title="Additions"
             />
+            {confirming ? (
+              <SendConfirm
+                busy={sending}
+                count={confirming.kind === "additions" ? tickedAdds.length : tickedRemoves.length}
+                onCancel={() => setConfirming(null)}
+                onSend={() => void sendFile(confirming)}
+                request={confirming}
+              />
+            ) : null}
+            {sent ? (
+              <p
+                className={cn(
+                  "break-words border-l-2 bg-white p-3 text-phx-xs font-bold md:col-span-2",
+                  sent.status === "sent" ? "border-phx-ok text-phx-ok" : "border-phx-warn text-phx-warn",
+                )}
+              >
+                {sent.status === "sent"
+                  ? `"${sent.subject}" sent for ${sent.people} ${sent.people === 1 ? "person" : "people"}. `
+                  : sent.status === "queued"
+                    ? `"${sent.subject}" is waiting to be sent and will retry by itself. `
+                    : ""}
+                {sent.message}
+              </p>
+            ) : null}
             {error ? (
               <div className="md:col-span-2">
                 <SaveError error={error} />
@@ -313,9 +377,12 @@ function EdiPanel(props: {
   note: string;
   onClear: () => void;
   onExport: () => void;
+  /** `true` is Send test: the same email, to the owner alone. */
+  onSend: (test: boolean) => void;
   onTickAll: () => void;
   title: string;
 }) {
+  const cannotSend = props.disabled || props.count === 0 || Boolean(props.blocked);
   return (
     <div className="space-y-2 border border-phx-line bg-white p-3">
       <p className="text-sm font-black text-phx-ink">
@@ -329,8 +396,56 @@ function EdiPanel(props: {
           <Download className="h-4 w-4" />
           {props.busy ? "Building the file" : `Export ${props.title.toLowerCase()} (${props.count})`}
         </Button>
+        <button className={toolButtonClassName} disabled={cannotSend} onClick={() => props.onSend(true)} type="button">
+          Send test to me
+        </button>
+        <Button className="h-9 gap-2" disabled={cannotSend} onClick={() => props.onSend(false)} variant="outline">
+          <Send className="h-4 w-4" />
+          Send to Libano-Suisse
+        </Button>
       </div>
       {props.blocked ? <p className="break-words text-phx-xs font-bold text-phx-warn">{props.blocked}</p> : null}
+    </div>
+  );
+}
+
+/** The last look before a real email leaves: who receives it, the subject, and how many people. */
+function SendConfirm(props: { busy: boolean; count: number; onCancel: () => void; onSend: () => void; request: SendRequest }) {
+  const { kind, test } = props.request;
+  const words = kind === "additions" ? "Additions" : "Deletions";
+  const to = test ? LIBANO_MOVEMENT_TEST_TO : LIBANO_MOVEMENT_EMAIL_TO;
+  const cc = test ? [] : LIBANO_MOVEMENT_EMAIL_CC;
+  return (
+    <div className={cn("space-y-2 border bg-white p-3 md:col-span-2", test ? "border-phx-line" : "border-phx-accent")}>
+      <p className="text-sm font-black text-phx-ink">
+        {test
+          ? `Send a test of the ${words.toLowerCase()} file for ${props.count} ${props.count === 1 ? "person" : "people"} to you only?`
+          : `Send the ${words.toLowerCase()} file for ${props.count} ${props.count === 1 ? "person" : "people"} to Libano-Suisse?`}
+      </p>
+      <dl className="grid gap-1 text-phx-xs font-semibold text-phx-ink-soft sm:grid-cols-[6rem_1fr]">
+        <dt className="font-black text-phx-ink">To</dt>
+        <dd className="break-words">{to.join(", ")}</dd>
+        <dt className="font-black text-phx-ink">CC</dt>
+        <dd className="break-words">{cc.length > 0 ? cc.join(", ") : "Nobody"}</dd>
+        <dt className="font-black text-phx-ink">Subject</dt>
+        <dd className="break-words">{movementSubject(props.request)}</dd>
+        <dt className="font-black text-phx-ink">Attached</dt>
+        <dd className="break-words">The {words} sheet, the same file Export builds</dd>
+      </dl>
+      <p className={cn("break-words text-phx-xs font-bold", test ? "text-phx-ink-soft" : "text-phx-warn")}>
+        {test
+          ? "Nothing goes to Libano-Suisse. You receive exactly the email they would, marked as a test, so you can open the file and check it first."
+          : "This sends a real email to the insurer, from Phoenix on your behalf. It says it is an automated email from the system, and replies come to you."}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Button className="h-9 gap-2" disabled={props.busy || props.count === 0} onClick={props.onSend}>
+          <Send className="h-4 w-4" />
+          {props.busy ? "Sending" : test ? "Send test now" : "Send now"}
+        </Button>
+        <button className={toolButtonClassName} disabled={props.busy} onClick={props.onCancel} type="button">
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }
