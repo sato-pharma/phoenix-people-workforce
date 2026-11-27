@@ -150,6 +150,7 @@ const SIDE_CAPTIONS = { back: "ظهر البطاقة", front: "وجه البطا
 
 function missingSideNote(page: BankLetterIdPage, side: "front" | "back"): string {
   if (page.status === "scan") return "البطاقة محفوظة كملف PDF في مستندات التعيين — تُطبع من هناك";
+  if (page.status === "not-a-card") return "الصورة المرفوعة ليست صورة البطاقة — تُلصق نسخة هنا";
   return side === "front" ? "لا توجد صورة لوجه البطاقة — تُلصق نسخة هنا" : "لا توجد صورة لظهر البطاقة — تُلصق نسخة هنا";
 }
 

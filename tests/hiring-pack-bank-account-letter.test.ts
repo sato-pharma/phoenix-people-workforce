@@ -163,6 +163,15 @@ export async function runHiringPackBankAccountLetterTests() {
   assert.equal(single.front?.fileName, "بطاقة.jpg", "one picture is printed as the front");
   assert.equal(idCardStatus([stored("بطاقة حسن.pdf", "2026-11-01", "application/pdf")]), "scan", "a PDF alone is a scan, which a Word page cannot carry");
   assert.equal(idCardStatus([]), "missing");
+  // A new hire filed her own portrait as both sides (owner, 2026-11-27): never printed as a card.
+  const sized = (fileName: string, sizeBytes: number) => ({ ...stored(fileName, "2026-11-04"), sizeBytes });
+  const twice = pickIdSides([sized("national-id-front.jpg", 701413), sized("national-id-back.jpg", 701413)]);
+  assert.deepEqual([twice.front, twice.back, twice.status], [null, null, "not-a-card"], "one file filed as both sides is not a card");
+  const portrait = pickIdSides([sized("national-id-front.jpg", 701413), sized("national-id-back.jpg", 512000)], { personalPhotoSizes: [701413] });
+  assert.equal(portrait.front?.fileName, "national-id-back.jpg", "the personal photo is never a side; the real picture left is printed");
+  assert.equal(portrait.status, "one-photo");
+  assert.equal(pickIdSides([sized("national-id-front.jpg", 701413)], { personalPhotoSizes: [701413] }).status, "not-a-card", "a slot holding only the portrait has nothing to print");
+  assert.equal(pickIdSides([sized("national-id-front.jpg", 400000), sized("national-id-back.jpg", 380000)], { personalPhotoSizes: [701413] }).status, "photos", "two real sides still print");
 
   const wide = fitIdPicture(1600, 1000);
   assert.equal(wide.cx, ID_SIDE_BOX_MM.width * EMU_PER_MM, "a landscape card fills the box width");
@@ -186,6 +195,7 @@ export async function runHiringPackBankAccountLetterTests() {
     { back: idPicture, front: idPicture, name: "شخص تجريبي أول", nationalId: "30001010100011", status: "photos" },
     { back: null, front: null, name: "شخص تجريبي ثان", nationalId: null, status: "missing" },
     { back: null, front: null, name: "شخص تجريبي ثالث", nationalId: "29912120100022", status: "scan" },
+    { back: null, front: null, name: "شخص تجريبي رابع", nationalId: "29801010100033", status: "not-a-card" },
   ];
   const withIds = await JSZip.loadAsync(
     await buildBankAccountLetterDocx({
@@ -195,7 +205,7 @@ export async function runHiringPackBankAccountLetterTests() {
       headOfficeAr: "القاهرة",
       idPages,
       images: { bandPng: PNG_STUB, logoPng: PNG_STUB },
-      rows: bankLetterRows([person({}), person({ hrId: "T-2" }), person({ hrId: "T-3" })]),
+      rows: bankLetterRows([person({}), person({ hrId: "T-2" }), person({ hrId: "T-3" }), person({ hrId: "T-4" })]),
     }),
   );
   const idDocument = await withIds.file("word/document.xml")!.async("string");
@@ -213,6 +223,7 @@ export async function runHiringPackBankAccountLetterTests() {
   assert.ok(idDocument.indexOf("وجه البطاقة") < idDocument.indexOf("ظهر البطاقة"), "the front is the top half, the back the bottom");
   assert.ok(idTexts.includes("لا توجد صورة لوجه البطاقة — تُلصق نسخة هنا"), "a missing side prints an empty box, never skips the person");
   assert.ok(idTexts.some((text) => text.includes("PDF")), "a PDF-only card says where to print it from");
+  assert.ok(idTexts.includes("الصورة المرفوعة ليست صورة البطاقة — تُلصق نسخة هنا"), "a portrait filed as the card prints an empty box that says the upload is not the card");
   const idFiles = Object.keys(withIds.files).filter((name) => !withIds.files[name].dir);
   assert.deepEqual(
     idFiles.filter((name) => name.startsWith("word/media/id-card-")).sort(),
@@ -233,6 +244,9 @@ export async function runHiringPackBankAccountLetterTests() {
 
   // ── 6. the route: its gate, and the audit row before the file ─────────────────────────────────
   const route = readFileSync(join(process.cwd(), "app/api/hiring-pack/bank-account-letter/route.ts"), "utf8");
+  const store = readFileSync(join(process.cwd(), "src/lib/hiring-pack/bank-account-letter-store.ts"), "utf8");
+  assert.ok(store.includes("Buffer.compare(frontRaw, backRaw) === 0"), "identical front and back bytes are never printed, whatever the sizes said");
+  assert.ok(store.includes('joiningSlotId("photo")'), "each person's personal photo sizes are read, so a portrait filed as the card is caught");
   assert.match(route, /forms\.paperScope !== null\)/, "a paper-scoped seat is refused");
   const audit = route.indexOf("writeRequiredAuditLog({");
   const file = route.indexOf("new Response(");

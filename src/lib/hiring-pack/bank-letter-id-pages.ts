@@ -21,6 +21,8 @@ export type StoredIdFile = {
   contentType: string;
   /** ISO time; the earlier upload is the front when the names do not say. */
   uploadedAt: string;
+  /** The stored size; two sides of one card are never the same file. Unknown → not compared. */
+  sizeBytes?: number | null;
 };
 
 /**
@@ -28,12 +30,16 @@ export type StoredIdFile = {
  * - `photos`: a front and a back picture — the page prints both;
  * - `one-photo`: a single picture, printed as the front, the back box left empty;
  * - `scan`: only a PDF scan, which a Word page cannot carry — printed from Hiring Documents instead;
+ * - `not-a-card`: the slot holds a picture that cannot be the card — the same file filed as both
+ *   sides, or the person's own personal photo (owner, 2026-11-27: a new hire's portrait printed on
+ *   her ID page). Nothing is printed from it; the page shows empty boxes and the screen says why;
  * - `missing`: nothing on file.
  */
-export type IdCardStatus = "photos" | "one-photo" | "scan" | "missing";
+export type IdCardStatus = "photos" | "one-photo" | "scan" | "not-a-card" | "missing";
 
 export const ID_CARD_STATUS_LABELS: Record<IdCardStatus, string> = {
   missing: "No ID card on file",
+  "not-a-card": "The ID card slot holds a personal photo, not the card — upload the card",
   "one-photo": "Only one side of the ID card on file",
   photos: "ID card front and back on file",
   scan: "ID card on file as a PDF scan only",
@@ -53,14 +59,25 @@ function sideNamed(file: StoredIdFile): "front" | "back" | null {
   return null;
 }
 
+function sizeOf(file: StoredIdFile): number | null {
+  return typeof file.sizeBytes === "number" && file.sizeBytes > 0 ? file.sizeBytes : null;
+}
+
 /**
  * Which file is the front and which the back. A name that says so wins (`national-id-front.jpg`,
  * "وجه"); otherwise the pictures go in upload order, the first the front. Only pictures are sides;
- * a PDF makes the person a `scan` when it is all there is.
+ * a PDF makes the person a `scan` when it is all there is. A picture the same size as one of the
+ * person's personal photos is never a side, and a front and back of one size are the same file
+ * filed twice — `not-a-card`, with nothing to print.
  */
-export function pickIdSides<T extends StoredIdFile>(files: readonly T[]): { front: T | null; back: T | null; status: IdCardStatus } {
-  const pictures = files
-    .filter(isPicture)
+export function pickIdSides<T extends StoredIdFile>(
+  files: readonly T[],
+  options: { personalPhotoSizes?: readonly number[] } = {},
+): { front: T | null; back: T | null; status: IdCardStatus } {
+  const photoSizes = new Set(options.personalPhotoSizes ?? []);
+  const allPictures = files.filter(isPicture);
+  const pictures = allPictures
+    .filter((file) => !photoSizes.has(sizeOf(file) ?? -1))
     .slice()
     .sort((a, b) => a.uploadedAt.localeCompare(b.uploadedAt));
   let front = pictures.filter((file) => sideNamed(file) === "front").at(-1) ?? null;
@@ -68,8 +85,12 @@ export function pickIdSides<T extends StoredIdFile>(files: readonly T[]): { fron
   const rest = pictures.filter((file) => file !== front && file !== back && sideNamed(file) === null);
   if (!front) front = rest.shift() ?? null;
   if (!back) back = rest.shift() ?? null;
+  if (front && back && sizeOf(front) !== null && sizeOf(front) === sizeOf(back)) {
+    return { back: null, front: null, status: "not-a-card" };
+  }
   if (front && back) return { back, front, status: "photos" };
   if (front || back) return { back: null, front: front ?? back, status: "one-photo" };
+  if (allPictures.length > 0) return { back: null, front: null, status: "not-a-card" };
   return { back: null, front: null, status: files.length > 0 ? "scan" : "missing" };
 }
 

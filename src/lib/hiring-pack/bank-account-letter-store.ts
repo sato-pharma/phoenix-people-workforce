@@ -123,18 +123,19 @@ type IdFileRow = {
   file_name: string;
   content_type: string;
   uploaded_at: string;
+  size_bytes: number | null;
 };
 
 type IdFile = StoredIdFile & { storagePath: string };
 
-const ID_FILE_COLUMNS = "employee_hr_id,storage_path,file_name,content_type,uploaded_at";
+const ID_FILE_COLUMNS = "employee_hr_id,storage_path,file_name,content_type,uploaded_at,size_bytes";
 
-/** The id of the "National ID copy" slot, or null when no active slot carries the flag. */
-async function nationalIdSlotId(): Promise<string | null> {
+/** The id of the active slot the joining form files this upload in, or null when none carries the flag. */
+async function joiningSlotId(upload: "national_id" | "photo"): Promise<string | null> {
   const { data, error } = await getSupabaseAdmin()
     .from("hiring_document_definitions")
     .select("id")
-    .eq("joining_form_upload", "national_id")
+    .eq("joining_form_upload", upload)
     .eq("is_active", true)
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -150,6 +151,7 @@ function groupIdFiles(rows: readonly IdFileRow[]): Map<string, IdFile[]> {
     const file: IdFile = {
       contentType: row.content_type,
       fileName: row.file_name,
+      sizeBytes: row.size_bytes,
       storagePath: row.storage_path,
       uploadedAt: row.uploaded_at,
     };
@@ -158,15 +160,38 @@ function groupIdFiles(rows: readonly IdFileRow[]): Map<string, IdFile[]> {
   return byPerson;
 }
 
-/** Every slot file, read once — the slot holds a few files per person, never a company's worth of pages. */
-async function loadAllIdFiles(): Promise<Map<string, IdFile[]>> {
-  const slotId = await nationalIdSlotId();
-  if (!slotId) return new Map();
+type IdFiles = { files: Map<string, IdFile[]>; personalPhotoSizes: Map<string, number[]> };
+
+/**
+ * Every ID slot file, read once — the slot holds a few files per person, never a company's worth of
+ * pages — and the sizes of each person's personal photos, so a portrait filed as the card is never
+ * printed as one (owner, 2026-11-27).
+ */
+async function loadAllIdFiles(): Promise<IdFiles> {
+  const [slotId, photoSlotId] = await Promise.all([joiningSlotId("national_id"), joiningSlotId("photo")]);
+  if (!slotId) return { files: new Map(), personalPhotoSizes: new Map() };
   const rows = await fetchAllRows<IdFileRow>(
     () => getSupabaseAdmin().from("hiring_document_files").select(ID_FILE_COLUMNS).eq("document_id", slotId),
     "storage_path",
   );
-  return groupIdFiles(rows);
+  const personalPhotoSizes = new Map<string, number[]>();
+  if (photoSlotId) {
+    const photos = await fetchAllRows<IdFileRow>(
+      () => getSupabaseAdmin().from("hiring_document_files").select(ID_FILE_COLUMNS).eq("document_id", photoSlotId),
+      "storage_path",
+    );
+    for (const photo of photos) {
+      if (!photo.size_bytes) continue;
+      const key = photo.employee_hr_id.toLowerCase();
+      personalPhotoSizes.set(key, [...(personalPhotoSizes.get(key) ?? []), photo.size_bytes]);
+    }
+  }
+  return { files: groupIdFiles(rows), personalPhotoSizes };
+}
+
+function sidesFor(loaded: IdFiles, hrId: string) {
+  const key = hrId.toLowerCase();
+  return pickIdSides(loaded.files.get(key) ?? [], { personalPhotoSizes: loaded.personalPhotoSizes.get(key) });
 }
 
 /**
@@ -175,8 +200,8 @@ async function loadAllIdFiles(): Promise<Map<string, IdFile[]>> {
  */
 async function loadIdCardStatuses(): Promise<Map<string, IdCardStatus> | null> {
   try {
-    const files = await loadAllIdFiles();
-    return new Map([...files].map(([hrId, list]) => [hrId, pickIdSides(list).status]));
+    const loaded = await loadAllIdFiles();
+    return new Map([...loaded.files.keys()].map((hrId) => [hrId, sidesFor(loaded, hrId).status]));
   } catch (error) {
     logError("The bank account letter could not read the national ID files", {
       error: error instanceof Error ? error : new Error(String(error)),
@@ -218,10 +243,10 @@ async function preparePicture(bytes: Buffer): Promise<IdPicture | null> {
   }
 }
 
-async function loadSide(file: IdFile | null): Promise<IdPicture | null> {
+async function downloadSide(file: IdFile | null): Promise<Buffer | null> {
   if (!file) return null;
   try {
-    return await preparePicture(await downloadHiringDocumentFile(file.storagePath));
+    return await downloadHiringDocumentFile(file.storagePath);
   } catch (error) {
     logError("A national ID picture for the bank account letter could not be read", {
       context: { storagePath: file.storagePath },
@@ -240,21 +265,26 @@ const ID_DOWNLOAD_CONCURRENCY = 4;
  * read, is null — the page prints an empty box for it, never skips the person.
  */
 export async function loadBankLetterIdPages(chosen: readonly BankLetterEmployee[]): Promise<BankLetterIdPage[]> {
-  const files = await loadAllIdFiles();
+  const loaded = await loadAllIdFiles();
   const pages: BankLetterIdPage[] = new Array(chosen.length);
   let next = 0;
   async function worker() {
     while (next < chosen.length) {
       const index = next++;
       const employee = chosen[index];
-      const sides = pickIdSides(files.get(employee.hrId.toLowerCase()) ?? []);
-      const [front, back] = await Promise.all([loadSide(sides.front), loadSide(sides.back)]);
+      const sides = sidesFor(loaded, employee.hrId);
+      const [frontRaw, backRaw] = await Promise.all([downloadSide(sides.front), downloadSide(sides.back)]);
+      // The same bytes as both sides is one picture filed twice — never a card, whatever its size said.
+      const samePicture = frontRaw !== null && backRaw !== null && Buffer.compare(frontRaw, backRaw) === 0;
+      const [front, back] = samePicture
+        ? [null, null]
+        : await Promise.all([frontRaw ? preparePicture(frontRaw) : null, backRaw ? preparePicture(backRaw) : null]);
       pages[index] = {
         back,
         front,
         name: (employee.nameAr ?? "").trim() || employee.displayName,
         nationalId: employee.nationalId,
-        status: sides.status,
+        status: samePicture ? "not-a-card" : sides.status,
       };
     }
   }
