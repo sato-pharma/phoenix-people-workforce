@@ -27,14 +27,16 @@ import JSZip from "jszip";
 
 import { LIBANO_TABLE_OF_BENEFITS } from "./benefits";
 import type { MedicalInsuranceCategory } from "./cost";
+import { LIBANO_GRACE_PERIOD_DAYS } from "./deletion-day";
 import { splitLibanoName, type LibanoMemberLine } from "./workbooks";
 
 export const LIBANO_MOVEMENT_TEMPLATE_PATH = join("assets", "medical-insurance", "libano-additions-deletions.xlsx");
 
 /** The branch name the insurer's sheet carries for every Sato row. */
 export const LIBANO_BRANCH_NAME = "Sato Pharma";
-/** The rules page: "Addition Date of any new Adherent will be the date of receiving the email with grace period 15 days". */
-export const LIBANO_GRACE_PERIOD_DAYS = 15;
+/** The rules page: "Addition Date of any new Adherent will be the date of receiving the email with grace period 15 days".
+ * It lives beside the deletion-date rule, which reads the same number (./deletion-day.ts). */
+export { LIBANO_GRACE_PERIOD_DAYS };
 
 const FIRST_ROW = 6;
 const ADDITIONS_LAST_ROW = 597;

@@ -13,6 +13,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { todayInCairo } from "@/lib/date-only";
 import { hrIdForStorage } from "@/lib/hr-id";
+import { formatLeftDay } from "@/lib/employees/left-flag";
 import { employeeExitDay, getEmployeeDirectoryRows, invalidateEmployeeDirectoryCache, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -45,6 +46,7 @@ import {
   removeMedicalInsuranceFile,
   uploadMedicalInsuranceFile,
 } from "./file-storage";
+import { defaultDeletionDay, deletionDayProblem } from "./deletion-day";
 import { LIBANO_DELETIONS_SHEET_ROWS } from "./libano-movement-sheet";
 import { buildCostLetter, CostLetterError, type CostLetter } from "./cost-letter";
 import { cleanCostLetterCc, COST_LETTER_EMAIL_BATCH, sendCostLetterEmails, type CostLetterEmailOutcome } from "./cost-letter-email";
@@ -1492,16 +1494,27 @@ export async function prepareLibanoMemberFile(
   const actions = chosen as MedicalInsuranceAction[];
 
   if (kind === "deletions") {
+    // The deletion date typed beside each person goes on the file as typed (owner, 27 Nov 2026: "It must follow what
+    // I say"); a person sent with none goes as far back as Libano-Suisse accepts. A date the insurer's sheet would
+    // mark "Exceed Grace period", or one outside the cover, is refused before any file is built.
+    const typedDays = body.days && typeof body.days === "object" && !Array.isArray(body.days) ? (body.days as Record<string, unknown>) : {};
     const listed = new Set<string>();
     const rows: LibanoMemberLine[] = [];
     for (const action of actions) {
       const member = action.memberId ? rowsById.get(action.memberId) : undefined;
       if (!member) continue;
+      const window = { coverStart: member.coverage_starts_on, policyStartsOn: policy.startsOn, sendingDay: asOf };
+      const typed = typedDays[action.key];
+      const day = typed === undefined || typed === null || typed === "" ? defaultDeletionDay(action, window) : typed;
+      const problem = deletionDayProblem(day, { ...window, formatDay: formatLeftDay, name: action.name, policyEndsOn: policy.endsOn });
+      if (problem) throw new MedicalInsuranceInputError(problem);
+      const deletionDay = day as string;
       const family = member.member_type === "employee" ? state.memberRows.filter((other) => other.principal_member_id === member.id && isOpen(other)) : [];
       for (const row of [member, ...family]) {
         if (listed.has(row.id)) continue;
         listed.add(row.id);
-        rows.push(memberLine(row, rowsById, state.employeeRows, action.effectiveOn));
+        // A spouse or child whose own cover began later than the employee's deletion date goes from their own start.
+        rows.push(memberLine(row, rowsById, state.employeeRows, row.coverage_starts_on > deletionDay ? row.coverage_starts_on : deletionDay));
       }
     }
     if (rows.length > LIBANO_DELETIONS_SHEET_ROWS) {
