@@ -12,7 +12,7 @@
 // refused rather than "last one wins".
 // ---------------------------------------------------------------------------
 
-export const OWNER_OPS_JOBS = ["link-doctor", "merge-venues", "merge-customers", "remove-customer-pharmacy", "pin-pharmacy", "load-crm-list", "seat-in-building", "tablet-agents", "start-tablet-agent", "bind-tablet-agent", "revoke-tablet-agent", "match-app-version", "lock-rep-tablets", "sync-insurance-master", "end-insurance-cover"] as const;
+export const OWNER_OPS_JOBS = ["link-doctor", "merge-venues", "merge-customers", "remove-customer-pharmacy", "pin-pharmacy", "load-crm-list", "seat-in-building", "tablet-agents", "start-tablet-agent", "bind-tablet-agent", "revoke-tablet-agent", "match-app-version", "lock-rep-tablets", "sync-insurance-master", "end-insurance-cover", "reinstate-insurance-cover"] as const;
 export type OwnerOpsJob = (typeof OWNER_OPS_JOBS)[number];
 
 /** Every flag the runner knows, for refuseUnknownFlags. */
@@ -54,6 +54,7 @@ const VALUE_FLAGS_BY_JOB: Record<OwnerOpsJob, readonly string[]> = {
   "lock-rep-tablets": [],
   "sync-insurance-master": [],
   "end-insurance-cover": ["--employee"],
+  "reinstate-insurance-cover": ["--employee"],
 };
 
 /** A tablet's number as Headwind holds it — PHX-TAB-0008. Never a database row id. */
@@ -88,7 +89,7 @@ export type OwnerOpsPlan =
   | { job: "match-app-version"; apply: boolean; applicationId: number }
   | { job: "lock-rep-tablets"; apply: boolean }
   | { job: "sync-insurance-master"; apply: boolean }
-  | { job: "end-insurance-cover"; apply: boolean; hrIds: string[] };
+  | { job: "end-insurance-cover" | "reinstate-insurance-cover"; apply: boolean; hrIds: string[] };
 
 export type OwnerOpsParse = { ok: true; plan: OwnerOpsPlan } | { ok: false; error: string };
 
@@ -153,6 +154,11 @@ listed and none is sent. Only --apply writes. Every run ends with a proof read.
       only someone that screen lists to REMOVE, on the day and with the reason it gives (the last
       covered day for a leaver; the first day of cover, voided, for someone gone before it began).
       Their family on the policy ends the same day. Anyone the screen does not list is refused.
+  reinstate-insurance-cover --employee <HR id[,HR id…]>
+      Put each named employee's ended cover back, exactly as the register's "Put back" does: their
+      row reopens and the family that end took with them comes back. Used when cover was ended in
+      Phoenix before Libano-Suisse was sent the deletion, so the person is back on To remove for the
+      Send. Someone with no ended row on the policy in force is refused and nothing is changed.
 
   --apply      write for real (refused from a tree behind origin/main)
   --employee   whose draft workspace the proof read opens; by default every employee holding a
@@ -218,7 +224,7 @@ export function parseOwnerOpsArgs(argv: readonly string[]): OwnerOpsParse {
     return { ok: true, plan: { job, apply } };
   }
 
-  if (job === "end-insurance-cover") {
+  if (job === "end-insurance-cover" || job === "reinstate-insurance-cover") {
     const raw = need("--employee");
     if (typeof raw !== "string") return { ok: false, ...raw };
     const hrIds = [...new Set(raw.split(",").map((item) => item.trim()).filter(Boolean))];

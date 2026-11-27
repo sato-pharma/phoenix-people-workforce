@@ -204,6 +204,21 @@ employees the Add/Remove screen listed to remove; none had family on the policy.
   to Libano-Suisse by a person's hand.
 - **Proof:** the run reads back each person's register row and their family's rows (`coverage_ends_on`,
   `end_reason`); the audit log (`writeRequiredAuditLog`) holds one row per end, by B-10.
+- 🔴 **Send the deletion to Libano-Suisse FIRST, then end the cover.** The To remove list shows only people whose
+  cover is still open in Phoenix, so ending it takes them off the list and out of the Send. On 27 Nov 2026 the
+  three were ended at 11:10 before any real deletion went, and Salim Gomaa was then missing from To remove.
+
+### Put an ended cover back ("bring them back on To remove")
+
+First run 27 Nov 2026, on the owner's answer "Only bring back these three" (Salim Gomaa, Aya Tarek, Abdelrahman
+El-Shemy), so their deletion could be sent from the Add/Remove screen.
+
+- **Run:** `owner-ops.ts reinstate-insurance-cover --employee <HR id[,HR id…]>` (dry run first, then `--apply`).
+- **Function:** `updateMedicalInsuranceMember(owner, memberId, { action: "reinstate" })`, the register's own
+  "Put back": the row reopens, a live Exclude is revoked, and the family that end took with them comes back.
+- **What it refuses:** an HR id with no ended employee row on the policy in force, or with more than one; every
+  name is settled before anything is written.
+- **After the Send:** end them again with `end-insurance-cover`; the screen gives the same day and reason.
 
 ## Rep tablets
 
