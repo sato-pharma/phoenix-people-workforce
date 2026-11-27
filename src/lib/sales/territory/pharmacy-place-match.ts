@@ -20,9 +20,12 @@
 //      "صيدلية مصر الجديدة" is never "رامى مصر الجديدة" — and, the brick's town set aside, a name of
 //      two words or more has at least two of them in the listing: "عمر بن الخطاب" is never "د/ عمر";
 //   4. both say the same KIND of place: a pharmacy, a distributor or warehouse, a hospital, a nursery,
-//      a medical centre — "يونس لتجارة وتوزيع الادوية" is never "صيدلية يونس";
+//      a medical centre — "يونس لتجارة وتوزيع الادوية" is never "صيدلية يونس"; and a pharmacy is matched
+//      only to a listing that SAYS it is one (صيدلية, pharmacy): "صيدلية جامعة الازهر" is never the
+//      university's own listing, "مراد صادق" never a "دكتور مراد صادق" that may be his clinic;
 //   5. no other listing in the answer passes 1–4: two branches of a chain, or two shops of one name,
 //      leave Phoenix unable to tell which, so neither is kept.
+// "عبد …" and "ابو …" are ONE name ("عبد الرحمن غلوش" is two words, so "د. عبد الرحمن" carries one).
 // Words that only say what kind of place it is (صيدلية, pharmacy, د., دكتور, شركة, لتجارة وتوزيع
 // الادوية, "الجديدة", a branch number) never count as names. A listing named only in Latin letters cannot be compared with the Arabic sheet name and
 // is never a match.
@@ -30,7 +33,8 @@
 // Measured on the 30 Google answers saved from the PR 821 probe (Cairo 1 and Giza 1): 19 kept, all the
 // right shop; 8 wrong shops all refused; the 3 Latin-only listings left to the search. On the first 100
 // live lookups (the top of the sales ranking) the kind rule was added after it caught a distributor
-// matched to a corner shop.
+// matched to a corner shop. Reading the 2,000 of 27 Nov by eye added the pharmacy-word rule and the
+// one-name rule for "عبد …" / "ابو …": 42 matches were set back, 434 kept.
 //
 // PURE: no database, no Google call. The run is scripts/territory-match-pharmacy-places.ts.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -105,6 +109,29 @@ export function placeKind(name: string | null | undefined): PlaceKind {
 
 const ARABIC_LETTER = /[ء-ي]/;
 
+/** A name that says it is a pharmacy (صيدلية, صيدليات, pharmacy, drug store). */
+export function namesAPharmacy(name: string | null | undefined): boolean {
+  const normalized = normalizeName(String(name ?? ""));
+  return normalized.includes("صيدل") || normalized.includes("pharm") || normalized.includes("drug");
+}
+
+/** The first half of a compound given name, written apart or joined: "عبد الرحمن" = "عبدالرحمن". */
+const NAME_PREFIXES: ReadonlySet<string> = new Set(["عبد", "ابو"]);
+
+function joinCompoundNames(words: readonly string[]): string[] {
+  const out: string[] = [];
+  for (let index = 0; index < words.length; index += 1) {
+    const word = words[index];
+    if (NAME_PREFIXES.has(word) && index + 1 < words.length) {
+      out.push(word + words[index + 1]);
+      index += 1;
+    } else {
+      out.push(word);
+    }
+  }
+  return out;
+}
+
 /**
  * The words that name WHICH place it is, in order, stemmed: no sheet marks, no kind words, no digits.
  * For a name that has Arabic letters, only its Arabic words (a listing's Latin copy of its own name
@@ -113,9 +140,11 @@ const ARABIC_LETTER = /[ء-ي]/;
 export function namingWords(name: string | null | undefined): string[] {
   const raw = String(name ?? "").replace(/[-–—_/\\|]+/g, " ");
   const kept = raw.split(/\s+/).filter((word) => word && !SHEET_NAME_MARKS.has(word)).join(" ");
-  const words = normalizeName(kept)
-    .split(" ")
-    .filter((word) => word && !/\d/.test(word) && !isKindWord(word));
+  const words = joinCompoundNames(
+    normalizeName(kept)
+      .split(" ")
+      .filter((word) => word && !/\d/.test(word) && !isKindWord(word)),
+  );
   const arabicOnly = words.some((word) => ARABIC_LETTER.test(word)) ? words.filter((word) => ARABIC_LETTER.test(word)) : words;
   const seen = new Set<string>();
   const out: string[] = [];
@@ -157,7 +186,9 @@ function sameWord(left: string, right: string): boolean {
  * its words are set aside before counting how much of the name the listing carries.
  */
 export function listingNamesPharmacy(pharmacyName: string, listingName: string, brickName?: string | null): boolean {
-  if (placeKind(pharmacyName) !== placeKind(listingName)) return false;
+  const kind = placeKind(pharmacyName);
+  if (kind !== placeKind(listingName)) return false;
+  if ((kind === "pharmacy" || namesAPharmacy(pharmacyName)) && !namesAPharmacy(listingName)) return false;
   const pharmacy = namingWords(pharmacyName);
   const listing = namingWords(listingName);
   if (pharmacy.length === 0 || listing.length === 0) return false;
