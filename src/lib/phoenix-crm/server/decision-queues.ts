@@ -214,3 +214,22 @@ export async function countPhoenixCrmOffPlanVisitsWaitingForYou(seats: PhoenixCr
   ]);
   return manager + sfe;
 }
+
+/**
+ * The owner's "Add a customer to the list" shortcut (27 Nov 2026): every REAL add request still waiting
+ * for a decider — the district manager's step or SFE's — company-wide. Not "waiting for you": the Super
+ * Admin is never a step on a real list request (he may only override as Administrator), so this is the
+ * size of the queue he oversees, read in one head count. A request handed back to the rep (stage `rep`)
+ * waits on nobody's decision and is left out. Throws on a failed read, so the badge says "unavailable".
+ */
+export async function countListAddRequestsWaiting(): Promise<number> {
+  const { count, error } = await getSupabaseAdmin()
+    .from("phoenix_crm_list_requests")
+    .select("id", { count: "exact", head: true })
+    .eq("kind", "add")
+    .eq("status", "pending")
+    .eq("is_test", false)
+    .or("stage.is.null,stage.neq.rep");
+  throwIfError(error);
+  return count ?? 0;
+}

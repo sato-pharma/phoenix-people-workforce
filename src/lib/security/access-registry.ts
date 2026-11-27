@@ -2975,6 +2975,9 @@ export const accessRegistry = [
   // Visit Recording) as badge counts. The domain helper answers zeros to anyone but the Super Admin and asks
   // each count under the deciding page's own gate.
   sessionApi({ methods: ["GET"], pattern: "/api/approvals/crm-queues/pending-count", permission: { resource: "phoenix_crm", action: "read" }, guard: "domain-helper" }),
+  // The owner's seven queue shortcuts (27 Nov 2026). Read-only counts; loadOwnerQueueBadges answers the Super Admin
+  // alone and asks each count under the gate of the page its row opens.
+  sessionApi({ methods: ["GET"], pattern: "/api/approvals/owner-queues/pending-count", permission: { resource: "admin", action: "read" }, guard: "domain-helper" }),
   // Tick several leave or excuse requests and Approve all / Reject all. No permission to declare:
   // each request goes through its own decision service (decideVacationRequest asserts leave:approve,
   // decideExcuseRequestAsManager admits only the assigned manager), exactly as the single routes do.

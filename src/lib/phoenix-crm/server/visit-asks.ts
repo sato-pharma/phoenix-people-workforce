@@ -906,3 +906,13 @@ export async function loadVisitAskSummary(viewer: PhoenixCrmViewer, isTest: bool
   ]);
   return { ...reach, waitingForYou, anyToRead: asked + told > 0 };
 }
+
+/**
+ * The owner's "Visit ask: double, product manager or chain" shortcut (27 Nov 2026): every REAL ask still
+ * waiting for its answer, company-wide, all three kinds. Not "waiting for you" — the Super Admin answers
+ * no real ask (`visitAskInboxReach`), so this is the queue he oversees. One head count; throws on a failed
+ * read so the badge says "unavailable".
+ */
+export async function countVisitAsksWaiting(): Promise<number> {
+  return countAsks(false, { person: null, waitingOnly: true, since: null });
+}

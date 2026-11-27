@@ -595,7 +595,7 @@ export function runApprovalsHubTests() {
   assert.match(planCountRoute, /isPlanAwaitingOverdue/, "plan pending-count route computes overdue");
 
   const navBadgeStore = readFileSync("src/lib/nav-badge-store.ts", "utf8");
-  assert.match(navBadgeStore, /type Listener = \(count: number \| null, overdue: boolean\) => void;/, "the badge poll store threads overdue through to listeners");
+  assert.match(navBadgeStore, /type Listener = \(count: number \| null, overdue: boolean, unavailable: boolean\) => void;/, "the badge poll store threads overdue (and an unreadable count) through to listeners");
 
   assert.match(navBadgeSource, /nav-badge-alarm-overdue/, "NavBadge switches to the overdue alarm class once any awaiting item breaches its SLA");
 

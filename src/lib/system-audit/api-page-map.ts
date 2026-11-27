@@ -363,6 +363,7 @@ export const API_NO_UI: Readonly<Record<string, string>> = {
   "/api/direct-orders/needs-action-count": "Sidebar badge count (every page)",
   "/api/direct-orders/unbooked-count": "Sidebar badge count (every page)",
   "/api/approvals/crm-queues/pending-count": "Sidebar badge count (every page)",
+  "/api/approvals/owner-queues/pending-count": "Sidebar badge count (every page)",
   "/api/market-awareness/pending-count": "Sidebar badge count (every page)",
   "/api/marketing-requests/pending-count": "Sidebar badge count (every page)",
 };

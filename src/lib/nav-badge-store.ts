@@ -26,12 +26,18 @@ import {
   type PulseBadges,
 } from "@/lib/session-pulse-store";
 
-type Listener = (count: number | null, overdue: boolean) => void;
+/**
+ * `unavailable` is true when the server said it could NOT read the count (a failed read, never a refusal).
+ * The badge then says so instead of drawing nothing, because a dead read and an empty queue must never
+ * look the same (owner, 27 Nov 2026: a count that cannot be read shows as unavailable, never as 0).
+ */
+type Listener = (count: number | null, overdue: boolean, unavailable: boolean) => void;
 
 interface Channel {
   count: number | null;
   prevCount: number | null;
   overdue: boolean;
+  unavailable: boolean;
   inFlight: Promise<void> | null;
   listeners: Set<Listener>;
   intervalId: ReturnType<typeof setInterval> | null;
@@ -61,7 +67,14 @@ type BatchKey =
   | "sfeRecommendedChecks"
   | "cameraReviews"
   | "lateVisits"
-  | "recordedVisits";
+  | "recordedVisits"
+  | "ownerListAdds"
+  | "ownerFarVisitHolds"
+  | "ownerDoubleVisitRequests"
+  | "ownerVisitAsks"
+  | "ownerProbation"
+  | "ownerContractRenewals"
+  | "ownerHeldEmails";
 
 /** Maps each legacy per-src badge URL to its key in the batched response. */
 const BATCH_KEY_BY_SRC: Record<string, BatchKey> = {
@@ -100,6 +113,15 @@ const BATCH_KEY_BY_SRC: Record<string, BatchKey> = {
   "/api/approvals/crm-queues/pending-count?queue=camera-reviews": "cameraReviews",
   "/api/approvals/crm-queues/pending-count?queue=late-visits": "lateVisits",
   "/api/approvals/crm-queues/pending-count?queue=recorded-visits": "recordedVisits",
+  // The owner's seven queue shortcuts (27 Nov 2026). Each slot may carry `unavailable: true` — a count the
+  // server could not read — which the badge draws as a dash, never as an empty queue.
+  "/api/approvals/owner-queues/pending-count?queue=list-adds": "ownerListAdds",
+  "/api/approvals/owner-queues/pending-count?queue=far-visit-holds": "ownerFarVisitHolds",
+  "/api/approvals/owner-queues/pending-count?queue=double-visit-requests": "ownerDoubleVisitRequests",
+  "/api/approvals/owner-queues/pending-count?queue=visit-asks": "ownerVisitAsks",
+  "/api/approvals/owner-queues/pending-count?queue=probation": "ownerProbation",
+  "/api/approvals/owner-queues/pending-count?queue=contract-renewals": "ownerContractRenewals",
+  "/api/approvals/owner-queues/pending-count?queue=held-emails": "ownerHeldEmails",
 };
 
 /**
@@ -128,10 +150,11 @@ function hasBatchedChannels(): boolean {
  * update, and listener broadcast. Identical semantics to the original inline
  * per-src handler — extracted so the batched path reuses it verbatim.
  */
-function applyCount(src: string, newCount: number, overdue: boolean): void {
+function applyCount(src: string, newCount: number, overdue: boolean, unavailable = false): void {
   const channel = channels.get(src);
   if (!channel) return;
   if (
+    !unavailable &&
     channel.prevCount !== null &&
     newCount > channel.prevCount &&
     typeof window !== "undefined" &&
@@ -146,10 +169,13 @@ function applyCount(src: string, newCount: number, overdue: boolean): void {
       });
     }
   }
-  channel.prevCount = newCount;
+  // An unreadable count is not a number to compare the next one against: a dead read followed by a
+  // good one must not announce "new items" that were there all along.
+  if (!unavailable) channel.prevCount = newCount;
   channel.count = newCount;
   channel.overdue = overdue;
-  channel.listeners.forEach((l) => l(newCount, overdue));
+  channel.unavailable = unavailable;
+  channel.listeners.forEach((l) => l(newCount, overdue, unavailable));
 }
 
 /**
@@ -168,7 +194,7 @@ function applyBatch(d: PulseBadges | null | undefined, onlySrc?: string): void {
     if (onlySrc !== undefined && src !== onlySrc) continue;
     const slot = d?.[key];
     if (!slot || typeof slot.count !== "number") continue;
-    applyCount(src, slot.count, slot.overdue === true);
+    applyCount(src, slot.count, slot.overdue === true, slot.unavailable === true);
   }
 }
 
@@ -191,10 +217,10 @@ function fetchAndBroadcast(src: string): void {
   ch.inFlight = globalThis
     .fetch(src)
     .then((r) => r.json())
-    .then((d: { count?: number; overdue?: boolean }) => {
+    .then((d: { count?: number; overdue?: boolean; unavailable?: boolean }) => {
       const channel = channels.get(src);
       if (!channel || typeof d.count !== "number") return;
-      applyCount(src, d.count, d.overdue === true);
+      applyCount(src, d.count, d.overdue === true, d.unavailable === true);
     })
     .catch(() => {})
     .finally(() => {
@@ -223,6 +249,7 @@ export function subscribeNavBadge(src: string, listener: Listener): () => void {
       count: null,
       prevCount: null,
       overdue: false,
+      unavailable: false,
       inFlight: null,
       listeners: new Set(),
       intervalId: null,
@@ -234,7 +261,7 @@ export function subscribeNavBadge(src: string, listener: Listener): () => void {
 
   // Deliver cached count immediately so the badge doesn't blank on re-mount.
   if (ch.count !== null) {
-    listener(ch.count, ch.overdue);
+    listener(ch.count, ch.overdue, ch.unavailable);
   }
 
   if (isBatchedSrc(src)) {

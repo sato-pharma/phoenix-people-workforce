@@ -155,6 +155,9 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
       // The section's own label in system-navigation.ts stays "Approvals Hub" — that is what the
       // FLAT rail prints, which draws no domain door at all.
       { heading: "Inboxes", sectionIds: ["approvals-hub"] },
+      // The owner's seven queue shortcuts (27 Nov 2026), each with its waiting count. Their own heading:
+      // they are queues he works or oversees, not approval inboxes.
+      { heading: "My Queues", sectionIds: ["owner-queues"] },
     ],
   },
   {

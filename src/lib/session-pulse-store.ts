@@ -85,7 +85,7 @@ export interface PulseNotices {
 }
 
 /** The badges half of a pulse: one `{ count, overdue? }` slot per badge, keyed as nav-badge-store.ts maps them. */
-export type PulseBadges = Partial<Record<string, { count?: number; overdue?: boolean }>>;
+export type PulseBadges = Partial<Record<string, { count?: number; overdue?: boolean; unavailable?: boolean }>>;
 
 type BadgesListener = (badges: PulseBadges) => void;
 type NoticesListener = (notices: PulseNotices) => void;

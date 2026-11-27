@@ -41,6 +41,7 @@ import {
   BookCheck,
   HeartPulse,
   Hourglass,
+  ListPlus,
   IdCard,
   Inbox,
   KeyRound,
@@ -164,7 +165,13 @@ export type NavigationSectionItem = {
    */
   exact?: boolean;
   activeTab?: string;
-  navBadge?: "direct-orders-needs-action" | "direct-orders-approvals-pending" | "direct-orders-unbooked" | "approvals-hub-pending" | "vacation-approvals-pending" | "excuse-approvals-pending" | "plan-approvals-pending" | "marketing-approvals-pending" | "market-awareness-approvals-pending" | "calendar-disputes-pending" | "deduction-disputes-pending" | "place-checks-pending" | "sfe-recommended-checks-pending" | "camera-reviews-pending" | "late-visits-pending" | "recorded-visits-pending";
+  /**
+   * The row's full name, shown on hover, when the rail label had to be shorter than the words its owner gave
+   * it (the rail never wraps and never cuts a label — tests/sidebar-label-width.test.ts). The owner's queue
+   * shortcuts carry his exact wording here (27 Nov 2026).
+   */
+  fullLabel?: string;
+  navBadge?: "direct-orders-needs-action" | "direct-orders-approvals-pending" | "direct-orders-unbooked" | "approvals-hub-pending" | "vacation-approvals-pending" | "excuse-approvals-pending" | "plan-approvals-pending" | "marketing-approvals-pending" | "market-awareness-approvals-pending" | "calendar-disputes-pending" | "deduction-disputes-pending" | "place-checks-pending" | "sfe-recommended-checks-pending" | "camera-reviews-pending" | "late-visits-pending" | "recorded-visits-pending" | "owner-list-adds" | "owner-far-visit-holds" | "owner-double-visit-requests" | "owner-visit-asks" | "owner-probation" | "owner-contract-renewals" | "owner-held-emails";
 };
 
 export type NavigationSection = {
@@ -353,6 +360,32 @@ export const adminNavigationSectionSeeds = [
     // rows here, so they get the title (and the collapse toggle) back. SFE Manager still sees no
     // heading — see flatSidebarRoles.
     label: "Command Center",
+  },
+  // ── The owner's queue shortcuts (27 Nov 2026) ────────────────────────────────────────────────
+  // His seven labels, word for word in `fullLabel` (shown on hover): shortcuts that show how many items wait
+  // in each queue, so he works them from the sidebar. The rail label is the short form of his words because
+  // the rail never wraps and never cuts a label (tests/sidebar-label-width.test.ts, 125px beside a number).
+  //
+  // SUPER ADMIN ONLY, by `roles` and nothing else — a `permissions` list is OR-ed and would widen the rows to
+  // every holder of phoenix_crm:read. The numbers are counted server-side by loadOwnerQueueBadges
+  // (src/lib/approvals-hub/owner-queue-badges.ts), each under the gate of the page its row opens, and a count
+  // that cannot be read shows a dash, never 0.
+  //
+  // 🔴 EACH HREF CARRIES `from=queues`, AND THAT IS LOAD-BEARING: dedupeSectionsByHref keeps only the first row
+  // per exact href, and this band sits above the bands that already hold five of these pages. Without the
+  // marker those five rows would silently MOVE out of their own bands into this one. The pages ignore it.
+  {
+    id: "owner-queues",
+    items: [
+      { href: "/admin/field-crm?tab=team&from=queues", activeTab: "team", icon: ListPlus, label: "Add to List", fullLabel: "Add a customer to the list", roles: ["Super Admin"], navBadge: "owner-list-adds" },
+      { href: "/admin/phoenix-crm/far-visit-holds?from=queues", icon: MapPinned, label: "Far Visits Held", fullLabel: "Visits held for SFE (far visits)", roles: ["Super Admin"], navBadge: "owner-far-visit-holds" },
+      { href: "/admin/phoenix-crm/double-visit-requests?from=queues", icon: UsersRound, label: "Double Visits", fullLabel: "Double-visit request (up to 3 days)", roles: ["Super Admin"], navBadge: "owner-double-visit-requests" },
+      { href: "/admin/field-crm?tab=team&from=queues&queue=visit-asks", activeTab: "team", icon: MessageSquareQuote, label: "Visit Asks", fullLabel: "Visit ask: double, product manager or chain", roles: ["Super Admin"], navBadge: "owner-visit-asks" },
+      { href: "/probation?from=queues", icon: Hourglass, label: "Probation Due", fullLabel: "Probation", roles: ["Super Admin"], navBadge: "owner-probation" },
+      { href: "/contracts?from=queues", icon: FileSignature, label: "Open Renewals", fullLabel: "Contract renewal", roles: ["Super Admin"], navBadge: "owner-contract-renewals" },
+      { href: "/admin/notification-confidence?from=queues", icon: MailX, label: "Held Emails", fullLabel: "Held emails (a check stopped the send)", roles: ["Super Admin"], navBadge: "owner-held-emails" },
+    ],
+    label: "My Queues",
   },
   // ── Ruling 10 (owner, 2026-08-28): "Layer 1 = Approvals + Organogram only" ──────────────────
   // Organogram had TWO rail entries: one inside Command Center gated roles: ["CEO"], one inside

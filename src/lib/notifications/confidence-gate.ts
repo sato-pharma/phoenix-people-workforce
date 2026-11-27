@@ -705,6 +705,21 @@ export async function listPendingNotificationReviews(access: AccessContext): Pro
   return ((data ?? []) as ReviewRow[]).map(mapReviewRow);
 }
 
+/**
+ * How many emails a pre-send check is holding for the Super Admin's review — the list above, as one head
+ * count (the owner's "Held emails (a check stopped the send)" sidebar shortcut, 27 Nov 2026). Super Admin
+ * only, like the page; a failed read throws so the badge says "unavailable" instead of 0.
+ */
+export async function countHeldNotificationReviews(access: AccessContext): Promise<number> {
+  assertConfidenceGateActor(access);
+  const { count, error } = await getSupabaseAdmin()
+    .from("notification_send_reviews")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "held");
+  if (error) throw error;
+  return count ?? 0;
+}
+
 export async function discardHeldNotification(access: AccessContext, reviewId: string, note?: string) {
   assertConfidenceGateActor(access);
   const decidedBy = access.hrId ?? access.loginId ?? "system";
