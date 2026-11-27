@@ -54,6 +54,11 @@
 //                 reset, side-loading and force-stop — on top of the six they already carry, and says
 //                 what each one costs the rep. It only ever ADDS. `no_install_apps` and `no_config_wifi`
 //                 are refused by name, and mobile data is reported as what no Android lock can hold.
+//   sync-insurance-master syncEmployeeMasterFromMedicalInsurance   (owner, 27 Nov 2026: "synchronize from
+//                 medical insurance module to employee master the needed data"). The Libano-Suisse card
+//                 number goes onto the Employee Master; national ID, birth date, gender and mobile only where
+//                 the master is blank. Differences are listed, never written. Each write names B-10 to the
+//                 history log itself (it sets the actor headers), so this one is NOT unattributed.
 //   seat-in-building seatWaitingCustomersInVenue     (the Super Admin's door; no screen calls it yet)
 //                 Customers still waiting, with hours and no place, are seated in an approved building
 //                 at its own point; the building's timetable is then read for each, and only the ones it
@@ -896,6 +901,42 @@ async function runLockRepTablets(plan: Extract<OwnerOpsPlan, { job: "lock-rep-ta
   return { employees: [], focus: {}, proofDone: true };
 }
 
+async function runSyncInsuranceMaster(plan: Extract<OwnerOpsPlan, { job: "sync-insurance-master" }>, owner: AccessContext) {
+  const { syncEmployeeMasterFromMedicalInsurance } = await import("@/lib/medical-insurance/service");
+  const { MASTER_SYNC_FIELD_LABELS } = await import("@/lib/medical-insurance/master-sync");
+  const result = await syncEmployeeMasterFromMedicalInsurance(owner);
+  const verb = plan.apply ? "Filled" : "Would fill";
+  console.log(`\nPolicy ${result.policyNumber ?? "(not numbered yet)"}, monthly cost of ${result.costMonth}. ${verb} ${result.updated.length} employee record(s):`);
+  for (const update of result.updated) console.log(`  ${update.name} (${update.hrId}) — ${update.lines.join("; ")}`);
+  if (result.unpriced.length > 0) {
+    console.log(`\nCost not written — the module cannot price someone on their row (${result.unpriced.length}):`);
+    for (const item of result.unpriced) console.log(`  ${item.name} (${item.hrId}) — ${item.people} person(s) unpriced`);
+  }
+  if (result.failed.length > 0) {
+    console.log(`\nNot written (${result.failed.length}):`);
+    for (const item of result.failed) console.log(`  ${item.name} (${item.hrId}) — ${item.error}`);
+    process.exitCode = 1;
+  }
+  console.log(`\nDiffer on both sides — left for a person to settle (${result.differences.length}):`);
+  for (const item of result.differences) {
+    console.log(`  ${item.name} (${item.hrId}) — ${MASTER_SYNC_FIELD_LABELS[item.field]}: Employee Master ${item.master}, register ${item.register}`);
+  }
+
+  // The proof: the rows read back as the database holds them now.
+  const { getSupabaseAdmin } = await import("@/lib/supabase/server");
+  const hrIds = result.updated.map((update) => update.hrId);
+  if (hrIds.length > 0) {
+    const { data, error } = await getSupabaseAdmin()
+      .from("employees")
+      .select("hr_id, medical_insurance, medical_insurance_number, national_id, birth_date, gender, mobile_number")
+      .in("hr_id", hrIds);
+    if (error) throw new Error(`the proof read failed: ${error.message}`);
+    console.log(`\nPROOF — the Employee Master rows as they are now${plan.apply ? "" : " (the dry run changed nothing)"}:`);
+    for (const row of (data ?? []) as Array<Record<string, unknown>>) console.log(`  ${JSON.stringify(row)}`);
+  }
+  return { employees: [], focus: {}, proofDone: true };
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   if (argv.includes("--help") || argv.includes("-h")) {
@@ -943,6 +984,7 @@ async function main() {
     else if (plan.job === "revoke-tablet-agent") outcome = await runRevokeTabletAgent(plan, owner.access);
     else if (plan.job === "match-app-version") outcome = await runMatchAppVersion(plan, owner.access);
     else if (plan.job === "lock-rep-tablets") outcome = await runLockRepTablets(plan, owner.access);
+    else if (plan.job === "sync-insurance-master") outcome = await runSyncInsuranceMaster(plan, owner.access);
     else outcome = await runPinPharmacy(plan, owner.access);
   } catch (error) {
     refused = errorText(error);

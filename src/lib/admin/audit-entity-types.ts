@@ -208,6 +208,7 @@ const AUDIT_ENTITY_TYPE_PRESENT: Record<AuditEntityType, true> = {
   medical_insurance_exception: true,
   medical_insurance_export: true,
   medical_insurance_invoice: true,
+  medical_insurance_master_sync: true,
   medical_insurance_member: true,
   medical_insurance_policy: true,
   production_material: true,

@@ -34,6 +34,7 @@
 ## Inbox — new notes land here
 
 - [A docs/ pointer in a SUBFOLDER does not satisfy the long-bullet gate](a-docs-pointer-in-a-subfolder-does-not-count-for-the-long-bullet-gate.md) — `docs/devices/…` is invisible to its regex, so keep the bullet under 1,200 bytes.
+- [Receipt books: everything is in the `direct-order-receipt-books` skill](direct-order-receipt-books-everything.md) — books, security marks, guides, sample, proposal email, never-email rules, open items (PR 818).
 
 
 

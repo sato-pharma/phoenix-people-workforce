@@ -142,6 +142,8 @@ function dryRunIsTheDefault() {
   assert.equal(plan(["lock-rep-tablets"]).job, "lock-rep-tablets", "the lock job takes no flags at all");
   refused(["lock-rep-tablets", "--app", "84"], "a flag of another job is a mistyped job, never ignored");
   refused(["lock-rep-tablets", "--tablet", "PHX-TAB-0007"], "and it is never aimed at one tablet");
+  assert.equal(plan(["sync-insurance-master"]).job, "sync-insurance-master", "the Employee Master sync takes no flags: it reads the whole register");
+  refused(["sync-insurance-master", "--employee", "B-10"], "and it is never aimed at one person");
 }
 
 type Call = { url: string; method: string };

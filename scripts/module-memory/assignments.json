@@ -543,6 +543,7 @@
   "direct-order-chain-drops-the-whole-sales-line-silently": "direct-orders",
   "direct-order-hr-id-columns-are-mixed-case-and-access-hrid-is-lowercase": "direct-orders",
   "direct-order-pricing-rule-locked": "direct-orders",
+  "direct-order-receipt-books-everything": "direct-orders",
   "direct-order-request-module-build": "direct-orders",
   "direct-order-sales-month-is-a-finance-step-not-a-bug": "direct-orders",
   "direct-order-sales-month-is-finance-owned": "direct-orders",

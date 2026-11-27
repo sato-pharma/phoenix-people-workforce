@@ -12,7 +12,7 @@
 // refused rather than "last one wins".
 // ---------------------------------------------------------------------------
 
-export const OWNER_OPS_JOBS = ["link-doctor", "merge-venues", "merge-customers", "remove-customer-pharmacy", "pin-pharmacy", "load-crm-list", "seat-in-building", "tablet-agents", "start-tablet-agent", "bind-tablet-agent", "revoke-tablet-agent", "match-app-version", "lock-rep-tablets"] as const;
+export const OWNER_OPS_JOBS = ["link-doctor", "merge-venues", "merge-customers", "remove-customer-pharmacy", "pin-pharmacy", "load-crm-list", "seat-in-building", "tablet-agents", "start-tablet-agent", "bind-tablet-agent", "revoke-tablet-agent", "match-app-version", "lock-rep-tablets", "sync-insurance-master"] as const;
 export type OwnerOpsJob = (typeof OWNER_OPS_JOBS)[number];
 
 /** Every flag the runner knows, for refuseUnknownFlags. */
@@ -52,6 +52,7 @@ const VALUE_FLAGS_BY_JOB: Record<OwnerOpsJob, readonly string[]> = {
   "revoke-tablet-agent": ["--install", "--reason"],
   "match-app-version": ["--app"],
   "lock-rep-tablets": [],
+  "sync-insurance-master": [],
 };
 
 /** A tablet's number as Headwind holds it — PHX-TAB-0008. Never a database row id. */
@@ -84,7 +85,8 @@ export type OwnerOpsPlan =
   | { job: "bind-tablet-agent"; apply: boolean; installId: string; deviceNumber: string }
   | { job: "revoke-tablet-agent"; apply: boolean; installId: string; reason: string }
   | { job: "match-app-version"; apply: boolean; applicationId: number }
-  | { job: "lock-rep-tablets"; apply: boolean };
+  | { job: "lock-rep-tablets"; apply: boolean }
+  | { job: "sync-insurance-master"; apply: boolean };
 
 export type OwnerOpsParse = { ok: true; plan: OwnerOpsPlan } | { ok: false; error: string };
 
@@ -139,6 +141,11 @@ listed and none is sent. Only --apply writes. Every run ends with a proof read.
       clear an app. It never sets no_install_apps (Android applies that to the device owner too, so
       nothing would ever install again) or no_config_wifi (the rep could not join a network). The
       mobile-data switch itself cannot be held by any Android lock.
+  sync-insurance-master
+      Fill the Employee Master from the medical insurance register: the Libano-Suisse card number
+      (a blank one, or one from before this policy), and national ID, birth date, gender and mobile
+      ONLY where the Employee Master is blank. A value that differs on both sides is listed, never
+      written; Card Received (Yes-No) and every amount are never touched.
 
   --apply      write for real (refused from a tree behind origin/main)
   --employee   whose draft workspace the proof read opens; by default every employee holding a
@@ -200,7 +207,7 @@ export function parseOwnerOpsArgs(argv: readonly string[]): OwnerOpsParse {
     return UUID.test(value) ? value.toLowerCase() : { error: `${name} must be ${job === "merge-customers" || name === "--customer" ? "a customer" : "a pharmacy"} id (a uuid), got "${value}"` };
   };
 
-  if (job === "tablet-agents" || job === "lock-rep-tablets") {
+  if (job === "tablet-agents" || job === "lock-rep-tablets" || job === "sync-insurance-master") {
     return { ok: true, plan: { job, apply } };
   }
 
