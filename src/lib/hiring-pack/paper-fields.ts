@@ -198,6 +198,15 @@ export const PAPER_FIELD_BINDINGS: Readonly<Record<string, PaperFieldBinding>> =
   },
   PHONE: { store: "employee", field: "mobileNumber", kind: "text", labelEn: "Mobile number" },
   phone: { store: "employee", field: "mobileNumber", kind: "text", labelEn: "Mobile number" },
+  // Form 1 and Form 6's phone box prints the HR Manager's number for everyone (owner, 27 Nov 2026),
+  // so editing it there edits the ONE company value, never this employee's mobile.
+  formsContactPhone: {
+    store: "company",
+    field: "formsContactPhone",
+    kind: "text",
+    labelEn: "Phone on Form 1 and Form 6 (the HR Manager's, never the employee's)",
+    alsoOn: "Form 1 and Form 6, for every employee",
+  },
   EMAIL: { store: "employee", field: "workEmail", kind: "text", labelEn: "Work email" },
   email: { store: "employee", field: "workEmail", kind: "text", labelEn: "Work email" },
   ADDRESS: {
