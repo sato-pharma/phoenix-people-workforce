@@ -144,6 +144,9 @@ export type MedicalInsuranceAction = {
   lateStart?: boolean;
   /** On the policy with no HR id at all: they can be kept on as outside staff (`keep_outside`). */
   noRecord?: boolean;
+  /** Already on the register and sent before: ticked, they go out again on an additions file, and the register is
+   * left as it is (owner, 27 Nov 2026: "I will send the email again ... I want to attach the photos"). */
+  sendAgain?: boolean;
   /** An employee's own record, shown beside them: blank for family and for someone with no record. */
   hireDate?: string | null;
   areaName?: string | null;

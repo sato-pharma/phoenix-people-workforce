@@ -391,6 +391,52 @@ async function additionReadiness(actions: readonly MedicalInsuranceAction[], emp
   return readiness;
 }
 
+/** How far back a joiner already on the register can still be sent again: the 14 days Libano-Suisse backdates. */
+const SEND_AGAIN_WINDOW_DAYS = 14;
+
+/**
+ * Joiners already on the register, sent to Libano-Suisse before, who can go out again on an additions file (owner,
+ * 27 Nov 2026: "I will send the email again, because I want to attach the photos"). An employee with an HR id whose
+ * cover is open and started no more than 14 days ago, or starts later. Their register row is never changed by it.
+ */
+function sendAgainActions(state: State, asOf: string): MedicalInsuranceAction[] {
+  const from = new Date(Date.parse(`${asOf}T00:00:00Z`) - SEND_AGAIN_WINDOW_DAYS * 86_400_000).toISOString().slice(0, 10);
+  const pending = new Set(state.actions.map((action) => action.hrId).filter(Boolean));
+  const people = new Map(state.employees.map((employee) => [employee.hrId, employee]));
+  return state.memberRows
+    // A joiner, never the people the policy began with: cover starting after its first day.
+    .filter((row) => row.member_type === "employee" && row.hr_id && !pending.has(row.hr_id) && row.coverage_starts_on > state.policy.startsOn)
+    .filter((row) => !neverInForceRow(row) && (!row.coverage_ends_on || row.coverage_ends_on >= asOf) && row.coverage_starts_on >= from)
+    .map((row): MedicalInsuranceAction => {
+      const employee = people.get(row.hr_id as string);
+      return {
+        category: row.category,
+        certificateNumber: row.certificate_number,
+        decidedCategory: null,
+        dependants: 0,
+        effectiveOn: row.coverage_starts_on,
+        hrId: row.hr_id,
+        jobTitle: employee?.jobTitle ?? null,
+        key: `again:${row.id}`,
+        kind: "add",
+        lineName: employee?.lineName ?? null,
+        memberId: row.id,
+        memberType: "employee",
+        name: row.full_name,
+        reason: "Already on the register. Tick to send their file to Libano-Suisse again.",
+        sendAgain: true,
+        suggestedCategory: null,
+        timing: row.coverage_starts_on > asOf ? "soon" : "now",
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** A name of fewer than three words: Libano-Suisse's sheet got it with the Father Name blank. */
+function sentWithoutFatherName(name: string): boolean {
+  return name.trim().split(/\s+/).filter(Boolean).length < 3;
+}
+
 export async function getMedicalInsuranceView(): Promise<MedicalInsuranceView | null> {
   const asOf = todayInCairo();
   const policy = await loadPolicy(asOf);
@@ -431,11 +477,14 @@ export async function getMedicalInsuranceView(): Promise<MedicalInsuranceView | 
   const count = (kind: MedicalInsuranceAction["kind"], timing: MedicalInsuranceAction["timing"]) =>
     state.actions.filter((action) => action.kind === kind && action.timing === timing).length;
 
-  const readiness = await additionReadiness(state.actions, state.employeeRows);
-  const actions = state.actions.map((action) => {
+  const sentBefore = sendAgainActions(state, asOf);
+  const readiness = await additionReadiness([...state.actions, ...sentBefore], state.employeeRows);
+  const withGaps = (action: MedicalInsuranceAction) => {
     const ready = readiness.get(action.key);
     return ready ? { ...action, missing: ready.gaps } : action;
-  });
+  };
+  const actions = state.actions.map(withGaps);
+  const sentRecently = sentBefore.map(withGaps);
 
   return {
     actions,
@@ -460,6 +509,7 @@ export async function getMedicalInsuranceView(): Promise<MedicalInsuranceView | 
     members: memberView,
     movements: buildMedicalInsuranceMovements(state.members, policy.startsOn),
     policy: policyView(policy),
+    sentRecently,
   };
 }
 
@@ -1559,7 +1609,16 @@ async function recordSentMovement(access: AccessContext, steps: readonly Movemen
  */
 export async function prepareLibanoMemberFile(
   body: Record<string, unknown>,
-): Promise<{ policyId: string; policyNumber: string | null; policy: { startsOn: string; endsOn: string }; kind: LibanoMemberFileKind; rows: LibanoMemberLine[]; register: MovementRegisterStep[] }> {
+): Promise<{
+  policyId: string;
+  policyNumber: string | null;
+  policy: { startsOn: string; endsOn: string };
+  kind: LibanoMemberFileKind;
+  rows: LibanoMemberLine[];
+  register: MovementRegisterStep[];
+  /** An additions file only: who on it was sent before, and who of them first went with the Father Name blank. */
+  resent?: { names: string[]; fatherNameFilled: string[] };
+}> {
   const kind = body.kind;
   if (kind !== "additions" && kind !== "deletions" && kind !== "everyone") throw new MedicalInsuranceInputError("Choose additions, deletions or everyone covered.");
   const asOf = todayInCairo();
@@ -1591,7 +1650,8 @@ export async function prepareLibanoMemberFile(
   const chosenCategories = body.categories && typeof body.categories === "object" ? (body.categories as Record<string, unknown>) : {};
 
   const wanted = kind === "additions" ? "add" : "remove";
-  const byKey = new Map(state.actions.filter((action) => action.kind === wanted).map((action) => [action.key, action]));
+  const listed = kind === "additions" ? [...state.actions, ...sendAgainActions(state, asOf)] : state.actions;
+  const byKey = new Map(listed.filter((action) => action.kind === wanted).map((action) => [action.key, action]));
   const chosen = keys.map((key) => byKey.get(key));
   if (chosen.some((action) => !action)) {
     throw new MedicalInsuranceInputError(
@@ -1648,7 +1708,8 @@ export async function prepareLibanoMemberFile(
   const rows = actions.map((action): LibanoMemberLine => {
     const category = additionCategory(action, chosenCategories[action.key]);
     if (!category) throw new MedicalInsuranceInputError(`Choose a plan for ${action.name}.`);
-    if (action.hrId) register.push({ category, day: action.effectiveOn, hrId: action.hrId, name: action.name, step: "add" });
+    // Someone sent again is on the register already: nothing is recorded twice.
+    if (action.hrId && !action.sendAgain) register.push({ category, day: action.effectiveOn, hrId: action.hrId, name: action.name, step: "add" });
     const employee = action.hrId ? state.employeeRows.get(action.hrId) : undefined;
     // The name as the ID card prints it (owner, 27 Nov 2026): a Phoenix name of two words sent the Father Name blank.
     const card = readiness.get(action.key)?.cardName as IdCardName;
@@ -1667,7 +1728,11 @@ export async function prepareLibanoMemberFile(
       staffNumber: action.hrId,
     };
   });
-  return { kind, policy: { endsOn: policy.endsOn, startsOn: policy.startsOn }, policyId: policy.id, policyNumber: policy.policyNumber, register, rows };
+  const again = actions.filter((action) => action.sendAgain);
+  const resent = again.length > 0
+    ? { fatherNameFilled: again.filter((action) => sentWithoutFatherName(action.name)).map((action) => action.name), names: again.map((action) => action.name) }
+    : undefined;
+  return { kind, policy: { endsOn: policy.endsOn, startsOn: policy.startsOn }, policyId: policy.id, policyNumber: policy.policyNumber, register, resent, rows };
 }
 
 export type LibanoMovementEmailOutcome = {
@@ -1742,6 +1807,7 @@ export async function sendLibanoMovementEmail(access: AccessContext, body: Recor
     kind,
     photos,
     policyNumber: file.policyNumber,
+    resent: file.resent,
     rows: file.rows,
     systemFromAddress: systemEmail.defaultFromEmail,
     test,

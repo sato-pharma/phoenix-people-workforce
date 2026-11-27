@@ -39,7 +39,7 @@ import { buildMedicalInsuranceMonthlyCostWorkbook } from "../src/lib/medical-ins
 import { buildMonthlySplit, EMPLOYEE_MINIMUM_OWN_SHARE_MONTHLY, LIFE_INSURANCE_PER_PERSON_MONTHLY, monthlyCoverPiastres, quoteMonthlyCost, splitOwnCover } from "../src/lib/medical-insurance/monthly-split.ts";
 import { deletionStandingWords, employeeRecordWords, splitRegister } from "../src/lib/medical-insurance/view.ts";
 import { defaultDeletionDay, deletionDayProblem, earliestDeletionDay, LIBANO_GRACE_PERIOD_DAYS, LIBANO_MOST_DAYS_BACK } from "../src/lib/medical-insurance/deletion-day.ts";
-import { planLibanoMovementEmail } from "../src/lib/medical-insurance/libano-movement-email.ts";
+import { libanoResendLine, planLibanoMovementEmail } from "../src/lib/medical-insurance/libano-movement-email.ts";
 import type { LibanoMemberLine } from "../src/lib/medical-insurance/workbooks.ts";
 import { normalizeIdCardRead } from "../src/lib/employees/id-card-name.ts";
 import {
@@ -976,6 +976,24 @@ function testTheLibanoEmailGoesToTheInsurerAndTheTestToTheOwnerAlone() {
   assert.deepEqual([...Buffer.from(test.input.attachments[0]!.content, "base64")], [...workbook], "a test carries the same file");
   assert.notEqual(test.dedupeKey, real.dedupeKey, "a test never stands in for the real send");
   assert.notEqual(planLibanoMovementEmail({ ...base, atIso: "2026-11-26T23:31:00.000Z", test: true }).dedupeKey, test.dedupeKey, "a test can be sent again a minute later");
+
+  // A file sent again (owner, 27 Nov 2026: "I will send the email again ... put one line: the photos are attached,
+  // and Nourhan's data"): one line says so, and the outbox never answers it with the first send.
+  const photo = { bytes: Buffer.from([1, 2, 3]), contentType: "image/jpeg", fileName: "AI-0037.jpg" };
+  const firstAdd = planLibanoMovementEmail({ ...base, kind: "additions" });
+  const again = planLibanoMovementEmail({ ...base, kind: "additions", photos: [photo], resent: { fatherNameFilled: ["Nourhan Abdelmoniem"], names: ["Nourhan Abdelmoniem", "Samar Kamel Abd ELall Ali"] } });
+  const againLine = "We are sending this again with the personal photos attached, each named by the staff ID, and with Nourhan Abdelmoniem's father name, which was missing, now filled in from the national ID card.";
+  assert.ok(again.input.text.includes(againLine), "the resend carries its one line");
+  assert.ok(again.input.html.includes("We are sending this again with the personal photos attached"), "the letter carries it too");
+  assert.ok(!again.input.text.includes("Their personal photos are attached"), "one line, never the photo sentence twice");
+  assert.notEqual(again.dedupeKey, firstAdd.dedupeKey, "sent again the same day, it still leaves");
+  assert.ok(!firstAdd.input.text.includes("sending this again"), "a first send says nothing about sending again");
+  assert.equal(libanoResendLine({ fatherNameFilled: [], names: ["Samar"] }, true), "We are sending this again with the personal photos attached, each named by the staff ID.");
+  assert.equal(libanoResendLine(undefined, true), "");
+  const page2 = readFileSync("src/components/medical-insurance/medical-insurance-actions.tsx", "utf8");
+  assert.ok(page2.includes("Sent before, send again"), "the page lists who can be sent again");
+  const service2 = readFileSync("src/lib/medical-insurance/service.ts", "utf8");
+  assert.ok(service2.includes("if (action.hrId && !action.sendAgain) register.push("), "a person sent again is never recorded on the register twice");
 
   assert.throws(() => planLibanoMovementEmail({ ...base, rows: [] }), /Nobody is on the file/, "an empty file is never sent");
 

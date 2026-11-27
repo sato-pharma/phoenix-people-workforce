@@ -85,7 +85,9 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
   }
 
   // Only people still on today's list count as ticked; someone who dropped off since the page loaded does not.
-  const tickedAdds = view.actions.filter((action) => action.kind === "add" && ticked.has(action.key) && missingOf(action).length === 0);
+  // Someone already on the register who is sent again goes on the same additions file (owner, 27 Nov 2026).
+  const sentRecently = view.sentRecently ?? [];
+  const tickedAdds = [...view.actions, ...sentRecently].filter((action) => action.kind === "add" && ticked.has(action.key) && missingOf(action).length === 0);
   const tickedRemoves = view.actions.filter((action) => action.kind === "remove" && ticked.has(action.key));
   const addsWithoutCategory = tickedAdds.filter((action) => !additionCategory(action));
   const removeProblems = tickedRemoves.map(deletionProblemOf).filter((problem): problem is string => Boolean(problem));
@@ -289,7 +291,7 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
           ))}
         </div>
 
-        {canExport && (addCount > 0 || removeCount > 0) ? (
+        {canExport && (addCount > 0 || removeCount > 0 || sentRecently.length > 0) ? (
           <div className="grid gap-3 border-b border-phx-line p-4 md:grid-cols-2">
             <EdiPanel
               blocked={removeProblems.length > 0 ? removeProblems.join(" ") : null}
@@ -309,7 +311,7 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
               busy={busy === "additions"}
               count={tickedAdds.length}
               disabled={busy !== null || sending}
-              listCount={addCount}
+              listCount={addCount + sentRecently.length}
               note="Date of birth, ID number, sex and mobile come from each employee's record. Their staff number is their HR number."
               onClear={() => clearKind("add")}
               onExport={() => void exportFile("additions")}
@@ -317,6 +319,30 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
               onTickAll={() => tickAll("add")}
               title="Additions"
             />
+            {sentRecently.length > 0 ? (
+              <details className="border border-phx-line bg-white p-3 md:col-span-2">
+                <summary className="cursor-pointer break-words text-sm font-black text-phx-ink">
+                  Sent before, send again ({sentRecently.length})
+                </summary>
+                <p className="mt-1 break-words text-phx-xs font-semibold text-phx-ink-soft">
+                  Already on the register, cover starting within the last 14 days or later. Tick anyone whose file must go to Libano-Suisse again; they join the additions file above, and the email says it is sent again. The register is not changed.
+                </p>
+                <ul className="mt-2 divide-y divide-phx-line">
+                  {sentRecently.map((action) => (
+                    <li className="flex items-start gap-3 py-2" key={action.key}>
+                      {renderTick(action)}
+                      <div className="min-w-0 flex-1">
+                        <p className="break-words text-sm font-black text-phx-ink" dir="auto">{action.name}</p>
+                        <p className="break-words text-phx-xs font-semibold text-phx-ink-soft">
+                          {action.category ? `Plan ${action.category}, ` : ""}cover from {formatLeftDay(action.effectiveOn)}
+                        </p>
+                        {renderMissing(action)}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
             {confirming ? (
               <SendConfirm
                 busy={sending}
