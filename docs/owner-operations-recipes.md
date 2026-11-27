@@ -80,12 +80,17 @@ node --env-file-if-exists=.env.local --experimental-strip-types --experimental-s
   "completed" him instead: it re-stamped his validation and added one more copy of his contact on
   every save. That is how Dr Othman got a third identical contact when Salah El Hol was linked at
   00:06; the two copies were switched off (audit rows), and one contact stands.
-- **Distributor ids:** read `marketing_distributors` (25 Nov 2026: Ibn Sina 17, Overseas 19, Sofico 21).
+- **Distributor ids:** read `marketing_distributors` (`display_name`, never `name`). 26 Nov 2026: EGD 14,
+  Ibn Sina 17, Overseas (POS) 19, Ramco 20, Sofico 21.
+- **Proof read in SQL:** `marketing_customer_pharmacies` has `active` (not `is_active`); join
+  `marketing_pharmacy_distributor_codes` for the code and its `reference_status`.
 - **Refusal "that pharmacy is not one you can attach":** the `existingPharmacyId` belongs to another
   seat. Send it as a new venue with its codes, then merge the old copy into it (below).
 - **Proof:** the employee's workspace lists the doctor, and `pharmaciesByCustomer[<customer id>]`
   holds every pharmacy.
 - First done for Dr Othman El Shewehy / Sahar ElGallad, 25 Nov 2026 (session 6c7fe3eb).
+- Second, with the runner: Salah El Hol pharmacy (New Damietta) under Dr Othman for Sahar ElGallad,
+  26 Nov 2026 00:06 Cairo — body with `existingCustomerId`, 4 codes all `matched`, 4 active links.
 
 ### Merge duplicate pharmacy copies
 
