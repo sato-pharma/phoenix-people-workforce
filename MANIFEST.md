@@ -118,6 +118,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/spare-bootstrap.ps1` | 10556 | `76a97228f186bf4e` |
 | `scripts/spare-browser-guard.ps1` | 5993 | `71c76fcb5205ef6c` |
 | `scripts/spare-clean-up.sh` | 4690 | `93c16273b8603d06` |
+| `scripts/spare-console-quiet.sh` | 1778 | `7468fd497479c067` |
 | `scripts/spare-db-password-refresh.mjs` | 9275 | `c7310d6769dfe0a7` |
 | `scripts/spare-db-password-refresh.ps1` | 1110 | `19e5bfebc75143f5` |
 | `scripts/spare-dev-server-run.ps1` | 6728 | `17357c7260562a63` |
@@ -137,7 +138,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/spare-role-check.sh` | 7234 | `9bea84102225c1f4` |
 | `scripts/spare-shots.mjs` | 3122 | `42a38285765b8e88` |
 | `scripts/spare-shots.ps1` | 8181 | `5638640d2fe1c6bb` |
-| `scripts/spare-speed-report.mjs` | 8491 | `b7c09516d03246d3` |
+| `scripts/spare-speed-report.mjs` | 9228 | `6bbe3962da5667e2` |
 | `scripts/spare-speedup.ps1` | 5106 | `4459848498f3df20` |
 | `scripts/spare-status.ps1` | 4829 | `42ac74eb7778bb9e` |
 | `scripts/spare-telegram.ps1` | 2762 | `6f08e84e95cf8f22` |

@@ -52,10 +52,19 @@ for (let from = 0; ; from += 1000) {
 // the hourly medians, not their mean: on 21 Nov ONE load of /admin/field-crm just after midnight took 83 s while the
 // other eleven painted in 0.7-3 s, the mean read 8 s and the first report called the board 60% slower when nothing had
 // changed. A median needs most of a week's loads to be slower before it moves.
+// INSTANT REOPENS ARE LEFT OUT of every page-load figure (owner, 27 Nov 2026, "Fix false alarm"): a page load comes in
+// two kinds - the phone bringing back a page it already holds (60-300 ms) and a real build of the page (1-5 s). On a
+// quiet page their SHARE alone moved the median: Weekly Sales was called 53% slower (996 ms -> 1.5 s) when its real
+// loads got FASTER (2.4 s -> 1.8 s) - only the reopens fell from 41% to 35% of loads. An hourly median under 500 ms is a
+// reopen hour; it still counts in the week's total loads, never in a page's figure.
+const INSTANT_MS = 500;
 const acc = new Map();
+let loadsAllNow = 0;
 for (const r of rows) {
   const what = r.kind === "hard" ? "load" : "tap";
   const wk = r.hour >= cut ? "now" : "before";
+  if (what === "load" && wk === "now") loadsAllNow += Number(r.count);
+  if (what === "load" && Number(r.p50_ms) < INSTANT_MS) continue;
   const k = `${r.path}|${what}|${wk}`;
   const list = acc.get(k) ?? [];
   list.push({ ms: Number(r.p50_ms), n: Number(r.count) });
@@ -80,7 +89,7 @@ for (const path of paths) for (const what of ["load", "tap"]) {
 const slower = pairs.filter((p) => p.pct >= 30 && p.now - p.before >= (p.what === "load" ? 500 : 150)).sort((x, y) => (y.now - y.before) - (x.now - x.before));
 const faster = pairs.filter((p) => p.pct <= -15).sort((x, y) => (x.now - x.before) - (y.now - y.before)).slice(0, 3);
 const busiest = pairs.filter((p) => p.what === "load").sort((x, y) => y.nNow - x.nNow).slice(0, 5);
-const loadsNow = [...acc].filter(([k]) => k.endsWith("|load|now")).reduce((s, [, list]) => s + list.reduce((t, x) => t + x.n, 0), 0);
+const loadsNow = loadsAllNow;
 const s = (ms) => (ms >= 1000 ? `${(ms / 1000).toFixed(1)} s` : `${ms} ms`);
 const line = (p) => `${p.path} (${p.what === "load" ? "page load" : "tap"}): ${s(p.before)} -> ${s(p.now)} (${p.pct > 0 ? "+" : ""}${p.pct}%, ${p.nNow} times)`;
 const fmt = (d) => d.toLocaleDateString("en-GB", { timeZone: "Africa/Cairo", day: "numeric", month: "short" });
@@ -90,9 +99,9 @@ const msg = [
   ...slower.slice(0, 10).map((p) => `- ${line(p)}`),
   ...(slower.length > 10 ? [`- and ${slower.length - 10} more (the System Audit page, Slowest pages tab)`] : []),
   ...(faster.length ? ["Faster:", ...faster.map((p) => `- ${line(p)}`)] : []),
-  "Busiest pages, time to first content:",
+  "Busiest pages, time to first content of a real load:",
   ...busiest.map((p) => `- ${p.path}: ${s(p.now)} (${p.nNow} loads)`),
-  "Slower = the week's median is at least 30% and 0.5 s (a tap: 0.15 s) higher, with 30+ samples in both weeks - one freak load cannot trigger it.",
+  "Slower = the week's median is at least 30% and 0.5 s (a tap: 0.15 s) higher, with 30+ samples in both weeks - one freak load cannot trigger it. Page loads leave out instant reopens (a page the phone already held, under 0.5 s)."
 ].join("\n");
 log(`speed report: ${rows.length} hourly rows, ${pairs.length} pages compared, ${slower.length} slower, ${faster.length} faster`);
 if (!pairs.length) { log("SPEED REPORT NOT SENT: no page had 30 samples in both weeks - the timings may have stopped arriving"); }
