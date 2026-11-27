@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { stripComments } from "./support/comment-strip.ts";
 
-import { awaitingValidationNote, computeCallRate, type VisitForCallRate } from "../src/lib/crm/call-rate.ts";
+import { awaitingValidationNote, computeCallRate, waitingCountedAsVisitsNote, type VisitForCallRate } from "../src/lib/crm/call-rate.ts";
 
 /**
  * A manager must be able to read a zero that a rep did not earn.
@@ -123,18 +123,33 @@ export function runPhoenixCrmAwaitingValidationTests(): void {
     const repsList = source("src/lib/crm/reps-plans.ts");
     assert.match(repsList, /awaitingValidation: rep\.awaitingValidation,/, "the Reps List row carries it too");
 
-    // The Phoenix CRM calendar and the frequency report print the SAME sentence — four screens, one
-    // wording, so they cannot drift apart on what a held-back visit is called.
-    const calendar = source("src/components/phoenix-crm/calendar-tab.tsx");
-    assert.match(calendar, /awaitingValidationNote\(\{ awaitingValidation: waitingThisMonth \}\)/, "the calendar prints the one sentence");
+    // The frequency report, a KPI, prints the held-back sentence. 🔴 The Phoenix CRM calendar and its day pages are
+    // NOT KPIs: since 2026-11-27 a visit to a customer still waiting for validation COUNTS there as a visit (owner:
+    // "they count as visits but not count in KPIs"), so they print the one sentence that says so — three screens,
+    // one wording — and never the held-back one, which would tell a manager the cell left out what it counts.
     const reports = source("src/components/phoenix-crm/reports-tab.tsx");
-    assert.match(reports, /awaitingValidationNote\(report\)/, "and so does the frequency report");
+    assert.match(reports, /awaitingValidationNote\(report\)/, "the frequency report prints the held-back sentence");
+    for (const screen of ["calendar-tab.tsx", "day-detail-view.tsx", "manager-day-view.tsx"]) {
+      const text = source(`src/components/phoenix-crm/${screen}`);
+      assert.match(text, /waitingCountedAsVisitsNote\(/, `${screen} says the waiting visits are counted as visits`);
+    }
+    assert.doesNotMatch(
+      source("src/components/phoenix-crm/calendar-tab.tsx"),
+      /awaitingValidationNote/,
+      "and the calendar never says a visit it counts was held back",
+    );
+    assert.equal(waitingCountedAsVisitsNote(0), null, "nothing waiting, nothing said");
+    assert.match(waitingCountedAsVisitsNote(1) ?? "", /^1 visit is to a customer still waiting for validation: counted here as a visit, in no KPI/);
+    assert.match(waitingCountedAsVisitsNote(3) ?? "", /^3 visits are to customers still waiting for validation: counted here as visits, in no KPI/);
 
     // And both reads now PARTITION rather than filter at the database, which is the only way they
     // can say how many were held back. `phoenix-crm-countable-visits` pins that contract in full.
-    for (const path of ["src/lib/phoenix-crm/server/team-calendar.ts", "src/lib/phoenix-crm/server/reports.ts"]) {
-      assert.match(source(path), /customer_validated !== true/, `${path} excludes in code, so it can count what it held back`);
-    }
+    assert.match(source("src/lib/phoenix-crm/server/reports.ts"), /customer_validated !== true/, "the frequency report excludes in code, so it can count what it held back");
+    // The calendar READS the column only to say how many of the visits it counts are still waiting (2026-11-27).
+    const fold = source("src/lib/phoenix-crm/server/team-calendar.ts");
+    const foldBody = fold.slice(fold.indexOf("function foldVisitRow"), fold.indexOf("function visitDaysOf"));
+    assert.match(foldBody, /if \(row\.customer_validated !== true\) fold\.waiting\.set\(/, "the calendar tallies the waiting visits");
+    assert.doesNotMatch(foldBody, /return;/, "and goes on to count them as visits — it never stops at the tally");
   }
 
   // ── 5. The rep never sees it (Phoenix CRM golden rule #1) ────────────────────────────────────

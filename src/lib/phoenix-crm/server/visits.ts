@@ -162,6 +162,7 @@ import {
   unplannedFirstStatus,
   unplannedVisitRepNote,
   unplannedVisitStatusLabel,
+  visitCountsAsVisit,
   visitCountsInKpi,
   visitIsArchiveHistory,
   type UnplannedKind,
@@ -300,6 +301,12 @@ export type VisitRow = {
    * what keeps the day page's three figures equal to the calendar cell that opens it.
    */
   countsInKpi: boolean;
+  /**
+   * Whether this visit counts as a VISIT on the calendar and the day page it opens — `visitCountsAsVisit`: every
+   * half of `countsInKpi` except the customer's validation (owner, 2026-11-27: "they count as visits but not count in
+   * KPIs"). Never read by a KPI.
+   */
+  countsAsVisit: boolean;
   /**
    * An out-of-list visit has no approval of its own: it waits on its CUSTOMER being added to the list.
    * Where that has got to, in the rep's words. Null on every other visit.
@@ -523,6 +530,14 @@ function mapVisitRow(
     copiedFromOldSystem: importedAt !== null,
     archiveHistory: visitIsArchiveHistory({ importedAt, customerStatus: textOrNull(customerRow.status), customerValidated }),
     countsInKpi: visitCountsInKpi({
+      isUnplanned: row.is_unplanned === true,
+      unplannedKind,
+      unplannedStatus: unplannedApproval?.status ?? null,
+      customerValidated,
+      copiedFromOldSystem: importedAt !== null,
+      oldSystemKpiCounted: row.ireports360_kpi_counted === true,
+    }),
+    countsAsVisit: visitCountsAsVisit({
       isUnplanned: row.is_unplanned === true,
       unplannedKind,
       unplannedStatus: unplannedApproval?.status ?? null,
