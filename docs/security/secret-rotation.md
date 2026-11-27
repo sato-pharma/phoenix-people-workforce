@@ -100,7 +100,7 @@ production deploy. Each such job now also leaves a deployment record on GitHub; 
 
 **Stays repository-wide:** browser-visible values (`NEXT_PUBLIC_*`, the Supabase URL, anon and publishable keys,
 `APP_URL`, `SYNTHETIC_BASE_URL`) and `EXPO_TOKEN`, nothing else. `tests/workflow-secrets-need-environment.test.ts`
-holds all of this, and its list must equal the `keep` pattern in `.github/workflows/move-secrets-to-environments.yml`.
+holds all of this.
 
 **The three gaps closed on 19 Nov 2026** (the owner's "fix those"):
 
@@ -123,13 +123,13 @@ holds all of this, and its list must equal the `keep` pattern in `.github/workfl
 name for a job in that environment, so a value set without `--env` after the move is silently NOT the one the
 workflows read.
 
-**The one-time move** (after the pull request that added the environments merged): `gh auth token | gh secret set
-SECRETS_MOVER_TOKEN --env main-secrets`, then `gh workflow run move-secrets-to-environments.yml --ref main -f
-confirm=MOVE`, then `gh secret delete SECRETS_MOVER_TOKEN --env main-secrets` the moment the run ends, then
-`gh secret list --env main-secrets` against the run's summary. Run 1 (19 Nov 2026, 00:55 Cairo) moved 62 secrets and
-the repository copies were deleted on the owner's word; a re-run copies only names an environment does not hold yet. The workflow only COPIES. The repository-wide copies
-are deleted afterwards by name, and only on the owner's word: that delete cannot be undone, because GitHub never
-shows a secret's value again.
+**The one-time move, and its retirement.** `.github/workflows/move-secrets-to-environments.yml` copied each
+repository secret into the environments from inside a run (GitHub never shows a value, so nothing else can copy one).
+Run 1 (19 Nov 2026, 00:55 Cairo) moved 62 secrets and the repository copies were deleted on the owner's word; run 2
+moved the staging key and the Telegram pair. Its work was done, and on 27 Nov 2026 the owner retired it ("Retire it"):
+it read every secret at once (`toJSON(secrets)`), which code scanning flagged and GitHub held as "may be malicious" on
+every run. The file is in git history (last on `main` at 472485b6b) if a future move ever needs it, and only on his
+word. `tests/workflow-secrets-need-environment.test.ts` now refuses any workflow that reads `toJSON(secrets)`.
 
 
 ## Script database connections ask for TLS (19 Nov 2026)
