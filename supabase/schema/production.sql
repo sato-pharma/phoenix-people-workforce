@@ -6391,6 +6391,31 @@ $$;
 ALTER FUNCTION public.direct_order_close_receipt_book(p_book_no integer, p_kind text, p_expected_status text, p_actor_hr_id text, p_note text) OWNER TO postgres;
 
 --
+-- Name: direct_order_no_receipt_requests_guard(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.direct_order_no_receipt_requests_guard() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+begin
+  if tg_op = 'DELETE' then
+    raise exception 'A no-receipt request is a record: it is never deleted.' using errcode = 'P0001';
+  end if;
+  if new.id is distinct from old.id or new.request_id is distinct from old.request_id or new.reason is distinct from old.reason
+     or new.asked_by_hr_id is distinct from old.asked_by_hr_id or new.asked_at is distinct from old.asked_at then
+    raise exception 'A no-receipt request''s order, reason and asker never change.' using errcode = 'P0001';
+  end if;
+  if old.status <> 'pending' then
+    raise exception 'A decided no-receipt request never changes.' using errcode = 'P0001';
+  end if;
+  return new;
+end;
+$$;
+
+ALTER FUNCTION public.direct_order_no_receipt_requests_guard() OWNER TO postgres;
+
+--
 -- Name: direct_order_receipt_books_guard(); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -60695,6 +60720,33 @@ ALTER TABLE public.direct_order_marketing_offsets OWNER TO postgres;
 COMMENT ON TABLE public.direct_order_marketing_offsets IS 'A marketing request settled against a direct order''s outstanding debt instead of a treasury payout. paid_amount on the order stays cash received; remaining_amount = sales_value - paid - sum(these amounts).';
 
 --
+-- Name: direct_order_no_receipt_requests; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.direct_order_no_receipt_requests (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    request_id uuid NOT NULL,
+    reason text NOT NULL,
+    asked_by_hr_id text NOT NULL,
+    asked_at timestamp with time zone DEFAULT now() NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    decided_by_hr_id text,
+    decided_at timestamp with time zone,
+    decision_note text,
+    CONSTRAINT direct_order_no_receipt_requests_decided CHECK ((((status = 'pending'::text) AND (decided_by_hr_id IS NULL) AND (decided_at IS NULL)) OR ((status <> 'pending'::text) AND (decided_by_hr_id IS NOT NULL) AND (decided_at IS NOT NULL)))),
+    CONSTRAINT direct_order_no_receipt_requests_reason_check CHECK ((length(btrim(reason)) >= 3)),
+    CONSTRAINT direct_order_no_receipt_requests_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'refused'::text])))
+);
+
+ALTER TABLE public.direct_order_no_receipt_requests OWNER TO postgres;
+
+--
+-- Name: TABLE direct_order_no_receipt_requests; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.direct_order_no_receipt_requests IS 'An approved direct order that will have no delivery receipt stands only with the CEO''s approval (owner, 27 Nov 2026): Finance asks with a reason, the CEO approves or refuses. pending -> approved | refused once; never edited after the decision, never deleted. Service role only. See src/lib/direct-orders/receipt-books.ts.';
+
+--
 -- Name: direct_order_pharmacy_distributor_codes; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -77868,6 +77920,13 @@ ALTER TABLE ONLY public.direct_order_marketing_offsets
     ADD CONSTRAINT direct_order_marketing_offsets_request_key UNIQUE (marketing_request_id);
 
 --
+-- Name: direct_order_no_receipt_requests direct_order_no_receipt_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.direct_order_no_receipt_requests
+    ADD CONSTRAINT direct_order_no_receipt_requests_pkey PRIMARY KEY (id);
+
+--
 -- Name: direct_order_pharmacies direct_order_pharmacies_phoenix_pharmacy_code_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -84089,6 +84148,18 @@ CREATE INDEX direct_order_events_request_idx ON public.direct_order_events USING
 --
 
 CREATE INDEX direct_order_marketing_offsets_order_idx ON public.direct_order_marketing_offsets USING btree (direct_order_id);
+
+--
+-- Name: direct_order_no_receipt_requests_one_live; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE UNIQUE INDEX direct_order_no_receipt_requests_one_live ON public.direct_order_no_receipt_requests USING btree (request_id) WHERE (status = ANY (ARRAY['pending'::text, 'approved'::text]));
+
+--
+-- Name: direct_order_no_receipt_requests_status_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX direct_order_no_receipt_requests_status_idx ON public.direct_order_no_receipt_requests USING btree (status, asked_at);
 
 --
 -- Name: direct_order_pharmacies_area_idx; Type: INDEX; Schema: public; Owner: postgres
@@ -90535,6 +90606,12 @@ CREATE TRIGGER deductions_decisions_touch_updated_at_trg BEFORE UPDATE ON public
 CREATE TRIGGER deductions_publication_lines_guard_day_overlap_trg BEFORE INSERT ON public.deductions_publication_lines FOR EACH ROW EXECUTE FUNCTION public.deductions_publication_lines_guard_day_overlap();
 
 --
+-- Name: direct_order_no_receipt_requests direct_order_no_receipt_requests_guard; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER direct_order_no_receipt_requests_guard BEFORE DELETE OR UPDATE ON public.direct_order_no_receipt_requests FOR EACH ROW EXECUTE FUNCTION public.direct_order_no_receipt_requests_guard();
+
+--
 -- Name: direct_order_receipt_books direct_order_receipt_books_guard; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -92638,6 +92715,13 @@ ALTER TABLE ONLY public.direct_order_marketing_offsets
 
 ALTER TABLE ONLY public.direct_order_marketing_offsets
     ADD CONSTRAINT direct_order_marketing_offsets_marketing_request_id_fkey FOREIGN KEY (marketing_request_id) REFERENCES public.marketing_requests(id);
+
+--
+-- Name: direct_order_no_receipt_requests direct_order_no_receipt_requests_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.direct_order_no_receipt_requests
+    ADD CONSTRAINT direct_order_no_receipt_requests_request_id_fkey FOREIGN KEY (request_id) REFERENCES public.direct_order_requests(id);
 
 --
 -- Name: direct_order_pharmacies direct_order_pharmacies_merged_into_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
@@ -97195,6 +97279,18 @@ ALTER TABLE public.direct_order_events ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.direct_order_marketing_offsets ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: direct_order_no_receipt_requests; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.direct_order_no_receipt_requests ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: direct_order_no_receipt_requests direct_order_no_receipt_requests_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY direct_order_no_receipt_requests_service_role ON public.direct_order_no_receipt_requests TO service_role USING (true) WITH CHECK (true);
 
 --
 -- Name: direct_order_pharmacies; Type: ROW SECURITY; Schema: public; Owner: postgres
@@ -103146,6 +103242,13 @@ REVOKE ALL ON FUNCTION public.direct_order_close_receipt_book(p_book_no integer,
 GRANT ALL ON FUNCTION public.direct_order_close_receipt_book(p_book_no integer, p_kind text, p_expected_status text, p_actor_hr_id text, p_note text) TO service_role;
 
 --
+-- Name: FUNCTION direct_order_no_receipt_requests_guard(); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.direct_order_no_receipt_requests_guard() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.direct_order_no_receipt_requests_guard() TO service_role;
+
+--
 -- Name: FUNCTION direct_order_receipt_books_guard(); Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -108951,6 +109054,12 @@ GRANT ALL ON TABLE public.direct_order_events TO service_role;
 --
 
 GRANT ALL ON TABLE public.direct_order_marketing_offsets TO service_role;
+
+--
+-- Name: TABLE direct_order_no_receipt_requests; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.direct_order_no_receipt_requests TO service_role;
 
 --
 -- Name: TABLE direct_order_pharmacy_distributor_codes; Type: ACL; Schema: public; Owner: postgres

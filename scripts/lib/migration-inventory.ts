@@ -2722,6 +2722,16 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // `create policy` so a second run is a no-op too (`create or replace`, `if not exists`, `drop ... if exists`); the
   // function bodies, and so the digests above, are unchanged.
   "20261127121951_direct_order_receipt_guards.sql",
+  // An order stands without a delivery receipt only on the CEO's approval (owner, 27 Nov 2026: "Anwar approves in
+  // Phoenix"). One new empty table, one trigger function and its trigger; no row changed. The Supabase tool declined
+  // it twice on staging with no prompt reaching the owner; on his choice, 27 Nov ~14:45 Cairo ("Apply staging, then
+  // production"), applied through scripts/apply-sql-file.mjs, staging then production, which writes NO ledger row.
+  // Read back on cifwmndunmlxjhyjugxa and on ozucdzovmcqvepbozvqf (project name Phoenix HR) straight after:
+  // direct_order_no_receipt_requests_guard md5(prosrc) a83ba1c0a7c21a66174440f06f1d548c on both, equal to the file's
+  // own body (LF), security invoker; the trigger and the one-live-ask unique index in place; row-level security on,
+  // no grant to anon, authenticated or PUBLIC; 0 rows on both. Re-applying is a no-op (`if not exists`,
+  // `create or replace`, `drop ... if exists`).
+  "20261127142537_direct_order_no_receipt_approvals.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
