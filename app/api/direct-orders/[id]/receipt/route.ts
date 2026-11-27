@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { recordDirectOrderReceipt, releaseDirectOrderReceipt } from "@/lib/direct-orders/receipt-books";
+import {
+  askDirectOrderWithoutReceipt,
+  decideDirectOrderWithoutReceipt,
+  recordDirectOrderReceipt,
+  releaseDirectOrderReceipt,
+} from "@/lib/direct-orders/receipt-books";
 import { toApiError } from "@/lib/http/api-errors";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
@@ -16,6 +21,10 @@ export const dynamic = "force-dynamic";
  *
  * `{ action: "release", reason }` takes a receipt off an order it was entered on by mistake — Finance
  * or the Administrator only, with a written reason (owner, 27 Nov 2026: "make an undo option").
+ *
+ * `{ action: "ask_without_receipt", reason }` — Finance asks the CEO to let the order stand without a
+ * receipt; `{ action: "decide_without_receipt", decision: "approve" | "refuse", note }` — the CEO alone
+ * decides (owner, 27 Nov 2026: making an order without a receipt is Dr Anwar's authority only).
  */
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -23,7 +32,23 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (csrf) return csrf;
     const access = await resolveAccessContext(request);
     const { id } = await context.params;
-    const body = (await request.json().catch(() => ({}))) as { action?: unknown; reason?: unknown; serial?: unknown; code?: unknown; photoDataUrl?: unknown };
+    const body = (await request.json().catch(() => ({}))) as {
+      action?: unknown;
+      reason?: unknown;
+      decision?: unknown;
+      note?: unknown;
+      serial?: unknown;
+      code?: unknown;
+      photoDataUrl?: unknown;
+    };
+    if (body.action === "ask_without_receipt") {
+      const asked = await askDirectOrderWithoutReceipt(access, { requestId: id, reason: body.reason ?? null });
+      return NextResponse.json({ success: true, message: asked.message });
+    }
+    if (body.action === "decide_without_receipt") {
+      const decided = await decideDirectOrderWithoutReceipt(access, { requestId: id, decision: body.decision ?? null, note: body.note ?? null });
+      return NextResponse.json({ success: true, message: decided.message });
+    }
     if (body.action === "release") {
       const released = await releaseDirectOrderReceipt(access, { requestId: id, reason: body.reason ?? null });
       return NextResponse.json({ success: true, message: released.message });

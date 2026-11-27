@@ -2,8 +2,13 @@ import assert from "node:assert/strict";
 
 import { createAccessContext } from "../src/lib/auth/permissions.ts";
 import {
+  askDirectOrderWithoutReceipt,
   closeDirectOrderReceiptBook,
+  countDirectOrderWithoutReceiptToDecide,
+  decideDirectOrderWithoutReceipt,
   issueDirectOrderReceiptBook,
+  listDirectOrderWithoutReceiptToDecide,
+  loadDirectOrderReceiptPanel,
   loadDirectOrderReceiptRegister,
   recordDirectOrderReceipt,
   releaseDirectOrderReceipt,
@@ -11,6 +16,8 @@ import {
 import {
   bookHeldAtApproval,
   checkBookIssue,
+  checkNoReceiptAsk,
+  checkNoReceiptDecision,
   checkReceiptForOrder,
   checkReceiptRelease,
   checkReceiptVoid,
@@ -19,6 +26,7 @@ import {
   parseReceiptSerial,
   receiptEntryBookFor,
   receiptRolloutStart,
+  type NoReceiptRow,
   type OrderForReceipt,
   type ReceiptBookRow,
   type ReceiptRow,
@@ -42,6 +50,11 @@ import { withPostgrestStandIn, writesTo, type Row, type StandIn } from "./suppor
 // returned book still proves an order approved while it was held; Finance can take a receipt off the
 // wrong order with a reason; every refused attempt is written on the order; a hand-out names a
 // person still at work; and closing a book is one database call.
+//
+// An order with no receipt stands only with the CEO's approval (owner, 27 Nov 2026: "صلاحيه عمل اى
+// اوردر بدون ايصال هى صلاحيه انور فقط لاغير"; he chose "Anwar approves in Phoenix"): Finance asks
+// with a reason, the CEO alone decides — never the Super Admin — and an approved order leaves the
+// missing-receipt lists.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -209,6 +222,45 @@ function pureTests() {
   assert.equal(checkBookIssue(book({ status: "returned", closedAt: "x" }), "AI-0001").ok, false, "a returned book is never reissued");
   assert.equal(checkReceiptVoid(receipt({ state: "used", requestId: "x" }), "spoiled").ok, false, "a receipt that proves an order is never cancelled");
   assert.equal(checkReceiptVoid(receipt(), "").ok, false, "a cancellation says why");
+
+  // Without a receipt: the CEO's approval alone (owner, 27 Nov 2026).
+  const approvedAsk: NoReceiptRow = {
+    id: "ask-1",
+    requestId: "11111111-1111-4111-8111-111111111111",
+    reason: "the venue refused to stamp",
+    askedByHrId: "B-185",
+    askedAt: "2026-12-12T09:00:00.000Z",
+    status: "approved",
+    decidedByHrId: "CEO-1",
+    decidedAt: "2026-12-13T09:00:00.000Z",
+    decisionNote: null,
+  };
+  const pendingAsk: NoReceiptRow = { ...approvedAsk, status: "pending", decidedByHrId: null, decidedAt: null };
+  assert.equal(
+    classifyOrderReceipt({ order: order(), books: [book()], hasReceipt: false, now: NOW, withoutReceiptApproved: true }),
+    "without_receipt",
+    "an order the CEO approved without a receipt is never flagged overdue",
+  );
+  assert.equal(
+    classifyOrderReceipt({ order: order(), books: [book()], hasReceipt: true, now: NOW, withoutReceiptApproved: true }),
+    "has_receipt",
+    "a receipt still counts first",
+  );
+  assert.equal(reasonOf(check({ withoutReceiptApproved: true })), "order_without_receipt", "no receipt is entered on an order approved to stand without one");
+  assert.equal(checkNoReceiptAsk({ standing: "overdue", live: null, reason: "the venue refused to stamp" }).ok, true);
+  assert.equal(checkNoReceiptAsk({ standing: "no_book", live: null, reason: "raised with no book" }).ok, true, "a no-book order may be asked too");
+  assert.equal(checkNoReceiptAsk({ standing: "overdue", live: null, reason: "  " }).ok, false, "an ask always says why");
+  assert.equal(checkNoReceiptAsk({ standing: "has_receipt", live: null, reason: "x x x" }).ok, false, "an order with a receipt needs no ask");
+  assert.equal(checkNoReceiptAsk({ standing: "not_required", live: null, reason: "x x x" }).ok, false, "a reversal or rejection owes nothing");
+  assert.equal(checkNoReceiptAsk({ standing: "overdue", live: pendingAsk, reason: "again" }).ok, false, "one ask waits at a time");
+  assert.equal(checkNoReceiptAsk({ standing: "without_receipt", live: approvedAsk, reason: "again" }).ok, false, "an approved order is not asked again");
+  assert.equal(checkNoReceiptDecision({ live: pendingAsk, hasReceipt: false, decision: "approve", note: "" }).ok, true, "approving needs no note");
+  assert.equal(checkNoReceiptDecision({ live: pendingAsk, hasReceipt: false, decision: "refuse", note: "" }).ok, false, "a refusal always says why");
+  assert.equal(checkNoReceiptDecision({ live: pendingAsk, hasReceipt: true, decision: "approve", note: "" }).ok, false, "a receipt entered meanwhile makes the approval unnecessary");
+  assert.equal(checkNoReceiptDecision({ live: pendingAsk, hasReceipt: true, decision: "refuse", note: "has a receipt now" }).ok, true, "but it can still be refused");
+  assert.equal(checkNoReceiptDecision({ live: approvedAsk, hasReceipt: false, decision: "refuse", note: "changed my mind" }).ok, false, "a decided ask never changes");
+  assert.equal(checkNoReceiptDecision({ live: null, hasReceipt: false, decision: "approve", note: "" }).ok, false, "nothing to decide");
+  assert.equal(checkNoReceiptDecision({ live: pendingAsk, hasReceipt: false, decision: "maybe", note: "x x x" }).ok, false, "approve or refuse only");
 }
 
 // ─── Behaviour, through the shared PostgREST stand-in ────────────────────────
@@ -223,6 +275,7 @@ const PHOTO = `data:image/jpeg;base64,${Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 
 const MOMEN = createAccessContext({ hrId: "AI-0001", loginId: "momen", role: "District Manager", source: "session" });
 const STRANGER = createAccessContext({ hrId: "PD-0012", loginId: "eleiwa", role: "District Manager", source: "session" });
 const ADMIN = createAccessContext({ hrId: "B-10", loginId: "owner", role: "Super Admin", source: "session" });
+const CEO = createAccessContext({ hrId: "CEO-1", loginId: "anwar", role: "CEO", source: "session" });
 
 function tables(): Record<string, Row[]> {
   return {
@@ -247,6 +300,7 @@ function tables(): Record<string, Row[]> {
       { id: "ph-2", pharmacy_name: "El Nour Pharmacy" },
     ],
     direct_order_receipt_releases: [],
+    direct_order_no_receipt_requests: [],
     direct_order_events: [],
     audit_logs: [],
     employees: [],
@@ -477,6 +531,64 @@ async function behaviourTests() {
       assert.deepEqual(register.missing.map((o) => o.requestId).sort(), [ORDER_A, ORDER_B].sort());
       assert.equal(register.books.find((b) => b.bookNo === 1)?.owing, 2, "the book row says how many orders still owe a receipt from it");
       await rejectsWith(loadDirectOrderReceiptRegister(MOMEN), /Finance's/, "the desk is Finance's");
+    });
+  }
+
+  // 12b. Without a receipt: Finance asks, the CEO ALONE decides, and the approved order leaves the lists.
+  {
+    const standIn: StandIn = { tables: tables() };
+    await withPostgrestStandIn(standIn, async () => {
+      const asks = standIn.tables.direct_order_no_receipt_requests;
+      await rejectsWith(askDirectOrderWithoutReceipt(MOMEN, { requestId: ORDER_A, reason: "the venue refused" }), /Only Finance/, "the manager cannot ask for himself");
+      await rejectsWith(askDirectOrderWithoutReceipt(ADMIN, { requestId: ORDER_A, reason: " " }), /Write why/, "an ask always says why");
+      assert.equal(asks.length, 0, "a refused ask writes nothing");
+      await askDirectOrderWithoutReceipt(ADMIN, { requestId: ORDER_A, reason: "the venue refused to stamp the page" });
+      assert.equal(asks.length, 1, "the ask is one row");
+      assert.equal(asks[0].request_id, ORDER_A);
+      assert.equal(asks[0].asked_by_hr_id, "B-10");
+      // The database's own defaults, which the stand-in does not apply.
+      Object.assign(asks[0], { id: "ask-1", status: "pending", asked_at: "2026-12-19T09:00:00.000Z", decided_by_hr_id: null, decided_at: null, decision_note: null });
+
+      const waiting = await loadDirectOrderReceiptRegister(ADMIN);
+      assert.deepEqual(waiting.missing.map((o) => o.requestId).sort(), [ORDER_A, ORDER_B].sort(), "a waiting ask still owes its receipt");
+      assert.deepEqual(waiting.withoutReceipt.map((o) => [o.requestId, o.status]), [[ORDER_A, "pending"]], "Finance sees the ask waiting");
+      await rejectsWith(askDirectOrderWithoutReceipt(ADMIN, { requestId: ORDER_A, reason: "asking twice" }), /already waiting/, "one ask waits at a time");
+
+      // Only the CEO: the Super Admin has no override on this decision.
+      await rejectsWith(decideDirectOrderWithoutReceipt(ADMIN, { requestId: ORDER_A, decision: "approve", note: "" }), /Only the CEO/, "the Super Admin cannot decide it");
+      await rejectsWith(decideDirectOrderWithoutReceipt(MOMEN, { requestId: ORDER_A, decision: "approve", note: "" }), /Only the CEO/, "nor the manager");
+      assert.equal(await countDirectOrderWithoutReceiptToDecide(ADMIN), 0, "the badge counts nothing for the Super Admin");
+      assert.equal(await countDirectOrderWithoutReceiptToDecide(CEO), 1, "the CEO's badge counts the ask");
+      const toDecide = await listDirectOrderWithoutReceiptToDecide(CEO);
+      assert.deepEqual(toDecide.map((row) => [row.requestId, row.pharmacyName, row.reason]), [[ORDER_A, "El Shifa Pharmacy", "the venue refused to stamp the page"]]);
+      assert.deepEqual(await listDirectOrderWithoutReceiptToDecide(ADMIN), [], "nobody else has it in Needs action");
+
+      await rejectsWith(decideDirectOrderWithoutReceipt(CEO, { requestId: ORDER_A, decision: "refuse", note: "" }), /Write why/, "a refusal says why");
+      await decideDirectOrderWithoutReceipt(CEO, { requestId: ORDER_A, decision: "approve", note: "" });
+      assert.equal(asks[0].status, "approved");
+      assert.equal(asks[0].decided_by_hr_id, "CEO-1", "the decision is the CEO's own");
+      const eventTypes = standIn.tables.direct_order_events.map((e) => e.event_type);
+      assert.deepEqual(eventTypes, ["receipt_waiver_asked", "receipt_waiver_approved"], "both are on the order's history");
+
+      const after = await loadDirectOrderReceiptRegister(ADMIN);
+      assert.deepEqual(after.missing.map((o) => o.requestId), [ORDER_B], "the approved order leaves the missing-receipt list");
+      assert.equal(after.books.find((b) => b.bookNo === 1)?.owing, 1, "and the book no longer counts it as owing");
+      assert.deepEqual(after.withoutReceipt.map((o) => [o.requestId, o.status, o.waiverDecidedAt]), [[ORDER_A, "approved", asks[0].decided_at]]);
+      await withStoredUploads(async () => {
+        await rejectsWith(
+          recordDirectOrderReceipt(MOMEN, { requestId: ORDER_A, serial: "8", code: "C9D2EF", photoDataUrl: PHOTO }),
+          /approved this order to stand without a receipt/,
+          "no receipt is entered on it afterwards",
+        );
+      });
+      assert.equal(standIn.tables.direct_order_receipts.find((r) => r.serial === 8)?.state, "unused", "the page stays free");
+
+      const panel = await loadDirectOrderReceiptPanel(ADMIN, ORDER_A);
+      assert.ok(panel && !("unavailable" in panel));
+      assert.equal(panel.standing, "without_receipt");
+      assert.equal(panel.entryBook, null, "the panel offers no entry form");
+      assert.equal(panel.mayAskWithoutReceipt, false, "nor a second ask");
+      assert.equal(panel.withoutReceipt?.status, "approved");
     });
   }
 

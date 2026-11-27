@@ -17,6 +17,10 @@ has to rediscover it. The code side is module memory: the first bullet of `.clau
 - **NOT decided, and never decided in chat (money):** whether a missing receipt stops the order counting in that
   month's sales or collection. Today it does not; the receipt proves and flags only. The proposal email puts
   this to Dr Anwar and Ahmed El Maraghy as THEIR decision.
+- 27 Nov ~14:15: «صلاحيه عمل اى اوردر بدون ايصال هى صلاحيه انور فقط لاغير موافقه منه والتنفيذ من خلال استاذ احمد».
+  He chose "Anwar approves in Phoenix". Built: Finance (أستاذ أحمد) asks on the order with a reason, and the CEO
+  alone approves or refuses it on the same order and in his Needs action list. An approved order leaves the
+  missing-receipt lists. The Receipt Books desk lists every ask.
 - He asked for the guides **in Arabic**, "المختصر المفيد والمهم" (short and to the point). He asked for REAL
   screenshots, and a labelled drawing only where no real screen exists yet.
 
@@ -238,4 +242,7 @@ the browser on another machine.
     photograph it.
   - Never record a fake hand-over on production to get the picture.
 - The book files' route to the printer: USB is proposed.
-- Dr Anwar and Ahmed's decision on whether a missing receipt holds the sales month.
+- Dr Anwar and Ahmed's decision on whether a missing receipt holds the sales month. An order may now stand
+  without a receipt only once Dr Anwar approves it in Phoenix.
+- The management video (scene 13) and its covering message still ask them to decide the missing-receipt
+  question. Update both once the owner finishes his edits.

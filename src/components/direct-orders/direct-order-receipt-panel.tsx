@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { adminPanelClassName, adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
+import { ApprovalConfirmButtons, approvalActionClassName } from "@/components/approvals-hub/approval-action-kit";
 import { prepareDirectOrderInvoiceFile, type PreparedDirectOrderInvoice } from "@/components/direct-orders/invoice-file";
 import { FormField } from "@/components/ui/form-kit";
 import {
@@ -25,6 +26,10 @@ import { cn } from "@/lib/utils";
  * three things to enter from the signed page: its number, the code printed beside it, and a photo.
  * The server checks every rule again; this panel is the convenience, never the gate. Finance can take
  * a receipt off an order it was entered on by mistake, with a written reason (owner, 27 Nov 2026).
+ *
+ * An order that will never have a receipt stands without one only with the CEO's approval (owner,
+ * 27 Nov 2026: the CEO's authority alone, carried out through Finance): Finance asks here with a
+ * reason, and the CEO approves or refuses on the same panel.
  */
 export function DirectOrderReceiptPanel({ requestId, panel: given }: { requestId: string; panel: Panel | DirectOrderReceiptPanelUnavailable }) {
   const router = useRouter();
@@ -170,6 +175,10 @@ export function DirectOrderReceiptPanel({ requestId, panel: given }: { requestId
               )
             ) : null}
           </div>
+        ) : panel.standing === "without_receipt" ? (
+          <p className="text-phx-sm font-bold text-slate-800">
+            The CEO approved this order to stand without a delivery receipt. It no longer owes one.
+          </p>
         ) : panel.standing === "no_book" ? (
           <p className="text-phx-sm font-bold text-rose-700">
             The manager who raised this order held no receipt book when it was approved, so no signed page stands behind it. Finance lists it on the Receipt Books desk.
@@ -245,7 +254,159 @@ export function DirectOrderReceiptPanel({ requestId, panel: given }: { requestId
           </div>
         ) : null}
         {message ? <p className="text-phx-sm font-semibold text-slate-800">{message}</p> : null}
+
+        <NoReceiptSection panel={panel} requestId={requestId} />
       </div>
     </section>
+  );
+}
+
+const NO_RECEIPT_STATUS: Record<NonNullable<Panel["withoutReceipt"]>["status"], string> = {
+  pending: "Waiting for the CEO's decision",
+  approved: "Approved by the CEO — the order stands without a receipt",
+  refused: "Refused by the CEO — the order still owes its receipt",
+};
+
+/**
+ * Asking the CEO to let an order stand without a delivery receipt, and his decision. Finance asks
+ * with a reason; only the CEO decides. The server checks both again.
+ */
+function NoReceiptSection({ requestId, panel }: { requestId: string; panel: Panel }) {
+  const router = useRouter();
+  const [asking, setAsking] = useState(false);
+  const [reason, setReason] = useState("");
+  const [deciding, setDeciding] = useState<"approve" | "refuse" | null>(null);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const ask = panel.withoutReceipt;
+  if (!ask && !panel.mayAskWithoutReceipt) return null;
+
+  async function post(body: Record<string, unknown>, fallback: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/direct-orders/${encodeURIComponent(requestId)}/receipt`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string };
+      if (!res.ok || !data.success) throw new Error(data.message || fallback);
+      setMessage(data.message ?? "Saved.");
+      setAsking(false);
+      setDeciding(null);
+      setReason("");
+      setNote("");
+      router.refresh();
+    } catch (postError) {
+      setError(postError instanceof Error ? postError.message : "Something went wrong.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2 border-t border-slate-200 pt-3">
+      <p className="text-phx-xs font-black uppercase tracking-wider text-slate-500">Without a receipt — the CEO decides</p>
+      {ask ? (
+        <div className="space-y-1">
+          <p className={cn("text-phx-sm font-bold", ask.status === "refused" ? "text-rose-700" : "text-slate-900")}>{NO_RECEIPT_STATUS[ask.status]}</p>
+          <p className="break-words text-phx-sm text-slate-700" dir="auto">
+            Finance{ask.askedByName ? ` (${ask.askedByName})` : ""} asked on {cairoDateTime(ask.askedAt)}: {ask.reason}
+          </p>
+          {ask.decidedAt ? (
+            <p className="break-words text-phx-sm text-slate-700" dir="auto">
+              {ask.status === "approved" ? "Approved" : "Refused"}
+              {ask.decidedByName ? ` by ${ask.decidedByName}` : ""} on {cairoDateTime(ask.decidedAt)}
+              {ask.note ? `: ${ask.note}` : "."}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {panel.mayDecideWithoutReceipt && !message ? (
+        deciding ? (
+          <div className="space-y-2">
+            <FormField
+              label={deciding === "approve" ? "Note (optional)" : "Why is the request refused"}
+              required={deciding === "refuse"}
+              htmlFor={`no-receipt-note-${requestId}`}
+            >
+              <input
+                className={phxFieldClassName}
+                dir="auto"
+                id={`no-receipt-note-${requestId}`}
+                onChange={(event) => setNote(event.target.value)}
+                value={note}
+              />
+            </FormField>
+            <p className="text-phx-xs text-slate-500">
+              {deciding === "approve"
+                ? "The order will stand without a delivery receipt and leaves Finance's missing-receipt list. This cannot be changed afterwards."
+                : "The order keeps owing its delivery receipt. Finance can ask again with a new reason."}
+            </p>
+            {error ? <p className={phxFormErrorClassName}>{error}</p> : null}
+            <ApprovalConfirmButtons
+              busy={busy}
+              confirmLabel={deciding === "approve" ? "Yes, approve without a receipt" : "Yes, refuse the request"}
+              disabled={deciding === "refuse" && note.trim().length < 3}
+              onCancel={() => {
+                setDeciding(null);
+                setError(null);
+              }}
+              onConfirm={() => void post({ action: "decide_without_receipt", decision: deciding, note }, "Could not save the decision.")}
+            />
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            <button className={approvalActionClassName("approve", "regular", "flex-1 md:flex-none")} onClick={() => setDeciding("approve")} type="button">
+              Approve without a receipt
+            </button>
+            <button className={approvalActionClassName("reject", "regular", "flex-1 md:flex-none")} onClick={() => setDeciding("refuse")} type="button">
+              Refuse
+            </button>
+          </div>
+        )
+      ) : null}
+
+      {panel.mayAskWithoutReceipt && !message ? (
+        asking ? (
+          <div className="space-y-2">
+            <FormField label="Why will this order have no delivery receipt" required htmlFor={`no-receipt-reason-${requestId}`}>
+              <input
+                className={phxFieldClassName}
+                dir="auto"
+                id={`no-receipt-reason-${requestId}`}
+                onChange={(event) => setReason(event.target.value)}
+                placeholder="The venue refused to sign and stamp the page"
+                value={reason}
+              />
+            </FormField>
+            <p className="text-phx-xs text-slate-500">
+              Only the CEO can let an order stand without a receipt. The request reaches the CEO&apos;s Needs action list and is decided on this order.
+            </p>
+            {error ? <p className={phxFormErrorClassName}>{error}</p> : null}
+            <ApprovalConfirmButtons
+              busy={busy}
+              confirmLabel="Send to the CEO"
+              disabled={reason.trim().length < 3}
+              onCancel={() => {
+                setAsking(false);
+                setError(null);
+              }}
+              onConfirm={() => void post({ action: "ask_without_receipt", reason }, "Could not send the request.")}
+            />
+          </div>
+        ) : (
+          <button className={phxButtonGhostClassName} onClick={() => setAsking(true)} type="button">
+            Ask the CEO to approve it without a receipt
+          </button>
+        )
+      ) : null}
+      {message ? <p className="text-phx-sm font-semibold text-slate-800">{message}</p> : null}
+    </div>
   );
 }

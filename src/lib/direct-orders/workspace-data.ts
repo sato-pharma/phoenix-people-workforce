@@ -26,6 +26,7 @@ import type {
   DirectOrderOrdersScopeFilter,
 } from "@/lib/direct-orders/operational-query";
 import { resolveEffectiveOrdersScope } from "@/lib/direct-orders/orders-scope";
+import { listDirectOrderWithoutReceiptToDecide } from "@/lib/direct-orders/receipt-books";
 import { isDirectOrderRequesterRole } from "@/lib/direct-orders/types";
 import type { DirectOrderApprovalListItem, DirectOrderReportScope } from "@/lib/direct-orders/types";
 
@@ -347,6 +348,7 @@ export async function loadDirectOrderWorkspaceView(
     awaitingFinanceMonth,
     totals,
     recentScopePage,
+    withoutReceiptToDecide,
   ] = await Promise.all([
     // Only `awaiting` is drawn here — the Needs Action inbox — so held orders and the viewer's
     // decision history are not read at all.
@@ -380,6 +382,9 @@ export async function loadDirectOrderWorkspaceView(
             : null,
         )
       : Promise.resolve(null),
+    // Orders asking to stand without a delivery receipt — the CEO's alone (owner, 27 Nov 2026). Empty,
+    // with no read, for everyone else.
+    listDirectOrderWithoutReceiptToDecide(access),
   ]);
 
   // Overview's "Recent orders". The viewer's own five when they have any; otherwise, for a viewer
@@ -410,6 +415,7 @@ export async function loadDirectOrderWorkspaceView(
     myOrders,
     awaitingFinanceMonth,
     pendingCustomerValidations: pendingValidations.length,
+    withoutReceiptToDecide,
     basePath: options.basePath,
   });
 

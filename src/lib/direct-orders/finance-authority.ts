@@ -77,6 +77,17 @@ export function canManageDirectOrderReceiptBooks(access: DirectOrderFinanceAcces
 }
 
 /**
+ * Who decides whether an approved direct order may stand WITHOUT a delivery receipt: the CEO alone
+ * (owner, 27 Nov 2026: "صلاحيه عمل اى اوردر بدون ايصال هى صلاحيه انور فقط لاغير" — Dr Anwar's
+ * authority only). By ROLE, like the CEO rung of the approval chain, and deliberately NOT the Super
+ * Admin: the owner named the CEO alone, so no override reaches this decision. Finance asks
+ * (`canManageDirectOrderReceiptBooks`); this predicate only answers.
+ */
+export function canDecideDirectOrderWithoutReceipt(access: DirectOrderFinanceAccess): boolean {
+  return access.role === "CEO";
+}
+
+/**
  * Who may raise AND execute a service-fee marketing request against an order in one click.
  *
  * The Administrator alone (owner, 2026-10-15: the only Super Admin, recording the whole chain as

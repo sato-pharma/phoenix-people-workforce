@@ -84,3 +84,24 @@ It gates no sales month and no collection. Whether a missing receipt should hold
 for Dr Anwar and Ahmed El Maraghy, made on its own screen, never in chat.
 
 Pinned by `tests/direct-order-receipt-books.test.ts`.
+
+## An order without a receipt — the CEO's approval alone (27 Nov 2026)
+
+The owner, 27 Nov 2026: «صلاحيه عمل اى اوردر بدون ايصال هى صلاحيه انور فقط لاغير موافقه منه والتنفيذ من خلال
+استاذ احمد». Making any order without a receipt is Dr Anwar's authority alone. It is his approval, carried out
+through Ahmed El Maraghy. He chose "Anwar approves in Phoenix".
+
+- **Who asks:** Finance (`canManageDirectOrderReceiptBooks`), on the order's own page, always with a written
+  reason. Only an order that owes a receipt (`waiting`, `overdue`, `no_book`) and has no ask waiting or approved
+  can be asked.
+- **Who decides:** the CEO alone (`canDecideDirectOrderWithoutReceipt`, by role). The Super Admin has no override.
+  This is deliberate: the owner named the CEO alone. The CEO sees each ask in Needs action, and the count joins
+  the sidebar badge. Approving needs no note; refusing always says why. A receipt entered while the ask waits
+  makes approval impossible, so the ask can only be refused.
+- **What an approval does:** the order's standing becomes `without_receipt`. It leaves Finance's overdue and
+  no-book lists, and its book no longer counts it as owing. No receipt can be entered on it afterwards. It still
+  gates no month and no collection.
+- **The record:** `direct_order_no_receipt_requests` (migration `20261127142537`). It is service role only, and
+  each order has at most one ask waiting or approved. A decided ask never changes, and no row is deleted.
+  A refused order may be asked again, as a new row. Every ask and decision writes an audit row and an order
+  event (`receipt_waiver_asked`, `receipt_waiver_approved`, `receipt_waiver_refused`).
