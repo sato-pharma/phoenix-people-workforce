@@ -282,6 +282,20 @@ export function visitCountsInKpi(input: {
   return input.unplannedStatus === "approved";
 }
 
+/**
+ * 🔴 WHETHER A VISIT COUNTS AS A VISIT — on the team calendar, its month totals and the day pages it opens — which
+ * is every half of `visitCountsInKpi` EXCEPT the customer's validation (owner, 2026-11-27: "they count as visits but
+ * not count in KPIs"). A visit to a customer still waiting for validation is work the rep really did, and the private
+ * calendar already counts it, so the two calendars read one figure for one day. It is still in NO KPI: every KPI reader
+ * keeps asking `visitCountsInKpi` (or the view with `customer_validated`), and nothing here is a score.
+ *
+ * The other halves stay: an off-plan visit still waits for its approval, a held far visit for the SFE, and a copied
+ * visit for the trigger's answer — the countable view the calendar reads holds back exactly those.
+ */
+export function visitCountsAsVisit(input: Parameters<typeof visitCountsInKpi>[0]): boolean {
+  return visitCountsInKpi({ ...input, customerValidated: true });
+}
+
 /** Why a visit is outside every KPI figure: still waiting on somebody, or refused for good. */
 export type KpiHoldBack = "validation" | "approval" | "refused";
 

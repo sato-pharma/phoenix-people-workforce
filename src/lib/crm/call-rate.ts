@@ -467,6 +467,18 @@ export function awaitingValidationNote(rep: Pick<RepCallRate, "awaitingValidatio
     : `${count} visits saved, waiting for their customers to be validated`;
 }
 
+/**
+ * 🔴 THE SENTENCE THE PHOENIX CRM CALENDAR AND ITS DAY PAGES PRINT, where a visit to a customer still waiting for
+ * validation COUNTS AS A VISIT (owner, 2026-11-27: "they count as visits but not count in KPIs"). Never on a KPI
+ * board: there such a visit is in no figure and `awaitingValidationNote` says so. The rep never sees either.
+ */
+export function waitingCountedAsVisitsNote(count: number): string | null {
+  if (count <= 0) return null;
+  return count === 1
+    ? "1 visit is to a customer still waiting for validation: counted here as a visit, in no KPI until the customer is validated"
+    : `${count} visits are to customers still waiting for validation: counted here as visits, in no KPI until the customers are validated`;
+}
+
 export function hasNoGpsFeed(rep: RepCallRate, basis?: CallRateBasis): boolean {
   // WHICH BASIS DECIDES. `basis` is an explicit override for a caller holding rows it did not compute;
   // otherwise the ROW's own basis answers, because since the switch went per team (owner, 2026-10-07)

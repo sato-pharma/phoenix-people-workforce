@@ -306,11 +306,6 @@ export async function runPhoenixCrmCountableVisitsTests(): Promise<void> {
     // body must NAME the column in its select (PostgREST fails the whole read for a column it was
     // not given) AND exclude it explicitly, so an omission cannot pass as a partition.
     const filters: Array<{ path: string; from: string; reads: number; mode: "query" | "code"; alsoIn?: string }> = [
-      // AM · PM · Pharmacies per rep per day: what counts as work must be what colours a cell, and
-      // the cell now also says how many of that day's visits are waiting on their customers.
-      // `foldVisitRow` holds the partition since 2026-10-19: a rep's row and a manager's row fold a visit
-      // through the one function, so the exclusion is read there and the read is read here.
-      { alsoIn: "function foldVisitRow", from: "async function loadVisitDays", mode: "code", path: "src/lib/phoenix-crm/server/team-calendar.ts", reads: 1 },
       // The exceptions board, where an inflated tally REMOVES the row rather than showing a wrong
       // number: the board exists to raise the territory whose count is low.
       { from: "async function loadVisitTallies", mode: "query", path: "src/lib/phoenix-crm/server/exceptions.ts", reads: 1 },
@@ -364,6 +359,15 @@ export async function runPhoenixCrmCountableVisitsTests(): Promise<void> {
     //     "never touched it" list for doing the work, and would look truest in the first weeks, when
     //     almost nobody is validated yet.
     const exempt: Array<{ path: string; from: string; says: RegExp }> = [
+      {
+        // 🔴 THE TEAM CALENDAR IS NO KPI (owner, 2026-11-27: "they count as visits but not count in KPIs"). AM · PM ·
+        // Pharmacies per rep per day count a visit to a customer still waiting for validation AS A VISIT, as the private
+        // calendar does, and the cell says how many wait. It still reads the countable view, so an off-plan visit still
+        // waits for its approval there. `foldVisitRow` is the one fold for a rep's row and a manager's.
+        from: "async function loadVisitDays",
+        path: "src/lib/phoenix-crm/server/team-calendar.ts",
+        says: /A VISIT TO A CUSTOMER STILL WAITING FOR VALIDATION COUNTS AS A VISIT HERE, AND IN NO KPI/,
+      },
       {
         // It asks WHEN he last worked, so the grid reaches that far. A started team whose customers
         // are all unvalidated would otherwise read as never having worked, and the calendar would

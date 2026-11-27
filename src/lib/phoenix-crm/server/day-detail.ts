@@ -100,14 +100,15 @@ export async function loadPhoenixCrmDayDetail(
   // afterwards, and a day is read the way it was lived. The first cut inherited newest-first under
   // a heading that said "in the order they happened", which was simply untrue.
   const day = { ...loaded, visits: [...loaded.visits].sort((left, right) => left.capturedAt.localeCompare(right.capturedAt)) };
-  // 🔴 THE SAME BASIS AS THE CALENDAR CELL THAT OPENED THIS PAGE. `countsInKpi` is the row's own
-  // answer (`visitCountsInKpi`), so the headline here equals the grid's figure; the list below keeps
-  // every visit with its status, and what is held back is said in words rather than dropped.
-  const { archiveHistory, awaitingApproval, awaitingValidation, counts, pharmacies } = dayDetailCounts(
+  // 🔴 THE SAME BASIS AS THE CALENDAR CELL THAT OPENED THIS PAGE. `countsAsVisit` is the row's own answer
+  // (`visitCountsAsVisit`: a visit to a customer still waiting for validation counts as a visit, owner 2026-11-27),
+  // so the headline here equals the grid's figure; `countsInKpi` says why a visit is in no KPI, in words.
+  const { archiveHistory, awaitingApproval, awaitingValidation, counts, heldForValidation, pharmacies } = dayDetailCounts(
     day.visits.map((visit) => ({
       archiveHistory: visit.archiveHistory,
       capturedAt: visit.capturedAt,
       copiedFromOldSystem: visit.copiedFromOldSystem,
+      countsAsVisit: visit.countsAsVisit,
       countsInKpi: visit.countsInKpi,
       customerId: visit.customerId,
       customerName: visit.customerName,
@@ -133,6 +134,7 @@ export async function loadPhoenixCrmDayDetail(
     archiveHistory,
     awaitingApproval,
     awaitingValidation,
+    heldForValidation,
     counts,
     leaveUnread,
     missedRecords,

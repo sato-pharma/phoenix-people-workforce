@@ -8,6 +8,7 @@ import {
 } from "../src/lib/phoenix-crm/customer-frequency.ts";
 import { dayDetailCounts } from "../src/lib/phoenix-crm/day-detail.ts";
 import { phoenixCrmDayPath } from "../src/lib/phoenix-crm/modules.ts";
+import { visitCountsAsVisit, visitCountsInKpi } from "../src/lib/phoenix-crm/unplanned-rules.ts";
 import {
   buildTeamCalendar,
   dayShape,
@@ -418,21 +419,48 @@ export function runPhoenixCrmWave2ReportTests(): void {
     //    on the grid and 5 on the page the grid links to, with nothing to say which was right. On a
     //    team that has just started the gap is EVERY visit — measured 2026-10-02, 0 of Delta (1)'s
     //    1,551 carried-over customers were validated the day before it began.
+    // 🔴 SINCE 2026-11-27 A VISIT TO A CUSTOMER STILL WAITING FOR VALIDATION COUNTS AS A VISIT HERE AND ON THE CELL, AND
+    //    IN NO KPI (owner: "they count as visits but not count in KPIs"; Hagar Abu zeid's 15 Nov read PM 9 on the private
+    //    calendar and PM 8 here). `countsAsVisit` is `visitCountsAsVisit`, every half of the KPI rule but the validation.
     const held = dayDetailCounts([
       { ...scored, capturedAt: "2026-09-30T07:10:00.000Z", customerId: "1", customerName: "Scored", listType: "AM", pharmacyName: "El Ezaby" },
-      // Saved, real, and in no figure: nobody has validated this customer yet.
-      { capturedAt: "2026-09-30T08:00:00.000Z", countsInKpi: false, customerValidated: false, customerId: "2", customerName: "Waiting", listType: "PM", pharmacyName: "Seif" },
-      // Validated, but off the plan and still with the approvers — the other half of the question.
-      { capturedAt: "2026-09-30T09:00:00.000Z", countsInKpi: false, customerValidated: true, customerId: "3", customerName: "Off plan", listType: "PM", pharmacyName: null },
+      // Saved, real, and counted as a visit — in no KPI: nobody has validated this customer yet.
+      { capturedAt: "2026-09-30T08:00:00.000Z", countsAsVisit: true, countsInKpi: false, customerValidated: false, customerId: "2", customerName: "Waiting", listType: "PM", pharmacyName: "Seif" },
+      // Validated, but off the plan and still with the approvers — the other half of the question, counted nowhere.
+      { capturedAt: "2026-09-30T09:00:00.000Z", countsAsVisit: false, countsInKpi: false, customerValidated: true, customerId: "3", customerName: "Off plan", listType: "PM", pharmacyName: null },
+      // Both at once: off the plan AND unvalidated. It waits for the approvers first, so it is counted nowhere yet.
+      { capturedAt: "2026-09-30T10:00:00.000Z", countsAsVisit: false, countsInKpi: false, customerValidated: false, customerId: "4", customerName: "Both", listType: "PM", pharmacyName: "Rushdy" },
     ]);
-    assert.deepEqual(held.counts, { am: 1, pharmacies: 1, pm: 0 }, "only the scored visit reaches a figure, pharmacies included");
-    assert.equal(held.awaitingValidation, 1, "and what is held back is REPORTED, never dropped — a 0 with no reason is the defect");
-    assert.equal(held.awaitingApproval, 1, "the two reasons stay apart: one is the list, the other is an approval");
-    assert.equal(held.pharmacies.length, 2, "every pharmacy is still LISTED — the feedback was really taken");
+    assert.deepEqual(held.counts, { am: 1, pharmacies: 2, pm: 1 }, "the scored visit and the one waiting for validation are counted, pharmacies included");
+    assert.equal(held.awaitingValidation, 1, "and the one waiting for validation is still SAID, beside the figure that counts it");
+    assert.equal(held.awaitingApproval, 2, "a visit still with the approvers is counted nowhere, whatever its customer");
+    assert.equal(held.pharmacies.length, 3, "every pharmacy is still LISTED — the feedback was really taken");
     assert.deepEqual(
       held.pharmacies.map((entry) => entry.counted),
-      [true, false],
+      [true, true, false],
       "and each one says whether it is inside the figure above it",
+    );
+    assert.deepEqual(
+      dayDetailCounts([{ capturedAt: "2026-09-30T08:00:00.000Z", countsInKpi: false, customerValidated: false, customerId: "2", customerName: "Older caller", listType: "PM" }]).counts,
+      { am: 0, pharmacies: 0, pm: 0 },
+      "a caller that says nothing of countsAsVisit is read on countsInKpi, never counted by default",
+    );
+    for (const halves of [
+      { isUnplanned: false, unplannedKind: null, unplannedStatus: null },
+      { isUnplanned: true, unplannedKind: "out_of_plan" as const, unplannedStatus: "approved" as const },
+    ]) {
+      assert.equal(visitCountsAsVisit({ ...halves, customerValidated: false }), true, "an unvalidated customer's visit counts as a visit");
+      assert.equal(visitCountsInKpi({ ...halves, customerValidated: false }), false, "and still in no KPI");
+    }
+    assert.equal(
+      visitCountsAsVisit({ customerValidated: false, isUnplanned: true, unplannedKind: "out_of_plan", unplannedStatus: "manager_pending" }),
+      false,
+      "an off-plan visit still waits for its approval",
+    );
+    assert.equal(
+      visitCountsAsVisit({ copiedFromOldSystem: true, customerValidated: false, isUnplanned: false, unplannedKind: null, unplannedStatus: null }),
+      false,
+      "and a copied one for the trigger's answer",
     );
     assert.deepEqual(
       day.pharmacies[0]?.fromCustomers,
@@ -459,9 +487,11 @@ export function runPhoenixCrmWave2ReportTests(): void {
     // 🔴 AND IT COUNTS FROM THE ROW'S OWN ANSWER, NEVER BY COUNTING ROWS. `countsInKpi` is
     //    `visitCountsInKpi`, the TypeScript twin of the countable view plus `customer_validated`.
     assert.match(service, /countsInKpi: visit\.countsInKpi/, "the service hands the row's own answer to the counter");
+    assert.match(service, /countsAsVisit: visit\.countsAsVisit/, "and the row's own answer to whether it is a visit, the headline's basis");
     assert.match(service, /customerValidated: visit\.customerValidated/, "and the reason it is held back, so the page can say so");
     const visits = stripComments(readFileSync("src/lib/phoenix-crm/server/visits.ts", "utf8"));
     assert.match(visits, /visitCountsInKpi\(\{/, "the row answers it once, through the one predicate");
+    assert.match(visits, /countsAsVisit: visitCountsAsVisit\(\{/, "and whether it is a visit through its one predicate too");
     assert.match(visits, /validated_at/, "which means the read has to ask for validated_at by name — a view would have answered it");
 
     // Leave is HR's table, and a Phoenix CRM service may not read it (tests/phoenix-crm-boundary).
