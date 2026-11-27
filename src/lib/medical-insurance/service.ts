@@ -3,14 +3,17 @@
 // rules, and writes what a person decided. Every write is audited, and none of them touches payroll or
 // `employees.medical_insurance_status`. Nothing here sends anything or pays anything. Payroll READS one thing
 // from here from the December 2026 payroll month on: each employee's monthly share
-// (getPayrollMedicalInsuranceCharges), owner, 2026-11-24.
+// (getPayrollMedicalInsuranceCharges), owner, 2026-11-24. The one write into `employees` is
+// syncEmployeeMasterFromMedicalInsurance (owner, 2026-11-27): the card number, and blank identity fields
+// (./master-sync.ts); never the card-received answer, never an amount.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
+import { assertPermission } from "@/lib/auth/permissions";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { todayInCairo } from "@/lib/date-only";
 import { hrIdForStorage } from "@/lib/hr-id";
-import { employeeExitDay, getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { employeeExitDay, getEmployeeDirectoryRows, invalidateEmployeeDirectoryCache, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { compareInvoiceToPlan, invoiceDatesProblem, MEDICAL_INSURANCE_INVOICE_KINDS, type InvoiceComparison, type MedicalInsuranceInvoiceKind } from "./compare";
@@ -47,6 +50,7 @@ import { buildCostLetter, CostLetterError, type CostLetter } from "./cost-letter
 import { cleanCostLetterCc, COST_LETTER_EMAIL_BATCH, sendCostLetterEmails, type CostLetterEmailOutcome } from "./cost-letter-email";
 import { buildMonthlySplit, payrollChargesForWindow, type PayrollMedicalInsuranceCharge } from "./monthly-split";
 import { libanoLineGaps, type LibanoMemberFileKind, type LibanoMemberLine } from "./workbooks";
+import { describeMasterSyncChange, planEmployeeMasterSync, type MasterSyncDifference, type MasterSyncEmployee, type MasterSyncUpdate } from "./master-sync";
 import type {
   MedicalInsuranceDocumentKind,
   MedicalInsuranceDocumentRow,
@@ -1492,4 +1496,102 @@ export async function prepareLibanoMemberFile(
     throw new MedicalInsuranceInputError(`Libano-Suisse's file needs a date of birth and sex for everyone. Fill them on the Employee Master, or untick: ${gaps.join(", ")}.`);
   }
   return { kind, policy: { endsOn: policy.endsOn, startsOn: policy.startsOn }, policyId: policy.id, rows };
+}
+
+// ── The register feeds the Employee Master what it is missing (owner, 27 Nov 2026) ──────────────────────
+
+export type EmployeeMasterSyncResult = {
+  policyNumber: string;
+  updated: MasterSyncUpdate[];
+  failed: Array<{ hrId: string; name: string; error: string }>;
+  differences: MasterSyncDifference[];
+};
+
+const MASTER_SYNC_EMPLOYEE_COLUMNS = "hr_id, full_name, nickname, national_id, birth_date, gender, mobile_number, medical_insurance_number";
+
+type MasterSyncEmployeeDbRow = {
+  hr_id: string;
+  full_name: string | null;
+  nickname: string | null;
+  national_id: string | null;
+  birth_date: string | null;
+  gender: string | null;
+  mobile_number: string | null;
+  medical_insurance_number: string | null;
+};
+
+/**
+ * Writes the register's card number, and the identity the Employee Master is blank on, into `employees`
+ * (the rule: ./master-sync.ts). Each person is one guarded update — every field is written only while it
+ * still holds the value the plan read, so something typed in between is never overwritten — named to the
+ * history log as the person running it, and audited. One person's refusal is reported and the rest go on.
+ */
+export async function syncEmployeeMasterFromMedicalInsurance(access: AccessContext): Promise<EmployeeMasterSyncResult> {
+  await assertPermission(access, "medical_insurance", "read");
+  await assertPermission(access, "employees", "update");
+  const policy = await requirePolicy(todayInCairo());
+  const admin = getSupabaseAdmin();
+
+  const memberRows = await loadMembers(policy.id);
+  const hrIds = [...new Set(memberRows.filter((row) => row.member_type === "employee" && row.hr_id).map((row) => row.hr_id!.trim()))];
+  const employeeRows: MasterSyncEmployeeDbRow[] = [];
+  for (let start = 0; start < hrIds.length; start += 200) {
+    const { data, error } = await admin.from("employees").select(MASTER_SYNC_EMPLOYEE_COLUMNS).in("hr_id", hrIds.slice(start, start + 200));
+    fail(error);
+    employeeRows.push(...((data ?? []) as MasterSyncEmployeeDbRow[]));
+  }
+
+  const employees: MasterSyncEmployee[] = employeeRows.map((row) => ({
+    birthDate: row.birth_date,
+    gender: row.gender,
+    hrId: row.hr_id,
+    medicalInsuranceNumber: row.medical_insurance_number,
+    mobileNumber: row.mobile_number,
+    name: (row.nickname ?? "").trim() || (row.full_name ?? "").trim() || row.hr_id,
+    nationalId: row.national_id,
+  }));
+  const plan = planEmployeeMasterSync({
+    employees,
+    members: memberRows.map((row) => ({
+      birthDate: row.birth_date,
+      certificateNumber: row.certificate_number,
+      coverageEnd: row.coverage_ends_on,
+      coverageStart: row.coverage_starts_on,
+      gender: row.gender,
+      hrId: row.hr_id,
+      memberType: row.member_type,
+      nationalId: row.national_id,
+      phone: row.phone,
+    })),
+  });
+
+  const updated: MasterSyncUpdate[] = [];
+  const failed: EmployeeMasterSyncResult["failed"] = [];
+  for (const update of plan.updates) {
+    const patch: Record<string, string> = { updated_at: new Date().toISOString() };
+    for (const change of update.changes) patch[change.field] = change.to;
+    let query = admin.from("employees").update(patch).eq("hr_id", update.hrId);
+    for (const change of update.changes) query = change.from === null ? query.is(change.field, null) : query.eq(change.field, change.from);
+    // A script has no request to carry the actor, so the person is named here (src/lib/supabase/request-actor.ts).
+    if (access.loginId) query = query.setHeader("x-phoenix-actor-login-id", access.loginId);
+    if (access.hrId) query = query.setHeader("x-phoenix-actor-hr-id", hrIdForStorage(access.hrId));
+    const { data, error } = await query.select("hr_id");
+    if (error) {
+      failed.push({ error: error.message, hrId: update.hrId, name: update.name });
+      continue;
+    }
+    if ((data ?? []).length !== 1) {
+      failed.push({ error: "the Employee Master changed since it was read; nothing written for this person", hrId: update.hrId, name: update.name });
+      continue;
+    }
+    await writeRequiredAuditLog({
+      actorLoginId: access.loginId ?? null,
+      entityId: update.hrId,
+      entityType: "employee",
+      summary: `Filled ${update.name}'s Employee Master from the medical insurance register (policy ${policy.policyNumber}): ${update.changes.map(describeMasterSyncChange).join("; ")}`,
+    });
+    updated.push(update);
+  }
+  if (updated.length > 0) invalidateEmployeeDirectoryCache();
+  return { differences: plan.differences, failed, policyNumber: policy.policyNumber, updated };
 }
