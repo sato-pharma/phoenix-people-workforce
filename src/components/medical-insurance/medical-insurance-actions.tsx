@@ -9,6 +9,7 @@ import { phxFieldClassName, phxFieldGridTwoClassName, phxLabelClassName, phxSele
 import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-detail";
 import { formatLeftDay } from "@/lib/employees/left-flag";
 import { MEDICAL_INSURANCE_CATEGORIES, type MedicalInsuranceCategory } from "@/lib/medical-insurance/cost";
+import { defaultDeletionDay, deletionDayProblem, earliestDeletionDay } from "@/lib/medical-insurance/deletion-day";
 import { additionCategory, type MedicalInsuranceAction, type MedicalInsuranceActionKind } from "@/lib/medical-insurance/eligibility";
 import { LIBANO_MOVEMENT_EMAIL_CC, LIBANO_MOVEMENT_EMAIL_TO, LIBANO_MOVEMENT_TEST_TO } from "@/lib/medical-insurance/libano-movement-recipients";
 import { DECLINED_REASON, employeeRecordWords, type MedicalInsuranceView } from "@/lib/medical-insurance/view";
@@ -60,12 +61,27 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
   const [confirming, setConfirming] = React.useState<SendRequest | null>(null);
   const [sending, setSending] = React.useState(false);
   const [sent, setSent] = React.useState<SendOutcome | null>(null);
+  // The deletion date typed beside each person to remove. It is the date the file carries, and the day End cover
+  // starts from (owner, 27 Nov 2026: "It must follow what I say"); untouched, it is as far back as Libano-Suisse accepts.
+  const [deletionDays, setDeletionDays] = React.useState<Readonly<Record<string, string>>>({});
   const visible = view.actions.filter((action) => filter === "all" || action.kind === filter);
+
+  function deletionWindow(action: MedicalInsuranceAction) {
+    const coverStart = view.members.find((member) => member.id === action.memberId)?.coverageStart ?? action.effectiveOn;
+    return { coverStart, sendingDay: view.asOf };
+  }
+  function deletionDayOf(action: MedicalInsuranceAction): string {
+    return deletionDays[action.key] ?? defaultDeletionDay(action, deletionWindow(action));
+  }
+  function deletionProblemOf(action: MedicalInsuranceAction): string | null {
+    return deletionDayProblem(deletionDayOf(action), { ...deletionWindow(action), formatDay: formatLeftDay, name: action.name, policyEndsOn: view.policy.endsOn });
+  }
 
   // Only people still on today's list count as ticked; someone who dropped off since the page loaded does not.
   const tickedAdds = view.actions.filter((action) => action.kind === "add" && ticked.has(action.key));
   const tickedRemoves = view.actions.filter((action) => action.kind === "remove" && ticked.has(action.key));
   const addsWithoutCategory = tickedAdds.filter((action) => !additionCategory(action));
+  const removeProblems = tickedRemoves.map(deletionProblemOf).filter((problem): problem is string => Boolean(problem));
   const addCount = view.actions.filter((action) => action.kind === "add").length;
   const removeCount = view.actions.filter((action) => action.kind === "remove").length;
 
@@ -91,6 +107,12 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
     setTicked((current) => new Set([...current].filter((key) => !keys.has(key))));
   }
 
+  /** The deletion date of each ticked person, exactly as the screen shows it; an additions file carries none. */
+  function daysOf(kind: MovementKind, chosen: readonly MedicalInsuranceAction[]): { days?: Record<string, string> } {
+    if (kind !== "deletions") return {};
+    return { days: Object.fromEntries(chosen.map((action) => [action.key, deletionDayOf(action)])) };
+  }
+
   async function exportFile(kind: "additions" | "deletions") {
     const chosen = kind === "additions" ? tickedAdds : tickedRemoves;
     setBusy(kind);
@@ -98,7 +120,7 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
     try {
       await downloadPosted(
         MEMBER_FILE_URL,
-        { keys: chosen.map((action) => action.key), kind },
+        { ...daysOf(kind, chosen), keys: chosen.map((action) => action.key), kind },
         `Libano-Suisse-members-${kind}.xlsx`,
       );
     } catch (caught) {
@@ -120,7 +142,7 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
     setError(null);
     setSent(null);
     try {
-      const { outcome } = await postJsonAnswer<{ outcome: SendOutcome }>(MEMBER_FILE_SEND_URL, { keys: chosen.map((action) => action.key), kind: request.kind, test: request.test });
+      const { outcome } = await postJsonAnswer<{ outcome: SendOutcome }>(MEMBER_FILE_SEND_URL, { ...daysOf(request.kind, chosen), keys: chosen.map((action) => action.key), kind: request.kind, test: request.test });
       setSent(outcome);
       setConfirming(null);
     } catch (caught) {
@@ -140,6 +162,32 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
         onChange={() => toggle(action.key)}
         type="checkbox"
       />
+    );
+  }
+
+  function renderDeletionDay(action: MedicalInsuranceAction) {
+    if (!canExport || action.kind !== "remove") return null;
+    const problem = deletionProblemOf(action);
+    const earliest = earliestDeletionDay(deletionWindow(action));
+    return (
+      <label className="mt-2 block max-w-[12rem]">
+        <span className={phxLabelClassName}>Deletion date</span>
+        <input
+          aria-label={`Deletion date for ${action.name}`}
+          className={phxFieldClassName}
+          max={view.policy.endsOn}
+          min={earliest}
+          onChange={(event) => {
+            const value = event.target.value;
+            setDeletionDays((current) => ({ ...current, [action.key]: value }));
+          }}
+          type="date"
+          value={deletionDayOf(action)}
+        />
+        <span className={cn("mt-1 block break-words text-phx-xs font-semibold", problem ? "text-phx-warn" : "text-phx-ink-faint")}>
+          {problem ?? `Earliest Libano-Suisse accepts: ${formatLeftDay(earliest)}`}
+        </span>
+      </label>
     );
   }
 
@@ -208,11 +256,12 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
         {canExport && (addCount > 0 || removeCount > 0) ? (
           <div className="grid gap-3 border-b border-phx-line p-4 md:grid-cols-2">
             <EdiPanel
+              blocked={removeProblems.length > 0 ? removeProblems.join(" ") : null}
               busy={busy === "deletions"}
               count={tickedRemoves.length}
               disabled={busy !== null || sending}
               listCount={removeCount}
-              note="An employee's spouse and children on the policy are listed with them, one row each, as the insurer's sheet has a row per person."
+              note="Each person goes with the deletion date beside them, as far back as Libano-Suisse accepts unless you change it. An employee's spouse and children on the policy are listed with them, on the same date, one row each."
               onClear={() => clearKind("remove")}
               onExport={() => void exportFile("deletions")}
               onSend={(test) => askToSend({ kind: "deletions", test })}
@@ -236,6 +285,7 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
               <SendConfirm
                 busy={sending}
                 count={confirming.kind === "additions" ? tickedAdds.length : tickedRemoves.length}
+                dates={confirming.kind === "deletions" ? tickedRemoves.map((action) => `${action.name}, ${formatLeftDay(deletionDayOf(action))}`) : []}
                 onCancel={() => setConfirming(null)}
                 onSend={() => void sendFile(confirming)}
                 request={confirming}
@@ -299,12 +349,15 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
                           <p className="mt-0.5 break-words text-phx-xs font-semibold text-phx-ink-soft">{action.reason}</p>
                           {renderCategory(action)}
                         </td>
-                        <td className={cellClassName}><span className="break-words text-phx-xs font-bold text-phx-ink">{timingWords(action)}</span></td>
+                        <td className={cellClassName}>
+                          <span className="break-words text-phx-xs font-bold text-phx-ink">{timingWords(action)}</span>
+                          {renderDeletionDay(action)}
+                        </td>
                         <td className={cellClassName}>{renderOpenButton(action)}</td>
                       </tr>
                       {openKey === action.key ? (
                         <TableRowDetail colSpan={canExport ? 5 : 4} id={`medical-insurance-${action.key}`}>
-                          <ActionForm action={action} key={action.key} onDone={() => setOpenKey(null)} />
+                          <ActionForm action={action} endDay={action.kind === "remove" ? deletionDayOf(action) : undefined} key={action.key} onDone={() => setOpenKey(null)} />
                         </TableRowDetail>
                       ) : null}
                     </React.Fragment>
@@ -323,8 +376,9 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
                   <p className={cn("break-words text-phx-xs font-black", KIND_TONE[action.kind])}>{KIND_WORDS[action.kind]}: {timingWords(action)}</p>
                   <p className="break-words text-phx-xs font-semibold text-phx-ink-soft">{action.reason}</p>
                   {renderCategory(action)}
+                  {renderDeletionDay(action)}
                   {renderOpenButton(action)}
-                  {openKey === action.key ? <ActionForm action={action} onDone={() => setOpenKey(null)} /> : null}
+                  {openKey === action.key ? <ActionForm action={action} endDay={action.kind === "remove" ? deletionDayOf(action) : undefined} onDone={() => setOpenKey(null)} /> : null}
                 </div>
               ))}
             </div>
@@ -410,7 +464,7 @@ function EdiPanel(props: {
 }
 
 /** The last look before a real email leaves: who receives it, the subject, and how many people. */
-function SendConfirm(props: { busy: boolean; count: number; onCancel: () => void; onSend: () => void; request: SendRequest }) {
+function SendConfirm(props: { busy: boolean; count: number; dates: readonly string[]; onCancel: () => void; onSend: () => void; request: SendRequest }) {
   const { kind, test } = props.request;
   const words = kind === "additions" ? "Additions" : "Deletions";
   const to = test ? LIBANO_MOVEMENT_TEST_TO : LIBANO_MOVEMENT_EMAIL_TO;
@@ -429,6 +483,12 @@ function SendConfirm(props: { busy: boolean; count: number; onCancel: () => void
         <dd className="break-words">{cc.length > 0 ? cc.join(", ") : "Nobody"}</dd>
         <dt className="font-black text-phx-ink">Subject</dt>
         <dd className="break-words">{movementSubject(props.request)}</dd>
+        {props.dates.length > 0 ? (
+          <>
+            <dt className="font-black text-phx-ink">Deletion date</dt>
+            <dd className="break-words" dir="auto">{props.dates.join("; ")}</dd>
+          </>
+        ) : null}
         <dt className="font-black text-phx-ink">Attached</dt>
         <dd className="break-words">The {words} sheet, the same file Export builds</dd>
       </dl>
@@ -450,11 +510,12 @@ function SendConfirm(props: { busy: boolean; count: number; onCancel: () => void
   );
 }
 
-function ActionForm({ action, onDone }: { action: MedicalInsuranceAction; onDone: () => void }) {
+/** `endDay` is the row's deletion date, so End cover ends on the day the file went with unless it is changed here. */
+function ActionForm({ action, endDay, onDone }: { action: MedicalInsuranceAction; endDay?: string; onDone: () => void }) {
   const { busy, error, save } = useSave();
   const [category, setCategory] = React.useState<MedicalInsuranceCategory | "">(action.decidedCategory ?? action.suggestedCategory ?? "");
   const [certificate, setCertificate] = React.useState("");
-  const [day, setDay] = React.useState(action.effectiveOn);
+  const [day, setDay] = React.useState(endDay ?? action.effectiveOn);
   const [reason, setReason] = React.useState(action.kind === "add" ? DECLINED_REASON : action.reason);
   const adding = action.kind === "add";
 
