@@ -76,10 +76,6 @@ function letterAssetBase(): string {
   return /^https?:\/\//i.test(configured) ? configured : `https://${configured}`;
 }
 
-function cairoDate(iso: string, options: Intl.DateTimeFormatOptions): string {
-  return new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Cairo", ...options }).format(new Date(iso));
-}
-
 /** "30 Nov 2026" for a plain calendar day ("2026-11-30"), read as that day and never shifted by a time zone. */
 function plainDay(day: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(day);
@@ -90,8 +86,8 @@ function plainDay(day: string): string {
 }
 
 /**
- * The letter itself, in the signed Beyond authorisation's gold identity (./libano-movement-letter.ts): the
- * kicker, the two-weight title, the facts, the figures, the people, and the HR Manager's sign-off block.
+ * The email itself (./libano-movement-letter.ts): a plain email that opens at "Dear Libano-Suisse team,", lists the
+ * people under a gold-ruled header, and signs off with the HR Manager's gold signature block.
  */
 export function buildLibanoMovementEmail(input: {
   atIso: string;
@@ -110,7 +106,6 @@ export function buildLibanoMovementEmail(input: {
   const what = additions ? `add ${people} to` : `delete ${people} from`;
   const sheet = additions ? "Additions" : "Deletions";
   const dayWord = additions ? "Cover starts" : "Last covered day";
-  const longDate = cairoDate(input.atIso, { day: "numeric", month: "long", year: "numeric" });
   const automatedNote = `This is an automated email from Phoenix Workforce, Sato Pharma's HR system, sent on behalf of ${LIBANO_EMAIL_SENDER_NAME}, HR Manager. Replies go straight to the HR Manager.`;
   const signer = { line: "Sato Pharma · Human Resources", name: "Omar Anwar Gawish", replyTo: LIBANO_EMAIL_OWNER_COPY, title: "HR Manager, Human Resources" };
 
@@ -127,21 +122,20 @@ export function buildLibanoMovementEmail(input: {
 
   const textLines = [
     ...(input.test ? ["TEST SEND. This went to you alone, not to Libano-Suisse. Open the attached file and check it first.", ""] : []),
-    `Medical insurance ${sheet.toLowerCase()}`,
-    `${longDate} · ${people} · ${input.policyNumber ? `Policy ${input.policyNumber}` : "Group medical policy"}`,
-    "",
     "Dear Libano-Suisse team,",
     "",
-    `Please ${what} Sato Pharma's ${policyWords}. They are on the attached ${sheet} sheet, ${input.fileName}, on your own workbook:`,
+    `Please ${what} Sato Pharma's ${policyWords} with ${LIBANO_INSURER_NAME}. They are on the attached ${sheet} sheet, ${input.fileName}, on your own workbook:`,
     "",
     ...input.rows.map((row) => `- ${row.fullName} (${MEMBER_TYPE_WORDS[row.memberType]}${additions ? `, plan ${row.category}` : ""}), ${dayWord.toLowerCase()} ${plainDay(row.day)}`),
     "",
     "Please reply to confirm once it is done.",
     "",
-    "For Sato Pharma",
+    "Kind regards,",
+    "",
     signer.name,
     signer.title,
-    `Replies: ${signer.replyTo}`,
+    signer.line,
+    signer.replyTo,
     "",
     automatedNote,
   ];
@@ -150,31 +144,16 @@ export function buildLibanoMovementEmail(input: {
     assetBaseUrl: letterAssetBase(),
     automatedNote,
     closing: "Please reply to confirm once it is done.",
-    facts: [
-      { label: "Issued by", value: "Human Resources, Sato Pharma" },
-      { label: "To", value: `${LIBANO_INSURER_NAME}, policy administration` },
-      { label: "Date", value: longDate },
-    ],
-    figures: [
-      { label: "Date", note: cairoDate(input.atIso, { month: "short", year: "numeric" }), value: cairoDate(input.atIso, { day: "2-digit" }) },
-      { label: "People", value: String(count) },
-      { label: "Policy number", strong: true, value: input.policyNumber ?? "Group policy" },
-    ],
-    kicker: "Medical and life insurance",
-    law: `${sheet} to Sato Pharma's group medical policy with ${LIBANO_INSURER_NAME}`,
     paragraphsHtml: [
-      `Please ${escapeHtml(what)} Sato Pharma's ${escapeHtml(policyWords)}. They are on the attached ${sheet} sheet, <b>${escapeHtml(input.fileName)}</b>, on your own workbook.`,
+      `Please ${escapeHtml(what)} Sato Pharma's ${escapeHtml(policyWords)} with ${LIBANO_INSURER_NAME}. They are on the attached ${sheet} sheet, <b>${escapeHtml(input.fileName)}</b>, on your own workbook:`,
     ],
-    placeLine: `Head Office · Cairo · ${cairoDate(input.atIso, { month: "long", year: "numeric" })}`,
-    purpose: `The people below are on the attached sheet, one row each, in ${LIBANO_INSURER_NAME}'s own layout.`,
     salutation: "Dear Libano-Suisse team,",
     signer,
     subject,
     table: { head: ["Name", "Member", ...(additions ? ["Plan"] : []), dayWord], rows },
     testNoticeHtml,
     text: textLines.join("\n"),
-    titleBold: additions ? "additions" : "deletions",
-    titleLight: "Medical insurance",
+    valediction: "Kind regards,",
   });
   return { html: rendered.html, subject, text: rendered.text };
 }

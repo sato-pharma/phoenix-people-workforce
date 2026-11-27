@@ -932,12 +932,15 @@ function testTheLibanoEmailGoesToTheInsurerAndTheTestToTheOwnerAlone() {
   assert.match(real.input.text, /automated email from Phoenix Workforce/, "the plain-text copy says it too");
   assert.match(real.input.html, /Ahmed &lt;Ali&gt;/, "a name is escaped, never written into the email as markup");
   assert.ok(!real.input.html.includes("Ahmed <Ali>"), "the raw name never reaches the html");
-  // The signed Beyond authorisation's gold identity (owner, 27 Nov 2026): the gold layer, the microtext frame,
-  // the two-weight title, the HR Manager's sign-off block, the document code, and nothing an email client drops.
-  assert.ok(real.input.html.includes("#A8843F") && real.input.html.includes("#C9A45C"), "the letter wears the gold layer");
-  assert.ok(real.input.html.includes("SATO PHARMA L.L.C. &middot; HUMAN RESOURCES"), "the microtext frame");
-  assert.match(real.input.html, /Medical insurance <b[^>]*>deletions<\/b>/, "the two-weight title");
-  assert.ok(real.input.html.includes("Name and title") && real.input.html.includes("Omar Anwar Gawish") && real.input.html.includes("HR Manager, Human Resources"), "the sign-off block");
+  // An EMAIL, not a letter (owner, 27 Nov 2026: "It very looks like a PDF. I wanted email … remove the part above
+  // the Dear Libano-Suisse"): it opens at the greeting, and the signed Beyond letter's gold lives only in the
+  // people table's rules and the HR Manager's signature block.
+  assert.ok(real.input.html.includes("#A8843F") && real.input.html.includes("#C9A45C"), "the email wears the gold layer");
+  const beforeGreeting = real.input.html.slice(real.input.html.indexOf("<body"), real.input.html.indexOf("Dear Libano-Suisse team,</p>"));
+  assert.ok(beforeGreeting.length > 0, "the visible greeting is found (the hidden preview line also opens with it)");
+  assert.ok(!/<img|Human Resources|Medical insurance|Issued by|Policy number|HEAD OFFICE/.test(beforeGreeting.replace(/<div style="display:none[\s\S]*?<\/div>/, "")), "nothing stands above the greeting: no masthead, title, facts or figures");
+  assert.match(real.input.text, /^Dear Libano-Suisse team,/, "the plain text opens at the greeting too");
+  assert.ok(real.input.html.includes("Kind regards,") && real.input.html.includes("Omar Anwar Gawish") && real.input.html.includes("HR Manager, Human Resources"), "the signature block");
   assert.ok(real.input.html.includes("SATO-DIS-2026-01 v1.0"), "the document code in the running foot");
   assert.match(real.input.html, /\/brand\/sato-pharma-logo-on-light\.png/);
   assert.ok(!/border-radius|linear-gradient|box-shadow|<svg|@font-face/i.test(real.input.html), "square, flat, and nothing Outlook drops");
@@ -959,7 +962,7 @@ function testTheLibanoEmailGoesToTheInsurerAndTheTestToTheOwnerAlone() {
   assert.match(test.input.html, /TEST SEND/);
   assert.match(test.input.text, /TEST SEND/);
   const additions = planLibanoMovementEmail({ ...base, kind: "additions" });
-  assert.match(additions.input.html, /Medical insurance <b[^>]*>additions<\/b>/);
+  assert.match(additions.input.html, /Please add 2 people to/);
   assert.ok(additions.input.html.includes("Cover starts") && additions.input.html.includes(">Plan<"), "an addition names the plan and the day cover starts");
   assert.deepEqual([...Buffer.from(test.input.attachments[0]!.content, "base64")], [...workbook], "a test carries the same file");
   assert.notEqual(test.dedupeKey, real.dedupeKey, "a test never stands in for the real send");
