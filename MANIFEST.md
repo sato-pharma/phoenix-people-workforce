@@ -71,7 +71,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/hw-rep-tablet-location-watch.mjs` | 4557 | `9e4ba6a595ad8897` |
 | `scripts/import-account-sessions.mjs` | 18732 | `35af339a45b20e95` |
 | `scripts/install-ram-cleaner-elevated.ps1` | 3769 | `e59bf00883fc47fd` |
-| `scripts/mem-watchdog.ps1` | 170018 | `55293b4b160afecd` |
+| `scripts/mem-watchdog.ps1` | 170302 | `c15f70c06a460207` |
 | `scripts/memory-fold-run.mjs` | 7031 | `66984146a7f0247f` |
 | `scripts/mesh-failover/mesh-dns-reconciler.mjs` | 10966 | `aa80b2720aa450d4` |
 | `scripts/phoenix-dev-speed.ps1` | 6500 | `65f4b74bb9051427` |

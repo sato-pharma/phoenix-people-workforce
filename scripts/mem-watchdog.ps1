@@ -1763,10 +1763,12 @@ if ($env:PHX_ONEDRIVE_LIVETEST) {
 # has not been the foreground window for $WaIdleMin minutes - so it never closes under his hands. Foreground is
 # sampled on every 3-second poll; a window first seen by this watchdog counts as used at that moment.
 #
-# OFF SWITCH: PHX_WHATSAPP_LOWRAM=0.
+# 🔴 OFF BY DEFAULT SINCE 2026-11-27 ~23:10 Cairo — owner's pick "Stop the watchdog closing it": the laptop missed
+# his WhatsApp messages because free RAM sits near 2.6 GB, so this rule shut the window soon after every open.
+# ON SWITCH: PHX_WHATSAPP_LOWRAM=1 (only on his word). Before: on unless PHX_WHATSAPP_LOWRAM=0.
 # PROVE IT:   PHX_WHATSAPP_SELFTEST=1 asserts the title matcher and the decision offline (table-driven) and exits.
 #             PHX_WHATSAPP_LIVETEST=1 lists the real Edge windows, which ones match, and what it would do; closes nothing.
-$WaEnabled         = -not ($env:PHX_WHATSAPP_LOWRAM -eq '0')
+$WaEnabled         = ($env:PHX_WHATSAPP_LOWRAM -eq '1')
 $WaEverySec        = 15
 $WaCloseBelowMB    = 2600
 $WaLowChecksNeeded = 2
