@@ -899,6 +899,12 @@ there stands in `main-secrets` and posts it. A dispatch carrying `relay_text` ne
 hand-off cannot loop. The self-test takes both hops, so a green self-test proves the hand-off too. A failed
 hand-off is an `::error::` on the first run's page. Pinned by clause 8 of `tests/deploy-failure-alert.test.ts`.
 
+🔴 **Both Railway environments accept deployments from `main` only** (27 Nov 2026, the owner's request; PEH-010 in
+`sato-pharma/phoenix-engineering-hub`). `Phoenix-HR-Workforce / production` and `/ staging` each carry a custom
+branch rule, `main`, with no reviewers and no wait timer. Railway's own rows still land, because GitHub checks the
+rule only for an Actions job that names the environment: PRs 835, 837 and 829 deployed `success` on both under it.
+The before and after settings, and `restore.sh`, are in the hub's `tasks/PEH-010/`.
+
 ## The urgent route — "live in five minutes"
 
 Built 2026-10-18 at the owner's instruction: *"an extra route that you don't ever use except with a
