@@ -225,6 +225,10 @@ export async function runHiringPackBankAccountLetterTests() {
   assert.ok((await withIds.file("[Content_Types].xml")!.async("string")).includes('Extension="jpeg"'), "Word is told what a .jpeg is");
   const footer = await withIds.file("word/footer1.xml")!.async("string");
   assert.ok(footer.includes("SECTIONPAGES") && !footer.includes("NUMPAGES"), "the letter counts its own pages, never the ID pages after it");
+  assert.ok(
+    !(await withIds.file("word/settings.xml")!.async("string")).includes("updateFields"),
+    "Word opens the letter without asking to update fields that may refer to other files",
+  );
   assert.ok(!document.includes("<w:pageBreakBefore/>") && !files.includes("word/header2.xml"), "with no ID pages the letter is as it was");
 
   // ── 6. the route: its gate, and the audit row before the file ─────────────────────────────────
