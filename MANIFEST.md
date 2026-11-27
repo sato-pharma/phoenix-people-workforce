@@ -131,6 +131,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/spare-laptop-ssh-setup.ps1` | 3560 | `c701f0d120aa2857` |
 | `scripts/spare-netfix.sh` | 8000 | `1d73232b0b621c8c` |
 | `scripts/spare-page-check.sh` | 8045 | `46b17757436257b9` |
+| `scripts/spare-power-key.sh` | 916 | `4a690712d99f6f47` |
 | `scripts/spare-preview-run.sh` | 2852 | `6d66f0bd668c5ad2` |
 | `scripts/spare-preview-setup.sh` | 2795 | `45fca270fca8ebb7` |
 | `scripts/spare-preview.ps1` | 14685 | `a0ed80bb98512257` |
