@@ -5,7 +5,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 
 | file | bytes | sha256 |
 | --- | --- | --- |
-| `CLAUDE.md` | 16327 | `07792f626818b5c3` |
+| `CLAUDE.md` | 16419 | `b42f78dfdaef6a08` |
 | `docs/standing-rules-account.md` | 22427 | `cfb128ad8322e052` |
 | `hooks/cloud-first-router.mjs` | 5388 | `38817a5603e0abe6` |
 | `hooks/compact-summary-log.mjs` | 4793 | `3a0a55fdeba8da84` |
@@ -128,14 +128,14 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/spare-e2e-run.sh` | 5323 | `d0a3a315303eec54` |
 | `scripts/spare-e2e.ps1` | 4575 | `b4152c82b18c9da6` |
 | `scripts/spare-five-minute-log.sh` | 2175 | `526fd96756372ca5` |
-| `scripts/spare-follow-production.ps1` | 10184 | `78baabf1cf904135` |
+| `scripts/spare-follow-production.ps1` | 10282 | `bf796a8e957ed2a9` |
 | `scripts/spare-laptop-ssh-setup.ps1` | 3560 | `c701f0d120aa2857` |
 | `scripts/spare-netfix.sh` | 8000 | `1d73232b0b621c8c` |
 | `scripts/spare-page-check.sh` | 8045 | `46b17757436257b9` |
 | `scripts/spare-power-key.sh` | 916 | `4a690712d99f6f47` |
-| `scripts/spare-preview-run.sh` | 2852 | `6d66f0bd668c5ad2` |
+| `scripts/spare-preview-run.sh` | 2873 | `388a178984a32517` |
 | `scripts/spare-preview-setup.sh` | 2795 | `45fca270fca8ebb7` |
-| `scripts/spare-preview.ps1` | 14685 | `a0ed80bb98512257` |
+| `scripts/spare-preview.ps1` | 15734 | `02b7e2064cf78101` |
 | `scripts/spare-rebuild.ps1` | 16316 | `5b795fcfadebcab4` |
 | `scripts/spare-role-check.sh` | 7234 | `9bea84102225c1f4` |
 | `scripts/spare-shots.mjs` | 3122 | `42a38285765b8e88` |

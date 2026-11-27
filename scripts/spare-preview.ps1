@@ -21,6 +21,11 @@
   🔴 ONLY ON THE OWNER'S OWN WORD ("preview 649"). localhost:3000 stays the live version (the golden rule holds all the
   time); the pull request is only ever on localhost:3001.
 
+  🔴 PREVIEW REPLACES LIVE since 2026-11-27 (owner: "Preview replaces live", after "I need a real heavy corrective
+  action"): two dev servers (~6.5 GB) did not fit the 7.6 GB, so while a preview runs the live server on 3000 is STOPPED;
+  the unit's ExecStopPost starts it again when the preview ends. The follow task and the 04:00 restart skip it meanwhile.
+  To compare with the live version, open production itself. The paragraph below is the 2026-11-23 side-by-side design.
+
   HOW: two dev servers fit the spare's 7.6 GB with its 3.7 GB of compressed memory (zram) when the preview's heap is 3 GB
   and it keeps 4 pages. On the spare:
     - systemd unit phoenix-preview, port 3001, beside phoenix-dev on 3000; it ends by its time limit, `stop` or a crash.
@@ -47,13 +52,14 @@ function Spare([string]$cmd) { & "$PSScriptRoot\spare.ps1" -Command $cmd -Connec
 function Cairo([long]$epoch) { [TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTimeOffset]::FromUnixTimeSeconds($epoch), 'Egypt Standard Time').ToString('HH:mm') }
 
 function Show-Status {
-  $s = @(Spare 'if systemctl is-active -q phoenix-preview; then echo "STATE preview"; sudo cat /home/phxpreview/preview-info; elif systemctl is-active -q phoenix-dev; then echo "STATE live"; else echo "STATE down"; fi')
+  $s = @(Spare 'if systemctl is-active -q phoenix-preview; then echo "STATE preview"; echo "LIVE $(systemctl is-active phoenix-dev)"; sudo cat /home/phxpreview/preview-info; elif systemctl is-active -q phoenix-dev; then echo "STATE live"; else echo "STATE down"; fi')
   $state = "$($s | Where-Object { "$_" -like 'STATE *' } | Select-Object -First 1)"
   if ($state -eq 'STATE preview') {
     $info = "$($s | Where-Object { "$_" -like 'PR *' } | Select-Object -First 1)" -split ' '
     $title = "$($s | Where-Object { "$_" -like 'TITLE *' } | Select-Object -First 1)".Substring(6)
     $kind = if ($info[1] -eq 'commit') { 'AN EARLIER VERSION' } else { "PULL REQUEST $($info[1])" }
-    Write-Output ("localhost:3001 is showing {0} ({1}), commit {2}, until {3} Cairo; localhost:3000 is the live version." -f $kind, $title, $info[2].Substring(0, 9), (Cairo ([long]$info[3])))
+    $liveNow = if ("$s" -match 'LIVE active') { 'localhost:3000 is the live version (running beside it)' } else { 'localhost:3000 (live) is paused until it ends - preview replaces live since 2026-11-27' }
+    Write-Output ("localhost:3001 is showing {0} ({1}), commit {2}, until {3} Cairo; {4}." -f $kind, $title, $info[2].Substring(0, 9), (Cairo ([long]$info[3])), $liveNow)
   } elseif ($state -eq 'STATE live') { Write-Output 'localhost:3000 is showing the LIVE version (production''s code). No preview is running on localhost:3001.' }
   else { Write-Output 'Neither the live dev server nor a preview is running on the spare (it may be starting).' }
 }
@@ -61,7 +67,7 @@ function Show-Status {
 if ($Pr -eq 'status') { Show-Status; exit 0 }
 if ($Pr -eq 'stop') {
   $o = @(Spare 'if systemctl is-active -q phoenix-preview; then sudo systemctl stop phoenix-preview; echo STOPPED; else echo NONE; fi')
-  if ("$o" -match 'STOPPED') { Log 'preview stopped; localhost:3001 is closed and localhost:3000 stays the live version' } else { Write-Output 'No preview was running; localhost:3000 is the live version.' }
+  if ("$o" -match 'STOPPED') { Log 'preview stopped; localhost:3001 is closed and the live version on localhost:3000 is starting again (ready in about 2 minutes)' } else { Write-Output 'No preview was running; localhost:3000 is the live version.' }
   exit 0
 }
 $mode = if ($Pr -match '^\d{1,6}$') { 'pr' } elseif ($Pr -eq 'previous' -or $Pr -match '^[0-9a-f]{7,40}$') { 'commit' } else { throw "Give a pull request number, 'previous', a commit, 'status' or 'stop' (got '$Pr')." }
@@ -146,12 +152,15 @@ printf '[Service]\nRuntimeMaxSec=%s\n' "$SECS" | sudo tee /run/systemd/system/ph
 sudo systemctl daemon-reload
 sudo rm -f /run/phoenix-preview-switching
 sudo systemctl reset-failed phoenix-preview 2>/dev/null
-sudo systemctl start phoenix-preview && echo PREVIEW-STARTED
+# PREVIEW REPLACES LIVE (owner, 2026-11-27: "Preview replaces live"): two dev servers do not fit 7.6 GB, so the live one
+# pauses while a preview runs. The unit's ExecStopPost starts phoenix-dev again when the preview ends, however it ends.
+sudo systemctl stop phoenix-dev
+sudo systemctl start phoenix-preview && echo PREVIEW-STARTED || back_to_live
 '@
 $remote = $remote.Replace('__BASE__', $base).Replace('__SHA__', $sha).Replace('__PR__', $label).Replace('__SECS__', "$secs").Replace('__ENDS__', "$ends").Replace('__TITLE__', $titleB64)
 $out = @(Spare $remote)
 if ("$out" -notmatch 'PREVIEW-STARTED') { Log "preview of $what did NOT start: $(($out | Where-Object { $_ }) -join ' | ')"; exit 1 }
-Log ("preview of {0} ({1}) starting, commit {2}; localhost:3001 until {3} Cairo, the live version stays on localhost:3000" -f $what, $title, $sha.Substring(0, 9), (Cairo $ends))
+Log ("preview of {0} ({1}) starting, commit {2}; localhost:3001 until {3} Cairo; localhost:3000 (live) is paused until it ends" -f $what, $title, $sha.Substring(0, 9), (Cairo $ends))
 if ($behind -gt 0) { Write-Output "note: this pull request's branch is $behind commit(s) behind the live version, so the preview lacks those newer changes." }
 $mig = @($files | Where-Object { $_.path -like 'supabase/migrations/*' })
 if ($mig.Count -and $mode -eq 'pr') { Write-Output "note: it carries $($mig.Count) database migration(s); a page that needs one not yet applied to production will error in the preview." }

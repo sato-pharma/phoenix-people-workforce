@@ -52,7 +52,7 @@ if (Test-Path -LiteralPath $runSrc) {
 
 # THE DEV SERVER IS STARTED WHEN IT IS NOT RUNNING (2026-11-13), never while an install is running or the packages are incomplete,
 # (a pull request preview runs BESIDE it on localhost:3001 since 2026-11-23, so it never holds the live server back).
-$srv = @(Spare 'cd ~/phoenix/phoenix-workforce; if systemctl is-active -q phoenix-dev; then echo "SRV up"; elif pgrep -f "pnpm.*install" >/dev/null; then echo "SRV installing"; elif [ ! -e node_modules/.bin/next ]; then echo "SRV no-packages"; else sudo systemctl start phoenix-dev; echo "SRV started"; fi')
+$srv = @(Spare 'cd ~/phoenix/phoenix-workforce; if systemctl is-active -q phoenix-dev; then echo "SRV up"; elif systemctl is-active -q phoenix-preview; then echo "SRV preview"; elif pgrep -f "pnpm.*install" >/dev/null; then echo "SRV installing"; elif [ ! -e node_modules/.bin/next ]; then echo "SRV no-packages"; else sudo systemctl start phoenix-dev; echo "SRV started"; fi')
 if ("$srv" -match 'SRV started') { Log 'dev server was not running on the spare (a restart or a power cut) - started it' }
 
 if ($Target -eq 'production') {
@@ -117,7 +117,7 @@ if [ -n "`$lock_changed" ] || [ `$broken = 1 ]; then
     echo "install try `$try failed (exit `$code): `$(tail -n 3 ~/phoenix/last-install.log | tr '\n' '/')"
     [ `$try = 1 ] && sleep 60
   done
-  sudo systemctl start phoenix-dev   # a pull request preview runs BESIDE it on 3001 since 2026-11-23, so the live one always comes back
+  systemctl is-active -q phoenix-preview || sudo systemctl start phoenix-dev   # preview REPLACES live since 2026-11-27; the preview's ExecStopPost brings live back
   if [ `$ok = 1 ]; then echo 'packages reinstalled and verified complete, dev server restarted'; else echo 'INSTALL FAILED - packages are incomplete and the dev server will not start; output in ~/phoenix/last-install.log; the next run retries'; fi
 fi
 echo "now at `$(git log -1 --format='%h %s')"
