@@ -11,6 +11,7 @@ import { systemIdentity } from "@/config/system-settings";
 import { DOM_TRANSLATE_GUARD_BOOT_SCRIPT } from "@/lib/error-monitor/dom-translate-guard";
 import { CSP_NONCE_HEADER } from "@/lib/security/content-security-policy";
 import { CSP_NONCE_CAPTURE_BOOT_SCRIPT } from "@/lib/security/csp-nonce";
+import { inlineScriptLiteral } from "@/lib/security/inline-script-literal";
 import {
   DEFAULT_DISPLAY_SCALE,
   DISPLAY_SCALE_CSS_VAR,
@@ -56,15 +57,15 @@ const SCRIPT_FONT_CSS = `
  * this runs above every error boundary React has. The failure mode of getting this wrong is a blank
  * page, so the worst case is deliberately "render at the default scale".
  */
-const DISPLAY_SCALE_BOOT_SCRIPT = `(function(){try{var a=${JSON.stringify(
+const DISPLAY_SCALE_BOOT_SCRIPT = `(function(){try{var a=${inlineScriptLiteral(
   DISPLAY_SCALE_OPTIONS,
-)};var v=parseFloat(window.localStorage.getItem(${JSON.stringify(
+)};var v=parseFloat(window.localStorage.getItem(${inlineScriptLiteral(
   DISPLAY_SCALE_STORAGE_KEY,
-)}));var s=a.indexOf(v)>=0?v:${DEFAULT_DISPLAY_SCALE};document.documentElement.style.setProperty(${JSON.stringify(
+)}));var s=a.indexOf(v)>=0?v:${DEFAULT_DISPLAY_SCALE};document.documentElement.style.setProperty(${inlineScriptLiteral(
   DISPLAY_SCALE_CSS_VAR,
-)},String(s));}catch(e){document.documentElement.style.setProperty(${JSON.stringify(
+)},String(s));}catch(e){document.documentElement.style.setProperty(${inlineScriptLiteral(
   DISPLAY_SCALE_CSS_VAR,
-)},${JSON.stringify(String(DEFAULT_DISPLAY_SCALE))});}})();`;
+)},${inlineScriptLiteral(String(DEFAULT_DISPLAY_SCALE))});}})();`;
 
 export const metadata: Metadata = {
   title: systemIdentity.appName,

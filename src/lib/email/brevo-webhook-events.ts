@@ -256,8 +256,13 @@ type BrevoEventConfirmation = "confirmed" | "not_found" | "unavailable";
 type BrevoEventLogEntry = { email?: unknown; messageId?: unknown };
 
 /** The webhook sends `message-id` with or without angle brackets; the event log uses them. Compare bare. */
-function bareMessageId(value: string): string {
-  return value.trim().replace(/^<+/, "").replace(/>+$/, "");
+export function bareMessageId(value: string): string {
+  const trimmed = value.trim();
+  let start = 0;
+  let end = trimmed.length;
+  while (start < end && trimmed[start] === "<") start += 1;
+  while (end > start && trimmed[end - 1] === ">") end -= 1;
+  return trimmed.slice(start, end);
 }
 
 async function askBrevoEventLog(

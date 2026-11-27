@@ -25,11 +25,29 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * The address a download button may hand the browser: a path on this site under `/api/`,
+ * with its query. Anything else — another host, a `//host` address, a scheme, a control
+ * character — answers null.
+ */
+export function sameOriginApiPath(url: string): string | null {
+  const value = String(url ?? "").trim();
+  if (!value.startsWith("/api/")) return null;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code < 0x20 || code === 0x7f || value[index] === "\\") return null;
+  }
+  return value;
+}
+
+/**
  * Hand a same-origin `/api/**` download to the browser. Not a page navigation — the
- * response is an attachment, so the current page stays exactly where it is.
+ * response is an attachment, so the current page stays exactly where it is. An address
+ * that is not a path under `/api/` on this site is not followed.
  */
 export function downloadFromApiRoute(url: string): void {
-  window.location.assign(url);
+  const path = sameOriginApiPath(url);
+  if (!path) return;
+  window.location.assign(path);
 }
 
 /**
