@@ -114,13 +114,17 @@ the browser on another machine.
   until Finance records the hand-over.** So Ahmed's first action is "Hand to <name>" on the day each book changes
   hands.
 - **Finance's desk:** Direct Orders → Receipt Books, at `/admin/direct-orders/receipts`. It shows only for Ahmed
-  El Maraghy and the Super Admin. It has four parts:
+  El Maraghy and the Super Admin. It has five parts:
   - "Approved with no receipt": red after 14 days.
+  - "Approved with no receipt book" (PR 829, owner 27 Nov: "Flag them"): from the first hand-out on, every
+    approved order raised by someone who held no book that day. Nothing before the first hand-out is listed.
   - The 16 books, with these buttons:
     - "Hand to <name>";
     - "Hand out" (for a spare, after choosing a manager);
     - "Returned to Finance";
-    - "Record lost": cancels the book's unused receipts.
+    - "Record lost": cancels the book's unused receipts, in one database call. Works on a spare still in store too
+      (the first version's database check refused that).
+    - A red line under the counts: how many approved orders still owe a receipt from that book.
   - "Cancel a spoiled receipt": a used receipt can never be cancelled.
   - "Receipts entered and cancelled".
 - **The receipt panel ("DELIVERY RECEIPT")** sits under the order detail, on both order pages.
@@ -133,17 +137,26 @@ the browser on another machine.
     - "Code beside the number*", with the hint "Six letters and digits".
     - "Photograph the signed page" / "Choose file".
     - The orange "Save the receipt".
-- **What Phoenix refuses:**
-  - a wrong code: refused FIRST, so guessing learns nothing;
+- **What Phoenix refuses** (checked in this order: the order, the book's custody, the code, then used/cancelled;
+  a wrong code is always refused before "already used", so guessing learns nothing):
+  - an order that is not approved, or already has a receipt;
   - an unknown serial;
-  - a receipt already used;
-  - another manager's book;
-  - a book not handed out, returned, or lost;
-  - a cancelled receipt;
-  - an order that is not approved;
-  - an order that already has a receipt.
+  - a book not handed out, or lost, or another manager's;
+  - a RETURNED book, unless the order was approved while the manager held it (late entry, owner 27 Nov:
+    "Allow late entry");
+  - a wrong code;
+  - a receipt already used, or cancelled.
 
-  Every refusal is logged on the order. The exact messages, with what each one means, are in the guide's section 5.
+  Every refusal is logged on the order, including not allowed, a bad serial, a bad code, a bad photo and a lost
+  race, and never with the typed code. The exact messages, with what each one means, are in the guide's section 5.
+- **The undo** (PR 829, owner 27 Nov: "make an undo option"): on an order with a receipt, Finance and the Super
+  Admin see "Undo — entered on the wrong order". A written reason is required. The receipt goes back to unused for
+  the right order; the reason, the photo and who entered it are kept in `direct_order_receipt_releases`, the audit
+  log and the order's history. The manager cannot undo his own entry.
+- **The database guards the paper too** (migration `20261127121951`): a used receipt goes back to unused only
+  through `direct_order_release_receipt`; a cancelled one stays cancelled; a claim re-reads its book (a book lost
+  while the photo uploads refuses the claim); serials, codes and ranges never change; nothing is ever deleted; a
+  book moves only in store → issued or lost, issued → returned or lost. A hand-out names an employee still at work.
 
 ## The guides (`_generator/guides.mjs`)
 
@@ -204,6 +217,15 @@ the browser on another machine.
   - The old files are in `_superseded v2 - old cover wording\` and `Guides\_superseded - old cover wording\`.
     Never print them.
   - The copier test still carries a receipt page from the OLD sample. That page is unaffected (no cover, fake codes).
+
+- ✅ **The guides and the email draft were updated on 27 Nov 2026, 12:32 Cairo, for PR 829.**
+  - The guides now say: a returned book's page is accepted only for an order approved while the manager held it;
+    an order raised with no book is flagged at Finance; Finance alone can undo a receipt entered on the wrong
+    order, with a reason. The managers' guide's section 5 gained "… reported lost" and "… while the photo was
+    uploading" rows. Page counts are unchanged (summary 4, guide 3).
+  - The copier test was rebuilt with them, so its receipt page now comes from the NEW sample.
+  - The old files are in `Guides\_superseded - before late entry\`. The generator copy in `_generator\` is the
+    same as this skill's `generator/guides.mjs`; run it with `PHOENIX_REPO` set to the primary checkout.
 
 - The physical copier test. Two ways to do it:
   - on an office printer, now: `اختبار العلامة المخفية - ماكينة التصوير.pdf`, page 2, printed at 100% then

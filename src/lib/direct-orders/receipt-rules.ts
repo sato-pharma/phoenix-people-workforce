@@ -16,8 +16,12 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 // do not match the order — Finance compares the photo with the order lines.
 //
 // Finance issues, returns and reports a book lost (owner: "Finance"). An approved order with no
-// receipt 14 days after approval is flagged on Finance's desk (owner: "14 days"). Nothing here gates
-// the sales month or the collection — that is a money rule the owner decides on its own screen.
+// receipt 14 days after approval is flagged on Finance's desk (owner: "14 days"). An order raised by
+// someone who held no book is flagged too, from the day the first book was handed out (owner, 27 Nov
+// 2026: "Flag them"). A page from a returned book is still accepted for an order approved while its
+// manager held it (owner, 27 Nov 2026: "Allow late entry"), and Finance can undo a receipt entered on
+// the wrong order, with a written reason (owner, 27 Nov 2026: "make an undo option"). Nothing here
+// gates the sales month or the collection — that is a money rule the owner decides on its own screen.
 //
 // Pure: every function takes plain rows and returns a decision, so the tests need no database.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -75,6 +79,16 @@ export type ReceiptRefusalReason =
   | "receipt_used"
   | "receipt_voided";
 
+/** Why an attempt was refused before or after the rules ran — each one is written on the order too. */
+export type ReceiptAttemptRefusal =
+  | ReceiptRefusalReason
+  | "not_allowed"
+  | "bad_serial"
+  | "bad_code"
+  | "bad_photo"
+  | "claim_lost"
+  | "book_changed";
+
 /** "000123" — the serial exactly as it is printed. */
 export function formatReceiptSerial(serial: number): string {
   return String(serial).padStart(6, "0");
@@ -119,8 +133,9 @@ function sameHrId(a: string | null | undefined, b: string | null | undefined): b
 
 /**
  * May this receipt prove this order? Checked in this order on purpose: the order first (nothing to
- * prove), then the paper's book (custody), then the code (is the page real), then its state (was it
- * used). A wrong code is refused before "already used" is said, so guessing a code learns nothing.
+ * prove), then the paper's book (custody: handed out, still in the requester's hands or returned
+ * after he held it for this order), then the code (is the page real), then its state (was it used).
+ * A wrong code is refused before "already used" is said, so guessing a code learns nothing.
  */
 export function checkReceiptForOrder(input: {
   order: OrderForReceipt;
@@ -144,14 +159,19 @@ export function checkReceiptForOrder(input: {
   if (book.status === "in_store") {
     return refuse("book_not_issued", `Receipt ${label} is in book ${book.bookNo}, which Finance has not handed out yet.`);
   }
-  if (book.status === "returned") {
-    return refuse("book_returned", `Receipt ${label} is in book ${book.bookNo}, which was returned to Finance.`);
-  }
   if (book.status === "lost") {
     return refuse("book_lost", `Receipt ${label} is in book ${book.bookNo}, which was reported lost. None of its receipts can be used.`);
   }
   if (!sameHrId(book.holderHrId, order.requesterHrId)) {
     return refuse("other_holders_book", `Receipt ${label} is in another manager's book. Use a receipt from the book handed to the person who raised this order.`);
+  }
+  // Late entry (owner, 27 Nov 2026: "Allow late entry"): a returned book still proves an order
+  // approved while its manager held it — never one approved after it came back.
+  if (book.status === "returned" && !bookHeldAt(book, order)) {
+    return refuse(
+      "book_returned",
+      `Receipt ${label} is in book ${book.bookNo}, which was returned to Finance. A page from a returned book proves only an order approved while the manager held it.`,
+    );
   }
   if (receipt.checkCode !== typedCode) {
     return refuse("code_mismatch", `The code does not match receipt ${label}. Type the six characters printed beside the number.`);
@@ -169,26 +189,46 @@ function refuse(reason: ReceiptRefusalReason, message: string): ReceiptDecision 
   return { ok: false, reason, message };
 }
 
-/**
- * Was the order's requester holding a book when it was approved? Only then is a receipt owed: an
- * order approved before the books were handed out is never flagged (the cutover is each book's own
- * issue date). A book returned or lost before the approval does not count.
- */
-export function bookHeldAtApproval(order: OrderForReceipt, books: readonly ReceiptBookRow[]): ReceiptBookRow | null {
-  if (!order.decidedAt) return null;
+/** Did this book sit with the order's requester on the day the order was approved? */
+function bookHeldAt(book: ReceiptBookRow, order: OrderForReceipt): boolean {
+  if (!order.decidedAt || book.status === "in_store" || !book.issuedAt) return false;
   const decided = Date.parse(order.decidedAt);
-  if (!Number.isFinite(decided)) return null;
-  for (const book of books) {
-    if (book.status === "in_store" || !book.issuedAt) continue;
-    if (!sameHrId(book.holderHrId, order.requesterHrId)) continue;
-    if (Date.parse(book.issuedAt) > decided) continue;
-    if (book.closedAt && Date.parse(book.closedAt) <= decided) continue;
-    return book;
-  }
-  return null;
+  if (!Number.isFinite(decided)) return false;
+  if (!sameHrId(book.holderHrId, order.requesterHrId)) return false;
+  if (Date.parse(book.issuedAt) > decided) return false;
+  if (book.closedAt && Date.parse(book.closedAt) <= decided) return false;
+  return true;
 }
 
-export type ReceiptStanding = "has_receipt" | "not_required" | "waiting" | "overdue";
+/**
+ * Was the order's requester holding a book when it was approved? Only then is a receipt owed from a
+ * book: an order approved before the books were handed out is never flagged (the cutover is each
+ * book's own issue date). A book returned or lost before the approval does not count.
+ */
+export function bookHeldAtApproval(order: OrderForReceipt, books: readonly ReceiptBookRow[]): ReceiptBookRow | null {
+  return books.find((book) => bookHeldAt(book, order)) ?? null;
+}
+
+/**
+ * The day the receipt check began: the first time Finance handed any book out. From then on an
+ * approved order raised by someone holding no book is flagged, not silently excused (owner, 27 Nov
+ * 2026: "Flag them"). Null while every book is still in store — nothing is flagged before the rollout.
+ */
+export function receiptRolloutStart(books: readonly ReceiptBookRow[]): number | null {
+  let first: number | null = null;
+  for (const book of books) {
+    if (!book.issuedAt) continue;
+    const at = Date.parse(book.issuedAt);
+    if (Number.isFinite(at) && (first === null || at < first)) first = at;
+  }
+  return first;
+}
+
+/**
+ * `no_book`: approved after the rollout, but its requester held no book that day, so no signed page
+ * stands behind it. Flagged on Finance's desk at once (owner, 27 Nov 2026: "Flag them").
+ */
+export type ReceiptStanding = "has_receipt" | "not_required" | "waiting" | "overdue" | "no_book";
 
 /** Whole days since approval, Cairo-agnostic (a duration, not a date). */
 export function daysSinceApproval(decidedAt: string | null, now: Date): number | null {
@@ -199,7 +239,8 @@ export function daysSinceApproval(decidedAt: string | null, now: Date): number |
 }
 
 /**
- * Where an order stands on its receipt. `waiting` inside the 14 days, `overdue` from day 14 on.
+ * Where an order stands on its receipt. `waiting` inside the 14 days, `overdue` from day 14 on, and
+ * `no_book` when its requester held no book on the day it was approved, after the rollout began.
  * Only an approved original order owes one — a reversal, a rejection or a cancellation never does.
  */
 export function classifyOrderReceipt(input: {
@@ -210,7 +251,12 @@ export function classifyOrderReceipt(input: {
 }): ReceiptStanding {
   if (input.hasReceipt) return "has_receipt";
   if (input.order.status !== "approved" || input.order.reversalOfRequestId) return "not_required";
-  if (!bookHeldAtApproval(input.order, input.books)) return "not_required";
+  if (!bookHeldAtApproval(input.order, input.books)) {
+    const rollout = receiptRolloutStart(input.books);
+    const decided = input.order.decidedAt ? Date.parse(input.order.decidedAt) : Number.NaN;
+    if (rollout === null || !Number.isFinite(decided) || decided < rollout) return "not_required";
+    return "no_book";
+  }
   const days = daysSinceApproval(input.order.decidedAt, input.now) ?? 0;
   return days >= RECEIPT_OVERDUE_DAYS ? "overdue" : "waiting";
 }
@@ -218,6 +264,17 @@ export function classifyOrderReceipt(input: {
 /** The book a manager may write a receipt from today: the one issued to him and still open. */
 export function openBookFor(holderHrId: string, books: readonly ReceiptBookRow[]): ReceiptBookRow | null {
   return books.find((book) => book.status === "issued" && sameHrId(book.holderHrId, holderHrId)) ?? null;
+}
+
+/**
+ * The book a receipt for this order is written from: the requester's open book, or — late entry — the
+ * book he held when the order was approved and has since returned to Finance. Never a lost book.
+ */
+export function receiptEntryBookFor(order: OrderForReceipt, books: readonly ReceiptBookRow[]): ReceiptBookRow | null {
+  const open = openBookFor(order.requesterHrId, books);
+  if (open) return open;
+  const held = bookHeldAtApproval(order, books);
+  return held && held.status === "returned" ? held : null;
 }
 
 /** Finance hands a book out. Only a book still in store, and a pre-printed book only to its printed name. */
@@ -243,6 +300,21 @@ export function checkBookClose(book: ReceiptBookRow | null, kind: "returned" | "
   }
   if (kind === "lost" && book.status !== "issued" && book.status !== "in_store") {
     return { ok: false, message: `Book ${book.bookNo} is already ${book.status === "lost" ? "recorded lost" : "returned"}.` };
+  }
+  return { ok: true };
+}
+
+/**
+ * Finance undoes a receipt entered on the wrong order (owner, 27 Nov 2026: "make an undo option").
+ * Only a used receipt on THIS order, and always with a written reason — the release is kept for ever.
+ */
+export function checkReceiptRelease(input: { receipt: ReceiptRow | null; requestId: string; reason: string }): ReceiptDecisionPlain {
+  const { receipt } = input;
+  if (!receipt || receipt.state !== "used" || receipt.requestId !== input.requestId) {
+    return { ok: false, message: "This order has no receipt to undo." };
+  }
+  if (input.reason.trim().length < 3) {
+    return { ok: false, message: "Write why the receipt is taken off this order, for example 'entered on the wrong order'." };
   }
   return { ok: true };
 }

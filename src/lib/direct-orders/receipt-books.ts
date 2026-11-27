@@ -3,19 +3,23 @@ import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { canManageDirectOrderReceiptBooks } from "@/lib/direct-orders/finance-authority";
 import { DIRECT_ORDER_INVOICE_BUCKET, parseDirectOrderInvoiceDataUrl } from "@/lib/direct-orders/invoice-evidence";
 import {
+  bookHeldAtApproval,
   checkBookClose,
   checkBookIssue,
   checkReceiptForOrder,
+  checkReceiptRelease,
   checkReceiptVoid,
   classifyOrderReceipt,
   daysSinceApproval,
   formatReceiptRange,
   formatReceiptSerial,
   normalizeReceiptCode,
-  openBookFor,
   parseReceiptSerial,
   RECEIPT_OVERDUE_DAYS,
+  receiptEntryBookFor,
+  receiptRolloutStart,
   type OrderForReceipt,
+  type ReceiptAttemptRefusal,
   type ReceiptBookRow,
   type ReceiptBookStatus,
   type ReceiptRow,
@@ -25,7 +29,7 @@ import {
 import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { isUuid } from "@/lib/http/uuid";
-import { canonicalHrIdKey, hrIdForStorage } from "@/lib/hr-id";
+import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -33,14 +37,20 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // The delivery-receipt books — reads and writes. Every decision is in receipt-rules.ts.
 //
 // 🔴 A receipt's check code NEVER leaves the server. No read here returns it, and the only place it
-// is compared is checkReceiptForOrder. The codes are not in Git either: the rows are seeded from the
-// printer's register by scripts/seed-direct-order-receipt-books.mjs.
+// is compared is checkReceiptForOrder. The codes are not in Git either: the rows were seeded once
+// from the printer's register.json, which is kept off GitHub with the printed books.
+//
+// The database guards the paper as well (migration 20261127121951): a used receipt goes back to
+// unused only through direct_order_release_receipt, a cancelled one stays cancelled, a receipt is
+// claimed only while its book is with a manager or returned, and no receipt or book is ever deleted.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const BOOKS = "direct_order_receipt_books";
 const RECEIPTS = "direct_order_receipts";
 const BOOK_COLUMNS = "book_no,first_serial,last_serial,printed_holder_hr_id,holder_hr_id,status,issued_at,closed_at";
 const PHOTO_TTL_SECONDS = 60 * 60;
+/** The database guard's refusal (raise ... using errcode 'P0001'). */
+const GUARD_REFUSED = "P0001";
 
 type BookDbRow = {
   book_no: number;
@@ -162,18 +172,27 @@ export type DirectOrderReceiptPanel = {
     photoUrl: string | null;
     photoIsPdf: boolean;
   } | null;
-  /** The book the requester writes from today, when the viewer may enter the receipt. */
-  entryBook: { bookNo: number; rangeLabel: string } | null;
+  /** The book the receipt is written from, when the viewer may enter it: the open book, or a returned one (late entry). */
+  entryBook: { bookNo: number; rangeLabel: string; returned: boolean } | null;
   /** Said when the order owes a receipt but the requester holds no open book to write it from. */
   noOpenBook: boolean;
+  /** Finance may take the receipt off this order, with a written reason (owner, 27 Nov 2026: "make an undo option"). */
+  mayRelease: boolean;
 };
+
+/** The receipt could not be read: said on the order as such, never as "no receipt". */
+export type DirectOrderReceiptPanelUnavailable = { unavailable: true };
 
 /**
  * The receipt panel on an order. The caller has already proved the viewer may see the order (the
  * detail loader's scope); this decides only who may ENTER the receipt — the requester, or Finance.
- * Null when the books are not readable (said by the caller as nothing, never a false "no receipt").
+ * Null when the order is not found or no book exists yet; `{ unavailable: true }` when the books could
+ * not be read, so the order says so instead of hiding the receipt.
  */
-export async function loadDirectOrderReceiptPanel(access: AccessContext, requestId: string): Promise<DirectOrderReceiptPanel | null> {
+export async function loadDirectOrderReceiptPanel(
+  access: AccessContext,
+  requestId: string,
+): Promise<DirectOrderReceiptPanel | DirectOrderReceiptPanelUnavailable | null> {
   try {
     const order = await loadOrder(requestId);
     if (!order) return null;
@@ -201,28 +220,38 @@ export async function loadDirectOrderReceiptPanel(access: AccessContext, request
     }
 
     const mayEnter = !used && order.status === "approved" && !order.reversalOfRequestId && (isRequester(access, order) || canManageDirectOrderReceiptBooks(access));
-    const book = mayEnter ? openBookFor(order.requesterHrId, books) : null;
+    const book = mayEnter ? receiptEntryBookFor(order, books) : null;
     return {
       standing,
       daysSinceApproval: daysSinceApproval(order.decidedAt, now),
       overdueDays: RECEIPT_OVERDUE_DAYS,
       receipt,
-      entryBook: book ? { bookNo: book.bookNo, rangeLabel: formatReceiptRange(book.firstSerial, book.lastSerial) } : null,
+      entryBook: book
+        ? { bookNo: book.bookNo, rangeLabel: formatReceiptRange(book.firstSerial, book.lastSerial), returned: book.status === "returned" }
+        : null,
       noOpenBook: mayEnter && !book && standing !== "not_required",
+      mayRelease: used !== null && canManageDirectOrderReceiptBooks(access),
     };
   } catch (error) {
     logError("Direct-order receipt panel could not be read", { labels: { event: "direct_order_receipt_panel_failed", requestId }, error });
-    return null;
+    return { unavailable: true };
   }
 }
 
 // ─── Entering a receipt ──────────────────────────────────────────────────────
 
+/** Written on the order for every refused attempt: a run of them is the trace of someone trying pages. Never the typed code. */
+async function recordRefusal(order: OrderForReceipt, access: AccessContext, reason: ReceiptAttemptRefusal, message: string, serial: number | null) {
+  await insertOrderEvent(order.id, access.hrId, "receipt_refused", message, { serial, reason });
+}
+
 /**
  * The manager enters the receipt that proves this order: serial, code and a photo of the signed,
  * stamped page. Stored only when every rule passes, then claimed with a compare-and-set (`state` is
  * still unused, `request_id` still empty) so two presses — or two managers with a photocopy — can
- * never both win. The order's unique `request_id` stops one order taking two receipts.
+ * never both win. The order's unique `request_id` stops one order taking two receipts, and the
+ * database guard re-reads the book inside the claim, so a book recorded lost while the photo
+ * uploads can no longer be claimed from.
  */
 export async function recordDirectOrderReceipt(
   access: AccessContext,
@@ -234,12 +263,22 @@ export async function recordDirectOrderReceipt(
   const order = await loadOrder(input.requestId);
   if (!order) throw notFoundError("This direct order was not found.");
   if (!isRequester(access, order) && !canManageDirectOrderReceiptBooks(access)) {
-    throw forbiddenError("Only the manager who raised this order, or Finance, enters its receipt.");
+    const message = "Only the manager who raised this order, or Finance, enters its receipt.";
+    await recordRefusal(order, access, "not_allowed", message, parseReceiptSerial(input.serial));
+    throw forbiddenError(message);
   }
   const serial = parseReceiptSerial(input.serial);
-  if (serial === null) throw validationError("Type the receipt number printed at the top of the page — six digits.");
+  if (serial === null) {
+    const message = "Type the receipt number printed at the top of the page — six digits.";
+    await recordRefusal(order, access, "bad_serial", message, null);
+    throw validationError(message);
+  }
   const code = normalizeReceiptCode(input.code);
-  if (!code) throw validationError("Type the six-character code printed beside the receipt number.");
+  if (!code) {
+    const message = "Type the six-character code printed beside the receipt number.";
+    await recordRefusal(order, access, "bad_code", message, serial);
+    throw validationError(message);
+  }
 
   const receipt = await loadReceipt(serial);
   const [book, existing] = await Promise.all([receipt ? loadBook(receipt.bookNo) : Promise.resolve(null), loadReceiptForOrder(order.id)]);
@@ -252,8 +291,7 @@ export async function recordDirectOrderReceipt(
     orderReceiptSerial: existing ? Number(existing.serial) : null,
   });
   if (!decision.ok) {
-    // Every refusal is written on the order: a run of wrong codes is the trace of someone trying pages.
-    await insertOrderEvent(order.id, access.hrId, "receipt_refused", decision.message, { serial, reason: decision.reason });
+    await recordRefusal(order, access, decision.reason, decision.message, serial);
     throw decision.reason === "receipt_used" || decision.reason === "order_has_receipt"
       ? conflictError(decision.message)
       : validationError(decision.message);
@@ -263,7 +301,9 @@ export async function recordDirectOrderReceipt(
   try {
     photo = parseDirectOrderInvoiceDataUrl(input.photoDataUrl);
   } catch {
-    throw validationError("Attach a clear photo of the signed and stamped receipt page.");
+    const message = "Attach a clear photo of the signed and stamped receipt page.";
+    await recordRefusal(order, access, "bad_photo", message, serial);
+    throw validationError(message);
   }
 
   const supabase = getSupabaseAdmin();
@@ -291,13 +331,17 @@ export async function recordDirectOrderReceipt(
     .select("serial");
   if (claimError || !claimed || claimed.length === 0) {
     await supabase.storage.from(DIRECT_ORDER_INVOICE_BUCKET).remove([path]).catch(() => undefined);
-    const code23505 = (claimError as { code?: string } | null)?.code === "23505";
-    if (claimError && !code23505) throw claimError;
-    throw conflictError(
-      code23505
+    const errorCode = (claimError as { code?: string } | null)?.code;
+    if (claimError && errorCode !== "23505" && errorCode !== GUARD_REFUSED) throw claimError;
+    const reason: ReceiptAttemptRefusal = errorCode === "23505" ? "order_has_receipt" : errorCode === GUARD_REFUSED ? "book_changed" : "claim_lost";
+    const message =
+      reason === "order_has_receipt"
         ? "This order already has a receipt. An order takes one receipt."
-        : `Receipt ${formatReceiptSerial(serial)} was just used on another order. A receipt proves one order only.`,
-    );
+        : reason === "book_changed"
+          ? `Book ${receipt?.bookNo ?? ""} was returned or recorded lost while the photo was uploading, so receipt ${formatReceiptSerial(serial)} was not saved. Reload the order.`
+          : `Receipt ${formatReceiptSerial(serial)} was just used on another order. A receipt proves one order only.`;
+    await recordRefusal(order, access, reason, message, serial);
+    throw conflictError(message);
   }
 
   const serialLabel = formatReceiptSerial(serial);
@@ -310,6 +354,45 @@ export async function recordDirectOrderReceipt(
   });
   await insertOrderEvent(order.id, access.hrId, "receipt_recorded", `Delivery receipt ${serialLabel} entered.`, { serial, bookNo: receipt?.bookNo ?? null });
   return { message: `Receipt ${serialLabel} is saved with the order. It can never be used on another order.`, serialLabel };
+}
+
+/**
+ * Finance takes a receipt off the order it was entered on by mistake (owner, 27 Nov 2026: "make an
+ * undo option"). Finance or the Administrator only, always with a written reason. The receipt goes
+ * back to unused so it can be entered on the right order; the release, its reason and the photo it
+ * carried are kept for ever in direct_order_receipt_releases, the audit log and the order's history.
+ */
+export async function releaseDirectOrderReceipt(access: AccessContext, input: { requestId: string; reason: unknown }): Promise<{ message: string }> {
+  if (!canManageDirectOrderReceiptBooks(access)) throw forbiddenError("Only Finance can take a receipt off an order.");
+  const order = await loadOrder(input.requestId);
+  if (!order) throw notFoundError("This direct order was not found.");
+  const reason = String(input.reason ?? "").trim().slice(0, 300);
+  const used = await loadReceiptForOrder(order.id);
+  const receipt = used ? await loadReceipt(Number(used.serial)) : null;
+  const decision = checkReceiptRelease({ receipt, requestId: order.id, reason });
+  if (!decision.ok) throw validationError(decision.message);
+  const serial = Number(receipt?.serial);
+  const serialLabel = formatReceiptSerial(serial);
+  const actor = hrIdForStorage(access.hrId) ?? access.loginId ?? "system";
+  const { data, error } = await getSupabaseAdmin().rpc("direct_order_release_receipt", {
+    p_serial: serial,
+    p_request_id: order.id,
+    p_actor_hr_id: actor,
+    p_reason: reason,
+  });
+  if (error) throw error;
+  const result = (data ?? {}) as { released?: boolean; photo_storage_path?: string | null; used_by_hr_id?: string | null; used_at?: string | null };
+  if (!result.released) throw conflictError(`Receipt ${serialLabel} on this order was just changed by someone else. Reload the page.`);
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? access.hrId,
+    entityType: "direct_order_request",
+    entityId: order.id,
+    oldValues: { receiptSerial: serialLabel, photoPath: result.photo_storage_path ?? null, enteredBy: result.used_by_hr_id ?? null, enteredAt: result.used_at ?? null },
+    newValues: { receiptSerial: null, reason },
+    summary: `Delivery receipt ${serialLabel} taken off the direct order: ${reason}`,
+  });
+  await insertOrderEvent(order.id, access.hrId, "receipt_released", `Delivery receipt ${serialLabel} taken off this order: ${reason}`, { serial, reason });
+  return { message: `Receipt ${serialLabel} is taken off this order and can now be entered on the right one. The reason is kept on the order's history.` };
 }
 
 // ─── Finance: the register ───────────────────────────────────────────────────
@@ -327,6 +410,8 @@ export type ReceiptRegisterBook = {
   used: number;
   voided: number;
   unused: number;
+  /** Approved orders raised while this book was held that still have no receipt from it. */
+  owing: number;
 };
 
 export type ReceiptRegisterOrder = {
@@ -354,6 +439,8 @@ export type ReceiptRegisterEntry = {
 export type DirectOrderReceiptRegister = {
   books: ReceiptRegisterBook[];
   missing: ReceiptRegisterOrder[];
+  /** Approved since the first book went out, raised by someone who held no book that day (owner, 27 Nov 2026: "Flag them"). */
+  noBook: Omit<ReceiptRegisterOrder, "standing">[];
   recent: ReceiptRegisterEntry[];
   overdueDays: number;
   /** Everyone a spare book may be handed to: District Managers on a line with direct orders, still employed. */
@@ -368,14 +455,17 @@ export async function loadDirectOrderReceiptRegister(access: AccessContext): Pro
 
   const [{ data: receiptRows, error: receiptError }, ordersResult, holdersResult] = await Promise.all([
     supabase.from(RECEIPTS).select("serial,book_no,state,request_id,used_by_hr_id,used_at,voided_by_hr_id,voided_at,voided_reason").neq("state", "unused").order("serial"),
-    loadApprovedOrdersOfHolders(books),
+    loadApprovedOrdersSinceRollout(books),
     supabase
       .from("employees")
       .select("hr_id,full_name,job_title,employment_status")
       .eq("job_title", "District Sales Manager")
       .in("employment_status", ["active", "on_leave"]),
   ]);
+  // Every read the desk shows is checked: a failed read is said as "could not be read", never as an
+  // empty spare list or "Pharmacy not on file".
   if (receiptError) throw receiptError;
+  if (holdersResult.error) throw holdersResult.error;
   const touched = (receiptRows ?? []) as {
     serial: number; book_no: number; state: ReceiptState; request_id: string | null; used_by_hr_id: string | null;
     used_at: string | null; voided_by_hr_id: string | null; voided_at: string | null; voided_reason: string | null;
@@ -392,14 +482,28 @@ export async function loadDirectOrderReceiptRegister(access: AccessContext): Pro
 
   const now = new Date();
   const orders = ordersResult;
-  const missingOrders = orders
-    .map((row) => ({ row, standing: classifyOrderReceipt({ order: row.order, books, hasReceipt: receiptByOrder.has(row.order.id), now }) }))
-    .filter((entry): entry is { row: typeof entry.row; standing: "waiting" | "overdue" } => entry.standing === "waiting" || entry.standing === "overdue");
+  const classified = orders.map((row) => ({ row, standing: classifyOrderReceipt({ order: row.order, books, hasReceipt: receiptByOrder.has(row.order.id), now }) }));
+  const missingOrders = classified.filter(
+    (entry): entry is { row: typeof entry.row; standing: "waiting" | "overdue" } => entry.standing === "waiting" || entry.standing === "overdue",
+  );
+  const noBookOrders = classified.filter((entry) => entry.standing === "no_book");
+  const owingByBook = new Map<number, number>();
+  for (const entry of missingOrders) {
+    const held = bookHeldAtApproval(entry.row.order, books);
+    if (held) owingByBook.set(held.bookNo, (owingByBook.get(held.bookNo) ?? 0) + 1);
+  }
 
-  const pharmacyIds = [...new Set([...missingOrders.map((entry) => entry.row.pharmacyId), ...orders.filter((o) => receiptByOrder.has(o.order.id)).map((o) => o.pharmacyId)])];
+  const pharmacyIds = [
+    ...new Set([
+      ...missingOrders.map((entry) => entry.row.pharmacyId),
+      ...noBookOrders.map((entry) => entry.row.pharmacyId),
+      ...orders.filter((o) => receiptByOrder.has(o.order.id)).map((o) => o.pharmacyId),
+    ]),
+  ];
   const pharmacyNames = new Map<string, string>();
   for (let start = 0; start < pharmacyIds.length; start += 100) {
-    const { data } = await supabase.from("direct_order_pharmacies").select("id,pharmacy_name").in("id", pharmacyIds.slice(start, start + 100));
+    const { data, error } = await supabase.from("direct_order_pharmacies").select("id,pharmacy_name").in("id", pharmacyIds.slice(start, start + 100));
+    if (error) throw error;
     for (const row of (data ?? []) as { id: string; pharmacy_name: string | null }[]) pharmacyNames.set(row.id, String(row.pharmacy_name ?? "").trim());
   }
   const pharmacyByOrder = new Map(orders.map((o) => [o.order.id, pharmacyNames.get(o.pharmacyId) ?? null]));
@@ -433,6 +537,7 @@ export async function loadDirectOrderReceiptRegister(access: AccessContext): Pro
         used: count.used,
         voided: count.voided,
         unused: size - count.used - count.voided,
+        owing: owingByBook.get(book.bookNo) ?? 0,
       };
     }),
     missing: missingOrders
@@ -445,6 +550,17 @@ export async function loadDirectOrderReceiptRegister(access: AccessContext): Pro
         decidedAt: row.order.decidedAt,
         days: daysSinceApproval(row.order.decidedAt, now) ?? 0,
         standing,
+      }))
+      .sort((a, b) => b.days - a.days),
+    noBook: noBookOrders
+      .map(({ row }) => ({
+        requestId: row.order.id,
+        requesterName: names.get(row.order.requesterHrId) ?? row.order.requesterHrId,
+        pharmacyName: pharmacyNames.get(row.pharmacyId) || "Pharmacy not on file",
+        productName: row.productName,
+        salesValue: row.salesValue,
+        decidedAt: row.order.decidedAt,
+        days: daysSinceApproval(row.order.decidedAt, now) ?? 0,
       }))
       .sort((a, b) => b.days - a.days),
     recent: touched
@@ -465,12 +581,15 @@ export async function loadDirectOrderReceiptRegister(access: AccessContext): Pro
 
 type HolderOrder = { order: OrderForReceipt; pharmacyId: string; productName: string; salesValue: number };
 
-/** Approved orders of everyone who ever held a book, decided on or after the earliest issue date. */
-async function loadApprovedOrdersOfHolders(books: readonly ReceiptBookRow[]): Promise<HolderOrder[]> {
-  const issued = books.filter((book) => book.issuedAt && book.holderHrId);
-  if (issued.length === 0) return [];
-  const since = issued.map((book) => book.issuedAt as string).sort()[0];
-  const holderKeys = new Set(issued.map((book) => canonicalHrIdKey(book.holderHrId)));
+/**
+ * Every approved original order decided since the first book went out — whoever raised it. A holder's
+ * order may owe a receipt; anyone else's is flagged as raised without a book (owner, 27 Nov 2026:
+ * "Flag them"). Nothing before the rollout is read, so the orders from before the books never show.
+ */
+async function loadApprovedOrdersSinceRollout(books: readonly ReceiptBookRow[]): Promise<HolderOrder[]> {
+  const rollout = receiptRolloutStart(books);
+  if (rollout === null) return [];
+  const since = new Date(rollout).toISOString();
   const rows: HolderOrder[] = [];
   const pageSize = 1000;
   for (let from = 0; ; from += pageSize) {
@@ -481,6 +600,7 @@ async function loadApprovedOrdersOfHolders(books: readonly ReceiptBookRow[]): Pr
       .is("reversal_of_request_id", null)
       .gte("decided_at", since)
       .order("decided_at")
+      .order("id")
       .range(from, from + pageSize - 1);
     if (error) throw error;
     const page = (data ?? []) as {
@@ -488,7 +608,6 @@ async function loadApprovedOrdersOfHolders(books: readonly ReceiptBookRow[]): Pr
       pharmacy_id: string; product_name: string | null; sales_value: number | null;
     }[];
     for (const row of page) {
-      if (!holderKeys.has(canonicalHrIdKey(row.requester_hr_id))) continue;
       rows.push({
         order: { id: row.id, requesterHrId: row.requester_hr_id, status: row.status, decidedAt: row.decided_at, reversalOfRequestId: row.reversal_of_request_id },
         pharmacyId: row.pharmacy_id,
@@ -517,6 +636,16 @@ export async function issueDirectOrderReceiptBook(access: AccessContext, input: 
   const holder = String(input.holderHrId ?? book?.printedHolderHrId ?? "").trim();
   const decision = checkBookIssue(book, holder);
   if (!decision.ok) throw validationError(decision.message);
+  // The hand-out names a real person still at work — never a typed id that matches nobody.
+  const { data: employeeRows, error: employeeError } = await getSupabaseAdmin()
+    .from("employees")
+    .select("hr_id,employment_status")
+    .in("hr_id", hrIdLookupKeys(holder));
+  if (employeeError) throw employeeError;
+  const atWork = ((employeeRows ?? []) as { hr_id: string; employment_status: string | null }[]).some(
+    (row) => canonicalHrIdKey(row.hr_id) === canonicalHrIdKey(holder) && (row.employment_status === "active" || row.employment_status === "on_leave"),
+  );
+  if (!atWork) throw validationError(`${holder} is not an employee still at work, so book ${bookNo} cannot be handed to them.`);
   const now = new Date().toISOString();
   const { data, error } = await getSupabaseAdmin()
     .from(BOOKS)
@@ -539,7 +668,12 @@ export async function issueDirectOrderReceiptBook(access: AccessContext, input: 
   return { message: `Book ${bookNo} is recorded as handed to ${holderName} today. Every order approved from now on needs a receipt from it.` };
 }
 
-/** Finance takes a book back, or records it lost. Lost cancels every receipt in it still unused. */
+/**
+ * Finance takes a book back, or records it lost. Lost cancels every receipt in it still unused, in
+ * the same transaction as the book (direct_order_close_receipt_book), so a failure can never leave a
+ * lost book with live receipts. A returned book still proves the orders approved while it was held
+ * (late entry), so the answer says how many still owe a receipt from it.
+ */
 export async function closeDirectOrderReceiptBook(
   access: AccessContext,
   input: { bookNo: unknown; kind: unknown; note: unknown },
@@ -552,42 +686,66 @@ export async function closeDirectOrderReceiptBook(
   if (kind === "lost" && !note) throw validationError("Write what happened to the book.");
   const book = await loadBook(bookNo);
   const decision = checkBookClose(book, kind);
-  if (!decision.ok) throw validationError(decision.message);
-  const supabase = getSupabaseAdmin();
-  const now = new Date().toISOString();
-  const { data, error } = await supabase
-    .from(BOOKS)
-    .update({ status: kind, closed_at: now, closed_by_hr_id: hrIdForStorage(access.hrId), note, updated_at: now })
-    .eq("book_no", bookNo)
-    .eq("status", book?.status ?? "issued")
-    .select("book_no");
+  if (!decision.ok || !book) throw validationError(decision.ok ? "There is no such receipt book." : decision.message);
+  const { data, error } = await getSupabaseAdmin().rpc("direct_order_close_receipt_book", {
+    p_book_no: bookNo,
+    p_kind: kind,
+    p_expected_status: book.status,
+    p_actor_hr_id: hrIdForStorage(access.hrId),
+    p_note: note,
+  });
   if (error) throw error;
-  if (!data || data.length === 0) throw conflictError(`Book ${bookNo} was just changed by someone else. Reload the page.`);
-  let voided = 0;
-  if (kind === "lost") {
-    const { data: voidedRows, error: voidError } = await supabase
-      .from(RECEIPTS)
-      .update({ state: "voided", voided_reason: `Book ${bookNo} reported lost`, voided_by_hr_id: hrIdForStorage(access.hrId), voided_at: now, updated_at: now })
-      .eq("book_no", bookNo)
-      .eq("state", "unused")
-      .select("serial");
-    if (voidError) throw voidError;
-    voided = voidedRows?.length ?? 0;
-  }
+  const result = (data ?? {}) as { closed?: boolean; closed_at?: string; voided?: number };
+  if (!result.closed) throw conflictError(`Book ${bookNo} was just changed by someone else. Reload the page.`);
+  const voided = Number(result.voided ?? 0);
+  const closedAt = result.closed_at ?? new Date().toISOString();
   await writeRequiredAuditLog({
     actorLoginId: access.loginId ?? access.hrId,
     entityType: "direct_order_receipt_book",
     entityId: String(bookNo),
-    oldValues: { status: book?.status ?? null },
-    newValues: { status: kind, closedAt: now, note, receiptsCancelled: voided },
+    oldValues: { status: book.status },
+    newValues: { status: kind, closedAt, note, receiptsCancelled: voided },
     summary: kind === "lost" ? `Receipt book ${bookNo} recorded lost; ${voided} unused receipts cancelled.` : `Receipt book ${bookNo} returned to Finance.`,
   });
-  return {
-    message:
-      kind === "lost"
-        ? `Book ${bookNo} is recorded lost. Its ${voided} unused receipts are cancelled, so a page from it will be refused.`
-        : `Book ${bookNo} is recorded as returned. Its unused receipts can no longer be used.`,
-  };
+  if (kind === "lost") {
+    return { message: `Book ${bookNo} is recorded lost. Its ${voided} unused receipts are cancelled, so a page from it will be refused.` };
+  }
+  const owing = await countOrdersOwingFromBook(book, closedAt);
+  const owingLine =
+    owing === null
+      ? " The orders still owing a receipt from it could not be counted just now; they are listed on this desk."
+      : owing === 0
+        ? " No order approved while it was held is still waiting for a receipt."
+        : ` ${owing} order${owing === 1 ? "" : "s"} approved while it was held still ${owing === 1 ? "owes" : "owe"} a receipt; their pages from this book can still be entered.`;
+  return { message: `Book ${bookNo} is recorded as returned. Its unused receipts can no longer be used for new orders.${owingLine}` };
+}
+
+/** Approved orders raised while this book was held that have no receipt yet. Null when it cannot be read. */
+async function countOrdersOwingFromBook(book: ReceiptBookRow, closedAt: string): Promise<number | null> {
+  if (!book.holderHrId || !book.issuedAt) return 0;
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("direct_order_requests")
+      .select("id,requester_hr_id")
+      .eq("status", "approved")
+      .is("reversal_of_request_id", null)
+      .in("requester_hr_id", hrIdLookupKeys(book.holderHrId))
+      .gte("decided_at", book.issuedAt)
+      .lt("decided_at", closedAt);
+    if (error) throw error;
+    const ids = ((data ?? []) as { id: string }[]).map((row) => row.id);
+    let withReceipt = 0;
+    for (let start = 0; start < ids.length; start += 100) {
+      const { data: used, error: usedError } = await supabase.from(RECEIPTS).select("request_id").in("request_id", ids.slice(start, start + 100));
+      if (usedError) throw usedError;
+      withReceipt += (used ?? []).length;
+    }
+    return ids.length - withReceipt;
+  } catch (error) {
+    logError("Orders owing a receipt from a returned book could not be counted", { labels: { event: "direct_order_receipt_owing_failed", bookNo: book.bookNo }, error });
+    return null;
+  }
 }
 
 /** Finance cancels a spoiled page found in a book. A used receipt is never cancelled. */
