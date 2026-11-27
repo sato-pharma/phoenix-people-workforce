@@ -41,8 +41,10 @@ import { deletionStandingWords, employeeRecordWords, splitRegister } from "../sr
 import { defaultDeletionDay, deletionDayProblem, earliestDeletionDay, LIBANO_GRACE_PERIOD_DAYS, LIBANO_MOST_DAYS_BACK } from "../src/lib/medical-insurance/deletion-day.ts";
 import { planLibanoMovementEmail } from "../src/lib/medical-insurance/libano-movement-email.ts";
 import type { LibanoMemberLine } from "../src/lib/medical-insurance/workbooks.ts";
+import { normalizeIdCardRead } from "../src/lib/employees/id-card-name.ts";
 import {
   buildLibanoMemberFileWorkbook,
+  libanoAdditionGaps,
   libanoDay,
   libanoLineGaps,
   libanoMemberCells,
@@ -384,11 +386,10 @@ function testTheServiceFixesCannotBeRevertedQuietly() {
   assert.ok(end.includes("!alreadyKeptOut &&"), "a live keep-off is not inserted twice");
 
   // The additions file names everyone the insurer's sheet would take blank, instead of writing blank mandatory cells.
-  assert.match(
-    service.slice(service.indexOf("export async function prepareLibanoMemberFile(")),
-    /libanoLineGaps\([\s\S]*?needs a date of birth and sex for everyone/,
-    "the additions file refuses a line with no date of birth or sex",
-  );
+  const additions = service.slice(service.indexOf("export async function prepareLibanoMemberFile("));
+  const refusal = additions.indexOf("Missing data, so nothing was made or sent.");
+  assert.ok(additions.indexOf("additionReadiness(actions, state.employeeRows)") > -1 && refusal > -1, "the additions file refuses a line with anything missing");
+  assert.ok(refusal < additions.indexOf("const rows = actions.map("), "the refusal comes before any line is built");
 }
 
 /** The contract's age limits: over 64 for an employee or spouse, over 18 for a child, and no birth date. */
@@ -989,6 +990,122 @@ function testTheLibanoEmailGoesToTheInsurerAndTheTestToTheOwnerAlone() {
 }
 
 /**
+ * Rule 1 (owner, 27 Nov 2026): nobody goes to Libano-Suisse with anything missing. Nourhan Abdelmoniem's Phoenix name
+ * is two words, so her Father Name went out blank; the name now comes from her ID card, and a person lacking it, or
+ * any other fact the sheet takes, is flagged and cannot be ticked, exported or sent. Rule 2: the joiners' personal
+ * photos go with the sheet, each named by the staff ID.
+ */
+function testAnAdditionWithMissingDataIsFlaggedAndThePhotosGoNamedByStaffId() {
+  const complete = {
+    birthDate: "1992-10-22",
+    cardName: { father: "ABDELMONIEM", first: "NOURHAN", last: "ELSAYED HUSSEIN" },
+    gender: "female",
+    hasPhoto: true,
+    mobileNumber: "01000000000",
+    nationalId: "29210220100000",
+  };
+  assert.deepEqual(libanoAdditionGaps(complete), [], "everything there: she may be sent");
+  assert.deepEqual(libanoAdditionGaps({ ...complete, cardName: null }), ["name from the ID card"], "no card name: flagged");
+  assert.deepEqual(libanoAdditionGaps({ ...complete, cardName: { ...complete.cardName, father: " " } }), ["father name"], "a blank father name is flagged");
+  assert.deepEqual(
+    libanoAdditionGaps({ birthDate: null, cardName: null, gender: null, hasPhoto: false, mobileNumber: "", nationalId: null }),
+    ["name from the ID card", "date of birth", "sex", "national ID", "mobile number", "personal photo"],
+    "every gap is named at once",
+  );
+
+  // The card's name: kept only when the Arabic name and all three English parts are there.
+  const read = { father: "Abd El Moneim", first: "nourhan", is_id_card: true, last: "elsayed  hussein", name_ar: "نورهان عبد المنعم السيد حسين" };
+  assert.deepEqual(normalizeIdCardRead(read), { father: "ABD EL MONEIM", first: "NOURHAN", last: "ELSAYED HUSSEIN", nameAr: "نورهان عبد المنعم السيد حسين" });
+  assert.equal(normalizeIdCardRead({ ...read, father: null }), null, "no father name: not a read");
+  assert.equal(normalizeIdCardRead({ ...read, name_ar: "Nourhan" }), null, "no Arabic name: not a read");
+  assert.equal(normalizeIdCardRead({ ...read, is_id_card: false }), null, "not an ID card: not a read");
+
+  // The sheet writes the card's three names, not a split of the Phoenix name.
+  const line: LibanoMemberLine = {
+    adherentNumber: null,
+    birthDate: "1992-10-22",
+    category: "B",
+    day: "2026-12-01",
+    fullName: "NOURHAN ABDELMONIEM ELSAYED HUSSEIN",
+    gender: "female",
+    memberType: "employee",
+    nameParts: complete.cardName,
+    nationalId: "29210220100000",
+    phone: "01000000000",
+    principalNumber: null,
+    staffNumber: "AI-0037",
+  };
+  const cells = libanoMemberCells(line);
+  assert.ok(cells.includes("ABDELMONIEM") && cells.includes("ELSAYED HUSSEIN"), "the father and last names are the card's");
+  const sheetSource = readFileSync("src/lib/medical-insurance/libano-movement-sheet.ts", "utf8");
+  assert.ok(sheetSource.includes("const name = libanoNameParts(line);"), "the insurer's own workbook writes the card's names too");
+
+  // Rule 2: each photo goes with the additions sheet, named by the staff ID; a deletions email carries none.
+  const photo = { bytes: Buffer.from([255, 216, 255]), contentType: "image/jpeg", fileName: "AI-0037.jpg" };
+  const base = { atIso: "2026-11-27T13:00:00.000Z", fileName: "Libano-Suisse-members-additions-2026-11-27.xlsx", policyNumber: "50048950", rows: [line], systemFromAddress: "phoenix@send.satopharma.com", workbook: new Uint8Array([80, 75, 3, 4]) };
+  const additions = planLibanoMovementEmail({ ...base, kind: "additions", photos: [photo] });
+  assert.deepEqual(additions.input.attachments.map((attachment) => attachment.filename), ["Libano-Suisse-members-additions-2026-11-27.xlsx", "AI-0037.jpg"]);
+  assert.equal(additions.input.attachments[1].contentType, "image/jpeg");
+  assert.ok(additions.input.text.includes("Their personal photo is attached, named by the staff ID."), "the email says the photo is attached");
+  const deletions = planLibanoMovementEmail({ ...base, kind: "deletions", photos: [photo] });
+  assert.equal(deletions.input.attachments.length, 1, "a deletions email carries no photo");
+
+  const service = stripComments(readFileSync("src/lib/medical-insurance/service.ts", "utf8"));
+  const send = service.slice(service.indexOf("export async function sendLibanoMovementEmail("), service.indexOf("// ── The register feeds the Employee Master"));
+  assert.ok(send.includes('const photos = kind === "additions" ? await additionPhotos(file.rows) : [];') && send.includes("photos,"), "Send attaches the joiners' photos");
+  const photos = service.slice(service.indexOf("async function additionPhotos("), service.indexOf("export async function sendLibanoMovementEmail("));
+  assert.ok(photos.includes("fileName: `${hrId}.${extension}`"), "each photo is named by the staff ID");
+  assert.ok(photos.includes("if (missing.length > 0) throw new MedicalInsuranceInputError("), "a photo that cannot be read stops the send");
+  const view = service.slice(service.indexOf("export async function getMedicalInsuranceView("));
+  assert.ok(view.includes("missing: ready.gaps"), "the add list carries each person's gaps");
+
+  const screen = stripComments(readFileSync("src/components/medical-insurance/medical-insurance-actions.tsx", "utf8"));
+  assert.ok(screen.includes("ticked.has(action.key) && missingOf(action).length === 0"), "a flagged person never counts as ticked");
+  assert.ok(screen.includes('kind && missingOf(action).length === 0).map((action) => action.key)'), "Tick all skips a flagged person");
+  assert.match(screen, /if \(missing\.length > 0\) \{\s*return \(\s*<input[\s\S]*?disabled/, "a flagged person's box cannot be ticked");
+
+  // The card is read when the offer is accepted, once the reply has gone.
+  const joining = stripComments(readFileSync("src/lib/offers/joining-form-service.ts", "utf8"));
+  assert.ok(joining.includes('if (idPhotosFiled) await afterResponse("joining_form_id_card_name", () => readAndSaveIdCardName(hrId, "joining-form"));'));
+}
+
+/**
+ * Cover ended on its own first day was never in force, so it leaves the Add / Remove list even when that first day is
+ * still to come (owner, 27 Nov 2026: Abdelrahman El-Shemy, who declined before 1 December, was ended on 1 December four
+ * times and stayed under remove). And a real Send records on the register what its file said.
+ */
+function testAnEndedCoverLeavesTheListAndASendIsRecorded() {
+  const declined = employee({ active: false, employmentStatus: "declined_offer", hireDate: "2026-12-01" });
+  const voided = member({ coverageEnd: "2026-12-01", coverageStart: "2026-12-01" });
+  assert.deepEqual(actionsFor([declined], [voided], [], "2026-11-27").map((action) => action.key), [], "ended on its first day, still to come: nothing to do");
+  assert.equal(actionsFor([declined], [member({ coverageStart: "2026-12-01" })], [], "2026-11-27")[0]?.kind, "remove", "while it is open, he is still to remove");
+  assert.equal(actionsFor([declined], [member({ coverageEnd: "2026-12-05", coverageStart: "2026-12-01" })], [], "2026-11-27")[0]?.kind, "remove", "cover that runs past its first day was in force, so it still goes to Libano-Suisse");
+
+  const service = stripComments(readFileSync("src/lib/medical-insurance/service.ts", "utf8"));
+  assert.ok(service.includes("open: !neverInForceRow(row) && "), "the Members and Deletions tabs read a never-in-force row as ended");
+  const send = service.slice(service.indexOf("export async function sendLibanoMovementEmail("), service.indexOf("// ── The register feeds the Employee Master"));
+  const notSent = send.indexOf('if (outcome.status !== "not_sent") {');
+  const realOnly = send.indexOf("if (!test) {", notSent);
+  const recordCall = send.indexOf("const recorded = await recordSentMovement(access, file.register);", realOnly);
+  assert.ok(notSent > -1 && realOnly > notSent && recordCall > realOnly, "only a real send that is out or waiting records anything");
+  const record = service.slice(service.indexOf("async function recordSentMovement("), service.indexOf("export async function prepareLibanoMemberFile("));
+  assert.ok(
+    record.includes('await addMedicalInsuranceMember(access, { category: entry.category, coverageStart: entry.day, hrId: entry.hrId, memberType: "employee" });'),
+    "an addition goes on the register on the file's plan and day",
+  );
+  assert.ok(
+    record.includes('await updateMedicalInsuranceMember(access, entry.memberId, { action: "end", coverageEnd: entry.day, endReason: entry.reason });'),
+    "a deletion is ended on its deletion date",
+  );
+  assert.ok(record.includes('assertPermission(access, "medical_insurance", "create")') && record.includes('assertPermission(access, "medical_insurance", "update")'), "each write holds the register's own permission");
+  const file = service.slice(service.indexOf("export async function prepareLibanoMemberFile("), service.indexOf("export type LibanoMovementEmailOutcome"));
+  assert.ok(file.includes("register.push({ day: deletionDay, memberId: member.id"), "the deletion step carries the day on the file");
+  assert.ok(file.includes("register.push({ category, day: action.effectiveOn, hrId: action.hrId"), "the addition step carries the plan and day on the file");
+  const screen = stripComments(readFileSync("src/components/medical-insurance/medical-insurance-actions.tsx", "utf8"));
+  assert.match(screen, /if \(!request\.test\) \{\s*setTicked\(new Set\(\)\);\s*router\.refresh\(\);/, "after a real send the page reads the register again");
+}
+
+/**
  * A deletion goes to Libano-Suisse with the date typed beside the person, and starts as far back as the insurer's own
  * sheet accepts (owner, 27 Nov 2026: Salim Gomha's 22 November went on the file as the 23rd, his exit day). The
  * sheet's check is TODAY() - date < Assumptions!E7, and our file writes E7 = 15, so 14 days back is the furthest.
@@ -1115,6 +1232,8 @@ export async function runMedicalInsuranceTests() {
   testTheLibanoEmailGoesToTheInsurerAndTheTestToTheOwnerAlone();
   testDeletionsAreKeptApartForGood();
   testADeletionGoesWithTheTypedDayAndAsFarBackAsAllowed();
+  testAnEndedCoverLeavesTheListAndASendIsRecorded();
+  testAnAdditionWithMissingDataIsFlaggedAndThePhotosGoNamedByStaffId();
   testNothingHereSendsOrPays();
 }
 

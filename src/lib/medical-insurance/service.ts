@@ -9,7 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
-import { assertPermission } from "@/lib/auth/permissions";
+import { assertPermission, normalizeHrId } from "@/lib/auth/permissions";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { todayInCairo } from "@/lib/date-only";
 import { hrIdForStorage } from "@/lib/hr-id";
@@ -50,9 +50,11 @@ import { defaultDeletionDay, deletionDayProblem } from "./deletion-day";
 import { LIBANO_DELETIONS_SHEET_ROWS } from "./libano-movement-sheet";
 import { buildCostLetter, CostLetterError, type CostLetter } from "./cost-letter";
 import { cleanCostLetterCc, COST_LETTER_EMAIL_BATCH, sendCostLetterEmails, type CostLetterEmailOutcome } from "./cost-letter-email";
-import { buildMonthlySplit, payrollChargesForWindow, type PayrollMedicalInsuranceCharge } from "./monthly-split";
+import { buildMonthlySplit, payrollChargesForWindow, wasNeverInForce, type PayrollMedicalInsuranceCharge } from "./monthly-split";
 import type { MonthlyCostMemberNumbers } from "./cost-workbook";
-import { libanoLineGaps, type LibanoMemberFileKind, type LibanoMemberLine } from "./workbooks";
+import { libanoAdditionGaps, type LibanoMemberFileKind, type LibanoMemberLine } from "./workbooks";
+import { loadIdCardNames, readAndSaveIdCardName, type IdCardName } from "@/lib/employees/id-card-name";
+import { getEmployeePhotoMap, streamEmployeePhoto } from "@/lib/employees/employee-photo";
 import {
   describeMasterSyncAmountChange,
   describeMasterSyncChange,
@@ -343,6 +345,50 @@ async function loadDocuments(policyId: string, kinds: readonly MedicalInsuranceD
 }
 
 /** Everything but the money. Returns null when no policy has been set up. */
+/** How many unread ID cards one load reads, and how long a card that could not be read waits before it is tried again. */
+const ID_CARD_READS_PER_LOAD = 5;
+const ID_CARD_RETRY_MS = 30 * 60 * 1000;
+const idCardTriedAt = new Map<string, number>();
+
+type AdditionReadiness = { cardName: IdCardName | null; gaps: string[] };
+
+/**
+ * Each person on the add list with what Libano-Suisse's sheet still lacks for them (owner, 27 Nov 2026, rule 1) and
+ * the name their ID card carries. A joiner whose card has not been read yet is read here (a few a load, and a card
+ * that could not be read is left for half an hour), so a joiner from before the card was read at acceptance, or one
+ * whose read failed then, is read the first time the list opens.
+ */
+async function additionReadiness(actions: readonly MedicalInsuranceAction[], employeeRows: Map<string, EmployeeDirectoryRow>): Promise<Map<string, AdditionReadiness>> {
+  const adds = actions.filter((action) => action.kind === "add" && action.hrId);
+  const readiness = new Map<string, AdditionReadiness>();
+  if (adds.length === 0) return readiness;
+  const hrIds = adds.map((action) => action.hrId as string);
+  let names = await loadIdCardNames(hrIds);
+  const now = Date.now();
+  const unread = hrIds.filter((hrId) => !names.has(hrId) && now - (idCardTriedAt.get(hrId) ?? 0) > ID_CARD_RETRY_MS).slice(0, ID_CARD_READS_PER_LOAD);
+  if (unread.length > 0) {
+    for (const hrId of unread) idCardTriedAt.set(hrId, now);
+    await Promise.all(unread.map((hrId) => readAndSaveIdCardName(hrId, "medical-insurance-add-list")));
+    names = await loadIdCardNames(hrIds);
+  }
+  const photos = await getEmployeePhotoMap();
+  for (const action of adds) {
+    const hrId = action.hrId as string;
+    const record = employeeRows.get(hrId);
+    const cardName = names.get(hrId) ?? null;
+    const gaps = libanoAdditionGaps({
+      birthDate: dayOnly(record?.birthDate),
+      cardName,
+      gender: record?.gender ?? null,
+      hasPhoto: photos.has(normalizeHrId(hrId)),
+      mobileNumber: record?.mobileNumber ?? null,
+      nationalId: record?.nationalId ?? null,
+    });
+    readiness.set(action.key, { cardName, gaps });
+  }
+  return readiness;
+}
+
 export async function getMedicalInsuranceView(): Promise<MedicalInsuranceView | null> {
   const asOf = todayInCairo();
   const policy = await loadPolicy(asOf);
@@ -373,7 +419,7 @@ export async function getMedicalInsuranceView(): Promise<MedicalInsuranceView | 
     memberType: row.member_type,
     name: row.full_name,
     notes: row.notes,
-    open: !row.coverage_ends_on || row.coverage_ends_on >= asOf,
+    open: !neverInForceRow(row) && (!row.coverage_ends_on || row.coverage_ends_on >= asOf),
     principalMemberId: row.principal_member_id,
     principalName: row.principal_member_id ? memberNames.get(row.principal_member_id) ?? null : null,
     staffNumber: row.staff_number,
@@ -383,8 +429,14 @@ export async function getMedicalInsuranceView(): Promise<MedicalInsuranceView | 
   const count = (kind: MedicalInsuranceAction["kind"], timing: MedicalInsuranceAction["timing"]) =>
     state.actions.filter((action) => action.kind === kind && action.timing === timing).length;
 
+  const readiness = await additionReadiness(state.actions, state.employeeRows);
+  const actions = state.actions.map((action) => {
+    const ready = readiness.get(action.key);
+    return ready ? { ...action, missing: ready.gaps } : action;
+  });
+
   return {
-    actions: state.actions,
+    actions,
     asOf,
     counts: {
       addNow: count("add", "now"),
@@ -1428,6 +1480,11 @@ export async function removeMedicalInsuranceDocument(access: AccessContext, docu
 
 const FILE_MOST_ROWS = 500;
 
+/** A register row ended on its own first day: never in force, so never open, whatever day that is. */
+function neverInForceRow(row: MemberDbRow): boolean {
+  return wasNeverInForce({ coverageEnd: row.coverage_ends_on, coverageStart: row.coverage_starts_on });
+}
+
 function memberLine(row: MemberDbRow, rows: ReadonlyMap<string, MemberDbRow>, employees: ReadonlyMap<string, EmployeeDirectoryRow>, day: string): LibanoMemberLine {
   const principal = row.principal_member_id ? rows.get(row.principal_member_id) : undefined;
   return {
@@ -1445,6 +1502,37 @@ function memberLine(row: MemberDbRow, rows: ReadonlyMap<string, MemberDbRow>, em
   };
 }
 
+/** What the register records once a file has gone to Libano-Suisse: an addition is put on it, a deletion is ended. */
+export type MovementRegisterStep =
+  | { step: "add"; hrId: string; name: string; category: MedicalInsuranceCategory; day: string }
+  | { step: "end"; memberId: string; name: string; day: string; reason: string };
+
+/**
+ * Records on the register what a file sent to Libano-Suisse says (owner, 27 Nov 2026: "I sent them through the email in
+ * the system, so they are added. Why are they sitting here?"): each addition is put on the register from the day and on
+ * the plan the file carried, and each deletion is ended on its deletion date, with the family under them. Through the
+ * same functions as Add to the register and End cover. One person refused never stops the rest; each is named.
+ */
+async function recordSentMovement(access: AccessContext, steps: readonly MovementRegisterStep[]): Promise<{ done: string[]; failed: string[] }> {
+  const done: string[] = [];
+  const failed: string[] = [];
+  for (const entry of steps) {
+    try {
+      if (entry.step === "add") {
+        await assertPermission(access, "medical_insurance", "create");
+        await addMedicalInsuranceMember(access, { category: entry.category, coverageStart: entry.day, hrId: entry.hrId, memberType: "employee" });
+      } else {
+        await assertPermission(access, "medical_insurance", "update");
+        await updateMedicalInsuranceMember(access, entry.memberId, { action: "end", coverageEnd: entry.day, endReason: entry.reason });
+      }
+      done.push(entry.name);
+    } catch (error) {
+      failed.push(`${entry.name} (${error instanceof Error ? error.message : "not saved"})`);
+    }
+  }
+  return { done, failed };
+}
+
 /**
  * Turns the people ticked on the page into lines of Libano-Suisse's member file. Each one must still be on
  * today's list, as an addition or a deletion as asked, so a stale page cannot put somebody on the file
@@ -1453,14 +1541,14 @@ function memberLine(row: MemberDbRow, rows: ReadonlyMap<string, MemberDbRow>, em
  */
 export async function prepareLibanoMemberFile(
   body: Record<string, unknown>,
-): Promise<{ policyId: string; policyNumber: string | null; policy: { startsOn: string; endsOn: string }; kind: LibanoMemberFileKind; rows: LibanoMemberLine[] }> {
+): Promise<{ policyId: string; policyNumber: string | null; policy: { startsOn: string; endsOn: string }; kind: LibanoMemberFileKind; rows: LibanoMemberLine[]; register: MovementRegisterStep[] }> {
   const kind = body.kind;
   if (kind !== "additions" && kind !== "deletions" && kind !== "everyone") throw new MedicalInsuranceInputError("Choose additions, deletions or everyone covered.");
   const asOf = todayInCairo();
   const policy = await requirePolicy(asOf);
   const state = await loadState(policy, asOf);
   const rowsById = new Map(state.memberRows.map((row) => [row.id, row]));
-  const isOpen = (row: MemberDbRow) => !row.coverage_ends_on || row.coverage_ends_on >= asOf;
+  const isOpen = (row: MemberDbRow) => !neverInForceRow(row) && (!row.coverage_ends_on || row.coverage_ends_on >= asOf);
 
   if (kind === "everyone") {
     const open = state.memberRows.filter(isOpen);
@@ -1474,6 +1562,7 @@ export async function prepareLibanoMemberFile(
       policy: { endsOn: policy.endsOn, startsOn: policy.startsOn },
       policyId: policy.id,
       policyNumber: policy.policyNumber,
+      register: [],
       rows: [...ordered, ...orphans].map((row) => memberLine(row, rowsById, state.employeeRows, row.coverage_starts_on)),
     };
   }
@@ -1500,6 +1589,7 @@ export async function prepareLibanoMemberFile(
     const typedDays = body.days && typeof body.days === "object" && !Array.isArray(body.days) ? (body.days as Record<string, unknown>) : {};
     const listed = new Set<string>();
     const rows: LibanoMemberLine[] = [];
+    const register: MovementRegisterStep[] = [];
     for (const action of actions) {
       const member = action.memberId ? rowsById.get(action.memberId) : undefined;
       if (!member) continue;
@@ -1509,6 +1599,7 @@ export async function prepareLibanoMemberFile(
       const problem = deletionDayProblem(day, { ...window, formatDay: formatLeftDay, name: action.name, policyEndsOn: policy.endsOn });
       if (problem) throw new MedicalInsuranceInputError(problem);
       const deletionDay = day as string;
+      register.push({ day: deletionDay, memberId: member.id, name: action.name, reason: action.reason, step: "end" });
       const family = member.member_type === "employee" ? state.memberRows.filter((other) => other.principal_member_id === member.id && isOpen(other)) : [];
       for (const row of [member, ...family]) {
         if (listed.has(row.id)) continue;
@@ -1520,38 +1611,45 @@ export async function prepareLibanoMemberFile(
     if (rows.length > LIBANO_DELETIONS_SHEET_ROWS) {
       throw new MedicalInsuranceInputError(`Libano-Suisse's deletions sheet holds ${LIBANO_DELETIONS_SHEET_ROWS} people, families included; this file has ${rows.length}. Tick fewer and export twice.`);
     }
-    return { kind, policy: { endsOn: policy.endsOn, startsOn: policy.startsOn }, policyId: policy.id, policyNumber: policy.policyNumber, rows };
+    return { kind, policy: { endsOn: policy.endsOn, startsOn: policy.startsOn }, policyId: policy.id, policyNumber: policy.policyNumber, register, rows };
   }
 
+  // Nobody goes out with anything missing (owner, 27 Nov 2026, rule 1: "don't send if any data is missing"): the name
+  // from the ID card, the date of birth, the sex, the national ID, the mobile number and the personal photo. Everyone
+  // lacking something is named at once, so HR fixes them or unticks them; the page already refuses to tick them.
+  const readiness = await additionReadiness(actions, state.employeeRows);
+  const gaps = actions.flatMap((action) => {
+    const lacking = action.hrId ? readiness.get(action.key)?.gaps ?? ["name from the ID card"] : ["Phoenix employee record"];
+    return lacking.length > 0 ? [`${action.name} (${lacking.join(", ")})`] : [];
+  });
+  if (gaps.length > 0) {
+    throw new MedicalInsuranceInputError(`Missing data, so nothing was made or sent. Fill it in, or untick: ${gaps.join("; ")}.`);
+  }
+
+  const register: MovementRegisterStep[] = [];
   const rows = actions.map((action): LibanoMemberLine => {
     const category = additionCategory(action, chosenCategories[action.key]);
     if (!category) throw new MedicalInsuranceInputError(`Choose a plan for ${action.name}.`);
+    if (action.hrId) register.push({ category, day: action.effectiveOn, hrId: action.hrId, name: action.name, step: "add" });
     const employee = action.hrId ? state.employeeRows.get(action.hrId) : undefined;
+    // The name as the ID card prints it (owner, 27 Nov 2026): a Phoenix name of two words sent the Father Name blank.
+    const card = readiness.get(action.key)?.cardName as IdCardName;
     return {
       adherentNumber: null,
       birthDate: dayOnly(employee?.birthDate),
       category,
       day: action.effectiveOn,
-      fullName: employee?.fullName ?? action.name,
+      fullName: [card.first, card.father, card.last].join(" "),
       gender: employee?.gender ?? null,
       memberType: "employee",
+      nameParts: { father: card.father, first: card.first, last: card.last },
       nationalId: employee?.nationalId ?? null,
       phone: employee?.mobileNumber ?? null,
       principalNumber: null,
       staffNumber: action.hrId,
     };
   });
-  // The insurer's sheet marks the date of birth and the sex mandatory, and the Employee Master can hold neither. The
-  // register path refuses a missing date of birth too (addMedicalInsuranceMember), so everyone is named at once and HR
-  // fixes the records or unticks them, instead of a file with blank cells going out.
-  const gaps = rows.flatMap((line) => {
-    const lacking = libanoLineGaps(line);
-    return lacking.length > 0 ? [`${line.fullName} (${lacking.join(" and ")})`] : [];
-  });
-  if (gaps.length > 0) {
-    throw new MedicalInsuranceInputError(`Libano-Suisse's file needs a date of birth and sex for everyone. Fill them on the Employee Master, or untick: ${gaps.join(", ")}.`);
-  }
-  return { kind, policy: { endsOn: policy.endsOn, startsOn: policy.startsOn }, policyId: policy.id, policyNumber: policy.policyNumber, rows };
+  return { kind, policy: { endsOn: policy.endsOn, startsOn: policy.startsOn }, policyId: policy.id, policyNumber: policy.policyNumber, register, rows };
 }
 
 export type LibanoMovementEmailOutcome = {
@@ -1563,13 +1661,37 @@ export type LibanoMovementEmailOutcome = {
   cc: string[];
   people: number;
   message: string;
+  /** Who the register now records as the file said, and who it could not, each with the reason. */
+  recorded?: { done: string[]; failed: string[] };
 };
+
+/**
+ * Each joiner's personal photo, to go with the Additions sheet named by their staff ID (owner, 27 Nov 2026, rule 2:
+ * "take the photo she uploaded, rename it to her HR ID, and attach it with the sheet"): AI-0037.jpg. A photo that
+ * cannot be read stops the send, never a sheet without it.
+ */
+async function additionPhotos(rows: readonly LibanoMemberLine[]): Promise<Array<{ bytes: Buffer; contentType: string; fileName: string }>> {
+  const photos = await Promise.all(
+    rows.map(async (row) => {
+      const hrId = row.staffNumber ?? "";
+      const photo = hrId ? await streamEmployeePhoto(hrId) : null;
+      if (!photo) return { missing: row.fullName };
+      const extension = photo.contentType === "image/png" ? "png" : photo.contentType === "image/webp" ? "webp" : "jpg";
+      return { bytes: photo.bytes, contentType: photo.contentType, fileName: `${hrId}.${extension}` };
+    }),
+  );
+  const missing = photos.flatMap((photo) => ("missing" in photo ? [photo.missing] : []));
+  if (missing.length > 0) throw new MedicalInsuranceInputError(`Missing data, so nothing was sent: no personal photo could be read for ${missing.join(", ")}.`);
+  return photos as Array<{ bytes: Buffer; contentType: string; fileName: string }>;
+}
 
 /**
  * The Send button beside Export (owner, 27 Nov 2026): the ticked people's Additions or Deletions workbook,
  * the very file Export builds, emailed to Libano-Suisse's policy administration, copying the account manager
  * and the owner (./libano-movement-email.ts holds who, what and why). Through the durable outbox, so a
- * provider failure waits and retries instead of being lost. The register does not change.
+ * provider failure waits and retries instead of being lost. Once the real one is out or waiting, the register records
+ * what it said (`recordSentMovement`): the additions go on it, the deletions are ended on their dates. A test changes
+ * nothing.
  *
  * `test: true` is the Send test button: the very same email and file, to the owner alone and nobody at the
  * insurer, so he can check it before the real one leaves (owner, 27 Nov 2026).
@@ -1595,10 +1717,12 @@ export async function sendLibanoMovementEmail(access: AccessContext, body: Recor
   const test = body.test === true;
   const atIso = new Date().toISOString();
   const workbook = await sheet.buildLibanoMovementWorkbook({ kind, policy: { ...file.policy, holder: sheet.LIBANO_BRANCH_NAME }, rows: file.rows });
+  const photos = kind === "additions" ? await additionPhotos(file.rows) : [];
   const plan = mail.planLibanoMovementEmail({
     atIso,
     fileName: `Libano-Suisse-members-${kind}-${medicalInsuranceFileDay(atIso)}.xlsx`,
     kind,
+    photos,
     policyNumber: file.policyNumber,
     rows: file.rows,
     systemFromAddress: systemEmail.defaultFromEmail,
@@ -1645,6 +1769,13 @@ export async function sendLibanoMovementEmail(access: AccessContext, body: Recor
         ? `${outcome.status === "sent" ? "Emailed" : "Queued"} a TEST of the ${kind} file for ${file.rows.length} ${file.rows.length === 1 ? "person" : "people"} to ${plan.input.to.join(", ")} only`
         : `${outcome.status === "sent" ? "Emailed" : "Queued"} the ${kind} file for ${file.rows.length} ${file.rows.length === 1 ? "person" : "people"} to Libano-Suisse ("${plan.input.subject}")`,
     });
+    if (!test) {
+      const recorded = await recordSentMovement(access, file.register);
+      const words: string[] = [];
+      if (recorded.done.length > 0) words.push(`${kind === "additions" ? "Added to the register" : "Cover ended on the register"}: ${recorded.done.join(", ")}.`);
+      if (recorded.failed.length > 0) words.push(`Not recorded on the register, do it by hand: ${recorded.failed.join("; ")}.`);
+      outcome = { ...outcome, message: [outcome.message, ...words].join(" "), recorded };
+    }
   }
   return outcome;
 }

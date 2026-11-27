@@ -1,6 +1,7 @@
 "use client";
 
 import { Download, Send } from "lucide-react";
+import { useRouter } from "next/navigation";
 import * as React from "react";
 
 import { AdminTableShell } from "@/components/admin/admin-design-system";
@@ -51,7 +52,13 @@ function canTick(action: MedicalInsuranceAction): boolean {
   return action.kind === "add" || action.kind === "remove";
 }
 
+/** What an addition still lacks for Libano-Suisse's sheet; anything here and the person cannot be ticked (owner, 27 Nov 2026, rule 1). */
+function missingOf(action: MedicalInsuranceAction): string[] {
+  return action.kind === "add" ? action.missing ?? [] : [];
+}
+
 export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view }: Props) {
+  const router = useRouter();
   const [filter, setFilter] = React.useState<MedicalInsuranceActionKind | "all">("all");
   const [openKey, setOpenKey] = React.useState<string | null>(null);
   const [ticked, setTicked] = React.useState<ReadonlySet<string>>(new Set());
@@ -78,7 +85,7 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
   }
 
   // Only people still on today's list count as ticked; someone who dropped off since the page loaded does not.
-  const tickedAdds = view.actions.filter((action) => action.kind === "add" && ticked.has(action.key));
+  const tickedAdds = view.actions.filter((action) => action.kind === "add" && ticked.has(action.key) && missingOf(action).length === 0);
   const tickedRemoves = view.actions.filter((action) => action.kind === "remove" && ticked.has(action.key));
   const addsWithoutCategory = tickedAdds.filter((action) => !additionCategory(action));
   const removeProblems = tickedRemoves.map(deletionProblemOf).filter((problem): problem is string => Boolean(problem));
@@ -95,7 +102,7 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
   }
 
   function keysOf(kind: "add" | "remove"): string[] {
-    return view.actions.filter((action) => action.kind === kind).map((action) => action.key);
+    return view.actions.filter((action) => action.kind === kind && missingOf(action).length === 0).map((action) => action.key);
   }
 
   function tickAll(kind: "add" | "remove") {
@@ -145,6 +152,11 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
       const { outcome } = await postJsonAnswer<{ outcome: SendOutcome }>(MEMBER_FILE_SEND_URL, { ...daysOf(request.kind, chosen), keys: chosen.map((action) => action.key), kind: request.kind, test: request.test });
       setSent(outcome);
       setConfirming(null);
+      // A real send has just recorded the people on the register, so the lists are read again and they leave this tab.
+      if (!request.test) {
+        setTicked(new Set());
+        router.refresh();
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The email could not be sent. Try again.");
     } finally {
@@ -154,6 +166,19 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
 
   function renderTick(action: MedicalInsuranceAction) {
     if (!canExport || !canTick(action)) return null;
+    const missing = missingOf(action);
+    if (missing.length > 0) {
+      return (
+        <input
+          aria-label={`${action.name} cannot be ticked: missing ${missing.join(", ")}`}
+          checked={false}
+          className="mt-0.5 h-5 w-5 shrink-0 cursor-not-allowed"
+          disabled
+          title={`Missing: ${missing.join(", ")}`}
+          type="checkbox"
+        />
+      );
+    }
     return (
       <input
         aria-label={`Tick ${action.name} for the ${action.kind === "add" ? "additions" : "deletions"} file`}
@@ -162,6 +187,16 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
         onChange={() => toggle(action.key)}
         type="checkbox"
       />
+    );
+  }
+
+  function renderMissing(action: MedicalInsuranceAction) {
+    const missing = missingOf(action);
+    if (missing.length === 0) return null;
+    return (
+      <p className="mt-1 break-words text-phx-xs font-black text-phx-danger">
+        Missing: {missing.join(", ")}. Cannot be sent until it is filled in.
+      </p>
     );
   }
 
@@ -236,7 +271,7 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
   return (
     <div className="space-y-5">
       <AdminTableShell
-        description="Where the rule and the register disagree. Tick who goes on Libano-Suisse's member file and export it: deletions and additions are separate files, each on Libano-Suisse's own Additions and Deletions workbook, as they issued it. The file goes to the insurer by your hand. Saving a change here records it on the register."
+        description="Where the rule and the register disagree. Tick who goes on Libano-Suisse's member file and export it: deletions and additions are separate files, each on Libano-Suisse's own Additions and Deletions workbook, as they issued it. Send to Libano-Suisse also records it on the register: the additions go on it and the deletions are ended on their dates. Saving a change here records it on the register too."
         title="Who should be in, and who should be out"
       >
         <div className="flex flex-wrap gap-2 border-b border-phx-line p-4">
@@ -347,6 +382,7 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
                         <td className={cellClassName}>
                           <p className={cn("break-words text-phx-xs font-black", KIND_TONE[action.kind])}>{KIND_WORDS[action.kind]}</p>
                           <p className="mt-0.5 break-words text-phx-xs font-semibold text-phx-ink-soft">{action.reason}</p>
+                          {renderMissing(action)}
                           {renderCategory(action)}
                         </td>
                         <td className={cellClassName}>
@@ -375,6 +411,7 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
                   </div>
                   <p className={cn("break-words text-phx-xs font-black", KIND_TONE[action.kind])}>{KIND_WORDS[action.kind]}: {timingWords(action)}</p>
                   <p className="break-words text-phx-xs font-semibold text-phx-ink-soft">{action.reason}</p>
+                  {renderMissing(action)}
                   {renderCategory(action)}
                   {renderDeletionDay(action)}
                   {renderOpenButton(action)}
@@ -495,7 +532,9 @@ function SendConfirm(props: { busy: boolean; count: number; dates: readonly stri
       <p className={cn("break-words text-phx-xs font-bold", test ? "text-phx-ink-soft" : "text-phx-warn")}>
         {test
           ? "Nothing goes to Libano-Suisse. You receive exactly the email they would, marked as a test, so you can open the file and check it first."
-          : "This sends a real email to the insurer, from Phoenix on your behalf. It says it is an automated email from the system, and replies come to you."}
+          : kind === "additions"
+            ? "This sends a real email to the insurer, from Phoenix on your behalf, and puts these people on the register from the day and on the plan the file carries. Replies come to you."
+            : "This sends a real email to the insurer, from Phoenix on your behalf, and ends these people's cover on the register on the deletion date shown. Replies come to you."}
       </p>
       <div className="flex flex-wrap gap-2">
         <Button className="h-9 gap-2" disabled={props.busy || props.count === 0} onClick={props.onSend}>

@@ -34,6 +34,7 @@ import {
   type Movement,
   type OpeningStatement,
 } from "./cost";
+import { wasNeverInForce } from "./monthly-split";
 
 /** How far ahead a joiner or leaver appears on the list as coming up. */
 const MEDICAL_INSURANCE_HORIZON_DAYS = 30;
@@ -142,6 +143,9 @@ export type MedicalInsuranceAction = {
   /** An employee's own record, shown beside them: blank for family and for someone with no record. */
   hireDate?: string | null;
   areaName?: string | null;
+  /** An addition only: what Libano-Suisse's sheet still lacks for this person (`libanoAdditionGaps`). Anything here
+   * and the person cannot be ticked, exported or sent (owner, 27 Nov 2026, rule 1). */
+  missing?: string[];
 };
 
 /**
@@ -160,7 +164,13 @@ export type MedicalInsuranceActions = {
   exceptions: KeptException[];
 };
 
+/**
+ * Covered on that day or after it. Cover ended on its own first day was never in force (`wasNeverInForce`), so it is
+ * not open even when that first day is still to come: a joiner who declined before 1 December, ended on 1 December,
+ * stayed on the remove list however often End cover was pressed (owner, 27 Nov 2026: Abdelrahman El-Shemy).
+ */
 function isOpenOn(member: MemberFacts, day: string): boolean {
+  if (wasNeverInForce(member)) return false;
   return !member.coverageEnd || member.coverageEnd >= day;
 }
 

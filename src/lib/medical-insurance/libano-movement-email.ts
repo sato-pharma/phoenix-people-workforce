@@ -98,6 +98,8 @@ export function buildLibanoMovementEmail(input: {
   kind: LibanoMovementEmailKind;
   policyNumber: string | null;
   rows: readonly LibanoMemberLine[];
+  /** How many personal photos go with an additions sheet, each named by the staff ID. */
+  photoCount?: number;
   /** A TEST send: the same email, marked as a test, to the owner alone. */
   test?: boolean;
 }): { html: string; subject: string; text: string } {
@@ -109,6 +111,9 @@ export function buildLibanoMovementEmail(input: {
   const what = additions ? `add ${people} to` : `delete ${people} from`;
   const sheet = additions ? "Additions" : "Deletions";
   const dayWord = additions ? "Cover starts" : "Last covered day";
+  const photoWords = additions && (input.photoCount ?? 0) > 0
+    ? `${input.photoCount === 1 ? "Their personal photo is attached, named by the staff ID." : "Their personal photos are attached, each named by the staff ID."}`
+    : "";
   // Exactly these words and no more (owner, 27 Nov 2026: "this is an automated email from Phoenix Workforce, Sato
   // Pharma HR system only"). The reply still reaches the HR Manager through the Reply-To.
   const automatedNote = "This is an automated email from Phoenix Workforce, Sato Pharma HR system.";
@@ -141,7 +146,7 @@ export function buildLibanoMovementEmail(input: {
     "",
     ...input.rows.map((row) => `- ${row.fullName} (${MEMBER_TYPE_WORDS[row.memberType]}${additions ? `, plan ${row.category}` : ""}), ${dayWord.toLowerCase()} ${plainDay(row.day)}`),
     "",
-    "Please reply to confirm once it is done.",
+    `${photoWords ? `${photoWords} ` : ""}Please reply to confirm once it is done.`,
     "",
     "Kind regards,",
     "",
@@ -157,7 +162,7 @@ export function buildLibanoMovementEmail(input: {
   const rendered = renderLibanoMovementLetter({
     assetBaseUrl: letterAssetBase(),
     automatedNote,
-    closing: "Please reply to confirm once it is done.",
+    closing: `${photoWords ? `${photoWords} ` : ""}Please reply to confirm once it is done.`,
     paragraphsHtml: [
       `Please ${escapeHtml(what)} Sato Pharma's ${escapeHtml(policyWords)} with ${LIBANO_INSURER_NAME}. They are on the attached ${sheet} sheet, <b>${escapeHtml(input.fileName)}</b>, on your own workbook:`,
     ],
@@ -195,6 +200,8 @@ export function planLibanoMovementEmail(input: {
   atIso: string;
   fileName: string;
   kind: LibanoMovementEmailKind;
+  /** An additions file only: each joiner's personal photo, named by their staff ID (owner, 27 Nov 2026, rule 2). */
+  photos?: ReadonlyArray<{ bytes: Buffer | Uint8Array; contentType: string; fileName: string }>;
   policyNumber: string | null;
   rows: readonly LibanoMemberLine[];
   systemFromAddress: string;
@@ -218,7 +225,8 @@ export function planLibanoMovementEmail(input: {
   };
 } {
   if (input.rows.length === 0) throw new Error("Nobody is on the file, so there is nothing to send.");
-  const email = buildLibanoMovementEmail(input);
+  const photos = input.kind === "additions" ? input.photos ?? [] : [];
+  const email = buildLibanoMovementEmail({ ...input, photoCount: photos.length });
   const recipients = libanoMovementRecipients(input.test === true);
   const people = input.rows.map((row) => `${row.memberType}:${row.staffNumber ?? ""}:${row.fullName}`).sort().join("|");
   const digest = createHash("sha256").update(people).digest("hex").slice(0, 32);
@@ -230,7 +238,10 @@ export function planLibanoMovementEmail(input: {
   return {
     dedupeKey,
     input: {
-      attachments: [{ content: Buffer.from(new Uint8Array(input.workbook)).toString("base64"), contentType: XLSX_TYPE, filename: input.fileName }],
+      attachments: [
+        { content: Buffer.from(new Uint8Array(input.workbook)).toString("base64"), contentType: XLSX_TYPE, filename: input.fileName },
+        ...photos.map((photo) => ({ content: Buffer.from(photo.bytes).toString("base64"), contentType: photo.contentType, filename: photo.fileName })),
+      ],
       cc: recipients.cc,
       externalRecipients: recipients.external,
       from: libanoMovementFrom(input.systemFromAddress),
