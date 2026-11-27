@@ -16,12 +16,18 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 // do not match the order — Finance compares the photo with the order lines.
 //
 // Finance issues, returns and reports a book lost (owner: "Finance"). An approved order with no
-// receipt 14 days after approval is flagged on Finance's desk (owner: "14 days"). An order raised by
+// receipt 7 days after approval is flagged on Finance's desk, and its manager raises no new order until
+// it is entered (owner, 26 Nov 2026: "14 days"; 27 Nov: «حد اقصى اسبوع»). An order raised by
 // someone who held no book is flagged too, from the day the first book was handed out (owner, 27 Nov
 // 2026: "Flag them"). A page from a returned book is still accepted for an order approved while its
 // manager held it (owner, 27 Nov 2026: "Allow late entry"), and Finance can undo a receipt entered on
 // the wrong order, with a written reason (owner, 27 Nov 2026: "make an undo option"). Nothing here
 // gates the sales month or the collection — that is a money rule the owner decides on its own screen.
+//
+// An order that will never have a receipt stands without one ONLY with the CEO's approval (owner,
+// 27 Nov 2026: "صلاحيه عمل اى اوردر بدون ايصال هى صلاحيه انور فقط لاغير موافقه منه والتنفيذ من خلال
+// استاذ احمد"; he chose "Anwar approves in Phoenix"). Finance asks on the order with a written reason;
+// the CEO approves or refuses it. An approved one leaves Finance's overdue and no-book lists.
 //
 // Pure: every function takes plain rows and returns a decision, so the tests need no database.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -29,8 +35,11 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 /** The printer's alphabet — no 0/O, 1/I/L, so a handwritten or misread code cannot be ambiguous. */
 export const RECEIPT_CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 export const RECEIPT_CODE_LENGTH = 6;
-/** Owner, 26 Nov 2026: an approved order is flagged when no receipt is entered 14 days after approval. */
-export const RECEIPT_OVERDUE_DAYS = 14;
+/**
+ * An approved order is flagged when no receipt is entered 7 days after approval (owner, 27 Nov 2026:
+ * «حد اقصى اسبوع» — it was 14 days from 26 Nov), and its manager raises no new order until it is.
+ */
+export const RECEIPT_OVERDUE_DAYS = 7;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -77,7 +86,8 @@ export type ReceiptRefusalReason =
   | "other_holders_book"
   | "code_mismatch"
   | "receipt_used"
-  | "receipt_voided";
+  | "receipt_voided"
+  | "order_without_receipt";
 
 /** Why an attempt was refused before or after the rules ran — each one is written on the order too. */
 export type ReceiptAttemptRefusal =
@@ -144,11 +154,16 @@ export function checkReceiptForOrder(input: {
   receipt: ReceiptRow | null;
   book: ReceiptBookRow | null;
   orderReceiptSerial: number | null;
+  /** The CEO approved this order to stand without a receipt. */
+  withoutReceiptApproved?: boolean;
 }): ReceiptDecision {
   const { order, serial, typedCode, receipt, book } = input;
   const label = formatReceiptSerial(serial);
   if (order.status !== "approved" || order.reversalOfRequestId) {
     return refuse("order_not_approved", "A receipt is entered once the order is approved.");
+  }
+  if (input.withoutReceiptApproved) {
+    return refuse("order_without_receipt", "The CEO approved this order to stand without a receipt, so no receipt is entered on it.");
   }
   if (input.orderReceiptSerial !== null) {
     return refuse("order_has_receipt", `This order already has receipt ${formatReceiptSerial(input.orderReceiptSerial)}. An order takes one receipt.`);
@@ -228,7 +243,7 @@ export function receiptRolloutStart(books: readonly ReceiptBookRow[]): number | 
  * `no_book`: approved after the rollout, but its requester held no book that day, so no signed page
  * stands behind it. Flagged on Finance's desk at once (owner, 27 Nov 2026: "Flag them").
  */
-export type ReceiptStanding = "has_receipt" | "not_required" | "waiting" | "overdue" | "no_book";
+export type ReceiptStanding = "has_receipt" | "not_required" | "waiting" | "overdue" | "no_book" | "without_receipt";
 
 /** Whole days since approval, Cairo-agnostic (a duration, not a date). */
 export function daysSinceApproval(decidedAt: string | null, now: Date): number | null {
@@ -239,8 +254,9 @@ export function daysSinceApproval(decidedAt: string | null, now: Date): number |
 }
 
 /**
- * Where an order stands on its receipt. `waiting` inside the 14 days, `overdue` from day 14 on, and
+ * Where an order stands on its receipt. `waiting` inside the 7 days, `overdue` from day 7 on, and
  * `no_book` when its requester held no book on the day it was approved, after the rollout began.
+ * `without_receipt` when the CEO approved it to stand without one — never flagged after that.
  * Only an approved original order owes one — a reversal, a rejection or a cancellation never does.
  */
 export function classifyOrderReceipt(input: {
@@ -248,9 +264,12 @@ export function classifyOrderReceipt(input: {
   books: readonly ReceiptBookRow[];
   hasReceipt: boolean;
   now: Date;
+  /** The CEO approved this order to stand without a receipt. */
+  withoutReceiptApproved?: boolean;
 }): ReceiptStanding {
   if (input.hasReceipt) return "has_receipt";
   if (input.order.status !== "approved" || input.order.reversalOfRequestId) return "not_required";
+  if (input.withoutReceiptApproved) return "without_receipt";
   if (!bookHeldAtApproval(input.order, input.books)) {
     const rollout = receiptRolloutStart(input.books);
     const decided = input.order.decidedAt ? Date.parse(input.order.decidedAt) : Number.NaN;
@@ -326,4 +345,57 @@ export function checkReceiptVoid(receipt: ReceiptRow | null, reason: string): Re
   if (receipt.state === "voided") return { ok: false, message: `Receipt ${formatReceiptSerial(receipt.serial)} is already cancelled.` };
   if (reason.trim().length < 3) return { ok: false, message: "Write why the receipt is cancelled, for example 'spoiled, kept in the book'." };
   return { ok: true };
+}
+
+// ─── An order without a receipt: the CEO's authority alone ───────────────────
+
+export type NoReceiptStatus = "pending" | "approved" | "refused";
+
+export type NoReceiptRow = {
+  id: string;
+  requestId: string;
+  reason: string;
+  askedByHrId: string;
+  askedAt: string;
+  status: NoReceiptStatus;
+  decidedByHrId: string | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
+};
+
+/** The standings that owe a receipt — only these may be asked to stand without one. */
+const OWES_RECEIPT: ReadonlySet<ReceiptStanding> = new Set<ReceiptStanding>(["waiting", "overdue", "no_book"]);
+
+/**
+ * May Finance ask the CEO to let this order stand without a receipt? Only an approved order that owes
+ * one, has none, and has no ask already waiting or approved — always with a written reason.
+ */
+export function checkNoReceiptAsk(input: { standing: ReceiptStanding; live: NoReceiptRow | null; reason: string }): ReceiptDecisionPlain {
+  if (input.standing === "has_receipt") return { ok: false, message: "This order already has a receipt." };
+  if (input.live?.status === "approved" || input.standing === "without_receipt") {
+    return { ok: false, message: "The CEO already approved this order to stand without a receipt." };
+  }
+  if (input.live?.status === "pending") return { ok: false, message: "A request for this order is already waiting for the CEO's decision." };
+  if (!OWES_RECEIPT.has(input.standing)) return { ok: false, message: "Only an approved order that owes a delivery receipt can be asked to stand without one." };
+  if (input.reason.trim().length < 3) return { ok: false, message: "Write why this order has no delivery receipt." };
+  return { ok: true };
+}
+
+/**
+ * May the CEO decide this ask? Only a waiting one. Approving needs the order still to owe a receipt (a
+ * receipt entered meanwhile makes the ask unnecessary — refuse it instead); refusing always says why.
+ */
+export function checkNoReceiptDecision(input: {
+  live: NoReceiptRow | null;
+  hasReceipt: boolean;
+  decision: unknown;
+  note: string;
+}): { ok: true; decision: "approved" | "refused" } | { ok: false; message: string } {
+  if (!input.live || input.live.status !== "pending") return { ok: false, message: "There is no request on this order waiting for a decision." };
+  if (input.decision !== "approve" && input.decision !== "refuse") return { ok: false, message: "Choose approve or refuse." };
+  if (input.decision === "approve" && input.hasReceipt) {
+    return { ok: false, message: "A delivery receipt was entered on this order after the request was sent, so it no longer needs to stand without one. Refuse the request." };
+  }
+  if (input.decision === "refuse" && input.note.trim().length < 3) return { ok: false, message: "Write why the request is refused." };
+  return { ok: true, decision: input.decision === "approve" ? "approved" : "refused" };
 }

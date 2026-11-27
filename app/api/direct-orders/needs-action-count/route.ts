@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { countDirectOrderAwaitingFast, getDirectOrderUnbookedBadge } from "@/lib/direct-orders/service";
 import { countDirectOrderPendingValidations } from "@/lib/direct-orders/pharmacy-validation";
+import { countDirectOrderWithoutReceiptToDecide } from "@/lib/direct-orders/receipt-books";
 import { logError } from "@/lib/observability/log";
 
 export const runtime = "nodejs";
@@ -37,13 +38,16 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    const [awaiting, unbooked, validations] = await Promise.all([
+    // The fourth term (owner, 27 Nov 2026): orders asking to stand without a delivery receipt, which
+    // only the CEO decides — 0 to everyone else, and a head-only count.
+    const [awaiting, unbooked, validations, withoutReceipt] = await Promise.all([
       countDirectOrderAwaitingFast(access),
       getDirectOrderUnbookedBadge(access),
       countDirectOrderPendingValidations(access),
+      countDirectOrderWithoutReceiptToDecide(access),
     ]);
     return NextResponse.json(
-      { count: awaiting + unbooked.count + validations, overdue: unbooked.overdue },
+      { count: awaiting + unbooked.count + validations + withoutReceipt, overdue: unbooked.overdue },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {

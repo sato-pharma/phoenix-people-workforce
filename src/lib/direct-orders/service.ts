@@ -233,6 +233,11 @@ import {
 import { assertDirectOrderWorkflowTransition, directOrderDecisionAction } from "@/lib/direct-orders/workflow";
 import { sendDirectOrderApprovedEmail } from "@/lib/direct-orders/approved-email";
 import {
+  assertDirectOrderMayBeRaised,
+  assertPaymentStandingAllowsFinalApproval,
+  assertRequesterHasNoLateReceipts,
+} from "@/lib/direct-orders/payment-standing";
+import {
   approvedStepActors,
   assertOrderCarriedBySuperAdminStands,
   assertPharmacyRulingStands,
@@ -4428,6 +4433,15 @@ export async function submitDirectOrder(
   let pharmacy = pharmacies.get(input.pharmacyId) ?? null;
   if (!pharmacy) badRequest("Venue not found — pick an existing one or add a new venue first.");
 
+  // Refused before anything is written (owner, 27 Nov 2026): the manager has a delivery receipt past
+  // its 7 days, or this pharmacy has paid nothing on an earlier order of a product in this basket.
+  // A part-paid product or a late payer climbs, and only the CEO's own approval finishes it.
+  await assertDirectOrderMayBeRaised({
+    requesterHrId: actorHrId,
+    pharmacyId: input.pharmacyId,
+    productCodes: lines.map((line) => line.productCode),
+  });
+
   // Repair BEFORE deciding (owner rule, 2026-08-08). Pharmacies registered before auto-link exists
   // still carry their code in the name field; without this they would keep failing the hold test on
   // every future order for a code that is sitting right there. Running it here means the repair and
@@ -4814,6 +4828,16 @@ export async function reviseDirectOrder(
   const overCap = lines.some((line) => line.overCap);
   const salesValue = totalSalesValue;
 
+  // Sent back up the chain is raised again (owner, 27 Nov 2026): the same refusals as a new order — a
+  // delivery receipt of the requester's past its 7 days, or nothing paid on this product before.
+  if (!before.reversalOfRequestId) {
+    await assertDirectOrderMayBeRaised({
+      requesterHrId: before.requesterHrId,
+      pharmacyId: before.pharmacyId,
+      productCodes: lines.map((line) => line.productCode),
+    });
+  }
+
   const steps = await loadSteps(before.id);
   const activeStep = resolveActiveStep(steps);
   if (!activeStep) {
@@ -5013,6 +5037,21 @@ export async function decideDirectOrder(
           "has not confirmed yet, so this order cannot be finalized. The SFE Manager has to check it first. " +
           "Every approval already given on this request stands.",
       );
+    }
+    // What the pharmacy still owes, read at the last approval (owner, 27 Nov 2026): a product it has
+    // paid nothing on is refused, and a part-paid product or a late payer is finished only by the
+    // CEO's own approval, never the Super Admin answering for that rung. And the manager who raised it
+    // must have no delivery receipt past its 7 days — this catches an order already climbing when the
+    // receipt went late, or revived from hold. A reversal undoes an order, so neither holds it.
+    if (!request.reversalOfRequestId) {
+      const items = (await loadDirectOrderItemsForRequests([request.id])).get(request.id) ?? [];
+      await assertRequesterHasNoLateReceipts(request.requesterHrId);
+      await assertPaymentStandingAllowsFinalApproval({
+        actorRole: access.role,
+        requestId: request.id,
+        pharmacyId: request.pharmacyId,
+        productCodes: items.length > 0 ? items.map((item) => item.productCode) : [request.productCode],
+      });
     }
   }
 

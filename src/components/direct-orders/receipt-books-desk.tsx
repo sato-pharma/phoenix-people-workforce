@@ -52,9 +52,10 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
 }
 
 /**
- * Finance's Receipt Books desk (owner, 26 Nov 2026: "Finance", "14 days").
+ * Finance's Receipt Books desk (owner, 26 Nov 2026: "Finance"; 27 Nov: 7 days).
  * Approved orders still owing a receipt, orders raised by someone holding no book (owner, 27 Nov
- * 2026: "Flag them"), the sixteen books and who holds each, the spoiled-page cancel, and the receipts
+ * 2026: "Flag them"), the orders asked to stand without a receipt (the CEO decides each, owner,
+ * 27 Nov 2026), the sixteen books and who holds each, the spoiled-page cancel, and the receipts
  * entered. Every action is checked again on the server.
  */
 export function ReceiptBooksDesk({ register }: { register: DirectOrderReceiptRegister }) {
@@ -147,6 +148,39 @@ export function ReceiptBooksDesk({ register }: { register: DirectOrderReceiptReg
               ))}
             </ul>
           </>
+        )}
+      </Panel>
+
+      <Panel
+        title={`Without a receipt — ${register.withoutReceipt.filter((order) => order.status === "pending").length} waiting for the CEO, ${register.withoutReceipt.filter((order) => order.status === "approved").length} approved`}
+      >
+        {register.withoutReceipt.length === 0 ? (
+          <p className="text-phx-sm text-slate-600">
+            No order has been asked to stand without a delivery receipt. Only the CEO can approve one: ask from the order&apos;s own page, with the reason.
+          </p>
+        ) : (
+          <ul className="divide-y divide-slate-200">
+            {register.withoutReceipt.map((order) => (
+              <li className="grid grid-cols-1 gap-1 py-2 sm:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(0,1fr)] sm:gap-3" key={order.requestId}>
+                <div className="min-w-0">
+                  <Link className="break-words text-phx-sm font-bold text-slate-900 underline-offset-2 hover:underline" href={`/admin/direct-orders/${order.requestId}?from=/admin/direct-orders/receipts`}>
+                    {order.pharmacyName}
+                  </Link>
+                  <p className="break-words text-phx-xs text-slate-500">
+                    {order.productName} · {money(order.salesValue)} · {order.requesterName}
+                  </p>
+                </div>
+                <p className="break-words text-phx-sm text-slate-700" dir="auto">
+                  {order.reason}
+                </p>
+                <p className={cn("text-phx-sm", order.status === "pending" ? "font-bold text-amber-700" : "text-slate-600")}>
+                  {order.status === "pending"
+                    ? `Waiting for the CEO since ${cairoDate(order.askedAt)}`
+                    : `Approved${order.decidedByName ? ` by ${order.decidedByName}` : ""}${order.waiverDecidedAt ? ` ${cairoDate(order.waiverDecidedAt)}` : ""}`}
+                </p>
+              </li>
+            ))}
+          </ul>
         )}
       </Panel>
 

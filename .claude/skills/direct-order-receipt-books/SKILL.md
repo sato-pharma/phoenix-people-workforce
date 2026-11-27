@@ -11,12 +11,17 @@ has to rediscover it. The code side is module memory: the first bullet of `.clau
 ## His words, and what is NOT decided
 
 - 26 Nov ~19:30: "Build the check". Book owner: **"Finance"**, meaning Ahmed El Maraghy. Flag an approved order
-  with no receipt after **"14 days"**.
+  with no receipt after **"14 days"**. 27 Nov ~15:00 he cut it to a week: «حد اقصى اسبوع ولا ينفذ له اوردارات
+  اخرى»; the manager who raised the late order is blocked from raising another ("The manager who raised it").
 - 27 Nov ~00:15: "Merge 812". PR 812 merged at 00:18 (merge sha `efbccb86b`) and served from 00:23. The error
   check stayed CLEAN for 15 minutes.
 - **NOT decided, and never decided in chat (money):** whether a missing receipt stops the order counting in that
   month's sales or collection. Today it does not; the receipt proves and flags only. The proposal email puts
   this to Dr Anwar and Ahmed El Maraghy as THEIR decision.
+- 27 Nov ~14:15: «صلاحيه عمل اى اوردر بدون ايصال هى صلاحيه انور فقط لاغير موافقه منه والتنفيذ من خلال استاذ احمد».
+  He chose "Anwar approves in Phoenix". Built: Finance (أستاذ أحمد) asks on the order with a reason, and the CEO
+  alone approves or refuses it on the same order and in his Needs action list. An approved order leaves the
+  missing-receipt lists. The Receipt Books desk lists every ask.
 - He asked for the guides **in Arabic**, "المختصر المفيد والمهم" (short and to the point). He asked for REAL
   screenshots, and a labelled drawing only where no real screen exists yet.
 
@@ -115,7 +120,7 @@ the browser on another machine.
   hands.
 - **Finance's desk:** Direct Orders → Receipt Books, at `/admin/direct-orders/receipts`. It shows only for Ahmed
   El Maraghy and the Super Admin. It has five parts:
-  - "Approved with no receipt": red after 14 days.
+  - "Approved with no receipt": red after 7 days (14 until 27 Nov).
   - "Approved with no receipt book" (PR 829, owner 27 Nov: "Flag them"): from the first hand-out on, every
     approved order raised by someone who held no book that day. Nothing before the first hand-out is listed.
   - The 16 books, with these buttons:
@@ -176,7 +181,8 @@ the browser on another machine.
 - **The area managers' guide:**
   1. Know your receipt, with the sample.
   2. On paper.
-  3. On Phoenix within 14 days. This section has the panel DRAWING, captioned as a drawing.
+  3. On Phoenix within 14 days. This section has the panel DRAWING, captioned as a drawing. 🔴 Since 27 Nov
+     the rule is 7 days and a late receipt blocks the manager's next order: update this guide too.
   4. Rules.
   5. Refusal messages.
 - Screenshots come from the spare's live page, signed in as Super Admin role-only, in the browser pane.
@@ -238,4 +244,7 @@ the browser on another machine.
     photograph it.
   - Never record a fake hand-over on production to get the picture.
 - The book files' route to the printer: USB is proposed.
-- Dr Anwar and Ahmed's decision on whether a missing receipt holds the sales month.
+- Dr Anwar and Ahmed's decision on whether a missing receipt holds the sales month. An order may now stand
+  without a receipt only once Dr Anwar approves it in Phoenix.
+- The management video (scene 13) and its covering message still ask them to decide the missing-receipt
+  question. Update both once the owner finishes his edits.

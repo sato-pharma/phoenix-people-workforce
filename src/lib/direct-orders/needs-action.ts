@@ -83,7 +83,8 @@ export type DirectOrderNeedsActionKind =
   | "correct"
   | "verify_customer"
   | "decide_customer"
-  | "assign_month";
+  | "assign_month"
+  | "decide_without_receipt";
 
 export type DirectOrderNeedsActionItem = {
   id: string;
@@ -168,6 +169,19 @@ export type DirectOrderNeedsActionInput = {
   awaitingFinanceMonth: readonly DirectOrderQueueRow[];
   /** Pending pharmacy validations this viewer may decide. 0 for everyone but Super Admin. */
   pendingCustomerValidations: number;
+  /**
+   * Approved orders Finance asked to let stand without a delivery receipt — the CEO's alone to decide
+   * (owner, 27 Nov 2026). Empty for everyone else.
+   */
+  withoutReceiptToDecide?: readonly {
+    requestId: string;
+    requesterName: string;
+    pharmacyName: string;
+    productName: string;
+    salesValue: number;
+    reason: string;
+    askedAt: string;
+  }[];
   /** Route prefix for this shell — "/admin/direct-orders" or "/employee-portals/direct-orders". */
   basePath: string;
 };
@@ -254,6 +268,27 @@ export function buildDirectOrderNeedsAction(
         `${basePath}?view=needs-action&queue=assign_month`,
       ),
     );
+  }
+
+  const withoutReceipt = input.withoutReceiptToDecide ?? [];
+  if (withoutReceipt.length > 0) {
+    groups.push({
+      kind: "decide_without_receipt",
+      headline: `${withoutReceipt.length} approved ${plural(withoutReceipt.length, "order is", "orders are")} asking to stand without a delivery receipt`,
+      actionLabel: "Decide",
+      count: withoutReceipt.length,
+      totalValue: withoutReceipt.reduce((sum, row) => sum + row.salesValue, 0),
+      items: withoutReceipt.map((row) => ({
+        id: row.requestId,
+        title: `${row.requesterName} · ${row.productName}`,
+        subtitle: [row.pharmacyName, money(row.salesValue), `Finance: ${row.reason}`].filter(Boolean).join(" · "),
+        salesValue: row.salesValue,
+        createdAt: row.askedAt,
+        href: `${basePath}/${encodeURIComponent(row.requestId)}`,
+        flagged: false,
+      })),
+      seeAllHref: `${basePath}?view=needs-action&queue=decide_without_receipt`,
+    });
   }
 
   if (input.pendingCustomerValidations > 0) {

@@ -291,6 +291,25 @@ export const MODULES = [
     keywords: ["direct order", "direct orders", "direct-order"],
     tables: ["direct_order"],
   },
+  // 🔴 SPLIT 2026-11-27, FOR THE REASON `phoenix-crm-approvals` RECORDS: `direct-orders` measured a 4,012-byte
+  // pointer against the 4,000 margin the moment the CEO-approves-an-order-without-a-receipt rule landed. The
+  // DELIVERY-RECEIPT BOOKS are the clean cut: their own files, tables and desk, and their rules are read while
+  // editing a receipt, not the approval chain or the booking month. `direct-orders` KEEPS EVERY GLOB IT HAD, so a
+  // receipt file loads the PAIR and nothing that used to arrive stops arriving.
+  {
+    id: "direct-order-receipts",
+    title: "Direct orders — the delivery-receipt books",
+    scope: "The printed receipt books: custody, entering a receipt on an order, the 7-day flag and the late manager's block, the undo, an order standing without a receipt on the CEO's approval, and the paper books' documents.",
+    globs: [
+      "src/lib/direct-orders/{receipt-books,receipt-rules}.ts",
+      "src/components/direct-orders/{direct-order-receipt-panel,receipt-books-desk}.tsx",
+      "app/**/direct-orders/**/receipt*/**",
+      "tests/direct-order-receipt-books*",
+      "supabase/migrations/*direct_order*receipt*",
+    ],
+    keywords: ["receipt book", "receipt books", "delivery receipt", "without a receipt", "no receipt"],
+    tables: ["direct_order_receipt", "direct_order_no_receipt"],
+  },
   {
     id: "incentives",
     title: "Incentives and targets payout",

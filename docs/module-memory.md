@@ -99,6 +99,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `sales-attribution` — Attribution, achievement, targets and sales territory | `src/lib/sales/territory/**` and 7 more |
 | `weekly-sales` — Weekly sales and stock | `src/lib/sales/weekly/**` and 3 more |
 | `direct-orders` — Direct orders | `src/lib/direct-orders/**` and 5 more |
+| `direct-order-receipts` — Direct orders — the delivery-receipt books | `src/lib/direct-orders/{receipt-books,receipt-rules}.ts` and 4 more |
 | `incentives` — Incentives and targets payout | `src/lib/incentives/**` and 2 more |
 | `medical-insurance` — Medical Insurance (Libano-Suisse group policy, who is in and out, bill against plan) | `src/lib/medical-insurance/**` and 4 more |
 | `production-planning` — Production Planner (toll manufacturing — Ivyronc and Guamusin) | `src/lib/production-planning/**` and 5 more |

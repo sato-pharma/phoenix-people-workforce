@@ -8,7 +8,7 @@ security marks, the guides, the sample book, the proposal email and the never-em
 
 - **The owner's decisions.**
   - 26 Nov 2026: "Build the check"; the books belong to "Finance"; an order with no receipt is flagged after
-    "14 days".
+    "14 days". On 27 Nov he cut it to a week: «حد اقصى اسبوع ولا ينفذ له اوردارات اخرى فى حاله عدم رفعه».
   - 27 Nov 2026, after a gap audit: orders raised by someone with no book: "Flag them"; a returned book: "Allow
     late entry"; a receipt entered on the wrong order: "make an undo option"; all of it "Fix all in PR 829".
 - 16 books × 50 = 800 numbered receipts, each with a six-character printed code
@@ -46,7 +46,8 @@ code is never written anywhere.
 - From the first hand-out of any book (`receiptRolloutStart`), an approved order raised by someone holding NO
   book that day is `no_book`. It is listed on Finance's Receipt Books desk under "Approved with no receipt
   book", never silently excused. Nothing approved before the first hand-out is listed.
-- An order still owing a receipt 14 days after approval turns red on the desk. Each book's line on the desk says
+- An order still owing a receipt 7 days after approval turns red on the desk, and the manager who raised it
+  cannot raise a new order until it is entered (see the last section). Each book's line on the desk says
   how many approved orders still owe a receipt from it.
 
 ## Who does what
@@ -84,3 +85,44 @@ It gates no sales month and no collection. Whether a missing receipt should hold
 for Dr Anwar and Ahmed El Maraghy, made on its own screen, never in chat.
 
 Pinned by `tests/direct-order-receipt-books.test.ts`.
+
+## An order without a receipt — the CEO's approval alone (27 Nov 2026)
+
+The owner, 27 Nov 2026: «صلاحيه عمل اى اوردر بدون ايصال هى صلاحيه انور فقط لاغير موافقه منه والتنفيذ من خلال
+استاذ احمد». Making any order without a receipt is Dr Anwar's authority alone. It is his approval, carried out
+through Ahmed El Maraghy. He chose "Anwar approves in Phoenix".
+
+- **Who asks:** Finance (`canManageDirectOrderReceiptBooks`), on the order's own page, always with a written
+  reason. Only an order that owes a receipt (`waiting`, `overdue`, `no_book`) and has no ask waiting or approved
+  can be asked.
+- **Who decides:** the CEO alone (`canDecideDirectOrderWithoutReceipt`, by role). The Super Admin has no override.
+  This is deliberate: the owner named the CEO alone. The CEO sees each ask in Needs action, and the count joins
+  the sidebar badge. Approving needs no note; refusing always says why. A receipt entered while the ask waits
+  makes approval impossible, so the ask can only be refused.
+- **What an approval does:** the order's standing becomes `without_receipt`. It leaves Finance's overdue and
+  no-book lists, and its book no longer counts it as owing. No receipt can be entered on it afterwards. It still
+  gates no month and no collection.
+- **The record:** `direct_order_no_receipt_requests` (migration `20261127142537`). It is service role only, and
+  each order has at most one ask waiting or approved. A decided ask never changes, and no row is deleted.
+  A refused order may be asked again, as a new row. Every ask and decision writes an audit row and an order
+  event (`receipt_waiver_asked`, `receipt_waiver_approved`, `receipt_waiver_refused`).
+
+## A late receipt stops its manager's next order (27 Nov 2026)
+
+The owner, 27 Nov 2026: «the 14 days طبعا يقلوا حد اقصى اسبوع ولا ينفذ له اوردارات اخرى فى حاله عدم رفعه فى خلال
+المده المحدده». Asked who is blocked, he chose "The manager who raised it".
+
+- `RECEIPT_OVERDUE_DAYS` is **7** (it was 14). From day 7 after approval the order is `overdue`.
+- `listLateReceiptsForRequester` lists one manager's `overdue` orders. While any is listed, `submitDirectOrder`
+  refuses a new order from that manager, for any pharmacy, before anything is written, and so does
+  `reviseDirectOrder` for an order sent back and resubmitted. The refusal names how many, the oldest and its
+  pharmacy. The last approval refuses too (`assertRequesterHasNoLateReceipts`), so an order already climbing when
+  the receipt went late, or revived from hold, is not finished until the receipt is entered.
+- Not a block: a `no_book` order (Finance's flag), an order approved from a book Finance has since recorded lost
+  (its receipt can no longer be entered, so it stays on Finance's desk), an order the CEO approved to stand
+  without a receipt, an order that has its receipt, and a reversal. An ask still waiting for the CEO does
+  **not** lift the block.
+- The manager's orders are read in batches of 100 ids: about 400 in one request overflow the address and read
+  back empty with no error.
+- The printed area managers' guide and the videos still say "within 14 days". Update them with the owner's edits.
+- Pinned by `tests/direct-order-payment-standing.test.ts`.
