@@ -79,7 +79,7 @@ export async function readIdCardName(front: { bytes: Buffer; contentType: string
     const response = await createOpenAiResponseText({
       input: [{ content: [{ text: `Read the name on this ID card. ${hint}`, type: "input_text" as const }, { detail: "high" as const, image_url: dataUrl, type: "input_image" as const }], role: "user" as const }],
       instructions: INSTRUCTIONS,
-      maxOutputTokens: 600,
+      maxOutputTokens: 2000, // 600 ran out on 27 Nov 2026 (the low-effort thinking counts against it)
       purpose: "employee-id-card-name",
       reasoning: { effort: "low" },
       text: TEXT_FORMAT,
