@@ -65,7 +65,65 @@ export type LateVisitItem = {
   status: LateVisitStatus;
   decidedByName: string | null;
   decidedAtText: string | null;
+  /** Why Phoenix closed it by itself (`duplicateClosingReason`), or null on a decision the Super Admin made. */
+  decisionReason: string | null;
 };
+
+// ── A filed visit the person already logged again ─────────────────────────────────────────────────
+
+/**
+ * 🔴 A COPY OF A VISIT ALREADY COUNTED IS CLOSED BY PHOENIX, SHOWN, AND NEVER COUNTED (owner, 27 Nov 2026, on three
+ * "No location" visits whose reps logged the same doctor again with location minutes later: show it happened, show
+ * it rejected and why, and never count it). The match is the missed-record door's own "already visited" rule — the
+ * same seat, customer and day for a territory visit, the same manager, customer and day for his own single visit — so
+ * a row closed here is exactly one the Approve button could only have been refused on.
+ */
+export type LateVisitCandidate = {
+  kind: LateVisitKind;
+  seatId: string;
+  senderHrId: string;
+  customerId: string;
+  /** A manager's single visit may name a customer of his own list instead (`body.managerCustomerId`). */
+  managerCustomerId: string | null;
+  pressedDay: string;
+};
+
+export type CountedVisit = {
+  kind: LateVisitKind;
+  seatId: string | null;
+  managerHrId: string | null;
+  customerId: string | null;
+  managerCustomerId: string | null;
+  visitDate: string;
+  /** When it was logged, as the phone stamped it, or the save when the phone sent none. */
+  loggedAt: string | null;
+  withLocation: boolean;
+};
+
+export function countedCopyOf(candidate: LateVisitCandidate, visits: readonly CountedVisit[]): CountedVisit | null {
+  const sender = personOf(candidate.senderHrId);
+  const matches = visits.filter((visit) => {
+    if (visit.kind !== candidate.kind || visit.visitDate !== candidate.pressedDay) return false;
+    if (candidate.kind === "territory") return visit.seatId === candidate.seatId && visit.customerId === candidate.customerId;
+    if (!sender || personOf(visit.managerHrId) !== sender) return false;
+    return (
+      (visit.customerId !== null && visit.customerId === candidate.customerId) ||
+      (candidate.managerCustomerId !== null && visit.managerCustomerId === candidate.managerCustomerId)
+    );
+  });
+  // The earliest counted one is the one named, whichever order the read returned them in.
+  return [...matches].sort((left, right) => String(left.loggedAt ?? "").localeCompare(String(right.loggedAt ?? "")))[0] ?? null;
+}
+
+/** What the Decided tab says on a row Phoenix closed. `loggedAtText` is the counted visit's time in Cairo, or null. */
+export function duplicateClosingReason(counted: Pick<CountedVisit, "withLocation">, loggedAtText: string | null): string {
+  const when = loggedAtText ? ` at ${loggedAtText}` : " the same day";
+  const where = counted.withLocation ? " with its location" : "";
+  return `Already counted: the same visit was logged again${when}${where}, and that one is counted. This copy was closed automatically and is not counted.`;
+}
+
+/** Who decided, on a row Phoenix closed by itself. */
+export const CLOSED_AUTOMATICALLY_BY = "Phoenix, automatically";
 
 export type LateVisitsBoard = { pending: LateVisitItem[]; decided: LateVisitItem[] };
 

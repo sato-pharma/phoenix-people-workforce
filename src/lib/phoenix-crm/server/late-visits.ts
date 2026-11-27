@@ -15,6 +15,7 @@
 
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import {
+  CLOSED_AUTOMATICALLY_BY,
   managerApprovalBody,
   parseLateVisitFiling,
   pressedWithNoLocation,
@@ -28,6 +29,7 @@ import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { managersInScope, personKey, territoryName } from "@/lib/phoenix-crm/scope";
 import { productManagerRowKey } from "@/lib/phoenix-crm/team-calendar";
 import { canEnterMissedRecords, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { closeDuplicateLateVisits } from "@/lib/phoenix-crm/server/late-visit-duplicates";
 import { enterManagerMissedVisit } from "@/lib/phoenix-crm/server/manager-missed-records";
 import { enterMissedVisit } from "@/lib/phoenix-crm/server/missed-records";
 import { loadPeopleNames } from "@/lib/phoenix-crm/server/people";
@@ -36,7 +38,7 @@ import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 
 const TABLE = "phoenix_crm_late_visits";
 const COLUMNS =
-  "id, kind, sender_hr_id, seat_id, customer_id, customer_name, pressed_at_device, pressed_day, arrived_at, body, status, decided_by_hr_id, decided_at, approved_visit_id";
+  "id, kind, sender_hr_id, seat_id, customer_id, customer_name, pressed_at_device, pressed_day, arrived_at, body, status, decided_by_hr_id, decided_at, approved_visit_id, decision_reason";
 /** How far back the decided list reaches. The pending list has no limit: nothing waiting is ever hidden. */
 const DECIDED_SHOWN_DAYS = 30;
 
@@ -115,6 +117,8 @@ function visitLabelOf(kind: LateVisitKind, body: Row): string {
  * badge loader turns that into a zero for the badge alone.
  */
 export async function countLateVisitsWaiting(): Promise<number> {
+  // A copy of a visit already counted is closed first, so it never pulses on the sidebar (27 Nov 2026).
+  await closeDuplicateLateVisits();
   const { count, error } = await getSupabaseAdmin()
     .from(TABLE)
     .select("id", { count: "exact", head: true })
@@ -126,6 +130,8 @@ export async function countLateVisitsWaiting(): Promise<number> {
 
 export async function loadLateVisits(viewer: PhoenixCrmViewer): Promise<LateVisitsBoard> {
   assertSuperAdmin(viewer);
+  // A copy of a visit already counted is closed first and shown on Decided with its reason (owner, 27 Nov 2026).
+  await closeDuplicateLateVisits();
   const since = new Date(Date.now() - DECIDED_SHOWN_DAYS * 24 * 60 * 60 * 1000).toISOString();
   const [pendingRows, decidedRows] = await Promise.all([
     fetchAllRowsKeyset<Row>(() => getSupabaseAdmin().from(TABLE).select(COLUMNS).eq("status", "pending").eq("is_test", false), {
@@ -144,6 +150,7 @@ export async function loadLateVisits(viewer: PhoenixCrmViewer): Promise<LateVisi
     const seat = viewer.org.seats.get(String(row.seat_id ?? ""));
     const sender = String(row.sender_hr_id ?? "");
     const decider = typeof row.decided_by_hr_id === "string" ? row.decided_by_hr_id : null;
+    const reason = typeof row.decision_reason === "string" && row.decision_reason.trim() ? row.decision_reason.trim() : null;
     return {
       id: String(row.id),
       kind,
@@ -158,8 +165,9 @@ export async function loadLateVisits(viewer: PhoenixCrmViewer): Promise<LateVisi
       products: Array.isArray(body.products) ? body.products.filter((entry): entry is string => typeof entry === "string") : [],
       comment: typeof body.comment === "string" && body.comment.trim() ? body.comment.trim() : null,
       status: row.status === "approved" ? "approved" : row.status === "rejected" ? "rejected" : "pending",
-      decidedByName: decider ? (names.get(personKey(decider) ?? "") ?? decider) : null,
+      decidedByName: decider ? (names.get(personKey(decider) ?? "") ?? decider) : reason ? CLOSED_AUTOMATICALLY_BY : null,
       decidedAtText: cairoText(row.decided_at),
+      decisionReason: reason,
     };
   };
   const byArrival = (left: Row, right: Row) => String(right.arrived_at ?? "").localeCompare(String(left.arrived_at ?? ""));

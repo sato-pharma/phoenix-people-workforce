@@ -624,6 +624,44 @@ export async function loadManagerVisitClientRefsOnFile(input: { enteredByHrId: s
 }
 
 /**
+ * His own single visits on these days, with the customer each went to, when it was logged and whether it carried a
+ * fix — for closing a filed late visit he already logged again and had counted (owner, 27 Nov 2026: show it happened,
+ * show it rejected and why, never count it; `server/late-visit-duplicates.ts`). Real visits only. No count, no flag.
+ * A failed read throws: the caller then leaves every filed visit waiting for the Super Admin.
+ */
+export async function loadManagerOwnVisitsOnDays(input: { managerHrIds: ReadonlyArray<string>; days: ReadonlyArray<string> }): Promise<
+  Array<{ managerHrId: string | null; customerId: string | null; managerCustomerId: string | null; visitDate: string; loggedAt: string | null; withLocation: boolean }>
+> {
+  const managers = dedupeIds(input.managerHrIds.map((hrId) => personKey(hrId)));
+  const days = dedupeIds([...input.days]);
+  if (managers.length === 0 || days.length === 0) return [];
+  const rows: Row[] = [];
+  for (const part of chunk(managers, 100)) {
+    rows.push(
+      ...(await fetchAllRowsKeyset<Row>(
+        () =>
+          getSupabaseAdmin()
+            .from("phoenix_crm_manager_visits")
+            .select("id, manager_hr_id, customer_id, manager_customer_id, visit_date, captured_at, created_at, lat, lon")
+            .eq("is_test", false)
+            .in("manager_hr_id", part)
+            .in("visit_date", days),
+        { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+      )),
+    );
+  }
+  const fix = (value: unknown) => typeof value === "number" && Number.isFinite(value);
+  return rows.map((row) => ({
+    managerHrId: textOrNull(row.manager_hr_id),
+    customerId: textOrNull(row.customer_id)?.toLowerCase() ?? null,
+    managerCustomerId: textOrNull(row.manager_customer_id)?.toLowerCase() ?? null,
+    visitDate: (textOrNull(row.visit_date) ?? "").slice(0, 10),
+    loggedAt: textOrNull(row.captured_at) ?? textOrNull(row.created_at),
+    withLocation: fix(row.lat) && fix(row.lon),
+  }));
+}
+
+/**
  * When each named person's phone reached Phoenix with one of his own single visits since a moment, by upper-cased HR
  * id — the server's insert time (`created_at`), never `captured_at`, which 38 of 202 such visits on production did
  * not carry as their arrival (24 Nov 2026). For testing a wait a manager's phone claimed for a held visit (owner,
