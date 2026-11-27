@@ -147,6 +147,9 @@ function dryRunIsTheDefault() {
   assert.deepEqual(plan(["end-insurance-cover", "--employee", "PD-0042, OF-0005,PD-0042"]), { apply: false, hrIds: ["PD-0042", "OF-0005"], job: "end-insurance-cover" }, "ending cover names the people, each once, and is a dry run until --apply");
   refused(["end-insurance-cover"], "ending cover is never aimed at everyone");
   refused(["end-insurance-cover", "--employee", "Aya Tarek"], "an HR id, never a name");
+  assert.deepEqual(plan(["reinstate-insurance-cover", "--employee", "B-76,OF-0005, B-76"]), { apply: false, hrIds: ["B-76", "OF-0005"], job: "reinstate-insurance-cover" }, "putting cover back names the people, each once, and is a dry run until --apply");
+  refused(["reinstate-insurance-cover"], "putting cover back is never aimed at everyone");
+  refused(["reinstate-insurance-cover", "--employee", "Salim Gomaa"], "an HR id, never a name");
 }
 
 type Call = { url: string; method: string };

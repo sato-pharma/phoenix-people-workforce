@@ -172,3 +172,24 @@ export function employeeRecordWords(person: { hrId: string | null; hireDate?: st
   if (second) words.push(second);
   return words;
 }
+
+/**
+ * THE REGISTER IS TWO LISTS THAT NEVER MIX (owner, 27 Nov 2026: "if even ended … I need them to not disappear …
+ * never mix with others. So deletions, historical deletions, put them in a separate tab"). Members holds every row
+ * with no end; Deletions holds every row that has one, kept for good, the latest end first. A row is in exactly one.
+ */
+export function splitRegister<T extends Pick<MedicalInsuranceMemberRow, "coverageEnd" | "name">>(members: readonly T[]): { onCover: T[]; deletions: T[] } {
+  const onCover = members.filter((member) => !member.coverageEnd).sort((a, b) => a.name.localeCompare(b.name));
+  const deletions = members
+    .filter((member) => Boolean(member.coverageEnd))
+    .sort((a, b) => String(b.coverageEnd).localeCompare(String(a.coverageEnd)) || a.name.localeCompare(b.name));
+  return { deletions, onCover };
+}
+
+/** Where a deletion stands, in words: voided from its first day, still covered to its last day, or off. */
+export function deletionStandingWords(member: Pick<MedicalInsuranceMemberRow, "coverageEnd" | "coverageStart">, asOf: string, formatDay: (day: string) => string): string {
+  if (!member.coverageEnd) return "On cover";
+  if (member.coverageEnd <= member.coverageStart) return "Never in force: ended on its first day";
+  if (member.coverageEnd >= asOf) return `Still covered until ${formatDay(member.coverageEnd)}`;
+  return `Off the policy after ${formatDay(member.coverageEnd)}`;
+}

@@ -57,6 +57,10 @@
 //   end-insurance-cover updateMedicalInsuranceMember (owner, 27 Nov 2026: "End the three resigned
 //                 employees' insurance cover"). Ends each named employee's cover on the day and with the
 //                 reason the Add/Remove screen gives; refuses anyone the screen does not list to remove.
+//   reinstate-insurance-cover updateMedicalInsuranceMember action "reinstate" (owner, 27 Nov 2026: Salim Gomaa
+//                 was not on To remove because his cover was ended before Libano-Suisse was sent the deletion;
+//                 his MCQ answer "Only bring back these three"). The register's own "Put back", for the employee's
+//                 one ended row on the policy in force; refused when there is none or more than one.
 //   sync-insurance-master syncEmployeeMasterFromMedicalInsurance   (owner, 27 Nov 2026: "synchronize from
 //                 medical insurance module to employee master the needed data"). The Libano-Suisse card
 //                 number goes onto the Employee Master; national ID, birth date, gender and mobile only where
@@ -973,6 +977,56 @@ async function runEndInsuranceCover(plan: Extract<OwnerOpsPlan, { job: "end-insu
   return { employees: [], focus: {}, proofDone: true };
 }
 
+async function runReinstateInsuranceCover(plan: Extract<OwnerOpsPlan, { job: "reinstate-insurance-cover" }>, owner: AccessContext) {
+  const { assertPermission } = await import("@/lib/auth/permissions");
+  const { updateMedicalInsuranceMember } = await import("@/lib/medical-insurance/service");
+  const { getSupabaseAdmin } = await import("@/lib/supabase/server");
+  // The same check the register's PATCH makes before it puts anyone back.
+  await assertPermission(owner, "medical_insurance", "update");
+  const supabase = getSupabaseAdmin();
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
+  const { data: policies, error: policyError } = await supabase
+    .from("medical_insurance_policies")
+    .select("id, starts_on, ends_on")
+    .lte("starts_on", today)
+    .gte("ends_on", today);
+  if (policyError) throw new Error(`the policy read failed: ${policyError.message}`);
+  if ((policies ?? []).length !== 1) throw new Error(`expected one policy in force on ${today}, found ${(policies ?? []).length} — nothing was put back`);
+  const policyId = (policies![0] as { id: string }).id;
+  const hrIds = plan.hrIds.map((hrId) => hrId.toUpperCase());
+  const { data, error } = await supabase
+    .from("medical_insurance_members")
+    .select("id, hr_id, full_name, coverage_ends_on, end_reason")
+    .eq("policy_id", policyId)
+    .eq("member_type", "employee")
+    .in("hr_id", hrIds)
+    .not("coverage_ends_on", "is", null);
+  if (error) throw new Error(`the register read failed: ${error.message}`);
+  const rows = (data ?? []) as Array<{ id: string; hr_id: string; full_name: string; coverage_ends_on: string; end_reason: string | null }>;
+  // Every name is settled before anything is written, so a refusal changes nobody.
+  const chosen = hrIds.map((hrId) => ({ hrId, rows: rows.filter((row) => row.hr_id.toUpperCase() === hrId) }));
+  const none = chosen.filter((item) => item.rows.length === 0).map((item) => item.hrId);
+  if (none.length > 0) throw new Error(`no ended cover on the policy in force for ${none.join(", ")} — nothing was put back`);
+  const many = chosen.filter((item) => item.rows.length > 1).map((item) => item.hrId);
+  if (many.length > 0) throw new Error(`more than one ended row for ${many.join(", ")}, so which to put back is the register's call — nothing was put back`);
+  const verb = plan.apply ? "Putting back" : "Would put back";
+  const memberIds: string[] = [];
+  for (const { rows: [row] } of chosen) {
+    console.log(`  ${verb} ${row.full_name} (${row.hr_id}) — ended ${row.coverage_ends_on}: ${row.end_reason ?? "no reason"}`);
+    await updateMedicalInsuranceMember(owner, row.id, { action: "reinstate" });
+    memberIds.push(row.id);
+  }
+  const { data: proof, error: proofError } = await supabase
+    .from("medical_insurance_members")
+    .select("hr_id, full_name, member_type, coverage_starts_on, coverage_ends_on, end_reason")
+    .or(`id.in.(${memberIds.join(",")}),principal_member_id.in.(${memberIds.join(",")})`);
+  if (proofError) throw new Error(`the proof read failed: ${proofError.message}`);
+  console.log(`
+PROOF — the register rows as they are now${plan.apply ? "" : " (the dry run changed nothing)"}:`);
+  for (const row of (proof ?? []) as Array<Record<string, unknown>>) console.log(`  ${JSON.stringify(row)}`);
+  return { employees: [], focus: {}, proofDone: true };
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   if (argv.includes("--help") || argv.includes("-h")) {
@@ -1022,6 +1076,7 @@ async function main() {
     else if (plan.job === "lock-rep-tablets") outcome = await runLockRepTablets(plan, owner.access);
     else if (plan.job === "sync-insurance-master") outcome = await runSyncInsuranceMaster(plan, owner.access);
     else if (plan.job === "end-insurance-cover") outcome = await runEndInsuranceCover(plan, owner.access);
+    else if (plan.job === "reinstate-insurance-cover") outcome = await runReinstateInsuranceCover(plan, owner.access);
     else outcome = await runPinPharmacy(plan, owner.access);
   } catch (error) {
     refused = errorText(error);

@@ -9,32 +9,45 @@ import { phxFieldClassName, phxFieldGridTwoClassName, phxLabelClassName, phxSele
 import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-detail";
 import { formatLeftDay } from "@/lib/employees/left-flag";
 import { MEDICAL_INSURANCE_CATEGORIES } from "@/lib/medical-insurance/cost";
-import { coveragePeriodWords, DECLINED_REASON, employeeRecordWords, MEMBER_TYPE_WORDS, type MedicalInsuranceMemberRow, type MedicalInsuranceView } from "@/lib/medical-insurance/view";
+import { coveragePeriodWords, DECLINED_REASON, employeeRecordWords, MEMBER_TYPE_WORDS, splitRegister, type MedicalInsuranceMemberRow, type MedicalInsuranceView } from "@/lib/medical-insurance/view";
 import { cn } from "@/lib/utils";
 
 import { cellClassName, downloadPosted, fileLinkClassName, headerClassName, SaveError, sendJson, textLinkClassName, useSave } from "./medical-insurance-parts";
 
 type Props = { canCreate: boolean; canEdit: boolean; canExport: boolean; view: MedicalInsuranceView };
-type Standing = "all" | "ended" | "open";
 type Mode = "edit" | "end" | "exclude" | "family";
 
-const STANDINGS: Array<{ id: Standing; label: string }> = [
-  { id: "open", label: "On cover" },
-  { id: "ended", label: "Cover ended" },
-  { id: "all", label: "Everyone" },
-];
-
-function matches(member: MedicalInsuranceMemberRow, query: string): boolean {
+export function matchesMember(member: MedicalInsuranceMemberRow, query: string): boolean {
   const wanted = query.trim().toLowerCase();
   if (!wanted) return true;
   return [member.name, member.certificateNumber, member.staffNumber, member.jobTitle, member.principalName, member.hrId, member.lineName, member.areaName].some((value) => String(value ?? "").toLowerCase().includes(wanted));
 }
 
+/** One person on the register: name, job, HR number and day joined, whose family they are, and their date of birth. */
+export function MedicalInsuranceMemberPerson({ member }: { member: MedicalInsuranceMemberRow }) {
+  return (
+    <>
+      <p className="break-words text-sm font-black text-phx-ink" dir="auto">{member.name}</p>
+      {member.jobTitle ? <p className="mt-0.5 break-words text-phx-xs font-semibold text-phx-ink-soft">{member.jobTitle}</p> : null}
+      {member.memberType === "employee"
+        ? employeeRecordWords(member).map((words) => <p className="break-words text-phx-xs font-semibold text-phx-ink-faint" key={words}>{words}</p>)
+        : null}
+      {member.memberType === "employee" ? null : (
+        <p className="break-words text-phx-xs font-semibold text-phx-ink-soft" dir="auto">{MEMBER_TYPE_WORDS[member.memberType]} of {member.principalName ?? "name not on record"}</p>
+      )}
+      {member.memberType === "employee" && !member.hrId ? <p className="break-words text-phx-xs font-semibold text-phx-warn">No Phoenix employee record</p> : null}
+      <p className={cn("break-words text-phx-xs font-semibold", member.birthDate ? "text-phx-ink-faint" : "text-phx-warn")}>{member.birthDate ? `Born ${formatLeftDay(member.birthDate)}` : "No date of birth"}</p>
+    </>
+  );
+}
+
+/**
+ * Members: everyone on cover, and only them. Someone whose cover has an end lives on the Deletions tab for good and
+ * is never mixed in here (owner, 27 Nov 2026); Put back is on that tab.
+ */
 export function MedicalInsuranceMembersTab({ canCreate, canEdit, canExport, view }: Props) {
-  const [standing, setStanding] = React.useState<Standing>("open");
   const [query, setQuery] = React.useState("");
   const [open, setOpen] = React.useState<{ id: string; mode: Mode } | null>(null);
-  const reinstate = useSave();
   const [fileBusy, setFileBusy] = React.useState(false);
   const [fileError, setFileError] = React.useState<string | null>(null);
 
@@ -51,29 +64,11 @@ export function MedicalInsuranceMembersTab({ canCreate, canEdit, canExport, view
   }
 
   const principals = view.members.filter((row) => row.open && row.memberType === "employee").sort((a, b) => a.name.localeCompare(b.name));
-  const visible = view.members
-    .filter((member) => (standing === "all" || (standing === "open") === member.open) && matches(member, query))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const { onCover } = splitRegister(view.members);
+  const visible = onCover.filter((member) => matchesMember(member, query));
 
   function toggle(id: string, mode: Mode) {
     setOpen((current) => (current?.id === id && current.mode === mode ? null : { id, mode }));
-  }
-
-  function renderPerson(member: MedicalInsuranceMemberRow) {
-    return (
-      <>
-        <p className="break-words text-sm font-black text-phx-ink" dir="auto">{member.name}</p>
-        {member.jobTitle ? <p className="mt-0.5 break-words text-phx-xs font-semibold text-phx-ink-soft">{member.jobTitle}</p> : null}
-        {member.memberType === "employee"
-          ? employeeRecordWords(member).map((words) => <p className="break-words text-phx-xs font-semibold text-phx-ink-faint" key={words}>{words}</p>)
-          : null}
-        {member.memberType === "employee" ? null : (
-          <p className="break-words text-phx-xs font-semibold text-phx-ink-soft" dir="auto">{MEMBER_TYPE_WORDS[member.memberType]} of {member.principalName ?? "name not on record"}</p>
-        )}
-        {member.memberType === "employee" && !member.hrId ? <p className="break-words text-phx-xs font-semibold text-phx-warn">No Phoenix employee record</p> : null}
-        <p className={cn("break-words text-phx-xs font-semibold", member.birthDate ? "text-phx-ink-faint" : "text-phx-warn")}>{member.birthDate ? `Born ${formatLeftDay(member.birthDate)}` : "No date of birth"}</p>
-      </>
-    );
   }
 
   function renderCover(member: MedicalInsuranceMemberRow) {
@@ -91,24 +86,13 @@ export function MedicalInsuranceMembersTab({ canCreate, canEdit, canExport, view
     return (
       <div className="flex flex-wrap gap-x-3 gap-y-1">
         <button className={textLinkClassName} onClick={() => toggle(member.id, "edit")} type="button">Edit</button>
-        {!member.coverageEnd && !(member.memberType === "employee" && member.hrId) ? (
+        {!(member.memberType === "employee" && member.hrId) ? (
           <button className={textLinkClassName} onClick={() => toggle(member.id, "family")} type="button">Move under an employee</button>
         ) : null}
-        {!member.coverageEnd && member.memberType === "employee" && member.hrId ? (
+        {member.memberType === "employee" && member.hrId ? (
           <button className={textLinkClassName} onClick={() => toggle(member.id, "exclude")} type="button">Exclude</button>
         ) : null}
-        {member.coverageEnd ? (
-          <button
-            className={textLinkClassName}
-            disabled={reinstate.busy}
-            onClick={() => void reinstate.save(() => sendJson(`/api/medical-insurance/members/${member.id}`, "PATCH", { action: "reinstate" }))}
-            type="button"
-          >
-            Put back
-          </button>
-        ) : (
-          <button className={textLinkClassName} onClick={() => toggle(member.id, "end")} type="button">End cover</button>
-        )}
+        <button className={textLinkClassName} onClick={() => toggle(member.id, "end")} type="button">End cover</button>
       </div>
     );
   }
@@ -139,27 +123,13 @@ export function MedicalInsuranceMembersTab({ canCreate, canEdit, canExport, view
             ) : null}
           </div>
         }
-        description="Everyone on the register. A row is never deleted: cover is ended, with its reason, and can be put back. The insurer's member file lists everyone covered today on Libano-Suisse's own sheet."
+        description="Everyone on cover. Someone whose cover is ended moves to Deletions, where they stay for good and can be put back. The insurer's member file lists everyone covered today on Libano-Suisse's own sheet."
         title="Members"
       >
-        <div className="flex flex-wrap gap-2 border-b border-phx-line p-4">
-          {STANDINGS.map(({ id, label }) => (
-            <button
-              aria-pressed={standing === id}
-              className={cn("border border-phx-line bg-white px-3 py-2 text-phx-xs font-bold text-phx-ink hover:border-phx-accent", standing === id && "border-phx-accent bg-phx-accent-soft")}
-              key={id}
-              onClick={() => setStanding(id)}
-              type="button"
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <SaveError error={reinstate.error} />
         <SaveError error={fileError} />
 
         {visible.length === 0 ? (
-          <p className="p-4 text-sm font-semibold text-phx-ink-soft">{view.members.length === 0 ? "Nobody is on the register yet." : "Nobody matches this search."}</p>
+          <p className="p-4 text-sm font-semibold text-phx-ink-soft">{onCover.length === 0 ? "Nobody is on cover yet." : "Nobody matches this search."}</p>
         ) : (
           <>
             <div className="hidden md:block">
@@ -184,7 +154,7 @@ export function MedicalInsuranceMembersTab({ canCreate, canEdit, canExport, view
                   {visible.map((member) => (
                     <React.Fragment key={member.id}>
                       <tr {...rowDetailToggleProps(`medical-insurance-${member.id}`, open?.id === member.id)}>
-                        <td className={cellClassName}>{renderPerson(member)}</td>
+                        <td className={cellClassName}><MedicalInsuranceMemberPerson member={member} /></td>
                         <td className={cellClassName}><span className="text-phx-xs font-bold text-phx-ink">{member.category}</span></td>
                         <td className={cellClassName}>
                           <p className="break-words text-phx-xs font-bold text-phx-ink">{member.certificateNumber ?? "Not yet given"}</p>
@@ -207,7 +177,7 @@ export function MedicalInsuranceMembersTab({ canCreate, canEdit, canExport, view
             <div className="space-y-3 p-4 md:hidden">
               {visible.map((member) => (
                 <div className="space-y-2 border border-phx-line bg-white p-4" key={member.id}>
-                  {renderPerson(member)}
+                  <MedicalInsuranceMemberPerson member={member} />
                   <p className="break-words text-phx-xs font-bold text-phx-ink">Plan {member.category}, member number {member.certificateNumber ?? "not yet given"}{member.staffNumber ? `, staff ${member.staffNumber}` : ""}</p>
                   {renderCover(member)}
                   {renderActions(member)}
@@ -276,7 +246,7 @@ function MemberForm({ member, mode, onDone, principals }: { member: MedicalInsur
     return (
       <div className="space-y-3">
         <p className="break-words text-phx-xs font-semibold text-phx-ink-soft">
-          Medical insurance is optional. Excluding ends {member.name}&apos;s cover on the day it started, ends their spouse and children with them, and keeps them off the policy so the add list does not ask for them again. Put back and the exceptions list reverse it.
+          Medical insurance is optional. Excluding ends {member.name}&apos;s cover on the day it started, ends their spouse and children with them, and keeps them off the policy so the add list does not ask for them again. Put back on the Deletions tab, or the exceptions list, reverses it.
         </p>
         <label className="block max-w-xl">
           <span className={phxLabelClassName}>Reason</span>
