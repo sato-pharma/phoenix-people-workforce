@@ -34,9 +34,11 @@ const SPARE_BOOKS = 2;
 // The customer copy — the carbon of Original 2, torn out and left with the customer.
 // Everything written in the shared block (date, customer, items, value) copies down to all three. The custody zone
 // of plies 2 and 3 is DESENSITIZED by the printer, so the manager's name, ID and signature never reach the customer.
+// The owner, 27 Nov 2026: receiving a book is optional, and a manager who has not received one may raise no direct order at all.
+const OPTIONAL_AR = "استلام الدفاتر اختياري، وفي حالة عدم الاستلام لا يحق للمدير عمل أي أوردر بيع مباشر نهائيًا.";
 const PARTS = [
   { key: "O1", kind: "custody", ar: "الأصل الأول — إقرار العهدة", note: "يبقى في الدفتر · يُرفع على فينكس خلال 3 أيام", en: "ORIGINAL 1" },
-  { key: "O2", kind: "customer", ar: "الأصل الثاني — استلام العميل", note: "يُنزع ويُرفع على فينكس خلال 6 أيام عمل ثم يُرسَل للمالية", en: "ORIGINAL 2" },
+  { key: "O2", kind: "customer", ar: "الأصل الثاني — استلام العميل", note: "يُنزع ويُرفع على فينكس خلال 6 أيام عمل، ثم للمالية", en: "ORIGINAL 2" },
   { key: "C", kind: "customer", ar: "صورة العميل", note: "تُنزع وتُسلَّم للعميل", en: "CUSTOMER COPY" },
 ];
 const C = { deep: "#0A527D", blue: "#0A6BA6", light: "#1482C2", tint: "#F2F6FA", hair: "#B9C7D4", muted: "#5A6B7C", body: "#1A1A1A", ghost: "#DCE6EF" };
@@ -171,7 +173,7 @@ body { font-family: ${FONT}; color: ${C.body}; font-size: 9.4pt; line-height: 1.
 .sheet:last-child { page-break-after: auto; break-after: auto; }
 .vp { position: absolute; left: 11mm; top: 92mm; width: 188mm; height: 186mm; z-index: 0; image-rendering: pixelated; }
 .wm { position: absolute; width: 150mm; height: 150mm; left: 30mm; top: 95mm; z-index: 0; }
-.sheet > *:not(.wm):not(.foot):not(.vp) { position: relative; z-index: 1; }
+.sheet > *:not(.wm):not(.foot):not(.vp):not(.zoneA):not(.zoneB) { position: relative; z-index: 1; }
 .sheet > .foot { z-index: 1; }
 .mast { display: flex; direction: ltr; align-items: center; gap: 5mm; }
 .mast__logo { width: 36mm; height: 14.2mm; flex: none; }
@@ -186,7 +188,7 @@ body { font-family: ${FONT}; color: ${C.body}; font-size: 9.4pt; line-height: 1.
 .micro { margin-top: 0.6mm; font-family: Consolas, monospace; font-size: 2.6pt; line-height: 1; color: ${C.blue}; white-space: nowrap; overflow: hidden; letter-spacing: 0.02em; }
 .part { display: flex; justify-content: space-between; align-items: baseline; margin-top: 2mm; padding-bottom: 1.2mm; border-bottom: 0.3mm solid ${C.hair}; font-size: 8.6pt; }
 .part b { color: ${C.deep}; font-size: 10pt; }
-.part .meta { color: ${C.muted}; }
+.part .meta { color: ${C.muted}; white-space: nowrap; }
 .part .meta bdi { font-family: Consolas, monospace; color: ${C.deep}; }
 .f { display: flex; flex-wrap: wrap; gap: 0 8mm; margin-top: 2.4mm; }
 .f__row { display: flex; align-items: baseline; gap: 2mm; flex: 1 1 100%; min-height: 7.4mm; }
@@ -199,7 +201,7 @@ body { font-family: ${FONT}; color: ${C.body}; font-size: 9.4pt; line-height: 1.
 .sec { margin: 3.4mm 0 1.4mm; padding-bottom: 0.8mm; border-bottom: 0.8pt solid ${C.blue}; color: ${C.deep}; font-size: 10pt; font-weight: 700; }
 table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 th { color: ${C.deep}; font-size: 8.2pt; font-weight: 700; padding: 1.4mm 1mm; border-top: 0.5mm solid ${C.deep}; border-bottom: 0.3mm solid ${C.deep}; text-align: center; line-height: 1.25; }
-td { height: 10.6mm; border-bottom: 0.25mm solid ${C.hair}; text-align: center; font-size: 9pt; }
+td { height: 9.8mm; border-bottom: 0.25mm solid ${C.hair}; text-align: center; font-size: 9pt; }
 td + td, th + th { border-inline-start: 0.25mm solid ${C.hair}; }
 tbody tr:nth-child(even) td { background: rgba(10, 107, 166, 0.06); }
 td.n { color: ${C.deep}; font-weight: 700; }
@@ -237,14 +239,15 @@ p { margin: 0; text-align: justify; }
 .signer b { color: ${C.deep}; }
 .thumb { display: inline-block; width: 26mm; height: 30mm; border: 0.3mm dashed ${C.deep}; vertical-align: top; margin-inline-start: 3mm; }
 /* the two zones: the custody zone (A) and the customer zone (B) sit at the same place on every ply */
-.zoneA { height: 84mm; margin-top: 2.6mm; padding: 2mm 3mm 2mm; border: 0.3mm solid ${C.hair}; border-inline-start: 0.9mm solid ${C.deep}; display: flex; flex-direction: column; }
+/* pinned: same place on all three sheets (the carbon must land on the desensitized zone) */
+.zoneA { position: absolute; z-index: 1; left: 11mm; right: 11mm; bottom: 61.4mm; height: 78mm; padding: 2mm 3mm 2mm; border: 0.3mm solid ${C.hair}; border-inline-start: 0.9mm solid ${C.deep}; display: flex; flex-direction: column; }
 .zoneA h3, .zoneB h3 { margin: 0 0 1mm; font-size: 9.6pt; color: ${C.deep}; }
 .zoneA p { font-size: 8.2pt; line-height: 1.55; margin-top: 0.8mm; }
 .zoneA .law { font-size: 7.6pt; line-height: 1.5; color: ${C.body}; }
 .zoneA .sig { margin-top: auto; }
 .zoneA--quiet { border-style: dashed; border-inline-start: 0.3mm dashed ${C.hair}; }
 .zoneA--quiet .nocopy { margin-top: auto; font-size: 7pt; color: ${C.muted}; text-align: center; }
-.zoneB { margin-top: 2.4mm; height: 44mm; padding: 2mm 3mm; border: 0.3mm solid ${C.hair}; border-inline-start: 0.9mm solid ${C.deep}; display: flex; gap: 4mm; }
+.zoneB { position: absolute; z-index: 1; left: 11mm; right: 11mm; bottom: 15mm; height: 44mm; padding: 2mm 3mm; border: 0.3mm solid ${C.hair}; border-inline-start: 0.9mm solid ${C.deep}; display: flex; gap: 4mm; }
 .zoneB .client__text { flex: 1; display: flex; flex-direction: column; }
 .zoneB .client__text .sig { margin-top: auto; }
 .zoneB--quiet { border-style: dashed; border-inline-start: 0.3mm dashed ${C.hair}; align-items: center; justify-content: center; color: ${C.muted}; font-size: 8.6pt; text-align: center; }
@@ -350,6 +353,7 @@ function coverPage(book) {
     <tr><td>تاريخ الاستلام</td><td>..... / ..... / 20..... م</td></tr>
   </tbody></table>
   <ol class="rules">
+    <li><b>${OPTIONAL_AR}</b></li>
     <li>كل إيصال يحمل رقم إذن مسلسلاً ورمز تحقق وختماً هندسياً خاصاً به لا يتكرر في أي إيصال آخر، وتطبع العلامة المائية نفسها في خلفية الإيصال.</li>
     <li>الإيصال الذي لا يطابق رقمه ورمزه وختمه سجل الشركة، أو به كشط أو تعديل في رقم الإذن، لا يُعتد به إثباتاً للتسليم.</li>
     <li>الأصل الأول (إقرار العهدة) لا يُنزع من الدفتر. الأصل الثاني يوقّعه العميل ويختمه، وينزعه مدير المنطقة ويرسله للمالية. صورة العميل تُنزع وتُسلَّم للعميل.</li>
@@ -375,6 +379,7 @@ function custodyPage(book) {
   <p>وأتعهد بالمحافظة على هذا الدفتر وكافة أصوله وصوره، واستخدامه في الأغراض المخصصة له من قِبل الشركة فقط، وعدم التصرف فيه أو إتلافه أو التلاعب ببياناته. كما ألتزم بتقديم كشف حساب وتوريد كافة المتحصلات أو المستندات الخاصة به أولاً بأول وفقاً للوائح الشركة.</p>
   <p>كما أتعهد التزاماً قاطعاً بتسليم هذا الدفتر (كعهدة مستردة بكافة كعوبه وأوراقه المستخدمة وغير المستخدمة) إلى الإدارة المختصة فور طلبه مني، أو عند انتهاء علاقة عملي بالشركة لأي سبب من الأسباب، ويُعد تسليم هذه العهدة ومراجعتها شرطاً أساسياً ولازماً لإتمام إجراءات إخلاء طرفي وصرف مستحقاتي المالية.</p>
   <p>وفي حالة فقدان الدفتر أو أي ورقة من أوراقه أو التقصير في تسليمه، أتحمل كامل المسؤولية القانونية والمدنية والجنائية المترتبة على ذلك، ويحق للشركة اتخاذ كافة الإجراءات القانونية اللازمة قِبلي لحفظ حقوقها.</p>
+  <p><b>وأقر بعلمي أن ${OPTIONAL_AR}</b></p>
   <p>وهذا إقرار مني بذلك للعمل بموجبه،،،</p>
   <div class="signer">
     <b>المُقِر بما فيه:</b><br>
@@ -408,6 +413,15 @@ async function toPdf(html, file, shots = []) {
   const spill = await page.evaluate(() => [...document.querySelectorAll("section.sheet")].map((s, i) => {
     const sb = s.getBoundingClientRect(); let worst = 0;
     s.querySelectorAll("*").forEach((e) => { if (e.closest(".wm")) return; const b = e.getBoundingClientRect(); if (b.height) worst = Math.max(worst, b.bottom - sb.bottom); });
+    // and on a receipt: nothing may run into the footer, the zones must not overlap the totals line or each other,
+    // nothing may spill out of a zone, and the part line must stay on one line
+    const r = (sel) => s.querySelector(sel)?.getBoundingClientRect();
+    const foot = r(".foot"), za = r(".zoneA"), zb = r(".zoneB"), tot = r(".total"), part = s.querySelector(".part");
+    if (foot && za && zb && tot) {
+      if (tot.bottom > za.top + 0.5 || za.bottom > zb.top + 0.5 || zb.bottom > foot.top + 0.5) worst = Math.max(worst, 1);
+      for (const z of [".zoneA", ".zoneB"]) { const zr = r(z); s.querySelectorAll(z + " *").forEach((e) => { const b = e.getBoundingClientRect(); if (b.height && (b.bottom > zr.bottom + 0.5 || b.top < zr.top - 0.5)) worst = Math.max(worst, 1); }); }
+      if (part) { const lh = parseFloat(getComputedStyle(part.querySelector("b")).fontSize) * 2.2; if (part.querySelector("span").getBoundingClientRect().height > lh) worst = Math.max(worst, 1); }
+    }
     return worst > 0.5 ? i : null;
   }).filter((x) => x !== null));
   await page.close();

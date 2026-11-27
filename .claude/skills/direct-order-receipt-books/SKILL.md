@@ -127,10 +127,17 @@ After Dr Anwar asked what the original and Copy 2 were for, the owner settled it
   days, Original 2 in 6 working days, Friday off. Phoenix verifies both, and a photo printed from Phoenix shows
   «مُصوَّر — غير صالح», so Finance prints the "verified on Phoenix" page instead.
 - Phoenix side: PR 844 (`docs/direct-order-receipt-books.md`, "Two originals and a copy").
-- **Still to do on paper:** redesign the sheets in `_generator/build.mjs` (and the copy in `generator/`), rebuild
-  the 16 books in a staging folder WITH a copy of `register.json` (all 800 codes, register sha unchanged), the
-  sample (`--sample-codes=TMDD9C,MVY378`), the guides (`guides.mjs`), both videos and the email draft; the
-  Copy 1 / Copy 2 wording below is the OLD design until then.
+- **Optional book — the owner's sentence, 27 Nov ~18:45, "add this sentence every where":** «استلام الدفاتر اختياري،
+  وفي حالة عدم الاستلام لا يحق للمدير عمل أي أوردر بيع مباشر نهائيًا.» It is `OPTIONAL_AR` in both generator
+  files: rule 1 on the book cover, a paragraph on the custody acknowledgement, the summary's first rows and the
+  managers' guide's lead and first rule; both videos and the email carry it too. Never drop it from a rebuild.
+- **Paper rebuilt 27 Nov ~18:30–19:00** in `_staging-two-originals/` (`books-v2`, `sample-v3`, `guides-v2`):
+  the two zones are pinned with `position:absolute` (zone A bottom 61.4mm, height 78mm; zone B bottom 15mm,
+  height 44mm), so the three sheets line up; the spill check also fails on zone overlap, content leaving a zone,
+  and a part line that wraps. 16 × 151 pages, 800 of 800 codes on all three sheets, register sha unchanged.
+- **The videos speak Egyptian colloquial** (owner, 27 Nov ~19:05: "pure arabic local egyptian voice"): Gemini's
+  "Charon" voice through `~/.claude/scripts/speak-arabic-reply.py`, never the Salma fallback; check a narration by
+  transcribing it before sending.
 
 ## Phoenix (PR 812, live since 27 Nov 00:23)
 
