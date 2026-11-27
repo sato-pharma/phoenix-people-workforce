@@ -2,6 +2,7 @@ import JSZip from "jszip";
 
 import { HOUSE_COLORS } from "@/lib/hiring-pack/house-identity";
 
+import { fitIdPicture, ID_SIDE_BOX_MM, type BankLetterIdPage, type IdPicture } from "./bank-letter-id-pages.ts";
 import {
   BANK_LETTER_BANK_NAME_AR,
   BANK_LETTER_HEADINGS,
@@ -21,6 +22,11 @@ import {
 //   the heading row repeats on every page and a row never splits across pages.
 //
 // NO SEAL — hiring documents never carry one.
+//
+// THEN ONE A4 PAGE PER CHOSEN PERSON (owner, 2026-11-27, `bank-letter-id-pages.ts`): the front of the
+// national ID card in the top half, the back in the bottom half, in the letter's order. The pages are
+// a section of their own with an EMPTY header and footer — a photocopy carries no letterhead — and the
+// letter's "صفحة N من M" counts the letter's own pages (SECTIONPAGES), never the copies after it.
 
 const W_NS =
   'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"';
@@ -56,6 +62,8 @@ export type BankLetterDocxInput = {
   companyNameEn: string;
   headOfficeAr: string;
   images: BankLetterImages;
+  /** One page per chosen person, in the letter's order. None → the letter alone, as before. */
+  idPages?: readonly BankLetterIdPage[];
 };
 
 function xml(value: string): string {
@@ -123,7 +131,55 @@ function table(rows: readonly BankLetterRow[]): string {
   return `<w:tbl><w:tblPr><w:bidiVisual/><w:tblW w:type="dxa" w:w="${TABLE_WIDTH}"/><w:tblBorders><w:top ${NO_BORDER}/><w:left ${NO_BORDER}/><w:bottom w:val="single" w:color="${HAIR}" w:sz="4"/><w:right ${NO_BORDER}/><w:insideH ${NO_BORDER}/><w:insideV ${NO_BORDER}/></w:tblBorders><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid>${grid}</w:tblGrid>${tableRow(BANK_LETTER_HEADINGS, { heading: true, zebra: false })}${body}</w:tbl>`;
 }
 
-function documentXml(rows: readonly BankLetterRow[], date: string): string {
+/** The media a document carries beyond the letterhead: each ID picture, named by its relationship. */
+type IdMedia = { relId: string; target: string; bytes: Uint8Array };
+
+const ID_PAGE_MARGIN = 850; // 15 mm, every side
+const ID_BOX_TWIPS = {
+  height: Math.round((ID_SIDE_BOX_MM.height * 1440) / 25.4),
+  width: Math.round((ID_SIDE_BOX_MM.width * 1440) / 25.4),
+};
+
+/** An empty box where a copy of that side goes, with a line saying why it is empty. */
+function emptySideBox(note: string): string {
+  const border = `w:val="dashed" w:color="${HAIR}" w:sz="6"`;
+  return `<w:tbl><w:tblPr><w:jc w:val="center"/><w:tblW w:type="dxa" w:w="${ID_BOX_TWIPS.width}"/><w:tblBorders><w:top ${border}/><w:left ${border}/><w:bottom ${border}/><w:right ${border}/><w:insideH ${NO_BORDER}/><w:insideV ${NO_BORDER}/></w:tblBorders><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="${ID_BOX_TWIPS.width}"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/><w:trHeight w:hRule="exact" w:val="${ID_BOX_TWIPS.height}"/></w:trPr><w:tc><w:tcPr><w:tcW w:type="dxa" w:w="${ID_BOX_TWIPS.width}"/><w:vAlign w:val="center"/></w:tcPr>${paragraph(run(note, { color: MUTED, size: 18 }), { jc: "center" })}</w:tc></w:tr></w:tbl>`;
+}
+
+const SIDE_CAPTIONS = { back: "ظهر البطاقة", front: "وجه البطاقة" } as const;
+
+function missingSideNote(page: BankLetterIdPage, side: "front" | "back"): string {
+  if (page.status === "scan") return "البطاقة محفوظة كملف PDF في مستندات التعيين — تُطبع من هناك";
+  return side === "front" ? "لا توجد صورة لوجه البطاقة — تُلصق نسخة هنا" : "لا توجد صورة لظهر البطاقة — تُلصق نسخة هنا";
+}
+
+/** One person's page: the name and national ID, the front, then the back, each in its own half. */
+function idPageXml(page: BankLetterIdPage, index: number, media: IdMedia[]): string {
+  const side = (which: "front" | "back", image: IdPicture | null) => {
+    let body: string;
+    if (image) {
+      const relId = `rIdIdCard${media.length + 1}`;
+      const extension = image.contentType === "image/png" ? "png" : "jpeg";
+      media.push({ bytes: image.bytes, relId, target: `media/id-card-${index + 1}-${which}.${extension}` });
+      const extent = fitIdPicture(image.widthPx, image.heightPx);
+      body = `<w:p><w:pPr><w:spacing w:after="0" w:before="0"/><w:jc w:val="center"/></w:pPr>${picture(relId, 100 + media.length, `${page.name} — ${SIDE_CAPTIONS[which]}`, extent)}</w:p>`;
+    } else {
+      body = emptySideBox(missingSideNote(page, which));
+    }
+    const caption = paragraph(run(SIDE_CAPTIONS[which], { color: MUTED, size: 16 }), {
+      after: which === "front" ? 280 : 0,
+      before: 60,
+      jc: "center",
+    });
+    return body + caption;
+  };
+  const pageBreak = index > 0 ? "<w:pageBreakBefore/>" : "";
+  const nameLine = `<w:p><w:pPr>${pageBreak}<w:bidi/><w:spacing w:after="40" w:before="0" w:line="300"/><w:jc w:val="start"/></w:pPr>${run(page.name, { bold: true, color: DEEP, size: 24 })}</w:p>`;
+  const idLine = paragraph(run(`الرقم القومي: ${page.nationalId?.trim() || "—"}`, { color: INK, size: 20 }), { after: 240 });
+  return nameLine + idLine + side("front", page.front) + side("back", page.back);
+}
+
+function documentXml(rows: readonly BankLetterRow[], date: string, idPages: readonly BankLetterIdPage[], media: IdMedia[]): string {
   const body = [
     paragraph(run(bankLetterDateLine(date), { color: INK, size: 22 }), { after: 200 }),
     paragraph(run(`السادة / ${BANK_LETTER_BANK_NAME_AR}`, { bold: true, color: DEEP, size: 24 }), { after: 120 }),
@@ -139,9 +195,17 @@ function documentXml(rows: readonly BankLetterRow[], date: string): string {
     paragraph(run("التوقيع", { bold: true, color: DEEP, size: 22 }), { after: 360, before: 600, keepNext: true }),
     paragraph(run("……………………………………….", { color: "000000", size: 22 })),
   ].join("");
-  const section =
+  const letterSection =
     '<w:sectPr><w:headerReference w:type="default" r:id="rIdHeader"/><w:footerReference w:type="default" r:id="rIdFooter"/><w:pgSz w:w="11906" w:h="16838" w:orient="portrait"/><w:pgMar w:top="2041" w:right="850" w:bottom="1247" w:left="850" w:header="680" w:footer="510" w:gutter="0"/><w:docGrid w:linePitch="360"/></w:sectPr>';
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ${W_NS}><w:body>${body}${section}</w:body></w:document>`;
+  if (idPages.length === 0) {
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ${W_NS}><w:body>${body}${letterSection}</w:body></w:document>`;
+  }
+  // The letter's section closes on a paragraph of its own; the ID pages are the last section, on a
+  // new page, under the empty header and footer.
+  const closeLetter = `<w:p><w:pPr>${letterSection}</w:pPr></w:p>`;
+  const pages = idPages.map((page, index) => idPageXml(page, index, media)).join("");
+  const idSection = `<w:sectPr><w:headerReference w:type="default" r:id="rIdHeaderBlank"/><w:footerReference w:type="default" r:id="rIdFooterBlank"/><w:type w:val="nextPage"/><w:pgSz w:w="11906" w:h="16838" w:orient="portrait"/><w:pgMar w:top="${ID_PAGE_MARGIN}" w:right="${ID_PAGE_MARGIN}" w:bottom="${ID_PAGE_MARGIN}" w:left="${ID_PAGE_MARGIN}" w:header="0" w:footer="0" w:gutter="0"/><w:docGrid w:linePitch="360"/></w:sectPr>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ${W_NS}><w:body>${body}${closeLetter}${pages}${idSection}</w:body></w:document>`;
 }
 
 function headerXml(companyNameAr: string, companyNameEn: string): string {
@@ -159,7 +223,7 @@ function headerXml(companyNameAr: string, companyNameEn: string): string {
 function footerXml(headOfficeAr: string): string {
   const muted = (text: string) => run(text, { color: MUTED, size: 13 });
   const address = `<w:p><w:pPr><w:pBdr><w:top w:val="single" w:color="${HAIR}" w:sz="4" w:space="4"/></w:pBdr><w:bidi/><w:spacing w:after="0" w:before="0" w:line="240"/><w:jc w:val="center"/></w:pPr>${muted(headOfficeAr)}</w:p>`;
-  const pages = paragraph(`${muted("صفحة ")}${fieldRun("PAGE")}${muted(" من ")}${fieldRun("NUMPAGES")}`, {
+  const pages = paragraph(`${muted("صفحة ")}${fieldRun("PAGE")}${muted(" من ")}${fieldRun("SECTIONPAGES")}`, {
     line: 240,
     jc: "center",
   });
@@ -171,14 +235,32 @@ const STYLES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:st
 const SETTINGS_XML =
   '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:updateFields w:val="true"/><w:defaultTabStop w:val="720"/><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>';
 
-const CONTENT_TYPES_XML =
-  '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>';
+const HEADER_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml";
+const FOOTER_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml";
+
+function contentTypesXml(withIdPages: boolean): string {
+  const blank = withIdPages
+    ? `<Override PartName="/word/header2.xml" ContentType="${HEADER_TYPE}"/><Override PartName="/word/footer2.xml" ContentType="${FOOTER_TYPE}"/>`
+    : "";
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="jpeg" ContentType="image/jpeg"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/><Override PartName="/word/header1.xml" ContentType="${HEADER_TYPE}"/><Override PartName="/word/footer1.xml" ContentType="${FOOTER_TYPE}"/>${blank}<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>`;
+}
 
 const ROOT_RELS_XML =
   '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>';
 
-const DOCUMENT_RELS_XML =
-  '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rIdSettings" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/><Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rIdFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/></Relationships>';
+const REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+
+function documentRelsXml(withIdPages: boolean, media: readonly IdMedia[]): string {
+  const blank = withIdPages
+    ? `<Relationship Id="rIdHeaderBlank" Type="${REL}/header" Target="header2.xml"/><Relationship Id="rIdFooterBlank" Type="${REL}/footer" Target="footer2.xml"/>`
+    : "";
+  const pictures = media.map((item) => `<Relationship Id="${item.relId}" Type="${REL}/image" Target="${item.target}"/>`).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdStyles" Type="${REL}/styles" Target="styles.xml"/><Relationship Id="rIdSettings" Type="${REL}/settings" Target="settings.xml"/><Relationship Id="rIdHeader" Type="${REL}/header" Target="header1.xml"/><Relationship Id="rIdFooter" Type="${REL}/footer" Target="footer1.xml"/>${blank}${pictures}</Relationships>`;
+}
+
+/** The ID pages' header and footer: present and empty, so the letterhead is not carried over. */
+const BLANK_HEADER_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:hdr ${W_NS}><w:p/></w:hdr>`;
+const BLANK_FOOTER_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr ${W_NS}><w:p/></w:ftr>`;
 
 const HEADER_RELS_XML =
   '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdLogo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/sato-pharma-logo.png"/><Relationship Id="rIdBand" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/sato-house-band.png"/></Relationships>';
@@ -191,13 +273,17 @@ const APP_XML =
   '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Phoenix Workforce</Application></Properties>';
 
 export async function buildBankAccountLetterDocx(input: BankLetterDocxInput): Promise<Uint8Array> {
+  const idPages = input.idPages ?? [];
+  const withIdPages = idPages.length > 0;
+  const media: IdMedia[] = [];
+  const document = documentXml(input.rows, input.date, idPages, media);
   const zip = new JSZip();
-  zip.file("[Content_Types].xml", CONTENT_TYPES_XML);
+  zip.file("[Content_Types].xml", contentTypesXml(withIdPages));
   zip.file("_rels/.rels", ROOT_RELS_XML);
   zip.file("docProps/core.xml", coreXml(input.companyNameEn));
   zip.file("docProps/app.xml", APP_XML);
-  zip.file("word/document.xml", documentXml(input.rows, input.date));
-  zip.file("word/_rels/document.xml.rels", DOCUMENT_RELS_XML);
+  zip.file("word/document.xml", document);
+  zip.file("word/_rels/document.xml.rels", documentRelsXml(withIdPages, media));
   zip.file("word/styles.xml", STYLES_XML);
   zip.file("word/settings.xml", SETTINGS_XML);
   zip.file("word/header1.xml", headerXml(input.companyNameAr, input.companyNameEn));
@@ -205,5 +291,10 @@ export async function buildBankAccountLetterDocx(input: BankLetterDocxInput): Pr
   zip.file("word/footer1.xml", footerXml(input.headOfficeAr));
   zip.file("word/media/sato-pharma-logo.png", input.images.logoPng);
   zip.file("word/media/sato-house-band.png", input.images.bandPng);
+  if (withIdPages) {
+    zip.file("word/header2.xml", BLANK_HEADER_XML);
+    zip.file("word/footer2.xml", BLANK_FOOTER_XML);
+    for (const item of media) zip.file(`word/${item.target}`, item.bytes);
+  }
   return zip.generateAsync({ compression: "DEFLATE", type: "uint8array" });
 }

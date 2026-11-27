@@ -14,6 +14,8 @@
 
 /** The screen, linked from the HR Forms hero. Written as `href: "/…"` so the navigation-reachability
  * guard's literal scan sees the link (a conditional prop value is a shape it does not match). */
+import type { IdCardStatus } from "./bank-letter-id-pages.ts";
+
 export const BANK_LETTER_PAGE = { href: "/hiring-pack/bank-account-letter" } as const;
 
 export const BANK_LETTER_BANK_NAME_AR = "بنك أبو ظبي الأول مصر";
@@ -39,6 +41,11 @@ export type BankLetterEmployee = {
   /** `employees.bank_name` as stored — FAB, CIB, QNB or nothing. */
   bankName: string | null;
   hireDate: string | null;
+  /**
+   * What Hiring Documents holds of the national ID card — the page after the letter prints it
+   * (`bank-letter-id-pages.ts`). Null when the files could not be read; the screen then says nothing.
+   */
+  idCard: IdCardStatus | null;
 };
 
 export type BankLetterField = "nameAr" | "nationalId" | "mobile" | "address" | "jobTitleAr" | "baseSalary";

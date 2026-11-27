@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, ArrowLeft, Download, Landmark, Loader2, Search, Users } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Download, IdCard, Landmark, Loader2, Search, Users } from "lucide-react";
 import Link from "next/link";
 
 import { AdminCallout, AdminInsightChip, AdminPageHero } from "@/components/admin/admin-design-system";
@@ -17,12 +17,17 @@ import {
   preselectedForBankLetter,
 } from "@/lib/hiring-pack/bank-account-letter";
 import type { BankLetterEmployee } from "@/lib/hiring-pack/bank-account-letter";
+import { ID_CARD_STATUS_LABELS } from "@/lib/hiring-pack/bank-letter-id-pages";
 import { cn } from "@/lib/utils";
 
 // Tick the people the bank should open accounts for and download the Word letter. Everyone whose
 // record shows no First Abu Dhabi Bank account arrives ticked; HR unticks whoever is not on this
 // letter. What each row shows is exactly what the letter prints — the same `bankLetterRows` the
 // server builds the file from — and a blank the letter would print is named beside the person.
+//
+// After the letter, the file carries ONE A4 PAGE PER TICKED PERSON with their national ID card, front
+// over back (owner, 2026-11-27). Each row says what Hiring Documents holds of the card, so a page
+// that will print an empty box is named before the file is made.
 
 type View = "without-fab" | "everyone";
 
@@ -62,6 +67,18 @@ function matches(employee: BankLetterEmployee, query: string): boolean {
     .includes(query);
 }
 
+/** What Hiring Documents holds of the card; says nothing when the files could not be read. */
+function IdCardLine({ employee }: { employee: BankLetterEmployee }) {
+  if (!employee.idCard) return null;
+  const complete = employee.idCard === "photos";
+  return (
+    <p className={cn("mt-1 flex items-start gap-1 text-xs font-semibold", complete ? "text-phx-ink-soft" : "text-amber-800")}>
+      <IdCard aria-hidden className="mt-px h-3.5 w-3.5 shrink-0" />
+      <span>{ID_CARD_STATUS_LABELS[employee.idCard]}</span>
+    </p>
+  );
+}
+
 function Gaps({ employee }: { employee: BankLetterEmployee }) {
   const gaps = bankLetterGaps(employee);
   if (gaps.length === 0) return null;
@@ -92,6 +109,8 @@ export function BankAccountLetterManager({
   const chosen = employees.filter((employee) => selected.has(employee.hrId));
   const withGaps = chosen.filter((employee) => bankLetterGaps(employee).length > 0);
   const chosenWithFab = chosen.filter(hasFabAccount);
+  // A ticked person whose ID page will print an empty box (a known status other than both sides).
+  const withoutIdPhotos = chosen.filter((employee) => employee.idCard !== null && employee.idCard !== "photos");
 
   function toggle(hrId: string) {
     setSelected((current) => {
@@ -145,10 +164,10 @@ export function BankAccountLetterManager({
             <>
               <AdminInsightChip tone="orange">{employees.length} on staff</AdminInsightChip>
               <AdminInsightChip tone="orange">{withoutFab.length} without a First Abu Dhabi Bank account</AdminInsightChip>
-              <AdminInsightChip>Word · Sato letterhead</AdminInsightChip>
+              <AdminInsightChip>Word · Sato letterhead · an ID card page per person</AdminInsightChip>
             </>
           }
-          description={`The account-opening letter to ${BANK_LETTER_BANK_NAME_AR}: name, national ID, mobile, address, job title and base salary for each person, on the Sato letterhead. Everyone without a First Abu Dhabi Bank account arrives ticked.`}
+          description={`The account-opening letter to ${BANK_LETTER_BANK_NAME_AR}: name, national ID, mobile, address, job title and base salary for each person, on the Sato letterhead, followed by one page per person with the front and back of their national ID card. Everyone without a First Abu Dhabi Bank account arrives ticked.`}
           eyebrow="Employee documents"
           icon={<Landmark className="h-5 w-5" />}
           title="Bank Account Letter"
@@ -208,7 +227,9 @@ export function BankAccountLetterManager({
 
         <div className="flex flex-col gap-3 border border-slate-200/90 bg-white/95 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
           <p className="min-w-0 text-sm font-semibold text-phx-ink-soft">
-            {count === 0 ? "Nobody ticked yet." : `${count} ${count === 1 ? "person" : "people"} on the letter`}
+            {count === 0
+              ? "Nobody ticked yet."
+              : `${count} ${count === 1 ? "person" : "people"} on the letter, then ${count} ID card ${count === 1 ? "page" : "pages"}`}
             {withGaps.length ? ` · ${withGaps.length} with a blank` : ""}
           </p>
           <Button className="h-10 rounded-none" disabled={busy || count === 0} onClick={() => void exportLetter()} type="button">
@@ -224,6 +245,18 @@ export function BankAccountLetterManager({
               The letter prints a blank for {withGaps.length === 1 ? "one person" : `${withGaps.length} people`}:{" "}
               {withGaps.map((employee) => employee.displayName).join(", ")}. Fill the missing details on their HR Forms record
               first, or send the letter with the blank.
+            </span>
+          </AdminCallout>
+        ) : null}
+
+        {withoutIdPhotos.length ? (
+          <AdminCallout tone="warning">
+            <IdCard className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              {withoutIdPhotos.length === 1 ? "One ID card page prints" : `${withoutIdPhotos.length} ID card pages print`} with an empty box,
+              because Hiring Documents does not hold both sides of the card:{" "}
+              {withoutIdPhotos.map((employee) => employee.displayName).join(", ")}. Upload the front and back to their
+              National ID copy on Hiring Documents, or attach a photocopy to the printed page.
             </span>
           </AdminCallout>
         ) : null}
@@ -300,6 +333,7 @@ export function BankAccountLetterManager({
                         <td className="break-words px-3 py-2">
                           <span className="block">{bankLabel(employee.bankName)}</span>
                           <Gaps employee={employee} />
+                          <IdCardLine employee={employee} />
                         </td>
                       </tr>
                     );
@@ -340,6 +374,7 @@ export function BankAccountLetterManager({
                       </span>
                       <span className="block text-xs">{bankLabel(employee.bankName)}</span>
                       <Gaps employee={employee} />
+                      <IdCardLine employee={employee} />
                     </span>
                   </label>
                 );

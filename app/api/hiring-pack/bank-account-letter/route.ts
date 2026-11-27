@@ -7,7 +7,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { bankLetterFileName, bankLetterRows } from "@/lib/hiring-pack/bank-account-letter";
 import { buildBankAccountLetterDocx } from "@/lib/hiring-pack/bank-account-letter-docx";
-import { listBankLetterEmployees, loadBankLetterImages } from "@/lib/hiring-pack/bank-account-letter-store";
+import { listBankLetterEmployees, loadBankLetterIdPages, loadBankLetterImages } from "@/lib/hiring-pack/bank-account-letter-store";
 import { loadCompanyDetails } from "@/lib/hiring-pack/company-details-store";
 import { hrFormsAccessFor } from "@/lib/hiring-pack/paper-access";
 
@@ -17,7 +17,9 @@ export const dynamic = "force-dynamic";
 // The bank account-opening letter (src/lib/hiring-pack/bank-account-letter.ts).
 //
 //   GET                              → { employees } — the active staff the screen lists.
-//   GET ?format=docx&hr=A&hr=B…      → the Word letter, those people in that order.
+//   GET ?format=docx&hr=A&hr=B…      → the Word letter, those people in that order, then one A4 page
+//                                      per person with their national ID card, front over back
+//                                      (owner, 2026-11-27; `bank-letter-id-pages.ts`).
 //
 // GET for both, like the rest of `/api/hiring-pack/**`, whose registry gate is `employee_documents`
 // read. The letter carries every chosen person's national ID, mobile, address and base salary, so
@@ -65,13 +67,14 @@ export async function GET(request: Request) {
       chosen.push(employee);
     }
 
-    const company = await loadCompanyDetails();
+    const [company, idPages] = await Promise.all([loadCompanyDetails(), loadBankLetterIdPages(chosen)]);
     const today = cairoDate();
     const docx = await buildBankAccountLetterDocx({
       date: today,
       companyNameAr: company.legalNameAr,
       companyNameEn: company.legalNameEn,
       headOfficeAr: company.headOfficeAr,
+      idPages,
       images: loadBankLetterImages(),
       rows: bankLetterRows(chosen),
     });
@@ -80,7 +83,12 @@ export async function GET(request: Request) {
       actorLoginId: access.loginId ?? access.hrId,
       entityId: randomUUID(),
       entityType: "bank_account_letter_export",
-      newValues: { count: chosen.length, hrIds: requested },
+      newValues: {
+        count: chosen.length,
+        hrIds: requested,
+        // Whose ID card the pages after the letter carry: a copy of a national ID left the system.
+        idCardPages: idPages.filter((page) => page.front || page.back).length,
+      },
       summary: `Bank account letter exported (${chosen.length} ${chosen.length === 1 ? "person" : "people"}) by ${access.hrId ?? "unknown"}.`,
     });
 
