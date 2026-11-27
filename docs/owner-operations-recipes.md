@@ -186,6 +186,25 @@ same day, on "cost in module in cost and invoices", it also wrote the monthly co
 - **Proof:** the run reads the changed `employees` rows back. `employee_change_log` names `actor_login_id`
   B-10 for each one.
 
+### End a leaver's cover ("end the resigned employees' insurance")
+
+First run 27 Nov 2026, on the owner's "End the three resigned employees' insurance cover". It ended three
+employees the Add/Remove screen listed to remove; none had family on the policy.
+
+- **Run:** `owner-ops.ts end-insurance-cover --employee <HR id[,HR id…]>` (up to 20; dry run first, then
+  `--apply`).
+- **Function:** `updateMedicalInsuranceMember(owner, memberId, { action: "end", coverageEnd, endReason })`
+  (`src/lib/medical-insurance/service.ts`), the same call the Add/Remove screen's "End cover" makes. It
+  asserts `medical_insurance` update.
+- **What it writes:** the end day and reason come from the screen's own removal row
+  (`getMedicalInsuranceView().actions`, kind `remove`): `effectiveOn` and `reason`, never a typed date. Someone
+  who left before their cover started is ended on its first day ("voided from its first day"). Their spouse
+  and children end with them. An HR id the screen does not list to remove is refused, and nothing is ended.
+- **What it never does:** delete a row, send the insurer anything, or touch a bill. The member file still goes
+  to Libano-Suisse by a person's hand.
+- **Proof:** the run reads back each person's register row and their family's rows (`coverage_ends_on`,
+  `end_reason`); the audit log (`writeRequiredAuditLog`) holds one row per end, by B-10.
+
 ## Rep tablets
 
 ### Make a tablet that already carries Phoenix Position actually start it
