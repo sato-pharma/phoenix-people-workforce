@@ -3,14 +3,21 @@
 //
 // ONE call to phx_territory_area_pharmacy_locations per area, run beside the pharmacy figures: it
 // returns each pharmacy's distributor rows, the brick's name and centre, and every point a rep
-// confirmed at that shop. An earlier version made about twenty follow-up reads from here and added
+// confirmed at that shop. Then one read of territory_pharmacy_place_matches for those customer codes:
+// the Google place Phoenix matched a top pharmacy to (place id only; pharmacy-place-match.ts). A
+// failure of that second read only leaves the free search links. An earlier version made about twenty follow-up reads from here and added
 // 2-4 seconds to opening an area (Cairo 1 CNS, 27 Nov 2026). This read can never take the figures
 // down: a failure leaves every name in the area plain text and says so in the server log.
 
 import { isUsablePoint, type Point } from "@/lib/pharmacy-search/geo";
 import { getSupabaseAdmin, toQueryError } from "@/lib/supabase/server";
 
-import { pickPharmacyDirections, type ConfirmedPharmacyPoint, type PharmacySourceRow } from "./pharmacy-directions";
+import {
+  pickPharmacyDirections,
+  type ConfirmedPharmacyPoint,
+  type MatchedPharmacyPlace,
+  type PharmacySourceRow,
+} from "./pharmacy-directions";
 import type { TerritoryPharmacyDirections } from "./types";
 
 type LocationRow = {
@@ -47,8 +54,29 @@ function parsePoints(value: unknown): Point[] {
   return points;
 }
 
+type PlaceMatchRow = {
+  distributor_code: string | null;
+  client_code: string | null;
+  google_place_id: string | null;
+};
+
+/** Pure: the matches table's rows → the matched places, keeping only rows with a place id. */
+export function matchedPlacesFromRows(rows: readonly PlaceMatchRow[]): MatchedPharmacyPlace[] {
+  const places: MatchedPharmacyPlace[] = [];
+  for (const row of rows) {
+    const distributorCode = text(row.distributor_code).toUpperCase();
+    const clientCode = text(row.client_code);
+    const placeId = text(row.google_place_id);
+    if (distributorCode && clientCode && placeId) places.push({ distributorCode, clientCode, placeId });
+  }
+  return places;
+}
+
 /** Pure: the function's rows → customer code → where its name sends a rep. Exported for the test. */
-export function directionsFromLocationRows(rows: readonly LocationRow[]): Map<string, TerritoryPharmacyDirections> {
+export function directionsFromLocationRows(
+  rows: readonly LocationRow[],
+  matchedPlaces: readonly MatchedPharmacyPlace[] = [],
+): Map<string, TerritoryPharmacyDirections> {
   const sourcesByCode = new Map<string, PharmacySourceRow[]>();
   const pointsByCode = new Map<string, ConfirmedPharmacyPoint[]>();
   const brickNames = new Map<string, string>();
@@ -73,12 +101,18 @@ export function directionsFromLocationRows(rows: readonly LocationRow[]): Map<st
     }
   }
 
+  const placesByCode = new Map<string, MatchedPharmacyPlace[]>();
+  for (const place of matchedPlaces) {
+    placesByCode.set(place.clientCode, [...(placesByCode.get(place.clientCode) ?? []), place]);
+  }
+
   const directions = new Map<string, TerritoryPharmacyDirections>();
   for (const [code, sources] of sourcesByCode) {
     const picked = pickPharmacyDirections({
       sources,
       displayName: sources.find((source) => source.clientName)?.clientName ?? "",
       confirmedPoints: pointsByCode.get(code) ?? [],
+      matchedPlaces: placesByCode.get(code) ?? [],
       brickNames,
       brickCentroids,
     });
@@ -103,11 +137,43 @@ export async function loadTerritoryPharmacyDirections(
       p_lines: [officialLine],
     });
     if (error) throw toQueryError(error);
-    return directionsFromLocationRows((data ?? []) as LocationRow[]);
+    const rows = (data ?? []) as LocationRow[];
+    return directionsFromLocationRows(rows, await loadMatchedPlaces(rows, areaCodes));
   } catch (error) {
     console.error(
       `[territory-drilldown] pharmacy directions unavailable for ${areaCodes.join(",")}: ${toQueryError(error).message}`,
     );
     return new Map();
+  }
+}
+
+/** Codes per read of the matches table: keeps each request's address well under PostgREST's limit. */
+const MATCH_READ_CHUNK = 200;
+
+/** The matched Google places for these rows' customer codes. Never throws: a failure is no matches. */
+async function loadMatchedPlaces(rows: readonly LocationRow[], areaCodes: string[]): Promise<MatchedPharmacyPlace[]> {
+  const codes = [...new Set(rows.map((row) => text(row.client_code)).filter(Boolean))];
+  if (codes.length === 0) return [];
+  try {
+    const chunks: string[][] = [];
+    for (let index = 0; index < codes.length; index += MATCH_READ_CHUNK) chunks.push(codes.slice(index, index + MATCH_READ_CHUNK));
+    const reads = await Promise.all(
+      chunks.map((chunk) =>
+        getSupabaseAdmin()
+          .from("territory_pharmacy_place_matches")
+          .select("distributor_code, client_code, google_place_id")
+          .eq("status", "matched")
+          .in("client_code", chunk),
+      ),
+    );
+    const found: PlaceMatchRow[] = [];
+    for (const read of reads) {
+      if (read.error) throw toQueryError(read.error);
+      found.push(...((read.data ?? []) as PlaceMatchRow[]));
+    }
+    return matchedPlacesFromRows(found);
+  } catch (error) {
+    console.error(`[territory-drilldown] matched Google places unavailable for ${areaCodes.join(",")}: ${toQueryError(error).message}`);
+    return [];
   }
 }
