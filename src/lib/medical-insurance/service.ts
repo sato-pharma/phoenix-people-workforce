@@ -1596,7 +1596,14 @@ export async function sendLibanoMovementEmail(access: AccessContext, body: Recor
   const base = { cc: plan.input.cc, people: file.rows.length, subject: plan.input.subject, test, to: plan.input.to };
   let outcome: LibanoMovementEmailOutcome;
   try {
-    const result = await sendDurableEmail({ input: plan.input, sender: "phoenix" }, { dedupeKey: plan.dedupeKey });
+    const result = await sendDurableEmail(
+      {
+        // The type is named here, at the send, so the notification registry reads it (notification-types.ts).
+        input: { ...plan.input, origin: { eventType: "medical_insurance_libano_movement_email", module: "medical_insurance", notificationType: "medical_insurance_libano_movement_email" } },
+        sender: "phoenix",
+      },
+      { dedupeKey: plan.dedupeKey },
+    );
     if (result.skipped) {
       outcome = isQueuedForRetry(result.reason)
         ? { ...base, message: result.reason, status: "queued" }

@@ -158,6 +158,7 @@ export const NOTIFICATION_TYPES: readonly NotificationTypeEntry[] = [
   { module: "internal_messages", eventType: "internal_message_email_requested", label: "An internal message was also sent to you by email", sentFrom: ["src/lib/internal-messages/service.ts"] },
   // The Medical Cover Statement, emailed by the Super Admin to the employee's own work email (cost-letter-email.ts).
   { module: "medical_insurance", eventType: "medical_cover_statement", label: "Your Medical Cover Statement: your grade, what you pay each month and your benefits", sentFrom: ["src/lib/medical-insurance/cost-letter-email.ts"], delivery: "direct_email" },
+  { module: "medical_insurance", eventType: "medical_insurance_libano_movement_email", label: "Medical insurance additions or deletions sent to Libano-Suisse, or a test of it to HR", sentFrom: ["src/lib/medical-insurance/libano-movement-email.ts", "src/lib/medical-insurance/service.ts"], delivery: "direct_email" },
   { module: "mailbox_offboarding", eventType: "mailbox_offboarding_overdue", label: "A leaver's mailbox has not been closed in time", sentFrom: ["src/lib/mailbox-offboarding/sweep.ts"] },
   { module: "new_hire_mailbox", eventType: "employee_added", label: "A new hire needs a company mailbox", sentFrom: ["src/lib/new-hire-mailbox/notify.ts"] },
   { module: "needs_you", eventType: "needs_you_daily_digest", label: "Your daily list of decisions waiting on you", sentFrom: ["src/lib/needs-you/deliver/daily.ts"] },

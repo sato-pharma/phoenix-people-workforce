@@ -954,7 +954,7 @@ function testTheLibanoEmailGoesToTheInsurerAndTheTestToTheOwnerAlone() {
   const route = readFileSync("app/api/medical-insurance/movement-file/send/route.ts", "utf8");
   assert.ok(route.includes("assertSameOriginMutation(request)") && route.includes(`assertPermission(access, "medical_insurance", "export")`));
   const service = readFileSync("src/lib/medical-insurance/service.ts", "utf8");
-  assert.ok(service.includes(`sendDurableEmail({ input: plan.input, sender: "phoenix" }`), "the button email goes through the durable outbox");
+  assert.ok(service.includes("sendDurableEmail(") && service.includes(`sender: "phoenix"`), "the button email goes through the durable outbox");
   const page = readFileSync("src/components/medical-insurance/medical-insurance-actions.tsx", "utf8");
   assert.ok(page.includes("Send test to me") && page.includes("Send to Libano-Suisse") && page.includes("<SendConfirm"));
 }
