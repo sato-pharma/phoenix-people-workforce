@@ -27,9 +27,15 @@ export function runCeoLandingLeaveCountsStayLightTests() {
     !ceo.includes("getVacationReportData("),
     "the CEO / System Administrator landing must not build the whole leave report for two counts",
   );
+  // Since 27 Nov 2026 the landing counts only the viewer's OWN turn (owner: every approval number
+  // counts only what waits on you), through the sidebar badge's own light read.
   assert.ok(
-    ceo.includes("getVacationPendingApprovalCounts(access)"),
-    "the landing's Leave tiles must read getVacationPendingApprovalCounts",
+    ceo.includes("getVacationAwaitingBadge(access)"),
+    "the landing's Leave tiles must read the viewer's-turn badge count, getVacationAwaitingBadge",
+  );
+  assert.ok(
+    !ceo.includes("getVacationPendingApprovalCounts("),
+    "the landing must not read the company's whole pending queue for its Leave tiles",
   );
 
   const vacation = readFileSync("src/lib/vacation/service.ts", "utf8");

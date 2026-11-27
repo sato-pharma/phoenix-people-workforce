@@ -98,6 +98,10 @@ export function buildLibanoMovementEmail(input: {
   kind: LibanoMovementEmailKind;
   policyNumber: string | null;
   rows: readonly LibanoMemberLine[];
+  /** How many personal photos go with an additions sheet, each named by the staff ID. */
+  photoCount?: number;
+  /** People on the file who were sent before, and who of them first went with the Father Name blank. */
+  resent?: { names: readonly string[]; fatherNameFilled: readonly string[] };
   /** A TEST send: the same email, marked as a test, to the owner alone. */
   test?: boolean;
 }): { html: string; subject: string; text: string } {
@@ -109,6 +113,12 @@ export function buildLibanoMovementEmail(input: {
   const what = additions ? `add ${people} to` : `delete ${people} from`;
   const sheet = additions ? "Additions" : "Deletions";
   const dayWord = additions ? "Cover starts" : "Last covered day";
+  const photoWords = additions && (input.photoCount ?? 0) > 0
+    ? `${input.photoCount === 1 ? "Their personal photo is attached, named by the staff ID." : "Their personal photos are attached, each named by the staff ID."}`
+    : "";
+  // One line when the file goes again (owner, 27 Nov 2026: "put one line: the photos are attached, and Nourhan's data").
+  const resendWords = additions ? libanoResendLine(input.resent, (input.photoCount ?? 0) > 0) : "";
+  const closingWords = [resendWords || photoWords, "Please reply to confirm once it is done."].filter(Boolean).join(" ");
   // Exactly these words and no more (owner, 27 Nov 2026: "this is an automated email from Phoenix Workforce, Sato
   // Pharma HR system only"). The reply still reaches the HR Manager through the Reply-To.
   const automatedNote = "This is an automated email from Phoenix Workforce, Sato Pharma HR system.";
@@ -141,7 +151,7 @@ export function buildLibanoMovementEmail(input: {
     "",
     ...input.rows.map((row) => `- ${row.fullName} (${MEMBER_TYPE_WORDS[row.memberType]}${additions ? `, plan ${row.category}` : ""}), ${dayWord.toLowerCase()} ${plainDay(row.day)}`),
     "",
-    "Please reply to confirm once it is done.",
+    closingWords,
     "",
     "Kind regards,",
     "",
@@ -157,7 +167,7 @@ export function buildLibanoMovementEmail(input: {
   const rendered = renderLibanoMovementLetter({
     assetBaseUrl: letterAssetBase(),
     automatedNote,
-    closing: "Please reply to confirm once it is done.",
+    closing: closingWords,
     paragraphsHtml: [
       `Please ${escapeHtml(what)} Sato Pharma's ${escapeHtml(policyWords)} with ${LIBANO_INSURER_NAME}. They are on the attached ${sheet} sheet, <b>${escapeHtml(input.fileName)}</b>, on your own workbook:`,
     ],
@@ -170,6 +180,24 @@ export function buildLibanoMovementEmail(input: {
     valediction: "Kind regards,",
   });
   return { html: rendered.html, subject, text: rendered.text };
+}
+
+/**
+ * The one line a file sent again carries: "We are sending this again with the personal photos attached, each named by
+ * the staff ID, and with Nourhan Abdelmoniem's father name, which was missing, now filled in from the national ID
+ * card." Empty when nobody on the file was sent before.
+ */
+export function libanoResendLine(resent: { names: readonly string[]; fatherNameFilled: readonly string[] } | undefined, withPhotos: boolean): string {
+  if (!resent || resent.names.length === 0) return "";
+  const list = (names: readonly string[]) => (names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`);
+  const filled = resent.fatherNameFilled;
+  const nameWords = filled.length === 0
+    ? ""
+    : filled.length === 1
+      ? `${filled[0]}'s father name, which was missing, now filled in from the national ID card`
+      : `the father names of ${list(filled)}, which were missing, now filled in from their national ID cards`;
+  const parts = [withPhotos ? "the personal photos attached, each named by the staff ID" : "", nameWords].filter(Boolean);
+  return parts.length === 0 ? "We are sending this again." : `We are sending this again with ${parts.join(", and with ")}.`;
 }
 
 /** The recipients, fixed: never typed on the page. A test goes to the owner alone, with no copies. */
@@ -195,7 +223,10 @@ export function planLibanoMovementEmail(input: {
   atIso: string;
   fileName: string;
   kind: LibanoMovementEmailKind;
+  /** An additions file only: each joiner's personal photo, named by their staff ID (owner, 27 Nov 2026, rule 2). */
+  photos?: ReadonlyArray<{ bytes: Buffer | Uint8Array; contentType: string; fileName: string }>;
   policyNumber: string | null;
+  resent?: { names: readonly string[]; fatherNameFilled: readonly string[] };
   rows: readonly LibanoMemberLine[];
   systemFromAddress: string;
   /** A TEST send (see buildLibanoMovementEmail). */
@@ -218,19 +249,25 @@ export function planLibanoMovementEmail(input: {
   };
 } {
   if (input.rows.length === 0) throw new Error("Nobody is on the file, so there is nothing to send.");
-  const email = buildLibanoMovementEmail(input);
+  const photos = input.kind === "additions" ? input.photos ?? [] : [];
+  const email = buildLibanoMovementEmail({ ...input, photoCount: photos.length });
   const recipients = libanoMovementRecipients(input.test === true);
   const people = input.rows.map((row) => `${row.memberType}:${row.staffNumber ?? ""}:${row.fullName}`).sort().join("|");
   const digest = createHash("sha256").update(people).digest("hex").slice(0, 32);
   // A test may be pressed again and again while the file is checked, so its key carries the minute; the real
   // send's key is the Cairo day, so a double press never reaches the insurer twice.
+  // A file sent again carries its own key, so the outbox never answers it with the first send of the same people.
+  const again = input.resent && input.resent.names.length > 0 ? "-again" : "";
   const dedupeKey = input.test
     ? `medical-insurance:libano-test-${input.kind}:${Math.floor(new Date(input.atIso).getTime() / 60_000)}:${digest}`
-    : `medical-insurance:libano-${input.kind}:${libanoEmailDay(input.atIso)}:${digest}`;
+    : `medical-insurance:libano-${input.kind}${again}:${libanoEmailDay(input.atIso)}:${digest}`;
   return {
     dedupeKey,
     input: {
-      attachments: [{ content: Buffer.from(new Uint8Array(input.workbook)).toString("base64"), contentType: XLSX_TYPE, filename: input.fileName }],
+      attachments: [
+        { content: Buffer.from(new Uint8Array(input.workbook)).toString("base64"), contentType: XLSX_TYPE, filename: input.fileName },
+        ...photos.map((photo) => ({ content: Buffer.from(photo.bytes).toString("base64"), contentType: photo.contentType, filename: photo.fileName })),
+      ],
       cc: recipients.cc,
       externalRecipients: recipients.external,
       from: libanoMovementFrom(input.systemFromAddress),

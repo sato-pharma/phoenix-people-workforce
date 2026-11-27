@@ -95,6 +95,35 @@ export function isHrApproverDirectReport(input: {
   return input.hrApproverHrIds.some((hrId) => key(hrId) === manager);
 }
 
+/**
+ * The HR step that waits on the requester's OWN acknowledgement (owner rule, 27 Nov 2026 — "B-10 is the
+ * system administrator account and the one who approves"; he chose "your own request is fully approved
+ * as soon as your manager approves it").
+ *
+ * The HR approver's own leave ran Direct manager (the CEO) -> HR, and the HR step was assigned to the
+ * requester himself, so a request the CEO had approved sat waiting for its own sender: 8 of the HR
+ * Manager's requests from 28 Jul to 23 Nov 2026 stood at "pending_hr" with the CEO's approval on each.
+ * Once every management step is approved, that step is completed in the requester's name, through the
+ * same decision path his own click runs. Returns the pending HR step assigned to the requester, or
+ * null when the HR step belongs to someone else (every other employee) or is no longer pending.
+ */
+export function ownPendingHrStep<T extends { approverHrId: string | null; status: string; stepKey: string }>(input: {
+  requesterHrId: string | null | undefined;
+  steps: T[];
+  sameHrId: (left: string | null | undefined, right: string | null | undefined) => boolean;
+}): T | null {
+  if (!String(input.requesterHrId ?? "").trim()) return null;
+  return (
+    input.steps.find(
+      (step) => step.stepKey === "hr" && step.status === "pending" && input.sameHrId(step.approverHrId, input.requesterHrId),
+    ) ?? null
+  );
+}
+
+/** The comment the requester reads on the HR step completed for him on his own request. */
+export const OWN_HR_STEP_COMMENT =
+  "Your own request: you are its HR approver, so your HR acknowledgement was recorded when management approved it.";
+
 /** A chain with no management step at all — the HR step is the one and final approval. */
 export function isHrOnlyChain(steps: Array<{ stepKey: VacationWorkflowStepKey }>): boolean {
   return steps.length > 0 && steps.every((step) => step.stepKey === "hr");

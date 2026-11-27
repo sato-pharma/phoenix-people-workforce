@@ -159,6 +159,22 @@ node --env-file-if-exists=.env.local --experimental-strip-types --experimental-s
   printed pin row.
 - **Proof:** the pin row, then the linked employees' workspaces.
 
+## Leave
+
+### Close the HR approver's own leave that waits on himself ("I already accepted this")
+
+First run 27 Nov 2026, on the owner's "B-10 is the system administrator account and the one who approves".
+It closed 8 of his own requests (28 Jul to 23 Nov 2026) that the CEO had approved and that still waited on
+the HR step assigned to him: all approved and paid, 6 days in total. New requests no longer wait: the rule
+runs by itself the moment management approves (`.claude/rules/time-off.md`).
+
+- **Run:** `node --experimental-strip-types --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs --env-file=.env.local scripts/vacation-complete-own-hr-steps.ts`
+  lists them; add `--apply` to close them. Emails are skipped on a local run.
+- **Function:** `completeOwnHrStep` (`src/lib/vacation/service.ts`); the rule is `ownPendingHrStep`
+  (`approval-flow.ts`). It approves through `applyVacationDecisionSequential`, the path his own click runs.
+- **Proof:** each request reads `status` approved, `hr_decision_by_hr_id` B-10, its HR step approved, one
+  `hr_own_request_auto_acknowledged` event; no `pending_hr` request has an HR step assigned to its own sender.
+
 ## Medical insurance
 
 ### Fill the Employee Master from the medical insurance register ("sync insurance to the master")

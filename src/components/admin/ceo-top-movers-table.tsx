@@ -155,10 +155,12 @@ export function CeoTopMoversTable({
       <div>
         <table className="w-full table-fixed border-collapse text-xs">
           <colgroup>
+            {/* Share gets 22%: at 18% its one-word header ("SHARE", tracked capitals) needed 56px in a
+                48px column on a 375px phone, and the table scrolled sideways (27 Nov 2026). */}
             <col className="w-[10%]" />
-            <col className="w-[50%]" />
+            <col className="w-[46%]" />
             <col className="w-[22%]" />
-            <col className="w-[18%]" />
+            <col className="w-[22%]" />
           </colgroup>
           <thead>
             <tr className="bg-slate-900 text-left">
