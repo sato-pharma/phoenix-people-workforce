@@ -392,7 +392,7 @@ async function restore(flags) {
   for (const key of services) {
     const svc = SERVICES[key];
     const before = (await readInstance(ENVIRONMENTS.production, svc.id)).latestDeployment?.id ?? null;
-    await gql(`mutation($s:String!,$i:ServiceConnectInput!){serviceConnect(id:$s,input:$i)}`, { s: svc.id, i: { repo: GIT_SOURCE.repo, branch: GIT_SOURCE.branch } });
+    await gql(`mutation($s:String!,$i:ServiceConnectInput!){serviceConnect(id:$s,input:$i){ id }}`, { s: svc.id, i: { repo: GIT_SOURCE.repo, branch: GIT_SOURCE.branch } });
     note(`- ${key}: reconnected to the git source`);
     // Only AFTER the reconnect: a service still on the image needs these to pull it. A git build never reads them, and
     // skipDeploys keeps this from starting a second deployment beside the one the reconnect started.

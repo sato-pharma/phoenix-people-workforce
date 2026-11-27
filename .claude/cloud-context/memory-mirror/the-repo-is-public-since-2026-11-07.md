@@ -1,12 +1,14 @@
 ---
 name: the-repo-is-public-since-2026-11-07
-description: "sato-pharma/phoenix-people-workforce was made PUBLIC on 2026-11-07 ~12:45 Cairo on the owner's word, for free GitHub Actions minutes; anything pushed is world-readable"
+description: "The main repo is PUBLIC (since 7 Nov 2026, for free Actions minutes). A 27 Nov private spell (08:18–~11:00 Cairo) was reversed by the owner: \"I WILL KEEP ON PUBLIC TO AVOID THE COST OF ACTIONS\""
 metadata:
   node_type: memory
   type: project
   originSessionId: 95681d3e-2bd6-4440-8cc2-1f176d61fe46
   modified: 2026-11-07T16:48:58.950Z
 ---
+
+> **27 Nov 2026:** the repo was private for about 2.5 hours that morning, and the owner then kept it PUBLIC (10:49 Cairo). This note holds. What that spell broke (Railway lost its git source): [[the-repo-is-private-since-2026-11-27]]. A self-hosted runner must never be attached while it is public; the spare runner was removed (0 runners, 27 Nov ~11:00).
 
 On 2026-11-07 (~12:45 Cairo) the owner made `sato-pharma/phoenix-people-workforce` **public** — his words: "MOVE REPO TO PUBLIC TO MAKE UNLIMITED CIO ACTIONS", "CONVERT TO PUBLIC REPO TEMPRERIORY BECAUSE I HAVE NO MONEY NOW". He was shown first that the history holds 51 data files (April 2026 distributor sales workbooks, pharmacy database, products list, July closing PDFs, a Playwright trace) and that a rewrite cannot purge pull-request refs; he chose public anyway.
 

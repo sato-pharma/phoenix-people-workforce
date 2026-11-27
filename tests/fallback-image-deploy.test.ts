@@ -154,6 +154,9 @@ export function runFallbackImageDeployTests(): void {
     const waitAt = restoreBody.indexOf("await waitForNewDeployment(");
     assert.ok(clearAt > -1, "🔴 restore clears each service's image-pull credentials — without it the token outlives every restore");
     assert.ok(reconnectAt > -1 && reconnectAt < clearAt && clearAt < waitAt, "reconnect to git first, then clear, then wait for the deployment");
+    // 27 Nov 2026: Railway now types serviceConnect as Service!, so a bare field is refused ("must have a selection of
+    // subfields") and the restore failed the day the repo's visibility change disconnected every service.
+    assert.match(restoreBody, /serviceConnect\(id:\$s,input:\$i\)\{ id \}/, "serviceConnect asks for a field of the Service it returns");
     assert.match(restoreBody, /environmentPatchCommit\(environmentId:\$e,patch:\$p,commitMessage:\$m,skipDeploys:true\)/, "an environment patch, with no second deployment");
     assert.match(restoreBody, /e: ENVIRONMENTS\.production,/, "the patch is production's, the only environment restore may touch");
     assert.match(restoreBody, /if \(credentialsLeft\.length\) \{\s*throw new Error\(/, "a token left behind ends the run red, after every service is back on git");
