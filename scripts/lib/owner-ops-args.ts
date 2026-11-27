@@ -89,7 +89,8 @@ export type OwnerOpsPlan =
   | { job: "match-app-version"; apply: boolean; applicationId: number }
   | { job: "lock-rep-tablets"; apply: boolean }
   | { job: "sync-insurance-master"; apply: boolean }
-  | { job: "end-insurance-cover" | "reinstate-insurance-cover"; apply: boolean; hrIds: string[] };
+  | { job: "end-insurance-cover"; apply: boolean; hrIds: string[] }
+  | { job: "reinstate-insurance-cover"; apply: boolean; hrIds: string[] };
 
 export type OwnerOpsParse = { ok: true; plan: OwnerOpsPlan } | { ok: false; error: string };
 
