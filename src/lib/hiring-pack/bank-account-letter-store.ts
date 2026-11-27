@@ -29,6 +29,7 @@ import {
   isPlausibleCardQuad,
   landscapeQuad,
   orderQuadClockwise,
+  outlineCardQuad,
   quadFromThousandths,
   refineCardQuad,
   warpCard,
@@ -270,7 +271,10 @@ async function cropToCard(bytes: Buffer): Promise<IdPicture | null> {
   const quad = expandQuad(landscapeQuad(ordered), ID_CARD_READ_MARGIN_SHARE, info.width, info.height);
   if (!isPlausibleCardQuad(quad, info.width, info.height)) return null;
   const grey = await sharp(data, { raw }).greyscale().blur(1.2).toColourspace("b-w").raw().toBuffer();
-  const refined = refineCardQuad({ data: new Uint8Array(grey), height: info.height, width: info.width }, quad);
+  const greyImage = { data: new Uint8Array(grey), height: info.height, width: info.width };
+  // The card's own light outline, when the photo shows one, outranks the reading's edges: a reading far
+  // outside or inside the card would otherwise leave desk in the picture or cut the card.
+  const refined = refineCardQuad(greyImage, outlineCardQuad(greyImage, quad) ?? quad);
   const size = cardCropSize();
   // A thin border of the photo all round: the cut lands on the desk, never on the card.
   const border = ID_CARD_BORDER_SHARE * size.width;
@@ -301,14 +305,28 @@ async function cropToCard(bytes: Buffer): Promise<IdPicture | null> {
  */
 async function preparePicture(bytes: Buffer): Promise<IdPicture | null> {
   try {
-    const card = await cropToCard(bytes).catch(() => null);
+    // The corner reading varies from one call to the next: a reading that does not make a card is asked once more.
+    const card = (await cropToCard(bytes).catch(() => null)) ?? (await cropToCard(bytes).catch(() => null));
     if (card) return card;
     const sharp = await loadSharp();
-    const { data, info } = await sharp(bytes)
+    const upright = await sharp(bytes)
       .rotate()
       .resize({ fit: "inside", height: ID_PICTURE_MAX_EDGE_PX, width: ID_PICTURE_MAX_EDGE_PX, withoutEnlargement: true })
-      .jpeg({ mozjpeg: true, quality: 85 })
       .toBuffer({ resolveWithObject: true });
+    // Uncut, the photo is still printed landscape (owner, 2026-11-27): a portrait photo is turned a
+    // quarter, then a half more when the card then reads upside down.
+    let turn = 0;
+    if (upright.info.height > upright.info.width) {
+      const quarter = await sharp(upright.data).rotate(90).resize({ width: 800 }).jpeg({ quality: 80 }).toBuffer();
+      const answer = await findIdCardOrientation(quarter);
+      if (answer === "upside_down") turn = 270;
+      else if (answer === "upright") turn = 90;
+      else {
+        const { data: g, info: gi } = await sharp(quarter).greyscale().raw().toBuffer({ resolveWithObject: true });
+        turn = barcodeBand({ data: new Uint8Array(g), height: gi.height, width: gi.width }) === "top" ? 270 : 90;
+      }
+    }
+    const { data, info } = await sharp(upright.data).rotate(turn).jpeg({ mozjpeg: true, quality: 85 }).toBuffer({ resolveWithObject: true });
     return { bytes: new Uint8Array(data), contentType: "image/jpeg", heightPx: info.height, widthPx: info.width };
   } catch {
     const size = pictureSize(bytes);

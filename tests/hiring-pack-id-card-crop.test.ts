@@ -14,6 +14,7 @@ import {
   isPlausibleCardQuad,
   landscapeQuad,
   orderQuadClockwise,
+  outlineCardQuad,
   quadFromThousandths,
   refineCardQuad,
   warpCard,
@@ -43,7 +44,7 @@ const DESK = 60;
 const CARD = 215;
 const STRIPE = 20;
 
-/** A made-up photo: dark desk, a light card inside `quad`, a dark stripe along the card's TOP edge. */
+/** A made-up photo: dark desk, a light card inside `quad`, a dark stripe just inside the card's TOP edge. */
 function drawPhoto(quad: CardQuad): { rgb: RawImage; grey: GreyImage } {
   // Photo pixel → card coordinates in 0..1, through the map from the photo onto the unit square.
   const toCard = homography(quad, [
@@ -58,7 +59,8 @@ function drawPhoto(quad: CardQuad): { rgb: RawImage; grey: GreyImage } {
     for (let x = 0; x < PHOTO_W; x += 1) {
       const c = applyHomography(toCard, { x, y });
       const inside = c.x >= 0 && c.x <= 1 && c.y >= 0 && c.y <= 1;
-      const value = !inside ? DESK + ((x * 7 + y * 3) % 9) : c.y < 0.12 ? STRIPE : CARD;
+      // The stripe stops short of the card's edges, as a real card's printing does.
+      const value = !inside ? DESK + ((x * 7 + y * 3) % 9) : c.y >= 0.03 && c.y < 0.12 && c.x > 0.03 && c.x < 0.97 ? STRIPE : CARD;
       grey[y * PHOTO_W + x] = value;
       rgb.fill(value, (y * PHOTO_W + x) * 3, (y * PHOTO_W + x) * 3 + 3);
     }
@@ -189,6 +191,23 @@ export async function runHiringPackIdCardCropTests() {
   for (let i = 0; i < 4; i += 1) {
     assert.ok(near(refined[i], upright[i], 4), `corner ${i} snapped to within 4 px of the card (read ${JSON.stringify(misread[i])}, got ${JSON.stringify(refined[i])})`);
   }
+  // A reading FAR off — one side 160 px out past the card, another 90 px inside it — is beyond the
+  // edge search's band; the card's own light outline finds it, and the snap then lands on its edges.
+  const farOff: CardQuad = [
+    { x: 700, y: 200 },
+    { x: 700, y: 1160 },
+    { x: 290, y: 1150 },
+    { x: 300, y: 210 },
+  ];
+  const outline = outlineCardQuad(photo.grey, farOff);
+  assert.ok(outline, "the card's outline is found from a reading far off");
+  const snappedFar = refineCardQuad(photo.grey, outline!);
+  for (let i = 0; i < 4; i += 1) {
+    assert.ok(near(snappedFar[i], upright[i], 5), `corner ${i} lands on the card from a far-off reading (got ${JSON.stringify(snappedFar[i])})`);
+  }
+  // A desk as light as the card has no outline to find: the reading is used as it came.
+  assert.equal(outlineCardQuad({ data: new Uint8Array(PHOTO_W * PHOTO_H).fill(230), height: PHOTO_H, width: PHOTO_W }, farOff), null, "no outline on a light desk");
+
   // A white card on a white desk has no edge to snap to: the reading is kept as it came.
   const blank: GreyImage = { data: new Uint8Array(PHOTO_W * PHOTO_H).fill(230), height: PHOTO_H, width: PHOTO_W };
   assert.deepEqual(refineCardQuad(blank, misread), misread, "no edge found → the reading is kept, never invented");
@@ -221,9 +240,11 @@ export async function runHiringPackIdCardCropTests() {
 
   // ── wiring: the page prints the crop, keeps the border, and falls back to the photo ─────────
   const store = readFileSync(join(process.cwd(), "src/lib/hiring-pack/bank-account-letter-store.ts"), "utf8");
-  assert.ok(store.includes("const card = await cropToCard(bytes).catch(() => null);"), "every side is cut to the card first, and a failed crop never loses the picture");
+  assert.ok(store.includes("const card = (await cropToCard(bytes).catch(() => null)) ?? (await cropToCard(bytes).catch(() => null));"), "every side is cut to the card first, asked twice, and a failed crop never loses the picture");
+  assert.ok(store.includes("if (upright.info.height > upright.info.width)") && store.includes(".rotate(turn)"), "an uncut portrait photo is still printed landscape, turned the right way up");
   assert.ok(store.includes("ID_CARD_BORDER_SHARE * size.width"), "the crop keeps the border round the card");
   assert.ok(store.includes("isPlausibleCardQuad(quad, info.width, info.height)"), "a reading that cannot be a card is never warped");
+  assert.ok(store.includes("refineCardQuad(greyImage, outlineCardQuad(greyImage, quad) ?? quad)"), "the card's own outline is used before the snap, the reading only when there is none");
   assert.ok(store.includes("orderQuadClockwise(read)") && store.includes("landscapeQuad(ordered)"), "the corners are ordered by geometry before the warp: never mirrored, always landscape");
   assert.ok(store.includes("findIdCardOrientation(preview)") && store.includes('=== "top"') && store.includes(".rotate(upsideDown ? 180 : 0)"), "an upside-down card is turned, by the model's answer or else the barcode band");
   const corners = readFileSync(join(process.cwd(), "src/lib/hiring-pack/id-card-corners.ts"), "utf8");

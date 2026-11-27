@@ -373,3 +373,98 @@ export function refineCardQuad(grey: GreyImage, quad: CardQuad): CardQuad {
   const refined: CardQuad = [corners[0], corners[1], corners[2], corners[3]];
   return isPlausibleCardQuad(refined, grey.width, grey.height) ? refined : quad;
 }
+
+/** A threshold that splits a grey histogram into its two populations (Otsu's method). */
+function otsuThreshold(histogram: readonly number[], total: number): number {
+  let sum = 0;
+  for (let v = 0; v < 256; v += 1) sum += v * histogram[v];
+  let sumBelow = 0;
+  let countBelow = 0;
+  let best = 0;
+  let threshold = 128;
+  for (let v = 0; v < 256; v += 1) {
+    countBelow += histogram[v];
+    if (countBelow === 0) continue;
+    const countAbove = total - countBelow;
+    if (countAbove === 0) break;
+    sumBelow += v * histogram[v];
+    const between = countBelow * countAbove * (sumBelow / countBelow - (sum - sumBelow) / countAbove) ** 2;
+    if (between > best) {
+      best = between;
+      threshold = v;
+    }
+  }
+  return threshold;
+}
+
+/**
+ * The card's own outline, found in the pixels: a plastic card is lighter than the desk it lies on, so
+ * the light region that holds the middle of the corner reading IS the card, whatever the reading said
+ * about its edges (the reading can land well outside the card, or inside it). Its four corners are the
+ * points of that region furthest out towards each of the reading's corners, in the reading's order, so
+ * the card's turn is kept. Null — and the reading is used as it came — when the desk is as light as the
+ * card (the region runs to the edge of the search), or the region is not a card's size and shape.
+ */
+export function outlineCardQuad(grey: GreyImage, hint: CardQuad): CardQuad | null {
+  const centre = { x: hint.reduce((sum, p) => sum + p.x, 0) / 4, y: hint.reduce((sum, p) => sum + p.y, 0) / 4 };
+  const reach = expandQuad(hint, 0.8, grey.width, grey.height);
+  const x0 = Math.max(0, Math.floor(Math.min(...reach.map((p) => p.x))));
+  const x1 = Math.min(grey.width - 1, Math.ceil(Math.max(...reach.map((p) => p.x))));
+  const y0 = Math.max(0, Math.floor(Math.min(...reach.map((p) => p.y))));
+  const y1 = Math.min(grey.height - 1, Math.ceil(Math.max(...reach.map((p) => p.y))));
+  const w = x1 - x0 + 1;
+  const h = y1 - y0 + 1;
+  if (w < 20 || h < 20) return null;
+  const histogram = new Array<number>(256).fill(0);
+  for (let y = y0; y <= y1; y += 1) for (let x = x0; x <= x1; x += 1) histogram[grey.data[y * grey.width + x]] += 1;
+  const threshold = otsuThreshold(histogram, w * h);
+  const light = (x: number, y: number) => grey.data[y * grey.width + x] > threshold;
+  // Seeds: the light pixels in the middle half of the reading — inside the card even when the reading is off.
+  const seen = new Uint8Array(w * h);
+  const queue: number[] = [];
+  for (let k = 0; k <= 20; k += 1) {
+    for (let j = 0; j <= 20; j += 1) {
+      const sx = Math.round(centre.x + (((k / 20) - 0.5) * 0.5) * (hint[1].x - hint[0].x) + (((j / 20) - 0.5) * 0.5) * (hint[3].x - hint[0].x));
+      const sy = Math.round(centre.y + (((k / 20) - 0.5) * 0.5) * (hint[1].y - hint[0].y) + (((j / 20) - 0.5) * 0.5) * (hint[3].y - hint[0].y));
+      if (sx < x0 || sx > x1 || sy < y0 || sy > y1 || !light(sx, sy)) continue;
+      const index = (sy - y0) * w + (sx - x0);
+      if (seen[index]) continue;
+      seen[index] = 1;
+      queue.push(index);
+    }
+  }
+  if (queue.length < 40) return null;
+  const best = hint.map(() => ({ point: centre, reach: Number.NEGATIVE_INFINITY }));
+  const towards = hint.map((p) => ({ x: p.x - centre.x, y: p.y - centre.y }));
+  let area = 0;
+  let touches = 0;
+  for (let head = 0; head < queue.length; head += 1) {
+    const index = queue[head];
+    const lx = index % w;
+    const ly = (index - lx) / w;
+    area += 1;
+    if (lx === 0 || ly === 0 || lx === w - 1 || ly === h - 1) touches += 1;
+    const x = lx + x0;
+    const y = ly + y0;
+    for (let i = 0; i < 4; i += 1) {
+      const r = (x - centre.x) * towards[i].x + (y - centre.y) * towards[i].y;
+      if (r > best[i].reach) best[i] = { point: { x, y }, reach: r };
+    }
+    if (lx > 0 && !seen[index - 1] && light(x - 1, y)) (seen[index - 1] = 1), queue.push(index - 1);
+    if (lx < w - 1 && !seen[index + 1] && light(x + 1, y)) (seen[index + 1] = 1), queue.push(index + 1);
+    if (ly > 0 && !seen[index - w] && light(x, y - 1)) (seen[index - w] = 1), queue.push(index - w);
+    if (ly < h - 1 && !seen[index + w] && light(x, y + 1)) (seen[index + w] = 1), queue.push(index + w);
+  }
+  // The light region spilling out to the edge of the search is the desk, not the card.
+  if (touches > 0.02 * (w + h)) return null;
+  const quad: CardQuad = [best[0].point, best[1].point, best[2].point, best[3].point];
+  if (!isPlausibleCardQuad(quad, grey.width, grey.height)) return null;
+  const outline = quadArea(quad);
+  // A card's printing leaves dark holes in the region, so its pixel count is below the outline's area;
+  // far below, or an outline far from the reading's size, is not the card.
+  if (area < 0.45 * outline || outline < 0.35 * quadArea(hint) || outline > 1.6 * quadArea(hint)) return null;
+  const across = distance(quad[0], quad[1]) + distance(quad[2], quad[3]);
+  const down = distance(quad[1], quad[2]) + distance(quad[3], quad[0]);
+  const ratio = Math.max(across, down) / Math.min(across, down);
+  return ratio >= 1.3 && ratio <= 1.95 ? quad : null;
+}
