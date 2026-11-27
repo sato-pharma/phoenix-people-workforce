@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 
 import { pharmacySearchText, pickPharmacyDirections, type PickDirectionsInput } from "../src/lib/sales/territory/pharmacy-directions.ts";
 import { directionsFromLocationRows, matchedPlacesFromRows } from "../src/lib/sales/territory/pharmacy-directions-sources.ts";
-import { listingNamesPharmacy, pickPlaceMatch, placeKind } from "../src/lib/sales/territory/pharmacy-place-match.ts";
+import {
+  isChainAreaAccount,
+  listingNamesPharmacy,
+  pickPlaceMatch,
+  placeKind,
+  trustedTownCentre,
+} from "../src/lib/sales/territory/pharmacy-place-match.ts";
 import { directionsNote } from "../src/lib/sales/territory/drilldown-words.ts";
 
 // The Territory Drilldown pharmacy name opens Google Maps (owner, 27 Nov 2026: "make sure the
@@ -214,4 +220,35 @@ export function runTerritoryPharmacyDirectionsTests() {
   assert.equal(pickPlaceMatch({ pharmacyName: "اسامة - العياط", brickName: "العياط", brickCentre: centre, listings: [shop, shop] }).status, "matched", "the same place twice is one place");
   assert.equal(pickPlaceMatch({ pharmacyName: "اسامة - العياط", brickName: "العياط", brickCentre: centre, listings: null }).status, "lookup_failed");
   assert.equal(pickPlaceMatch({ pharmacyName: "اسامة - العياط", brickName: "العياط", brickCentre: centre, listings: [] }).status, "no_match");
+
+  // 16. Cairo East 2 Pedia, 27 Nov 2026 ("Try to find the location for all the Cairo East 2 PDF pharmacies").
+  //     The sheet's own symbols never reach Google.
+  assert.equal(pharmacySearchText("هانى اسعد عمار $$- السلام", "مدينة السلام"), "صيدلية هانى اسعد عمار السلام مدينة السلام");
+  //     A listing may carry its town; a word that is neither the name nor the town is still another shop.
+  assert.equal(listingNamesPharmacy("خيرى عبد الله - عزبة النخل", "صيدلية الدكتور خيرى عبدالله عزبة النخل", "عزبة النخل"), true);
+  assert.equal(listingNamesPharmacy("خيرى عبد الله - عزبة النخل", "صيدلية الدكتور خيرى عبدالله المرج", "عزبة النخل"), false);
+  //     A stored brick centre Google puts 13 km from its town: the shop by Google's town centre is found.
+  const storedCentre = { latitude: 30.0448, longitude: 31.2439 };
+  const ezbetNakhl = { latitude: 30.1451, longitude: 31.3187 };
+  const khairy = { placeId: "K1", name: "صيدلية الدكتور خيرى عبدالله", lat: 30.1501, lng: 31.3237 };
+  const khairyInput = { pharmacyName: "خيرى عبد الله - عزبة النخل", brickName: "عزبة النخل", brickCentre: storedCentre, listings: [khairy] };
+  assert.equal(pickPlaceMatch(khairyInput).status, "no_match", "13 km from the wrong stored centre");
+  assert.equal(pickPlaceMatch({ ...khairyInput, townCentre: ezbetNakhl }).status, "matched", "near Google's own town centre");
+  assert.equal(trustedTownCentre(storedCentre, ezbetNakhl), ezbetNakhl, "13 km off: the stored centre is wrong");
+  assert.equal(trustedTownCentre(ezbetNakhl, { latitude: 30.1541, longitude: 31.3187 }), null, "1 km off: the stored centre stands");
+  assert.equal(trustedTownCentre(storedCentre, { latitude: 30.4, longitude: 31.2439 }), null, "40 km off: Google found another town of that name");
+  assert.equal(trustedTownCentre(storedCentre, null), null);
+  //     A chain's area-wide account has no one listing: never looked up.
+  assert.equal(isChainAreaAccount("EZB-CA4"), true);
+  assert.equal(isChainAreaAccount("0001563365"), false);
+  assert.equal(isChainAreaAccount("DOP-000053"), false);
+  assert.equal(isChainAreaAccount("22199672-2"), false);
+  //     A shop of the same name within 10 km, even past the 5 km limit, makes the match a doubt.
+  const abuZaabal = { latitude: 30.268, longitude: 31.37 };
+  const nearYoussef = { placeId: "Y1", name: "صيدليه يوسف سمير ابوزعبل", lat: 30.2765, lng: 31.37 };
+  const farYoussef = { placeId: "Y2", name: "صيدلية يوسف سمير الجديدة", lat: 30.3373, lng: 31.37 };
+  const youssef = { pharmacyName: "يوسف سمير الجديدة", brickName: "ابو زعبل", brickCentre: abuZaabal };
+  assert.equal(pickPlaceMatch({ ...youssef, listings: [nearYoussef] }).status, "matched");
+  assert.equal(pickPlaceMatch({ ...youssef, listings: [nearYoussef, farYoussef] }).status, "ambiguous", "the same name 7.7 km away");
+  assert.equal(pickPlaceMatch({ ...youssef, listings: [nearYoussef, { ...farYoussef, lat: 30.38 }] }).status, "matched", "12 km away is another town");
 }

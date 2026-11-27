@@ -10,7 +10,9 @@
 // So every doubt is a miss.
 //
 // A listing is the pharmacy only when ALL hold:
-//   1. it is within MAX_MATCH_FROM_BRICK_KM of the pharmacy's brick centre;
+//   1. it is within MAX_MATCH_FROM_BRICK_KM of the pharmacy's brick centre — or of Google's own centre
+//      for the brick's town, when the stored centre is wrong (Cairo East 2, 27 Nov 2026: عزبة النخل's
+//      stored centre was downtown Cairo, 13 km off; الخانكه 9.7 km; الخصوص 4.2 km);
 //   2. every word that names the listing is in the pharmacy's name (one letter off allowed for a word
 //      of FUZZY_MIN_LETTERS letters or more). The listing may drop words — the sheets add the street or district
 //      ("رامى مصر الجديدة" is listed "صيدلية رامى") — but it may never ADD one:
@@ -23,8 +25,10 @@
 //      a medical centre — "يونس لتجارة وتوزيع الادوية" is never "صيدلية يونس"; and a pharmacy is matched
 //      only to a listing that SAYS it is one (صيدلية, pharmacy): "صيدلية جامعة الازهر" is never the
 //      university's own listing, "مراد صادق" never a "دكتور مراد صادق" that may be his clinic;
-//   5. no other listing in the answer passes 1–4: two branches of a chain, or two shops of one name,
-//      leave Phoenix unable to tell which, so neither is kept.
+//   5. no other listing in the answer passes 2–4 within NAMESAKE_DOUBT_KM: two branches of a chain, or
+//      two shops of one name, leave Phoenix unable to tell which, so neither is kept — even when the
+//      second is past rule 1's distance ("يوسف سمير الجديدة" is listed at 7.7 km while another
+//      "يوسف سمير" sits 1 km from the brick: Cairo East 2, 27 Nov 2026).
 // "عبد …" and "ابو …" are ONE name ("عبد الرحمن غلوش" is two words, so "د. عبد الرحمن" carries one).
 // Words that only say what kind of place it is (صيدلية, pharmacy, د., دكتور, شركة, لتجارة وتوزيع
 // الادوية, "الجديدة", a branch number) never count as names. A listing named only in Latin letters cannot be compared with the Arabic sheet name and
@@ -197,10 +201,43 @@ export function listingNamesPharmacy(pharmacyName: string, listingName: string, 
   const town = new Set(namingWords(brickName));
   const ownWords = pharmacy.filter((word) => !town.has(word));
   const own = ownWords.length > 0 ? ownWords : pharmacy;
-  const everyListingWordInPharmacy = listing.every((word) => pharmacy.some((candidate) => sameWord(word, candidate)));
+  // A listing may carry its town ("صيدليه يوسف سمير ابوزعبل"): the town's words are not another name.
+  const everyListingWordInPharmacy = listing.every(
+    (word) => town.has(word) || pharmacy.some((candidate) => sameWord(word, candidate)),
+  );
   const firstWordInListing = listing.some((word) => sameWord(word, own[0]));
   const carried = own.filter((word) => listing.some((candidate) => sameWord(word, candidate))).length;
   return everyListingWordInPharmacy && firstWordInListing && carried >= Math.min(MIN_WORDS_CARRIED, own.length);
+}
+
+/** A second shop of the same name this close (rule 5) makes the match a doubt, even past rule 1's distance. */
+export const NAMESAKE_DOUBT_KM = 10;
+
+/** Farther than this from Google's centre for its town, a stored brick centre is treated as wrong. */
+export const BRICK_CENTRE_DOUBT_KM = 3;
+/**
+ * Farther than this, Google's answer for the town is the doubtful one, not the stored centre: a town
+ * name shared with another governorate geocodes there. The Cairo East 2 corrections were 4 to 13 km.
+ */
+export const TOWN_CENTRE_MAX_SHIFT_KM = 20;
+
+/**
+ * Google's centre for the brick's town, when it says the stored centre is wrong — more than
+ * BRICK_CENTRE_DOUBT_KM away, and no more than TOWN_CENTRE_MAX_SHIFT_KM. Otherwise null: the stored
+ * centre stands alone.
+ */
+export function trustedTownCentre(stored: Point, geocoded: Point | null | undefined): Point | null {
+  if (!geocoded || !isUsablePoint(geocoded.latitude, geocoded.longitude)) return null;
+  const shiftKm = haversineKm(stored, geocoded);
+  return shiftKm > BRICK_CENTRE_DOUBT_KM && shiftKm <= TOWN_CENTRE_MAX_SHIFT_KM ? geocoded : null;
+}
+
+/**
+ * A distributor account that stands for a whole chain in an area, not one shop ("EZB-CA4": every
+ * El Ezaby branch in Cairo East 2). It has no single listing; it is never looked up.
+ */
+export function isChainAreaAccount(clientCode: string | null | undefined): boolean {
+  return /^[A-Za-z]+-[A-Za-z]{2}\d+$/.test(String(clientCode ?? "").trim());
 }
 
 export type PlaceListing = { placeId: string; name: string; lat: number; lng: number };
@@ -219,19 +256,26 @@ export function pickPlaceMatch(input: {
   pharmacyName: string;
   brickName?: string | null;
   brickCentre: Point;
+  /** Google's own centre for the brick's town, when the stored centre is wrong (see rule 1). */
+  townCentre?: Point | null;
   listings: readonly PlaceListing[] | null;
 }): PlaceMatchVerdict {
   if (input.listings === null) return { status: "lookup_failed" };
   const passing = new Map<string, { listing: PlaceListing; distanceKm: number }>();
+  const namesakes = new Set<string>();
   for (const listing of input.listings) {
     if (!isUsablePoint(listing.lat, listing.lng)) continue;
-    const distanceKm = haversineKm({ latitude: listing.lat, longitude: listing.lng }, input.brickCentre);
-    if (distanceKm > MAX_MATCH_FROM_BRICK_KM) continue;
+    const at = { latitude: listing.lat, longitude: listing.lng };
+    const centres = input.townCentre ? [input.brickCentre, input.townCentre] : [input.brickCentre];
+    const distanceKm = Math.min(...centres.map((centre) => haversineKm(at, centre)));
+    if (distanceKm > NAMESAKE_DOUBT_KM) continue;
     if (!listingNamesPharmacy(input.pharmacyName, listing.name, input.brickName)) continue;
+    namesakes.add(listing.placeId);
+    if (distanceKm > MAX_MATCH_FROM_BRICK_KM) continue;
     if (!passing.has(listing.placeId)) passing.set(listing.placeId, { listing, distanceKm });
   }
   if (passing.size === 0) return { status: "no_match" };
-  if (passing.size > 1) return { status: "ambiguous", placeIds: [...passing.keys()] };
+  if (namesakes.size > 1) return { status: "ambiguous", placeIds: [...namesakes] };
   const [only] = passing.values();
   return { status: "matched", placeId: only.listing.placeId, listingName: only.listing.name, distanceKm: only.distanceKm };
 }
