@@ -865,6 +865,13 @@ function testTheTableOfBenefitsIsTheSignedOne() {
   assert.match(page, /\{tab === "benefits" \? <MedicalInsuranceBenefitsTab view=\{view\} \/> : null\}/, "the Benefits tab needs no money: every seat that opens the page sees it");
   const benefits = readFileSync("src/lib/medical-insurance/benefits.ts", "utf8");
   assert.doesNotMatch(benefits, /rateCard|premium|annualRate/, "the table of benefits carries no cost");
+  // The Cost calculator is a tab of its own (owner, 2026-11-27: "Make it in a separate tab"), held to the money
+  // seat like Cost and invoices, and no longer buried at the foot of the Cost tab.
+  assert.ok(page.includes(`...(money ? [{ id: "calculator" as const, label: "Cost calculator"`), "the calculator has its own tab, shown only with the money seat");
+  assert.ok(page.includes(`{tab === "calculator" && money ? <MedicalInsuranceCalculatorTab `), "the calculator tab renders the calculator");
+  const costTab = readFileSync("src/components/medical-insurance/medical-insurance-cost.tsx", "utf8");
+  const costTabBody = costTab.slice(costTab.indexOf("export function MedicalInsuranceCostTab("), costTab.indexOf("function Tiles("));
+  assert.doesNotMatch(costTabBody, /CostCalculatorPanel/, "Cost and invoices no longer carries the calculator at its foot");
 }
 
 function testASeatNeverHoldsAnAmount() {

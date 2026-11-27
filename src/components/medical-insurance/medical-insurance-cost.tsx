@@ -35,7 +35,6 @@ export function MedicalInsuranceCostTab({
     <div className="space-y-5">
       <YearPanel view={view} />
       <MonthlySplitPanel split={view.monthlySplit} />
-      <CostCalculatorPanel card={view.rateCard} policy={policy} />
       <OpeningPanel view={view} />
       <LinesPanel
         description="Joiners charged by the day to the policy's end (a quarter of the year from its last quarter on), and leavers refunded by the day from the day after their last covered day."
@@ -114,6 +113,14 @@ const CALCULATOR_WHO: ReadonlyArray<{ value: MedicalInsuranceMemberType; words: 
   { value: "child", words: "Their child" },
 ];
 
+/**
+ * The Cost calculator, a tab of its own (owner, 2026-11-27: "Make it in a separate tab"). It was at the foot of
+ * Cost and invoices' monthly split, three quarters down a long tab, where nobody found it.
+ */
+export function MedicalInsuranceCalculatorTab({ money, policy }: { money: MedicalInsuranceMoneyView; policy: { endsOn: string; startsOn: string } }) {
+  return <CostCalculatorPanel card={money.rateCard} policy={policy} />;
+}
+
 function CostCalculatorPanel({ card, policy }: { card: MedicalInsuranceRateCard; policy: { endsOn: string; startsOn: string } }) {
   const today = todayInCairo();
   const defaultStart = today < policy.startsOn ? policy.startsOn : today > policy.endsOn ? policy.endsOn : today;
@@ -128,7 +135,7 @@ function CostCalculatorPanel({ card, policy }: { card: MedicalInsuranceRateCard;
 
   return (
     <AdminTableShell
-      description="What someone's cover would cost a month, before they are on the policy. Choose who they are, their year of birth and the plan; it is priced exactly as the monthly split above prices a person on the register. Nothing is saved."
+      description="What someone's cover would cost a month, before they are on the policy. Choose who they are, their year of birth and the plan; it is priced exactly as the monthly split on Cost and invoices prices a person on the register. Nothing is saved."
       title="Cost calculator"
     >
       <div className="space-y-3 p-4">
