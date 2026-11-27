@@ -159,6 +159,33 @@ node --env-file-if-exists=.env.local --experimental-strip-types --experimental-s
   printed pin row.
 - **Proof:** the pin row, then the linked employees' workspaces.
 
+## Medical insurance
+
+### Fill the Employee Master from the medical insurance register ("sync insurance to the master")
+
+First run 27 Nov 2026, on the owner's "synchronize from medical insurance module to employee master
+the needed data". It filled 4 records: three Libano-Suisse card numbers and one mobile number. The
+same day, on "cost in module in cost and invoices", it also wrote the monthly cost into 10 records.
+
+- **Run:** `owner-ops.ts sync-insurance-master` (no flags: it reads the whole register).
+- **Function:** `syncEmployeeMasterFromMedicalInsurance` (`src/lib/medical-insurance/service.ts`). The
+  rule is `planEmployeeMasterSync` (`master-sync.ts`). The cost rule is `planMedicalInsuranceAmounts`. It asserts
+  `medical_insurance` read, `medical_insurance_invoices` read and `employees` update.
+- **What it writes:** "Medical Insurance Card Number" from the person's own employee row on the register.
+  A blank number is filled. One that differs (the cancelled MetLife policy's 2 to 4 digits) is replaced.
+  National ID, birth date, gender (M/F → male/female) and mobile (the insurer's 10 digits → 01…) are
+  written ONLY where the master is blank. "Medical Insurance" takes the module's monthly cost — what the
+  employee pays for the payroll month on the Cost and Invoices tabs (`getPayrollMedicalInsuranceCharges`),
+  December 2026 or the current month after it. An active employee the module charges nothing holds 0; a
+  leaver keeps the figure history holds; a row the module cannot price is printed, never guessed. Payroll
+  reads the module itself from December 2026, so this figure cannot charge twice. Each update is guarded on the value it read. It is audited and
+  names B-10 to `employee_change_log` through the actor headers, so it is not unattributed.
+- **What it never writes:** "Card Received (Yes-No)" and its date (the register cannot know the employee
+  holds the card). A value present on both sides that differs is printed under "Differ on
+  both sides" for a person to settle.
+- **Proof:** the run reads the changed `employees` rows back. `employee_change_log` names `actor_login_id`
+  B-10 for each one.
+
 ## Rep tablets
 
 ### Make a tablet that already carries Phoenix Position actually start it
