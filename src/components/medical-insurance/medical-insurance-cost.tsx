@@ -6,11 +6,12 @@ import * as React from "react";
 import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
 import { phxFieldClassName, phxFieldGridTwoClassName, phxHintClassName, phxLabelClassName, phxSelectClassName } from "@/components/ui/form-tokens";
+import { todayInCairo } from "@/lib/date-only";
 import { formatLeftDay } from "@/lib/employees/left-flag";
 import { INVOICE_KIND_WORDS, invoiceDatesProblem, MEDICAL_INSURANCE_INVOICE_KINDS, type MedicalInsuranceInvoiceKind } from "@/lib/medical-insurance/compare";
-import { ageBandWords, MEDICAL_INSURANCE_CATEGORIES, type MedicalInsuranceCategory, type MedicalInsuranceRateCard } from "@/lib/medical-insurance/cost";
+import { ageBandWords, MEDICAL_INSURANCE_CATEGORIES, type MedicalInsuranceCategory, type MedicalInsuranceMemberType, type MedicalInsuranceRateCard } from "@/lib/medical-insurance/cost";
 import { plannedLinesTotal, type CostLine } from "@/lib/medical-insurance/eligibility";
-import { EMPLOYEE_MINIMUM_OWN_SHARE_MONTHLY, LIFE_INSURANCE_PER_PERSON_MONTHLY, MONTHLY_SPLIT_ASSUMPTIONS, type MonthlySplit, type MonthlySplitPerson, type MonthlySplitRow } from "@/lib/medical-insurance/monthly-split";
+import { EMPLOYEE_MINIMUM_OWN_SHARE_MONTHLY, LIFE_INSURANCE_PER_PERSON_MONTHLY, MONTHLY_SPLIT_ASSUMPTIONS, quoteMonthlyCost, type MonthlySplit, type MonthlySplitPerson, type MonthlySplitRow } from "@/lib/medical-insurance/monthly-split";
 import { egpWords, MEDICAL_INSURANCE_OPEN_POINTS, MEMBER_TYPE_WORDS, type MedicalInsuranceInvoiceRow, type MedicalInsuranceMoneyView } from "@/lib/medical-insurance/view";
 import { cn } from "@/lib/utils";
 
@@ -23,11 +24,18 @@ const money = (value: number) => value.toLocaleString("en-US", { maximumFraction
 const signed = (value: number) => `${value > 0 ? "+" : ""}${money(value)}`;
 const rateWords = (value: number | null) => (value === null ? "Not quoted" : value.toLocaleString("en-US", { maximumFractionDigits: 2 }));
 
-export function MedicalInsuranceCostTab({ money: view, policy }: { money: MedicalInsuranceMoneyView; policy: { policyNumber: string | null } }) {
+export function MedicalInsuranceCostTab({
+  money: view,
+  policy,
+}: {
+  money: MedicalInsuranceMoneyView;
+  policy: { endsOn: string; policyNumber: string | null; startsOn: string };
+}) {
   return (
     <div className="space-y-5">
       <YearPanel view={view} />
       <MonthlySplitPanel split={view.monthlySplit} />
+      <CostCalculatorPanel card={view.rateCard} policy={policy} />
       <OpeningPanel view={view} />
       <LinesPanel
         description="Joiners charged by the day to the policy's end (a quarter of the year from its last quarter on), and leavers refunded by the day from the day after their last covered day."
@@ -94,6 +102,87 @@ function YearPanel({ view }: { view: MedicalInsuranceMoneyView }) {
           {unpriced === 1 ? "1 person cannot be priced" : `${unpriced} people cannot be priced`} (no date of birth, no plan, or an age band the offer did not quote), so the figures are short by them. Each one is named below with the reason.
         </p>
       ) : null}
+    </AdminTableShell>
+  );
+}
+
+// ── The cost calculator (owner, 2026-11-27) ────────────────────────────────────────────────────
+
+const CALCULATOR_WHO: ReadonlyArray<{ value: MedicalInsuranceMemberType; words: string }> = [
+  { value: "employee", words: "The employee" },
+  { value: "spouse", words: "Their spouse" },
+  { value: "child", words: "Their child" },
+];
+
+function CostCalculatorPanel({ card, policy }: { card: MedicalInsuranceRateCard; policy: { endsOn: string; startsOn: string } }) {
+  const today = todayInCairo();
+  const defaultStart = today < policy.startsOn ? policy.startsOn : today > policy.endsOn ? policy.endsOn : today;
+  const [who, setWho] = React.useState<MedicalInsuranceMemberType>("employee");
+  const [birthYear, setBirthYear] = React.useState("");
+  const [category, setCategory] = React.useState<MedicalInsuranceCategory>(MEDICAL_INSURANCE_CATEGORIES[0]!);
+  const [start, setStart] = React.useState(defaultStart);
+  const typedYear = /^\d{4}$/.test(birthYear.trim());
+  const coverageStart = start >= policy.startsOn && start <= policy.endsOn ? start : defaultStart;
+  const quote = typedYear ? quoteMonthlyCost({ birthYear: Number(birthYear.trim()), category, coverageStart, memberType: who, rateCard: card }) : null;
+  const employee = who === "employee";
+
+  return (
+    <AdminTableShell
+      description="What someone's cover would cost a month, before they are on the policy. Choose who they are, their year of birth and the plan; it is priced exactly as the monthly split above prices a person on the register. Nothing is saved."
+      title="Cost calculator"
+    >
+      <div className="space-y-3 p-4">
+        <div className={phxFieldGridTwoClassName}>
+          <label className="block">
+            <span className={phxLabelClassName}>Who</span>
+            <select className={phxSelectClassName} onChange={(event) => setWho(event.target.value as MedicalInsuranceMemberType)} value={who}>
+              {CALCULATOR_WHO.map((option) => <option key={option.value} value={option.value}>{option.words}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className={phxLabelClassName}>Plan</span>
+            <select className={phxSelectClassName} onChange={(event) => setCategory(event.target.value as MedicalInsuranceCategory)} value={category}>
+              {MEDICAL_INSURANCE_CATEGORIES.map((plan) => <option key={plan} value={plan}>Plan {plan}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className={phxLabelClassName}>Year of birth</span>
+            <input className={phxFieldClassName} inputMode="numeric" maxLength={4} onChange={(event) => setBirthYear(event.target.value.replace(/\D/g, ""))} placeholder="1990" value={birthYear} />
+          </label>
+          <label className="block">
+            <span className={phxLabelClassName}>Cover starts</span>
+            <input className={phxFieldClassName} max={policy.endsOn} min={policy.startsOn} onChange={(event) => setStart(event.target.value)} type="date" value={start} />
+          </label>
+        </div>
+        <p className={phxHintClassName}>The insurer prices the age as the year cover starts less the year of birth.</p>
+      </div>
+      {quote === null ? null : !quote.priced ? (
+        <p className="break-words border-t border-phx-line p-4 text-sm font-bold text-phx-warn">{quote.reason}</p>
+      ) : (
+        <>
+          <Tiles
+            tiles={[
+              { label: "Cover a month", value: egpWords(quote.monthly) },
+              { label: "The company pays a month", value: egpWords(quote.companyPays) },
+              { label: "The employee pays a month", value: egpWords(quote.employeePays) },
+            ]}
+          />
+          <ul className="list-disc space-y-1 border-t border-phx-line p-4 pl-9">
+            <li className="break-words text-phx-xs font-semibold tabular-nums text-phx-ink-soft">
+              Plan {category}, aged {quote.age} (ages {quote.band}): {egpWords(quote.annual)} a year before tax, {egpWords(quote.monthly)} a month with the tax.
+            </li>
+            <li className="break-words text-phx-xs font-semibold tabular-nums text-phx-ink-soft">
+              {employee
+                ? `Of the month, the company carries ${egpWords(quote.companyPays)} and the employee ${egpWords(quote.employeeCover)}${quote.raisedToMinimum ? `, raised to the EGP ${EMPLOYEE_MINIMUM_OWN_SHARE_MONTHLY} minimum` : ""}.`
+                : `A spouse or child is the employee's in full: ${egpWords(quote.employeeCover)} a month, and the company carries nothing.`}
+            </li>
+            <li className="break-words text-phx-xs font-semibold tabular-nums text-phx-ink-soft">
+              Life insurance: {egpWords(quote.lifeInsurance)} a month on the employee, so the employee pays {egpWords(quote.employeePays)} in all.
+            </li>
+            {quote.ageNote ? <li className="break-words text-phx-xs font-bold text-phx-warn">{quote.ageNote}</li> : null}
+          </ul>
+        </>
+      )}
     </AdminTableShell>
   );
 }

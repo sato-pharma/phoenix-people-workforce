@@ -119,6 +119,74 @@ export function splitOwnCover(monthlyPiastres: number): { company: number; emplo
   return { company: monthlyPiastres - employee, employee, raisedToMinimum: employee > thirty };
 }
 
+// ── The cost calculator (owner, 2026-11-27: "a cost calculator in the module … employee or family of employee
+// … the birth year and the grade, and it calculates the cost") ─────────────────────────────────────────────
+
+export type MonthlyCostQuote =
+  | { priced: false; age: number | null; reason: string }
+  | {
+      priced: true;
+      age: number;
+      band: string;
+      annual: number;
+      /** A month of the person's cover: premium and tax over twelve. */
+      monthly: number;
+      /** The company's part of the month: 70% of an employee's own cover, nothing of a spouse or child. */
+      companyPays: number;
+      /** The cover's part on the employee: their 30% (at least EGP 120), or a relative's month in full. */
+      employeeCover: number;
+      raisedToMinimum: boolean;
+      lifeInsurance: number;
+      /** What the employee pays a month for this person: the cover's part on them and the life insurance. */
+      employeePays: number;
+      /** The contract's age limit, when this person is past it: a review, never a refusal. */
+      ageNote: string | null;
+    };
+
+/**
+ * What one person would cost a month, by who they are, their year of birth and their plan, priced as the Cost
+ * tab prices a person on the register: the same rate card, the same age (the year cover starts less the year
+ * of birth), the same 70/30 split with its EGP 120 floor and EGP 85 life insurance. A spouse or child is the
+ * employee's in full. Pure; the Cost tab's calculator calls it in the browser.
+ */
+export function quoteMonthlyCost(input: {
+  birthYear: number;
+  category: MedicalInsuranceCategory;
+  coverageStart: string;
+  memberType: MedicalInsuranceMemberType;
+  rateCard: MedicalInsuranceRateCard;
+}): MonthlyCostQuote {
+  const { birthYear, category, coverageStart, memberType, rateCard } = input;
+  if (!Number.isInteger(birthYear) || birthYear < 1900 || birthYear > Number(coverageStart.slice(0, 4))) {
+    return { age: null, priced: false, reason: "Type a year of birth, four digits, not after the year cover starts" };
+  }
+  const rate = annualRate(rateCard, { birthDate: `${birthYear}-01-01`, category, coverageStart });
+  if (!rate.priced) return { age: rate.age, priced: false, reason: rate.reason };
+  const monthly = monthlyCoverPiastres(rateCard, rate.annual);
+  const own = memberType === "employee" ? splitOwnCover(monthly) : { company: 0, employee: monthly, raisedToMinimum: false };
+  const life = toPiastres(LIFE_INSURANCE_PER_PERSON_MONTHLY);
+  const limit = rateCard.ageLimits?.[memberType];
+  let ageNote: string | null = null;
+  if (typeof limit === "number" && rate.age > limit) {
+    ageNote = memberType === "child"
+      ? `Aged ${rate.age}: the plan covers children up to ${limit}`
+      : `Aged ${rate.age}: over ${limit} needs a health statement, and conditions from before the policy are not covered`;
+  }
+  return {
+    age: rate.age,
+    ageNote,
+    annual: rate.annual,
+    band: ageBandWords(rateCard.ageBands[rate.band]),
+    companyPays: toEgp(own.company),
+    employeeCover: toEgp(own.employee),
+    employeePays: toEgp(own.employee + life),
+    lifeInsurance: toEgp(life),
+    monthly: toEgp(monthly),
+    priced: true,
+    raisedToMinimum: own.raisedToMinimum,
+  };
+}
+
 /**
  * Cover that ends on its own first day was never in force: it is how a removal "voided from its first day"
  * is recorded (the register refuses an end before the start), for someone who was not an employee on the

@@ -12,6 +12,7 @@ import {
   deletionRefund,
   instalmentNumber,
   lastQuarterStart,
+  MEDICAL_INSURANCE_CATEGORIES,
   openingInstalment,
   openingStatement,
   parseRateCard,
@@ -35,7 +36,7 @@ import {
 } from "../src/lib/medical-insurance/eligibility.ts";
 import { LIBANO_TABLE_OF_BENEFITS } from "../src/lib/medical-insurance/benefits.ts";
 import { buildMedicalInsuranceMonthlyCostWorkbook } from "../src/lib/medical-insurance/cost-workbook.ts";
-import { buildMonthlySplit, EMPLOYEE_MINIMUM_OWN_SHARE_MONTHLY, LIFE_INSURANCE_PER_PERSON_MONTHLY, monthlyCoverPiastres, splitOwnCover } from "../src/lib/medical-insurance/monthly-split.ts";
+import { buildMonthlySplit, EMPLOYEE_MINIMUM_OWN_SHARE_MONTHLY, LIFE_INSURANCE_PER_PERSON_MONTHLY, monthlyCoverPiastres, quoteMonthlyCost, splitOwnCover } from "../src/lib/medical-insurance/monthly-split.ts";
 import { employeeRecordWords } from "../src/lib/medical-insurance/view.ts";
 import {
   buildLibanoMemberFileWorkbook,
@@ -687,6 +688,55 @@ function testTheCompanyCarries70PercentOfTheEmployeeAndTheFamilyIsTheEmployees()
 }
 
 /**
+ * The cost calculator (owner, 2026-11-27: "a cost calculator in the module … employee or family of employee … the
+ * birth year and the grade, and it calculates the cost") prices a person exactly as the monthly split does.
+ */
+function testTheCalculatorPricesAsTheSplitDoes() {
+  const start = POLICY.startsOn;
+  const split = buildMonthlySplit({
+    asOf: start,
+    members: [
+      member({ birthDate: "1990-01-01", category: "C", coverageStart: start, hrId: "T-1", id: "e-1", name: "Quoted Employee" }),
+      member({ birthDate: "1992-01-01", category: "C", coverageStart: start, hrId: null, id: "s-1", memberType: "spouse", name: "Quoted Spouse", principalMemberId: "e-1" }),
+      member({ birthDate: "1998-01-01", category: "C", coverageStart: start, hrId: "T-2", id: "e-2", name: "Minimum Employee" }),
+    ],
+    rateCard: CARD,
+  });
+  const employeeRow = split.rows.find((row) => row.hrId === "T-1")!;
+  const minimumRow = split.rows.find((row) => row.hrId === "T-2")!;
+
+  const employee = quoteMonthlyCost({ birthYear: 1990, category: "C", coverageStart: start, memberType: "employee", rateCard: CARD });
+  assert.ok(employee.priced);
+  assert.equal(employee.monthly, employeeRow.ownMonthly, "the month of cover is the split's");
+  assert.equal(employee.companyPays, employeeRow.companyPays, "the company's 70% is the split's");
+  assert.equal(employee.employeeCover, employeeRow.employeeOwnShare, "the employee's 30% is the split's");
+  assert.equal(employee.employeePays, Math.round((employeeRow.employeeOwnShare + LIFE_INSURANCE_PER_PERSON_MONTHLY) * 100) / 100, "their 30% and EGP 85 life insurance");
+
+  const spouse = quoteMonthlyCost({ birthYear: 1992, category: "C", coverageStart: start, memberType: "spouse", rateCard: CARD });
+  assert.ok(spouse.priced);
+  assert.equal(spouse.companyPays, 0, "the company carries nothing of a spouse or child");
+  assert.equal(spouse.employeeCover, employeeRow.familyMonthly, "a spouse is the employee's in full, as on the split");
+  assert.equal(spouse.employeePays, Math.round((employeeRow.familyMonthly + LIFE_INSURANCE_PER_PERSON_MONTHLY) * 100) / 100);
+  assert.equal(employee.employeePays + spouse.employeePays, employeeRow.employeePays, "the two quotes add up to the employee's row");
+
+  const minimum = quoteMonthlyCost({ birthYear: 1998, category: "C", coverageStart: start, memberType: "employee", rateCard: CARD });
+  assert.ok(minimum.priced && minimum.raisedToMinimum, "a 30% under EGP 120 is raised to it");
+  assert.equal(minimum.employeeCover, EMPLOYEE_MINIMUM_OWN_SHARE_MONTHLY);
+  assert.equal(minimum.companyPays, minimumRow.companyPays);
+
+  const plans = MEDICAL_INSURANCE_CATEGORIES.map((category) => quoteMonthlyCost({ birthYear: 1985, category, coverageStart: start, memberType: "employee", rateCard: CARD }));
+  for (const [index, quote] of plans.entries()) {
+    assert.ok(quote.priced, `plan ${MEDICAL_INSURANCE_CATEGORIES[index]} is priced`);
+    assert.equal(quote.annual, CARD.plans[MEDICAL_INSURANCE_CATEGORIES[index]!].rates[CARD.ageBands.findIndex((band) => 41 >= band.from && (band.to === null || 41 <= band.to))], "each plan reads its own rate");
+  }
+
+  const unknown = quoteMonthlyCost({ birthYear: 3000, category: "A", coverageStart: start, memberType: "employee", rateCard: CARD });
+  assert.equal(unknown.priced, false, "a year after cover starts is refused in words, never priced at zero");
+  const oldChild = quoteMonthlyCost({ birthYear: 1990, category: "A", coverageStart: start, memberType: "child", rateCard: CARD });
+  if (oldChild.priced) assert.match(oldChild.ageNote ?? "", /children up to/, "a child past the contract's limit is flagged for review");
+}
+
+/**
  * The monthly cost workbook (owner, 2026-11-27: "export XLX sheet with the employee and the monthly cost on him
  * … cost for the company and for him, and the details") is the Cost tab's split, cell for cell.
  */
@@ -841,6 +891,7 @@ export async function runMedicalInsuranceTests() {
   testEachEmployeeShowsTheirHrNumberHireDayLineAndArea();
   testTheContractsAgeLimitsAreReviewed();
   testTheCompanyCarries70PercentOfTheEmployeeAndTheFamilyIsTheEmployees();
+  testTheCalculatorPricesAsTheSplitDoes();
   await testTheMonthlyCostWorkbookIsTheCostTabsSplit();
   testTheTableOfBenefitsIsTheSignedOne();
   testEachBillIsComparedWithThePlan();
