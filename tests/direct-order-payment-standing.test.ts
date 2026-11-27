@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   assertDirectOrderMayBeRaised,
   assertPaymentStandingAllowsFinalApproval,
+  assertRequesterHasNoLateReceipts,
   classifyPharmacyPaymentStanding,
   lateReceiptRefusal,
   loadDirectOrderPaymentStandingNotice,
@@ -73,7 +74,9 @@ function pureTests() {
   assert.equal(s.overdue.length, 1, "owing after its collection date");
   const late = paymentStandingVerdict(s, [LACTO]);
   assert.equal(late.kind, "ceo_only", "a late payer needs Dr Anwar's own approval, whatever the product");
-  assert.match((late as { message: string }).message, /not keeping to its payment dates: 1 order still owe/);
+  assert.match((late as { message: string }).message, /not keeping to its payment dates: 1 order still owes 1,000 EGP after the date written on it/);
+  s = classify([owing({ productCodes: [IVY], collectionDate: "2026-12-19" }), owing({ requestId: "r-2", productCodes: [IVY], collectionDate: "2026-12-18" })]);
+  assert.match((paymentStandingVerdict(s, [LACTO]) as { message: string }).message, /2 orders still owe 2,000 EGP after the date written on them/);
   s = classify([owing({ productCodes: [IVY], collectionDate: today })]);
   assert.equal(s.overdue.length, 0, "due today is not late yet");
   s = classify([owing({ productCodes: [IVY], collectionDate: null })]);
@@ -98,6 +101,11 @@ function pureTests() {
     String(lateReceiptRefusal([{ requestId: "a", pharmacyName: "El Shifa Pharmacy", days: 9 }, { requestId: "b", pharmacyName: "El Nour Pharmacy", days: 12 }])),
     /2 of your approved orders have had no delivery receipt entered for more than 7 days \(the oldest 12 days, El Nour Pharmacy\)/,
   );
+  assert.match(
+    String(lateReceiptRefusal([{ requestId: "a", pharmacyName: "El Shifa Pharmacy", days: 9 }], "approver")),
+    /^The manager who raised this order has 1 approved order that has had no delivery receipt entered for more than 7 days \(the oldest 9 days, El Shifa Pharmacy\)\. This order cannot be approved until that receipt is entered\.$/,
+    "the approver is told whose receipt holds the order",
+  );
 
   // The service calls both checks where they belong: before anything is written, and at the last approval.
   const service = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
@@ -110,6 +118,15 @@ function pureTests() {
   const finalGate = decide.indexOf('if (input.decision === "approve" && evaluation.isFinal) {');
   const standingGate = decide.indexOf("await assertPaymentStandingAllowsFinalApproval(");
   assert.ok(finalGate > 0 && standingGate > finalGate && standingGate < decide.indexOf("phx_apply_direct_order_decision"), "decideDirectOrder checks at the last approval, before the write");
+  const receiptGate = decide.indexOf("await assertRequesterHasNoLateReceipts(request.requesterHrId)");
+  assert.ok(receiptGate > finalGate && receiptGate < decide.indexOf("phx_apply_direct_order_decision"), "the late receipt is checked again at the last approval");
+  const reversalSkip = decide.indexOf("if (!request.reversalOfRequestId) {");
+  assert.ok(reversalSkip > finalGate && reversalSkip < receiptGate && reversalSkip < standingGate, "a reversal is never held by what the pharmacy owes or a late receipt");
+  const revise = service.slice(service.indexOf("export async function reviseDirectOrder("));
+  assert.ok(
+    revise.indexOf("await assertDirectOrderMayBeRaised(") > 0 && revise.indexOf("await assertDirectOrderMayBeRaised(") < revise.indexOf('status: "pending_approval"'),
+    "an order sent back and resubmitted meets the same refusals as a new one, before it is written",
+  );
 }
 
 // ─── Behaviour, through the shared PostgREST stand-in ────────────────────────
@@ -130,11 +147,11 @@ function tables(): Record<string, Row[]> {
     direct_order_no_receipt_requests: [],
     direct_order_requests: [
       // Momen's: A approved 10 Dec, B 15 Dec, the used one 9 Dec with its receipt.
-      { id: ORDER_A, requester_hr_id: "AI-0001", status: "approved", decided_at: "2026-12-10T09:00:00.000Z", reversal_of_request_id: null, pharmacy_id: "ph-1", product_name: "Lacto Advanced 1", sales_value: 1200, remaining_amount: null, collection_date: "2026-12-30" },
-      { id: ORDER_B, requester_hr_id: "AI-0001", status: "approved", decided_at: "2026-12-15T09:00:00.000Z", reversal_of_request_id: null, pharmacy_id: "ph-2", product_name: "Ivyronc", sales_value: 800, remaining_amount: 300, collection_date: "2026-12-18" },
-      { id: ORDER_USED, requester_hr_id: "AI-0001", status: "approved", decided_at: "2026-12-09T09:00:00.000Z", reversal_of_request_id: null, pharmacy_id: "ph-1", product_name: "Guamusin", sales_value: 500, remaining_amount: 0, collection_date: "2026-12-15" },
+      { id: ORDER_A, product_code: LACTO, requester_hr_id: "AI-0001", status: "approved", decided_at: "2026-12-10T09:00:00.000Z", reversal_of_request_id: null, pharmacy_id: "ph-1", product_name: "Lacto Advanced 1", sales_value: 1200, remaining_amount: null, collection_date: "2026-12-30" },
+      { id: ORDER_B, product_code: IVY, requester_hr_id: "AI-0001", status: "approved", decided_at: "2026-12-15T09:00:00.000Z", reversal_of_request_id: null, pharmacy_id: "ph-2", product_name: "Ivyronc", sales_value: 800, remaining_amount: 300, collection_date: "2026-12-18" },
+      { id: ORDER_USED, product_code: "GUA-1", requester_hr_id: "AI-0001", status: "approved", decided_at: "2026-12-09T09:00:00.000Z", reversal_of_request_id: null, pharmacy_id: "ph-1", product_name: "Guamusin", sales_value: 500, remaining_amount: 0, collection_date: "2026-12-15" },
       // The order being decided: never counted against itself.
-      { id: PENDING, requester_hr_id: "AI-0001", status: "pending_approval", decided_at: null, reversal_of_request_id: null, pharmacy_id: "ph-1", product_name: "Lacto Advanced 1", sales_value: 900, remaining_amount: null, collection_date: "2026-12-31" },
+      { id: PENDING, product_code: LACTO, requester_hr_id: "AI-0001", status: "pending_approval", decided_at: null, reversal_of_request_id: null, pharmacy_id: "ph-1", product_name: "Lacto Advanced 1", sales_value: 900, remaining_amount: null, collection_date: "2026-12-31" },
     ],
     direct_order_request_items: [
       { request_id: ORDER_A, product_code: LACTO, product_name: "Lacto Advanced 1" },
@@ -180,7 +197,34 @@ async function behaviourTests() {
         /no delivery receipt entered for more than 7 days.*no new order can be raised/,
         "the late manager raises no new order, for any pharmacy",
       );
+      // At the last approval the same late receipt holds an order already climbing.
+      await rejectsWith(
+        assertRequesterHasNoLateReceipts("AI-0001", at("2026-12-17T10:00:00.000Z")),
+        /^The manager who raised this order has 1 approved order .*cannot be approved until that receipt is entered/,
+        "an order raised before the receipt went late is not finished",
+      );
+      await assertRequesterHasNoLateReceipts("AI-0001", at("2026-12-16T10:00:00.000Z"));
+
+      // A book Finance recorded lost: its receipts can never be entered, so they never hold the manager.
+      Object.assign(standIn.tables.direct_order_receipt_books[0], { status: "lost", closed_at: "2026-12-16T08:00:00.000Z" });
+      assert.deepEqual(await listLateReceiptsForRequester("AI-0001", NOW), [], "orders from a lost book are Finance's flag, not the manager's block");
+      Object.assign(standIn.tables.direct_order_receipt_books[0], { status: "issued", closed_at: null });
     });
+  }
+
+  // 1b. A manager with hundreds of orders: the receipt reads go in batches, never one long address.
+  {
+    const standIn: StandIn = { tables: tables() };
+    const many = Array.from({ length: 230 }, (_, index) => `aaaaaaaa-aaaa-4aaa-8aaa-${String(index).padStart(12, "0")}`);
+    for (const [index, id] of many.entries()) {
+      standIn.tables.direct_order_requests.push({ id, product_code: IVY, requester_hr_id: "AI-0001", status: "approved", decided_at: "2026-12-05T09:00:00.000Z", reversal_of_request_id: null, pharmacy_id: "ph-2", product_name: "Ivyronc", sales_value: 100, remaining_amount: 0, collection_date: "2026-12-30" });
+      standIn.tables.direct_order_receipts.push({ serial: 100 + index, book_no: 1, check_code: "HJ4MN5", state: "used", request_id: id });
+    }
+    const seen = await withPostgrestStandIn(standIn, async () => {
+      assert.deepEqual((await listLateReceiptsForRequester("AI-0001", NOW)).map((o) => o.requestId), [ORDER_A], "every one of the 230 with its receipt is seen as having it");
+    });
+    const receiptReads = seen.filter((entry) => entry.kind === "read" && entry.table === "direct_order_receipts");
+    assert.equal(receiptReads.length, 3, "233 orders are read in three batches of at most 100");
   }
 
   // 2. No books handed out yet: nothing is late.
@@ -202,6 +246,14 @@ async function behaviourTests() {
       );
       await assertDirectOrderMayBeRaised({ requesterHrId: "PD-0012", pharmacyId: "ph-1", productCodes: ["GUA-1"], now: NOW });
       await assertDirectOrderMayBeRaised({ requesterHrId: "PD-0012", pharmacyId: "ph-2", productCodes: [IVY], now: NOW });
+
+      // An older order with no item rows is the single product on its own row.
+      standIn.tables.direct_order_request_items = standIn.tables.direct_order_request_items.filter((item) => item.request_id !== ORDER_A);
+      await rejectsWith(
+        assertDirectOrderMayBeRaised({ requesterHrId: "PD-0012", pharmacyId: "ph-1", productCodes: [LACTO], now: NOW }),
+        /has not paid anything on its earlier order of Lacto Advanced 1 \(1,200 EGP still owed\)/,
+        "an unpaid order with no item rows still refuses the same product",
+      );
     });
   }
 
@@ -230,6 +282,11 @@ async function behaviourTests() {
       assert.deepEqual(notice.lines.map((line) => [line.products, line.owed, line.late, line.sameProduct]), [["Ivyronc", 300, true, "part_paid"]]);
       assert.equal(await loadDirectOrderPaymentStandingNotice({ requestId: ORDER_A, status: "approved", pharmacyId: "ph-2", productCodes: [IVY], now: NOW }), null, "a decided order shows no notice");
       assert.equal(await loadDirectOrderPaymentStandingNotice({ requestId: PENDING, status: "pending_approval", pharmacyId: "ph-1", productCodes: ["GUA-1"], now: NOW }), null, "a clear pharmacy shows none");
+      assert.equal(
+        await loadDirectOrderPaymentStandingNotice({ requestId: PENDING, status: "pending_approval", pharmacyId: "ph-1", productCodes: [LACTO], isReversal: true, now: NOW }),
+        null,
+        "a reversal undoing an order shows no payment notice",
+      );
     });
   }
 

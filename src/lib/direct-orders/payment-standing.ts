@@ -2,6 +2,7 @@ import { todayInCairo } from "@/lib/date-only";
 import { listLateReceiptsForRequester, type LateReceiptOrder } from "@/lib/direct-orders/receipt-books";
 import { validationError } from "@/lib/http/api-errors";
 import { logError } from "@/lib/observability/log";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -122,7 +123,7 @@ export function paymentStandingVerdict(standing: PharmacyPaymentStanding, produc
   if (standing.overdue.length > 0) {
     const owed = standing.overdue.reduce((sum, entry) => sum + entry.owed, 0);
     reasons.push(
-      `it is not keeping to its payment dates: ${standing.overdue.length} order${standing.overdue.length === 1 ? "" : "s"} still owe ${egp(round2(owed))} after the date written on ${standing.overdue.length === 1 ? "it" : "them"}`,
+      `it is not keeping to its payment dates: ${standing.overdue.length} order${standing.overdue.length === 1 ? " still owes" : "s still owe"} ${egp(round2(owed))} after the date written on ${standing.overdue.length === 1 ? "it" : "them"}`,
     );
   }
   if (reasons.length === 0) return { kind: "clear" };
@@ -131,6 +132,8 @@ export function paymentStandingVerdict(standing: PharmacyPaymentStanding, produc
 
 type OrderRow = {
   id: string;
+  product_code: string | null;
+  product_name: string | null;
   sales_value: number | null;
   remaining_amount: number | null;
   collection_date: string | null;
@@ -145,7 +148,7 @@ export async function loadPharmacyOwingOrders(pharmacyId: string, options: { exc
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("direct_order_requests")
-    .select("id,sales_value,remaining_amount,collection_date,decided_at")
+    .select("id,product_code,product_name,sales_value,remaining_amount,collection_date,decided_at")
     .eq("pharmacy_id", pharmacyId)
     .eq("status", "approved")
     .is("reversal_of_request_id", null)
@@ -155,13 +158,20 @@ export async function loadPharmacyOwingOrders(pharmacyId: string, options: { exc
     .filter((row) => row.id !== options.excludeRequestId)
     .filter((row) => owedOn({ salesValue: Number(row.sales_value ?? 0), remainingAmount: row.remaining_amount }) >= PAID_TOLERANCE_EGP);
   if (rows.length === 0) return [];
-  const { data: items, error: itemError } = await supabase
-    .from("direct_order_request_items")
-    .select("request_id,product_code,product_name")
-    .in("request_id", rows.map((row) => row.id));
-  if (itemError) throw itemError;
+  // Batches of 100 ids: about four hundred in one .in() overflow the request URL and read back EMPTY
+  // with no error, which would leave every order with no product (see loadDirectOrderItemsForRequests).
+  const items: { request_id: string; product_code: string | null; product_name: string | null }[] = [];
+  for (let i = 0; i < rows.length; i += 100) {
+    const batch = rows.slice(i, i + 100).map((row) => row.id);
+    items.push(
+      ...(await fetchAllRows<{ request_id: string; product_code: string | null; product_name: string | null }>(
+        () => supabase.from("direct_order_request_items").select("id,request_id,product_code,product_name").in("request_id", batch),
+        "id",
+      )),
+    );
+  }
   const lines = new Map<string, { codes: string[]; names: string[] }>();
-  for (const item of (items ?? []) as { request_id: string; product_code: string | null; product_name: string | null }[]) {
+  for (const item of items) {
     const entry = lines.get(item.request_id) ?? { codes: [], names: [] };
     entry.codes.push(String(item.product_code ?? ""));
     entry.names.push(String(item.product_name ?? ""));
@@ -173,8 +183,9 @@ export async function loadPharmacyOwingOrders(pharmacyId: string, options: { exc
     remainingAmount: row.remaining_amount === null ? null : Number(row.remaining_amount),
     collectionDate: row.collection_date,
     decidedAt: row.decided_at,
-    productCodes: lines.get(row.id)?.codes ?? [],
-    productNames: lines.get(row.id)?.names ?? [],
+    // An order with no item rows is the single product on its own row — as decideDirectOrder reads it.
+    productCodes: lines.get(row.id)?.codes ?? (row.product_code ? [String(row.product_code)] : []),
+    productNames: lines.get(row.id)?.names ?? (row.product_code ? [String(row.product_name ?? "")] : []),
   }));
 }
 
@@ -189,14 +200,35 @@ export async function loadPharmacyPaymentStanding(input: {
   return classifyPharmacyPaymentStanding({ orders, productCodes: input.productCodes, todayCairo: todayInCairo(input.now) });
 }
 
-/** The refusal a late receipt gives, or null. */
-export function lateReceiptRefusal(late: readonly LateReceiptOrder[]): string | null {
+/**
+ * The refusal a late receipt gives, or null — to the manager raising an order, or to the approver
+ * finishing one that manager raised.
+ */
+export function lateReceiptRefusal(late: readonly LateReceiptOrder[], audience: "requester" | "approver" = "requester"): string | null {
   if (late.length === 0) return null;
   const oldest = late.reduce((a, b) => (b.days > a.days ? b : a));
+  const detail =
+    `had no delivery receipt entered for more than 7 days (the oldest ${oldest.days} days, ${oldest.pharmacyName})`;
+  if (audience === "approver") {
+    return (
+      `The manager who raised this order has ${late.length} approved order${late.length === 1 ? " that has" : "s that have"} ${detail}. ` +
+      `This order cannot be approved until ${late.length === 1 ? "that receipt is" : "those receipts are"} entered.`
+    );
+  }
   return (
-    `${late.length} of your approved orders ${late.length === 1 ? "has" : "have"} had no delivery receipt entered for more than 7 days ` +
-    `(the oldest ${oldest.days} days, ${oldest.pharmacyName}). Enter ${late.length === 1 ? "it" : "them"} first; no new order can be raised until then.`
+    `${late.length} of your approved orders ${late.length === 1 ? "has" : "have"} ${detail}. ` +
+    `Enter ${late.length === 1 ? "it" : "them"} first; no new order can be raised until then.`
   );
+}
+
+/**
+ * At the last approval: an order whose manager now has a delivery receipt past its 7 days is not
+ * finished (owner, 27 Nov 2026: «ولا ينفذ له اوردارات اخرى»). This covers an order already climbing when
+ * the receipt went late, and one revived from hold.
+ */
+export async function assertRequesterHasNoLateReceipts(requesterHrId: string, now?: Date): Promise<void> {
+  const refusal = lateReceiptRefusal(await listLateReceiptsForRequester(requesterHrId, now), "approver");
+  if (refusal) throw validationError(refusal);
 }
 
 /**
@@ -294,9 +326,11 @@ export async function loadDirectOrderPaymentStandingNotice(input: {
   status: string;
   pharmacyId: string | null;
   productCodes: readonly string[];
+  /** A reversal undoes an order; what the pharmacy owes never holds it. */
+  isReversal?: boolean;
   now?: Date;
 }): Promise<PaymentStandingNotice | null> {
-  if (!input.pharmacyId || (input.status !== "pending_approval" && input.status !== "held")) return null;
+  if (input.isReversal || !input.pharmacyId || (input.status !== "pending_approval" && input.status !== "held")) return null;
   try {
     const now = input.now ?? new Date();
     const standing = await loadPharmacyPaymentStanding({

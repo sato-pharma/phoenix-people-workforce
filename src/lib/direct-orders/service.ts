@@ -232,7 +232,11 @@ import {
 } from "@/lib/direct-orders/types";
 import { assertDirectOrderWorkflowTransition, directOrderDecisionAction } from "@/lib/direct-orders/workflow";
 import { sendDirectOrderApprovedEmail } from "@/lib/direct-orders/approved-email";
-import { assertDirectOrderMayBeRaised, assertPaymentStandingAllowsFinalApproval } from "@/lib/direct-orders/payment-standing";
+import {
+  assertDirectOrderMayBeRaised,
+  assertPaymentStandingAllowsFinalApproval,
+  assertRequesterHasNoLateReceipts,
+} from "@/lib/direct-orders/payment-standing";
 import {
   approvedStepActors,
   assertOrderCarriedBySuperAdminStands,
@@ -4824,6 +4828,16 @@ export async function reviseDirectOrder(
   const overCap = lines.some((line) => line.overCap);
   const salesValue = totalSalesValue;
 
+  // Sent back up the chain is raised again (owner, 27 Nov 2026): the same refusals as a new order — a
+  // delivery receipt of the requester's past its 7 days, or nothing paid on this product before.
+  if (!before.reversalOfRequestId) {
+    await assertDirectOrderMayBeRaised({
+      requesterHrId: before.requesterHrId,
+      pharmacyId: before.pharmacyId,
+      productCodes: lines.map((line) => line.productCode),
+    });
+  }
+
   const steps = await loadSteps(before.id);
   const activeStep = resolveActiveStep(steps);
   if (!activeStep) {
@@ -5026,14 +5040,19 @@ export async function decideDirectOrder(
     }
     // What the pharmacy still owes, read at the last approval (owner, 27 Nov 2026): a product it has
     // paid nothing on is refused, and a part-paid product or a late payer is finished only by the
-    // CEO's own approval, never the Super Admin answering for that rung.
-    const items = (await loadDirectOrderItemsForRequests([request.id])).get(request.id) ?? [];
-    await assertPaymentStandingAllowsFinalApproval({
-      actorRole: access.role,
-      requestId: request.id,
-      pharmacyId: request.pharmacyId,
-      productCodes: items.length > 0 ? items.map((item) => item.productCode) : [request.productCode],
-    });
+    // CEO's own approval, never the Super Admin answering for that rung. And the manager who raised it
+    // must have no delivery receipt past its 7 days — this catches an order already climbing when the
+    // receipt went late, or revived from hold. A reversal undoes an order, so neither holds it.
+    if (!request.reversalOfRequestId) {
+      const items = (await loadDirectOrderItemsForRequests([request.id])).get(request.id) ?? [];
+      await assertRequesterHasNoLateReceipts(request.requesterHrId);
+      await assertPaymentStandingAllowsFinalApproval({
+        actorRole: access.role,
+        requestId: request.id,
+        pharmacyId: request.pharmacyId,
+        productCodes: items.length > 0 ? items.map((item) => item.productCode) : [request.productCode],
+      });
+    }
   }
 
   const action = directOrderDecisionAction({ decision: input.decision, isFinal: evaluation.isFinal });

@@ -114,9 +114,15 @@ The owner, 27 Nov 2026: «the 14 days طبعا يقلوا حد اقصى اسبو
 
 - `RECEIPT_OVERDUE_DAYS` is **7** (it was 14). From day 7 after approval the order is `overdue`.
 - `listLateReceiptsForRequester` lists one manager's `overdue` orders. While any is listed, `submitDirectOrder`
-  refuses a new order from that manager, for any pharmacy, before anything is written. The refusal names how
-  many, the oldest and its pharmacy.
-- Not a block: a `no_book` order (Finance's flag), an order the CEO approved to stand without a receipt, and an
-  order that has its receipt. An ask still waiting for the CEO does **not** lift the block.
+  refuses a new order from that manager, for any pharmacy, before anything is written, and so does
+  `reviseDirectOrder` for an order sent back and resubmitted. The refusal names how many, the oldest and its
+  pharmacy. The last approval refuses too (`assertRequesterHasNoLateReceipts`), so an order already climbing when
+  the receipt went late, or revived from hold, is not finished until the receipt is entered.
+- Not a block: a `no_book` order (Finance's flag), an order approved from a book Finance has since recorded lost
+  (its receipt can no longer be entered, so it stays on Finance's desk), an order the CEO approved to stand
+  without a receipt, an order that has its receipt, and a reversal. An ask still waiting for the CEO does
+  **not** lift the block.
+- The manager's orders are read in batches of 100 ids: about 400 in one request overflow the address and read
+  back empty with no error.
 - The printed area managers' guide and the videos still say "within 14 days". Update them with the owner's edits.
 - Pinned by `tests/direct-order-payment-standing.test.ts`.

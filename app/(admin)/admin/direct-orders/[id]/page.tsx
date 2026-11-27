@@ -7,7 +7,7 @@ import { DirectOrderPaymentStandingNotice } from "@/components/direct-orders/dir
 import { DirectOrderReceiptPanel } from "@/components/direct-orders/direct-order-receipt-panel";
 import { loadDirectOrderPaymentStandingNotice } from "@/lib/direct-orders/payment-standing";
 import { loadDirectOrderReceiptPanel } from "@/lib/direct-orders/receipt-books";
-import { getDirectOrderApprovalDetail } from "@/lib/direct-orders/service";
+import { getDirectOrderApprovalDetail, resolveDirectOrderReportScope } from "@/lib/direct-orders/service";
 import { canCancelHeldDirectOrder } from "@/lib/direct-orders/cancel-visibility";
 import { canCaptureDirectOrderValidation } from "@/lib/direct-orders/validation-visibility";
 import { getDirectOrderInvoiceValidationSlots } from "@/lib/direct-orders/pharmacy-validation";
@@ -77,6 +77,7 @@ export default async function AdminMyDirectOrderDetailPage({
         status: detail.request.status,
         pharmacyId: detail.pharmacy?.id ?? detail.request.pharmacyId,
         productCodes: detail.items.map((item) => item.productCode),
+        isReversal: Boolean(detail.request.reversalOfRequestId),
       })
     : null;
 
@@ -105,7 +106,14 @@ export default async function AdminMyDirectOrderDetailPage({
           invoiceSlots={invoiceSlots ? { used: invoiceSlots.used, limit: invoiceSlots.limit } : null}
         />
       ) : null}
-      {paymentNotice ? <DirectOrderPaymentStandingNotice notice={paymentNotice} orderHrefBase="/admin/direct-orders" /> : null}
+      {/* The earlier orders open only for a viewer who sees every order; a scoped approver would land
+          on another manager's order and be refused. */}
+      {paymentNotice ? (
+        <DirectOrderPaymentStandingNotice
+          notice={paymentNotice}
+          orderHrefBase={resolveDirectOrderReportScope(access) === "all" ? "/admin/direct-orders" : null}
+        />
+      ) : null}
       {receiptPanel && detail ? <DirectOrderReceiptPanel requestId={detail.request.id} panel={receiptPanel} /> : null}
       {showCancel && detail ? (
         <CancelHeldOrder

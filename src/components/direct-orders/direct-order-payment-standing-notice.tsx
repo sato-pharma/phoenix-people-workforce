@@ -17,10 +17,13 @@ const day = (value: string | null) => formatDateOnly(value, "en-GB", { day: "num
 export function DirectOrderPaymentStandingNotice({
   notice,
   orderHrefBase = null,
+  showOrders = true,
 }: {
   notice: PaymentStandingNotice;
   /** Where an earlier order opens; null where the viewer may not be able to open another manager's order. */
   orderHrefBase?: string | null;
+  /** False in the portal: the earlier orders are often other managers', so only the verdict is shown. */
+  showOrders?: boolean;
 }) {
   if (notice.unavailable) {
     return (
@@ -44,30 +47,32 @@ export function DirectOrderPaymentStandingNotice({
       </header>
       <div className="space-y-3 p-4">
         <p className={cn("text-phx-sm font-bold", refused ? "text-rose-700" : "text-amber-800")}>{notice.verdict.message}</p>
-        <ul className="divide-y divide-slate-200 border-t border-slate-200">
-          {notice.lines.map((line) => (
-            <li className="grid grid-cols-1 gap-1 py-2 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)] sm:gap-3" key={line.requestId}>
-              <div className="min-w-0">
-                {orderHrefBase ? (
-                  <Link className="break-words text-phx-sm font-bold text-slate-900 underline-offset-2 hover:underline" href={`${orderHrefBase}/${line.requestId}`}>
-                    {line.products}
-                  </Link>
-                ) : (
-                  <p className="break-words text-phx-sm font-bold text-slate-900">{line.products}</p>
-                )}
-                {line.sameProduct ? (
-                  <p className="text-phx-xs font-bold text-slate-600">
-                    {line.sameProduct === "unpaid" ? "Same product, nothing paid" : "Same product, part-paid"}
-                  </p>
-                ) : null}
-              </div>
-              <p className="text-phx-sm font-bold tabular-nums text-slate-900">{money(line.owed)} still owed</p>
-              <p className={cn("text-phx-sm", line.late ? "font-bold text-rose-700" : "text-slate-600")}>
-                {line.late ? `Due ${day(line.collectionDate)}, not paid` : `Due ${day(line.collectionDate)}`}
-              </p>
-            </li>
-          ))}
-        </ul>
+        {showOrders ? (
+          <ul className="divide-y divide-slate-200 border-t border-slate-200">
+            {notice.lines.map((line) => (
+              <li className="grid grid-cols-1 gap-1 py-2 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)] sm:gap-3" key={line.requestId}>
+                <div className="min-w-0">
+                  {orderHrefBase ? (
+                    <Link className="break-words text-phx-sm font-bold text-slate-900 underline-offset-2 hover:underline" href={`${orderHrefBase}/${line.requestId}`}>
+                      {line.products}
+                    </Link>
+                  ) : (
+                    <p className="break-words text-phx-sm font-bold text-slate-900">{line.products}</p>
+                  )}
+                  {line.sameProduct ? (
+                    <p className="text-phx-xs font-bold text-slate-600">
+                      {line.sameProduct === "unpaid" ? "Same product, nothing paid" : "Same product, part-paid"}
+                    </p>
+                  ) : null}
+                </div>
+                <p className="text-phx-sm font-bold tabular-nums text-slate-900">{money(line.owed)} still owed</p>
+                <p className={cn("text-phx-sm", line.late ? "font-bold text-rose-700" : "text-slate-600")}>
+                  {line.late ? `Due ${day(line.collectionDate)}, not paid` : `Due ${day(line.collectionDate)}`}
+                </p>
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </div>
     </section>
   );

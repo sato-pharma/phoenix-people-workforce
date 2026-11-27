@@ -68,6 +68,7 @@ export default async function PortalMyDirectOrderDetailPage({
         status: detail.request.status,
         pharmacyId: detail.pharmacy?.id ?? detail.request.pharmacyId,
         productCodes: detail.items.map((item) => item.productCode),
+        isReversal: Boolean(detail.request.reversalOfRequestId),
       })
     : null;
 
@@ -101,7 +102,8 @@ export default async function PortalMyDirectOrderDetailPage({
             invoiceSlots={invoiceSlots ? { used: invoiceSlots.used, limit: invoiceSlots.limit } : null}
           />
         ) : null}
-        {paymentNotice ? <DirectOrderPaymentStandingNotice notice={paymentNotice} /> : null}
+        {/* The verdict only: the earlier orders listed are often other managers', with their amounts. */}
+        {paymentNotice ? <DirectOrderPaymentStandingNotice notice={paymentNotice} showOrders={false} /> : null}
         {receiptPanel && detail ? <DirectOrderReceiptPanel requestId={detail.request.id} panel={receiptPanel} /> : null}
         {showCancel && detail ? (
           <CancelHeldOrder

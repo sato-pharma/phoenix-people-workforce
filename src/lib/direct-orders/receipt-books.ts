@@ -489,6 +489,7 @@ export async function releaseDirectOrderReceipt(access: AccessContext, input: { 
  * with a written reason; nothing changes on the order until the CEO approves it.
  */
 export async function askDirectOrderWithoutReceipt(access: AccessContext, input: { requestId: string; reason: unknown }): Promise<{ message: string }> {
+  await assertPermission(access, "direct_orders", "read");
   if (!canManageDirectOrderReceiptBooks(access)) throw forbiddenError("Only Finance asks the CEO to let an order stand without a receipt.");
   const order = await loadOrder(input.requestId);
   if (!order) throw notFoundError("This direct order was not found.");
@@ -524,6 +525,7 @@ export async function decideDirectOrderWithoutReceipt(
   access: AccessContext,
   input: { requestId: string; decision: unknown; note: unknown },
 ): Promise<{ message: string }> {
+  await assertPermission(access, "direct_orders", "read");
   if (!canDecideDirectOrderWithoutReceipt(access)) throw forbiddenError("Only the CEO decides whether an order may stand without a receipt.");
   const order = await loadOrder(input.requestId);
   if (!order) throw notFoundError("This direct order was not found.");
@@ -900,25 +902,36 @@ export type LateReceiptOrder = { requestId: string; pharmacyName: string; days: 
  * One manager's approved orders whose delivery receipt is past its 7 days (owner, 27 Nov 2026: «حد
  * اقصى اسبوع ولا ينفذ له اوردارات اخرى فى حاله عدم رفعه»; he chose "The manager who raised it"). While
  * any is listed that manager raises no new order. An order raised with no book (`no_book`) is Finance's
- * flag, not this block, and one the CEO approved to stand without a receipt is never late.
+ * flag, not this block, and one the CEO approved to stand without a receipt is never late. Nor is
+ * one approved from a book Finance has since recorded lost: its receipt can no longer be entered, so it
+ * stays on Finance's desk and never holds the manager for good.
  */
 export async function listLateReceiptsForRequester(requesterHrId: string, now: Date = new Date()): Promise<LateReceiptOrder[]> {
   const books = await loadBooks();
   if (books.length === 0) return [];
   const key = canonicalHrIdKey(requesterHrId);
   if (!key) return [];
-  const mine = (await loadApprovedOrdersSinceRollout(books)).filter((row) => canonicalHrIdKey(row.order.requesterHrId) === key);
+  const mine = (await loadApprovedOrdersSinceRollout(books)).filter(
+    (row) => canonicalHrIdKey(row.order.requesterHrId) === key && bookHeldAtApproval(row.order, books)?.status !== "lost",
+  );
   if (mine.length === 0) return [];
   const ids = mine.map((row) => row.order.id);
   const supabase = getSupabaseAdmin();
-  const [{ data: receiptRows, error: receiptError }, { data: askRows, error: askError }] = await Promise.all([
-    supabase.from(RECEIPTS).select("request_id").in("request_id", ids),
-    supabase.from(NO_RECEIPT).select("request_id").in("request_id", ids).eq("status", "approved"),
-  ]);
-  if (receiptError) throw receiptError;
-  if (askError) throw askError;
-  const withReceipt = new Set(((receiptRows ?? []) as { request_id: string | null }[]).map((row) => row.request_id));
-  const waived = new Set(((askRows ?? []) as { request_id: string }[]).map((row) => row.request_id));
+  // Batches of 100 ids: about four hundred in one .in() overflow the request URL and read back EMPTY
+  // with no error, which would make every order look receipt-less and refuse the manager falsely.
+  const withReceipt = new Set<string | null>();
+  const waived = new Set<string>();
+  for (let i = 0; i < ids.length; i += 100) {
+    const batch = ids.slice(i, i + 100);
+    const [{ data: receiptRows, error: receiptError }, { data: askRows, error: askError }] = await Promise.all([
+      supabase.from(RECEIPTS).select("request_id").in("request_id", batch),
+      supabase.from(NO_RECEIPT).select("request_id").in("request_id", batch).eq("status", "approved"),
+    ]);
+    if (receiptError) throw receiptError;
+    if (askError) throw askError;
+    for (const row of (receiptRows ?? []) as { request_id: string | null }[]) withReceipt.add(row.request_id);
+    for (const row of (askRows ?? []) as { request_id: string }[]) waived.add(row.request_id);
+  }
   const late = mine.filter(
     (row) =>
       classifyOrderReceipt({ order: row.order, books, hasReceipt: withReceipt.has(row.order.id), now, withoutReceiptApproved: waived.has(row.order.id) }) ===
