@@ -50,6 +50,9 @@ import { adminPanelClassName } from "@/components/admin/admin-design-tokens";
 import { issuePaperReference } from "@/components/hiring-pack/issue-paper-reference";
 import { PrintOptionsDialog, type PrintAnswer } from "@/components/hiring-pack/print-options-dialog";
 import { HiringPackPaperEditor } from "@/components/hiring-pack/paper-editor";
+import { HrFormsControl } from "@/components/hiring-pack/hr-forms-control";
+import { DEFAULT_FORMS_LAYOUT, stepOfDocument, stepsInPackages } from "@/lib/hiring-pack/forms-layout";
+import type { StoredFormsLayout } from "@/lib/hiring-pack/forms-layout-store";
 import {
   buildFormsDrive,
   candidateOptionLabel,
@@ -1009,6 +1012,18 @@ type Props = {
    * Super Admin only; the server's own gates are unchanged.
    */
   canEditAnyForm?: boolean;
+  /**
+   * The papers each package walks through, as the Control tab arranged them (owner, 2026-11-27).
+   * Absent → the standard order.
+   */
+  formsLayout?: StoredFormsLayout;
+};
+
+/** The standard order, for a page that passes no arrangement. Module scope, so it is stable. */
+const STANDARD_FORMS_LAYOUT: StoredFormsLayout = {
+  arranged: { leaver: false, newHire: false },
+  layout: DEFAULT_FORMS_LAYOUT,
+  ready: true,
 };
 
 /**
@@ -1038,8 +1053,12 @@ export function HiringPackManager({
   paperScope = null,
   salaryReadOnly = false,
   contractTermsReadOnly = false,
+  formsLayout = STANDARD_FORMS_LAYOUT,
 }: Props) {
   const scoped = paperScope !== null;
+  // The Control tab's arrangement, replaced in place after a save there so the wizard follows at once.
+  const [storedLayout, setStoredLayout] = useState<StoredFormsLayout>(formsLayout);
+  const [screenTab, setScreenTab] = useState<"forms" | "control">("forms");
   const [pack, setPack] = useState<HiringPackData | null>(initialPack);
   const [selectedHrId, setSelectedHrId] = useState(initialPack?.employee.hrId ?? "");
   const [form, setForm] = useState<FormState>(initialPack ? formFromPack(initialPack) : emptyForm());
@@ -1677,7 +1696,7 @@ export function HiringPackManager({
   // package, person, the paper, done.
   // ─────────────────────────────────────────────────────────────────────────────────────────────
   const paperSteps: LeaverStep[] =
-    path === "newHire" || path === "leaver" ? hrFormsPaperSteps(path, paperScope) : [];
+    path === "newHire" || path === "leaver" ? hrFormsPaperSteps(path, paperScope, storedLayout.layout) : [];
   const companyPapers: readonly StoredTemplate[] = scoped
     ? NO_TEMPLATES
     : path === "newHire"
@@ -2263,25 +2282,31 @@ export function HiringPackManager({
     </AdminTableShell>
   );
 
-  /** "Another paper": every folder but the two packages, plus the papers issued to anyone. */
+  /**
+   * "Another paper": every paper on NEITHER package's list as the Control tab arranged them, plus the
+   * certificates issued to anyone. A paper only a leaver may receive is offered for a departed person
+   * only — a Form 6 is never one click from being printed for somebody still at his desk.
+   */
+  const personLeft = Boolean(employee?.departed);
   const otherFolders = useMemo(() => {
     const folders = buildFormsDrive(scoped ? [] : companyTemplates.templates, paperScope);
     if (editAny) return folders;
+    const placed = stepsInPackages(storedLayout.layout);
     return folders
-      .map((folder) =>
-        folder.id === "joining"
-          ? { ...folder, entries: [] }
-          : folder.id === "leaving"
-            ? {
-                ...folder,
-                description: "Issued to anybody who asks, still employed or not.",
-                entries: folder.entries.filter((entry) => entry.audience === "everyone"),
-                labelEn: "Certificates",
-              }
-            : folder,
-      )
+      .map((folder) => {
+        const entries = folder.entries.filter((entry) => {
+          // An uploaded joining or leaving paper is walked in that package's company-papers step.
+          if (entry.versionId !== null) return folder.id !== "joining" && folder.id !== "leaving";
+          if (folder.id === "leaving" && entry.audience === "everyone") return true;
+          if (placed.has(stepOfDocument(entry.document))) return false;
+          return entry.audience !== "departed" || personLeft;
+        });
+        return folder.id === "leaving" && entries.every((entry) => entry.audience === "everyone")
+          ? { ...folder, description: "Issued to anybody who asks, still employed or not.", entries, labelEn: "Certificates" }
+          : { ...folder, entries };
+      })
       .filter((folder) => folder.entries.length > 0);
-  }, [companyTemplates.templates, editAny, paperScope, scoped]);
+  }, [companyTemplates.templates, editAny, paperScope, personLeft, scoped, storedLayout.layout]);
 
   const chooseOther = (entry: FormsDriveEntry) => {
     setOtherChoice(entry);
@@ -2318,6 +2343,55 @@ export function HiringPackManager({
         ) : null}
 
         <div className="scroll-mt-4" id={WIZARD_ANCHOR_ID} />
+        {/*
+          THE CONTROL TAB (owner, 2026-11-27): "a tab in HR Forms where I can rearrange the forms that
+          appear, remove a form, add a form I want to appear". Super Admin only, as "Edit any form" is;
+          the route refuses a save from anyone else.
+        */}
+        {canEditAnyForm ? (
+          <div aria-label="HR Forms sections" className="grid grid-cols-2 border-b border-phx-line sm:flex sm:flex-wrap" role="tablist">
+            {(
+              [
+                { id: "forms", label: "Forms" },
+                { id: "control", label: "Arrange forms" },
+              ] as const
+            ).map((tab) => (
+              <button
+                aria-selected={screenTab === tab.id}
+                className={cn(
+                  "-mb-px min-h-11 border-b-2 px-4 py-2 text-left text-sm transition-colors",
+                  screenTab === tab.id
+                    ? "border-phx-accent font-black text-phx-ink"
+                    : "border-transparent font-bold text-phx-ink-soft hover:text-phx-ink",
+                )}
+                key={tab.id}
+                onClick={() => setScreenTab(tab.id)}
+                role="tab"
+                type="button"
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {canEditAnyForm && screenTab === "control" ? (
+          <section className={cn(adminPanelClassName, "flex flex-col gap-4 p-4 sm:p-6")}>
+            <div className="flex flex-col gap-1">
+              <p className="text-phx-xs font-black uppercase tracking-wide text-phx-accent">Employee documents</p>
+              <h2 className="text-lg font-black text-phx-ink">Arrange HR Forms</h2>
+            </div>
+            <HrFormsControl
+              initial={storedLayout}
+              onSaved={(stored) => {
+                setStoredLayout(stored);
+                // A step number may now point at a different paper: start the person's papers again.
+                setStep((value) => Math.min(value, 2));
+                setPreview(null);
+              }}
+            />
+          </section>
+        ) : (
+        <>
         {/*
           HR FORMS IS THE ADVERSE DRUG REACTION REPORT'S WIZARD (owner, 2026-11-27): "make it the same
           form as the report. I choose: is this a new hire or a leaver? Then I choose the name. Then the
@@ -2697,13 +2771,15 @@ export function HiringPackManager({
             </div>
           ) : null}
         </FormWizard>
+        </>
+        )}
 
         {/*
           The Archive reprints superseded versions of every paper and the Studio uploads and prints
           company templates — neither is offered to a seat limited to its own papers. Both open their
           paper in the editor inside the wizard, so the page scrolls up to it.
         */}
-        {scoped ? null : (
+        {scoped || (canEditAnyForm && screenTab === "control") ? null : (
           <>
             <TemplateArchive
               employeeSelected={Boolean(pack)}

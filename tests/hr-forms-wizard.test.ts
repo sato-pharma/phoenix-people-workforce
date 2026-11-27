@@ -16,6 +16,15 @@ import {
   paperStatus,
   papersInPackages,
 } from "../src/lib/hiring-pack/hr-forms-wizard.ts";
+import {
+  ARRANGEABLE_STEPS,
+  DEFAULT_FORMS_LAYOUT,
+  cleanPackageSteps,
+  mayArrange,
+  normalizeFormsLayout,
+  sameFormsLayout,
+  stepsOutsidePackages,
+} from "../src/lib/hiring-pack/forms-layout.ts";
 import { printBanner } from "../src/lib/hiring-pack/render-shared.ts";
 import { singleCopyBanner } from "../src/lib/hiring-pack/single-copy.ts";
 import { HIRING_PACK_DOCUMENTS } from "../src/lib/hiring-pack/types.ts";
@@ -141,7 +150,7 @@ function testTheScreenIsTheWizard() {
   const manager = code("src/components/hiring-pack/hiring-pack-manager.tsx");
   assert.ok(manager.includes("<FormWizard"), "HR Forms wears the report's wizard");
   assert.ok(manager.includes("isStepDone={isStepDone}"), "the rail ticks what was printed, not what was passed");
-  assert.ok(manager.includes("hrFormsPaperSteps(path, paperScope)"), "the paper steps come from the one list");
+  assert.ok(manager.includes("hrFormsPaperSteps(path, paperScope, storedLayout.layout)"), "the paper steps come from the one list");
   assert.ok(!manager.includes("<PaperGroup"), "no package tab of grouped cards is left");
   assert.ok(!/<FormsDrive[\s/>]/u.test(manager), "nor the folder drive above it");
   assert.ok(manager.includes("editAny || target <= furthest"), "Edit any form opens every step");
@@ -165,10 +174,61 @@ function testTheScreenIsTheWizard() {
   assert.ok(route.includes("paperIssuesForViewer(access, listed)"), "through the same seat filter as the recent list");
 }
 
+/**
+ * THE CONTROL TAB (owner, 2026-11-27): "rearrange the forms that appear, remove a form, add a form —
+ * move it from another paper to new hire, or from new hire to another paper." Each package is an
+ * ordered list stored once; "Another paper" is every paper on neither list; a stored list is cleaned,
+ * never trusted.
+ */
+function testTheControlTabArrangesThePackages() {
+  // Nothing stored is the standard order, and the wizard walks exactly it.
+  assert.deepEqual(normalizeFormsLayout(null), DEFAULT_FORMS_LAYOUT);
+  assert.deepEqual(hrFormsPaperSteps("newHire", null, DEFAULT_FORMS_LAYOUT), hrFormsPaperSteps("newHire"));
+  assert.deepEqual(hrFormsPaperSteps("leaver", null, DEFAULT_FORMS_LAYOUT), hrFormsPaperSteps("leaver"));
+
+  // Rearranged, removed and added: the wizard follows the stored order, step for step.
+  const arranged = normalizeFormsLayout({ leaver: ["form6", "nda"], newHire: ["form1", "contract", "custodyLaptop"] });
+  assert.deepEqual(hrFormsPaperSteps("newHire", null, arranged), ["form1", "contract", "custodyLaptop"]);
+  assert.deepEqual(hrFormsPaperSteps("leaver", null, arranged), ["form6", "nda"]);
+  // A seat limited to its papers still sees only those, in the arranged order.
+  assert.deepEqual(hrFormsPaperSteps("newHire", ["contract", "form1"], arranged), ["form1", "contract"]);
+
+  // A removed paper lands in "Another paper"; a placed one leaves it.
+  const outside = stepsOutsidePackages(arranged);
+  assert.ok(outside.includes("workerDataForm"), "the worker data form, taken off new hire, is another paper");
+  assert.ok(outside.includes(EXIT_FORM_STEP), "so is the exit form once it is off the leaver list");
+  assert.ok(!outside.includes("nda") && !outside.includes("contract"), "a paper on a package is not offered again");
+  assert.equal(outside.length + new Set([...arranged.newHire, ...arranged.leaver]).size, ARRANGEABLE_STEPS.length, "every paper is somewhere, once");
+
+  // Cleaned, never trusted: an unknown key, a repeat, the exit forms one by one, the exit form on new hire.
+  assert.deepEqual(cleanPackageSteps(["contract", "contract", "noSuchPaper", 7, "exitForm"], "newHire"), ["contract"]);
+  assert.deepEqual(cleanPackageSteps(["resignation", "mutualTermination", "form6"], "leaver"), [EXIT_FORM_STEP, "form6"], "the two exit forms are the one exit-form step");
+  assert.deepEqual(cleanPackageSteps([], "leaver"), [], "an empty package is a real answer");
+  assert.equal(cleanPackageSteps("contract", "newHire"), null, "anything but a list keeps the standard order");
+  assert.equal(mayArrange(EXIT_FORM_STEP, "newHire"), false);
+  assert.ok(!ARRANGEABLE_STEPS.includes("resignation") && !ARRANGEABLE_STEPS.includes("mutualTermination"));
+  assert.ok(sameFormsLayout(normalizeFormsLayout({ newHire: [...DEFAULT_FORMS_LAYOUT.newHire] }), DEFAULT_FORMS_LAYOUT));
+
+  // The screen: the tab, the wizard reading the arrangement, Another paper following it.
+  const manager = code("src/components/hiring-pack/hiring-pack-manager.tsx");
+  assert.ok(manager.includes('{ id: "control", label: "Arrange forms" }'), "HR Forms has the Arrange forms tab");
+  assert.ok(manager.includes('canEditAnyForm && screenTab === "control" ? ('), "for the Super Admin only");
+  assert.ok(manager.includes("const placed = stepsInPackages(storedLayout.layout);"), "Another paper leaves out what the packages hold");
+  assert.ok(manager.includes('return entry.audience !== "departed" || personLeft;'), "a leaver's paper is offered for a departed person only");
+  for (const page of ["app/(admin)/hiring-pack/page.tsx", "app/employee-portals/hiring-pack/page.tsx"]) {
+    assert.ok(code(page).includes("formsLayout={formsLayout}"), `${page} hands the wizard the stored arrangement`);
+  }
+  const route = code("app/api/hiring-pack/forms-layout/route.ts");
+  assert.ok(route.includes('if (access.role !== "Super Admin") {'), "only the Super Admin saves an arrangement");
+  assert.ok(route.includes("const steps = cleanPackageSteps(raw, pack);"), "every list is cleaned before it is stored");
+  assert.ok(route.includes("assertSameOriginMutation(request)"), "the save is a same-origin write");
+}
+
 export function runHrFormsWizardTests() {
   testThePathsAndTheirPapers();
   testTheClearancesNeverHangOnTheExitRoute();
   testATickIsAPrintOrASignature();
   testTheBannerAsksThePrinterForTheCount();
   testTheScreenIsTheWizard();
+  testTheControlTabArrangesThePackages();
 }

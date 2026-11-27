@@ -10,8 +10,8 @@
 // So HR Forms is the Adverse Drug Reaction report's wizard (`FormWizard`, src/components/ui/form-kit):
 //   1. New hire, leaver, or another paper
 //   2. The person
-//   3. The details the papers print (new hire and leaver only)
-//   4… One step per paper, in the order they are handed over
+//   3… One step per paper, in the order they are handed over — each with its own fields above it,
+//      in the order the Control tab arranged (`forms-layout.ts`)
 //   last: what was printed, and the next person
 //
 // A PAPER IS DONE WHEN IT WAS PRINTED OR SIGNED for this person — read from the paper register
@@ -109,15 +109,23 @@ export function exitFormDocument(
  * `paperScope` — the papers a seat is limited to (SEAT_PRINTABLE_DOCUMENTS; none today), or null for
  * every paper. A paper outside the scope is not a step at all, rather than a step the server refuses.
  * The exit-form step stays while EITHER of its two papers is in scope.
+ *
+ * `arranged` — the package's papers as the Control tab arranged them (`forms-layout.ts`); absent, the
+ * standard order below.
  */
 export function hrFormsPaperSteps(
   path: HrFormsPath,
   paperScope: readonly HiringPackDocument[] | null = null,
+  arranged?: { newHire: readonly LeaverStep[]; leaver: readonly LeaverStep[] },
 ): LeaverStep[] {
   const inScope = (document: HiringPackDocument) => paperScope === null || paperScope.includes(document);
-  if (path === "newHire") return NEW_HIRE_PAPERS.filter(inScope);
+  if (path === "newHire") {
+    return (arranged?.newHire ?? NEW_HIRE_PAPERS).filter(
+      (step): step is HiringPackDocument => step !== EXIT_FORM_STEP && inScope(step),
+    );
+  }
   if (path === "leaver") {
-    return LEAVER_PAPERS.filter((step) =>
+    return (arranged?.leaver ?? LEAVER_PAPERS).filter((step) =>
       step === EXIT_FORM_STEP ? inScope("resignation") || inScope("mutualTermination") : inScope(step),
     );
   }

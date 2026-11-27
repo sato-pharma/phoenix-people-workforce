@@ -302,7 +302,7 @@ function testTheClearancePairAreComplementsNotAlternatives(): void {
   }
   assert.ok(leaver.includes(EXIT_FORM_STEP), "the exit form is its own step");
   const manager = readFileSync("src/components/hiring-pack/hiring-pack-manager.tsx", "utf8");
-  assert.ok(manager.includes("hrFormsPaperSteps(path, paperScope)"), "the screen walks the same list of papers");
+  assert.ok(manager.includes("hrFormsPaperSteps(path, paperScope, storedLayout.layout)"), "the screen walks the same list of papers");
 }
 
 // ---------------------------------------------------------------------------------------------

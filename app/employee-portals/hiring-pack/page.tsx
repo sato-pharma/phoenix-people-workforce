@@ -9,6 +9,7 @@ import { HiringPackManager } from "@/components/hiring-pack/hiring-pack-manager"
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { resolveNavigationMode, type AccessContext } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { loadFormsLayoutOrDefault } from "@/lib/hiring-pack/forms-layout-store";
 import { hrFormsAccessFor, packForViewer, type HrFormsAccess } from "@/lib/hiring-pack/paper-access";
 import {
   getHiringPack,
@@ -130,12 +131,16 @@ async function HiringPackContent({
     }
   }
 
+  // The order the Control tab arranged; the standard order when nothing is stored or the read fails.
+  const formsLayout = await loadFormsLayoutOrDefault();
+
   return (
     <HiringPackManager
       // "Edit any form" — every step, every person, every paper (owner, 2026-11-27). Super Admin only.
       canEditAnyForm={access.role === "Super Admin"}
       canManage={forms.canManage}
       candidates={candidates}
+      formsLayout={formsLayout}
       initialError={initialError}
       initialPack={initialPack}
       lines={lines}

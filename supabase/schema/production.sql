@@ -63575,6 +63575,32 @@ COMMENT ON COLUMN public.hiring_pack_document_fields.anchor_selector IS 'Flow su
 COMMENT ON COLUMN public.hiring_pack_document_fields.source_kind IS 'What the field prints. ''value'' reads the employee''s record through the same values map every compiled placement reads. ''literal'' prints a fixed string and must never look like data. ''mark'' prints a PICTURE - the company stamp or the stored HR signature, named in value_key - placed by hand by an operator; no compiled table and no renderer ever produces one, which is what separates it from the auto-drawn seal the owner removed on 2026-09-29.';
 
 --
+-- Name: hiring_pack_forms_layout; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.hiring_pack_forms_layout (
+    package_key text NOT NULL,
+    steps text[] DEFAULT '{}'::text[] NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_by_hr_id text,
+    CONSTRAINT hiring_pack_forms_layout_package_known CHECK ((package_key = ANY (ARRAY['newHire'::text, 'leaver'::text])))
+);
+
+ALTER TABLE public.hiring_pack_forms_layout OWNER TO postgres;
+
+--
+-- Name: TABLE hiring_pack_forms_layout; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.hiring_pack_forms_layout IS 'The HR Forms Control tab: the papers the new-hire and leaver packages walk through, in order, one row per package. No row = the compiled order in src/lib/hiring-pack/hr-forms-wizard.ts. Another paper = every paper on neither list. Written by the Super Admin only (app/api/hiring-pack/forms-layout).';
+
+--
+-- Name: COLUMN hiring_pack_forms_layout.steps; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.hiring_pack_forms_layout.steps IS 'Paper keys in walking order; exitForm stands for the two exit forms as one step. Cleaned by cleanPackageSteps on every read and write — an unknown key is dropped, never trusted.';
+
+--
 -- Name: hiring_pack_paper_register_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
@@ -78648,6 +78674,13 @@ ALTER TABLE ONLY public.hiring_pack_document_field_history
 
 ALTER TABLE ONLY public.hiring_pack_document_fields
     ADD CONSTRAINT hiring_pack_document_fields_pkey PRIMARY KEY (id);
+
+--
+-- Name: hiring_pack_forms_layout hiring_pack_forms_layout_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.hiring_pack_forms_layout
+    ADD CONSTRAINT hiring_pack_forms_layout_pkey PRIMARY KEY (package_key);
 
 --
 -- Name: hiring_pack_paper_register hiring_pack_paper_register_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
@@ -98160,6 +98193,12 @@ ALTER TABLE public.hiring_pack_document_field_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.hiring_pack_document_fields ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: hiring_pack_forms_layout; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.hiring_pack_forms_layout ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: hiring_pack_paper_register; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
@@ -109625,6 +109664,12 @@ GRANT SELECT,INSERT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.hiring_pack_docu
 --
 
 GRANT ALL ON TABLE public.hiring_pack_document_fields TO service_role;
+
+--
+-- Name: TABLE hiring_pack_forms_layout; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.hiring_pack_forms_layout TO service_role;
 
 --
 -- Name: SEQUENCE hiring_pack_paper_register_seq; Type: ACL; Schema: public; Owner: postgres

@@ -252,7 +252,7 @@ function testHrFormsReadsAsALedger() {
   // HR Forms is the report's wizard (owner, 2026-11-27): one step per paper, ticked once printed.
   assert.ok(forms.includes("<FormWizard"), "the papers are walked through one step at a time");
   assert.ok(forms.includes("isStepDone={isStepDone}"), "the rail ticks a paper once it is printed or signed");
-  assert.ok(forms.includes("hrFormsPaperSteps(path, paperScope)"), "a paper outside the seat's scope is not a step at all");
+  assert.ok(forms.includes("hrFormsPaperSteps(path, paperScope, storedLayout.layout)"), "a paper outside the seat's scope is not a step at all");
 }
 
 function testTheMessageToAJoiner() {
