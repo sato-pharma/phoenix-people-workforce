@@ -1,6 +1,6 @@
 "use client";
 
-import { Save } from "lucide-react";
+import { Download, Save } from "lucide-react";
 import * as React from "react";
 
 import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-system";
@@ -141,6 +141,12 @@ function MonthlySplitPanel({ split }: { split: MonthlySplit }) {
   const { rows, totals, unpriced } = split;
   return (
     <AdminTableShell
+      action={
+        <a className={cn(fileLinkClassName, "gap-2")} download href="/api/medical-insurance/cost/export">
+          <Download className="h-4 w-4" />
+          Export
+        </a>
+      }
       description={`Each month the company carries 70% of the employee's own cover and the employee 30%, never less than EGP ${EMPLOYEE_MINIMUM_OWN_SHARE_MONTHLY} (the company carries the rest). A spouse or child is the employee's in full, and EGP ${LIFE_INSURANCE_PER_PERSON_MONTHLY} of life insurance is added on the employee's share for every person covered. Only you see this.`}
       title="Who pays each month"
     >
