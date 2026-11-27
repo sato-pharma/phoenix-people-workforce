@@ -86,11 +86,17 @@ function testTheModuleChargeIsTheEmployeesShareOfTheMonth() {
     member({ coverageEnd: "2026-11-30", hrId: "T-4", id: "e-4", name: "Left In November" }),
     member({ coverageEnd: "2026-12-10", hrId: "T-5", id: "e-5", name: "Leaves In December" }),
     member({ birthDate: "2010-01-01", hrId: null, id: "c-9", memberType: "child", name: "Stray Child", principalMemberId: "gone" }),
+    member({ coverageEnd: "2026-12-01", coverageStart: "2026-12-01", hrId: "T-6", id: "e-6", name: "Voided From Its First Day" }),
   ];
   const charges = payrollChargesForWindow({ from: "2026-12-01", members, rateCard: CARD, to: "2026-12-31" });
   const byHr = new Map(charges.map((charge) => [charge.hrId, charge]));
 
   assert.deepEqual([...byHr.keys()].sort(), ["T-1", "T-2", "T-5"], "covered on some day of December: not a later joiner, not a November leaver, never a stray relative");
+  assert.ok(!byHr.has("T-6"), "cover voided from its first day (owner, 2026-11-27: EGP 205 charged to a leaver voided from 1 December) is in no month");
+  assert.ok(
+    !buildMonthlySplit({ asOf: "2026-12-01", members, rateCard: CARD }).rows.some((row) => row.hrId === "T-6"),
+    "and the Cost tab does not list it either, so the tab and the payslip still agree",
+  );
 
   const split = buildMonthlySplit({ asOf: "2026-12-01", members: members.filter((m) => ["e-1", "s-1", "e-2", "e-5"].includes(m.id)), rateCard: CARD });
   for (const row of split.rows) {

@@ -120,13 +120,23 @@ export function splitOwnCover(monthlyPiastres: number): { company: number; emplo
 }
 
 /**
+ * Cover that ends on its own first day was never in force: it is how a removal "voided from its first day"
+ * is recorded (the register refuses an end before the start), for someone who was not an employee on the
+ * policy dates. It costs nothing and charges nothing, in every month (owner, 2026-11-27: a leaver voided
+ * from 1 December was still charged EGP 205 for December).
+ */
+export function wasNeverInForce(member: Pick<MonthlySplitMember, "coverageEnd" | "coverageStart">): boolean {
+  return member.coverageEnd !== null && member.coverageEnd <= member.coverageStart;
+}
+
+/**
  * The monthly split for everyone whose cover has not ended by `asOf` (cover that starts later is counted and
  * shows its start day). One row per employee with their family under them; a family member whose employee is
  * not on the register stands as a row of their own and is the employee's in full.
  */
 export function buildMonthlySplit(input: { asOf: string; members: readonly MonthlySplitMember[]; rateCard: MedicalInsuranceRateCard }): MonthlySplit {
   const { asOf, members, rateCard } = input;
-  const open = members.filter((member) => member.coverageEnd === null || member.coverageEnd >= asOf);
+  const open = members.filter((member) => !wasNeverInForce(member) && (member.coverageEnd === null || member.coverageEnd >= asOf));
 
   const person = (member: MonthlySplitMember): { piastres: number | null; view: MonthlySplitPerson } => {
     const rate = annualRate(rateCard, { birthDate: member.birthDate, category: member.category, coverageStart: member.coverageStart });
@@ -220,7 +230,7 @@ export type PayrollMedicalInsuranceCharge = {
  * What each employee pays for a payroll month, from the same split the Cost tab and the Medical Cover Statement
  * show (owner, 2026-11-24: "in december implement everyone med ins deductions from medical insurance module").
  * A person is in the month when their cover touches any day of `from`..`to`, and is charged the whole month, the
- * way the Employee Master's flat figure was. Only an employee with an HR id can be charged: a relative is charged
+ * way the Employee Master's flat figure was. Cover voided from its first day is in no month (`wasNeverInForce`). Only an employee with an HR id can be charged: a relative is charged
  * on the employee's row, and a relative whose employee is no longer on the register is charged to nobody.
  */
 export function payrollChargesForWindow(input: {
@@ -230,7 +240,9 @@ export function payrollChargesForWindow(input: {
   rateCard: MedicalInsuranceRateCard;
 }): PayrollMedicalInsuranceCharge[] {
   const { from, to } = input;
-  const inMonth = input.members.filter((member) => member.coverageStart <= to && (member.coverageEnd === null || member.coverageEnd >= from));
+  const inMonth = input.members.filter(
+    (member) => !wasNeverInForce(member) && member.coverageStart <= to && (member.coverageEnd === null || member.coverageEnd >= from),
+  );
   const split = buildMonthlySplit({ asOf: from, members: inMonth, rateCard: input.rateCard });
   return split.rows
     .filter((row): row is MonthlySplitRow & { employee: MonthlySplitPerson; hrId: string } => row.employee !== null && Boolean(row.hrId))
