@@ -382,7 +382,7 @@ async function additionReadiness(actions: readonly MedicalInsuranceAction[], emp
       birthDate: dayOnly(record?.birthDate),
       cardName,
       gender: record?.gender ?? null,
-      hasPhoto: photos.has(normalizeHrId(hrId)),
+      hasPhoto: photos.has(normalizeHrId(hrId) ?? hrId),
       mobileNumber: record?.mobileNumber ?? null,
       nationalId: record?.nationalId ?? null,
     });

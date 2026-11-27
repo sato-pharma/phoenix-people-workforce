@@ -16,7 +16,6 @@ import { attachHiringDocumentFiles } from "@/lib/hiring-documents/service";
 import { joiningFormMailboxAddress } from "@/lib/new-hire-mailbox/address";
 import { openAndAnnounceNewHireMailboxes } from "@/lib/new-hire-mailbox/notify";
 import { logError, logInfo } from "@/lib/observability/log";
-import { afterResponse } from "@/lib/http/after-response";
 import { readAndSaveIdCardName } from "@/lib/employees/id-card-name";
 import { readOfferAcceptToken } from "@/lib/offers/accept-token";
 import { announceJoiningFormBlocked } from "@/lib/offers/accepted-offer-alert";
