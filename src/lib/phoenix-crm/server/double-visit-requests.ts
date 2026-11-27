@@ -620,3 +620,30 @@ export async function loadDoubleVisitReport(viewer: PhoenixCrmViewer, raw: { tes
   }
   return { isTest, audience, toAnswer, others, totals };
 }
+
+/**
+ * The owner's "Double-visit request (up to 3 days)" shortcut (27 Nov 2026): REAL requests raised in the
+ * report's own window (`REPORT_DAYS`) on which at least one person asked has not answered yet — requests,
+ * not people, so a request asked of two managers counts once. Two light reads, never the report. Throws
+ * on a failed read so the badge says "unavailable".
+ */
+export async function countDoubleVisitRequestsWaiting(cairoToday: string): Promise<number> {
+  const since = addDaysIso(cairoToday, -REPORT_DAYS);
+  const people = await fetchAllRowsKeyset<Row>(
+    () => getSupabaseAdmin().from("phoenix_crm_double_visit_request_people").select("id, request_id").eq("status", "waiting").eq("is_test", false),
+    { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+  );
+  const requestIds = [...new Set(people.map((row) => String(row.request_id)))];
+  let waiting = 0;
+  for (const part of chunk(requestIds, 100)) {
+    const { count, error } = await getSupabaseAdmin()
+      .from("phoenix_crm_double_visit_requests")
+      .select("id", { count: "exact", head: true })
+      .in("id", part)
+      .eq("is_test", false)
+      .gte("created_at", `${since}T00:00:00Z`);
+    throwIfError(error);
+    waiting += count ?? 0;
+  }
+  return waiting;
+}

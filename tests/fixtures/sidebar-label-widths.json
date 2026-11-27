@@ -255,7 +255,11 @@
     "WhatsApp Replies": 105,
     "WhatsApp Templates": 123,
     "Workflow Control": 103,
-    "Receipt Books": 82
+    "Receipt Books": 82,
+    "Add to List": 63,
+    "Double Visits": 76,
+    "Visit Asks": 55,
+    "Held Emails": 68
   },
   "portal": {
     "All Marketing Requests": 131,
@@ -697,7 +701,11 @@
       "WhatsApp Replies": 113,
       "WhatsApp Templates": 129,
       "Workflow Control": 107,
-      "Receipt Books": 89
+      "Receipt Books": 89,
+      "Add to List": 67,
+      "Double Visits": 81,
+      "Visit Asks": 61,
+      "Held Emails": 73
     },
     "portal": {
       "All Marketing Requests": 133,

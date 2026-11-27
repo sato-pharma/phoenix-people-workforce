@@ -435,6 +435,15 @@ export async function listVisibleContractRenewalWorkflows(access?: AccessContext
   });
 }
 
+/**
+ * How many contract renewals are open (requested, with a manager, or at HR review) for the employees this
+ * viewer may see — the list above, counted (the owner's "Contract renewal" sidebar shortcut, 27 Nov 2026).
+ * The caller asks it under the Contracts page's own gate; a failed read throws.
+ */
+export async function countOpenContractRenewals(access?: AccessContext): Promise<number> {
+  return (await listVisibleContractRenewalWorkflows(access)).length;
+}
+
 function validateCreateInput(
   employee: EmployeeDirectoryRow,
   currentContract: ContractDbRow | undefined,

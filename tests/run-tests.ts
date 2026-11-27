@@ -104,6 +104,7 @@ import { runNavHubPromotionTests } from "./nav-hub-promotion.test.ts";
 import { runSidebarDomainsTests } from "./sidebar-domains.test.ts";
 import { runSidebarLabelWidthTests } from "./sidebar-label-width.test.ts";
 import { runSidebarLabelSnapshotTests } from "./sidebar-label-snapshot.test.ts";
+import { runOwnerQueueShortcutsTests } from "./owner-queue-shortcuts.test.ts";
 import { runSidebarRowsReadUniquelyTests } from "./sidebar-rows-read-uniquely.test.ts";
 import { runAutomatedPayrollPageWidthTests } from "./automated-payroll-page-width.test.ts";
 import {
@@ -3658,6 +3659,7 @@ await runTest("automated payroll pages render full width", runAutomatedPayrollPa
 await runTest("sidebar width guard measures the font the app actually renders", runSidebarLabelFontSyncTests);
 await runTest("sidebar labels never clip (no ellipsis, no wrap)", runSidebarLabelWidthTests);
 await runTest("sidebar label snapshot has a measured width for every label in its own shell", runSidebarLabelSnapshotTests);
+await runTest("owner queue shortcuts: seven rows, live counts, an unreadable count is unavailable, never 0", runOwnerQueueShortcutsTests);
 await runTest("sidebar domain grouping loses no nav row for any role", runSidebarDomainsTests);
 await runTest(
   "no rail row opens a page of modules, and promoting the hubs neither widened nor narrowed any role's rail (the owner's 2026-09-05 rule, re-measured against the seeds every run rather than trusted from the one hand-count taken when it shipped)",

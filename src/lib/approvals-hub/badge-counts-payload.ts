@@ -15,6 +15,7 @@ import { countOpenDeductionsDisputes } from "@/lib/deductions/comments";
 import { assertDeductionsReadActor } from "@/lib/deductions/permissions";
 import { listPendingPrivateCalendarDataDisputes } from "@/lib/private-calendar/disputes";
 import { loadSuperAdminCrmQueueBadges } from "@/lib/phoenix-crm/server/needs-you";
+import { loadOwnerQueueBadges, ownerQueueSlots, unavailableOwnerQueueBadges } from "@/lib/approvals-hub/owner-queue-badges";
 import {
   getExcuseAwaitingBadge,
   getPlanAwaitingBadge,
@@ -118,8 +119,13 @@ export async function loadBadgeCounts(
       // The Super Admin's own Phoenix CRM queues (owner, 27 Nov 2026). Zeros for every other role, asked
       // before the Phoenix CRM viewer is built, so the rest of the company pays nothing for it.
       loadSuperAdminCrmQueueBadges(access),
+      // The owner's seven queue shortcuts (27 Nov 2026). Empty for every other role before any read; each
+      // slot is asked under its page's own gate and says "unavailable" on a failed read, never 0.
+      loadOwnerQueueBadges(access),
     ]);
-    const [plan, vacation, excuse, hub, directOrders, directOrdersUnbooked, directOrderValidations, marketing, marketAwareness, calendarDisputes, deductionDisputes, crmQueues] = settled;
+    const [plan, vacation, excuse, hub, directOrders, directOrdersUnbooked, directOrderValidations, marketing, marketAwareness, calendarDisputes, deductionDisputes, crmQueues, ownerQueuesSettled] = settled;
+    // loadOwnerQueueBadges settles each slot itself; a rejection here means the whole read broke.
+    const ownerQueues = ownerQueueSlots(ownerQueuesSettled.status === "fulfilled" ? ownerQueuesSettled.value : unavailableOwnerQueueBadges());
     return {
       // A refusal is the viewer's standing and reads the same every time; any other rejection, or a
       // domain reporting `available: false`, keeps this response out of the 20 s memory.
@@ -153,6 +159,7 @@ export async function loadBadgeCounts(
         cameraReviews: crmQueues.status === "fulfilled" ? crmQueues.value.cameraReviews : { count: 0 },
         lateVisits: crmQueues.status === "fulfilled" ? crmQueues.value.lateVisits : { count: 0 },
         recordedVisits: crmQueues.status === "fulfilled" ? crmQueues.value.recordedVisits : { count: 0 },
+        ...ownerQueues,
       },
     };
   });
@@ -189,5 +196,7 @@ export function emptyBadgeCounts() {
     cameraReviews: { count: 0 },
     lateVisits: { count: 0 },
     recordedVisits: { count: 0 },
+    // A failed poll cannot say how many wait in the owner's seven queues, so they say "unavailable".
+    ...ownerQueueSlots(unavailableOwnerQueueBadges()),
   };
 }

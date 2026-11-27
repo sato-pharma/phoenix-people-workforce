@@ -59,6 +59,7 @@ import {
   recordFarVisitRefusal,
   recordImpossibleTravelRefusal,
 } from "@/lib/phoenix-crm/server/refused-readings";
+import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
@@ -655,4 +656,29 @@ export async function loadFarVisitHolds(viewer: PhoenixCrmViewer): Promise<FarVi
     });
   }
   return out;
+}
+
+/**
+ * The page's own "Waiting" figure, without building the page (owner's sidebar shortcut "Visits held for
+ * SFE", 27 Nov 2026): every hold still `sfe_pending` whose visit saved and was not brought in from
+ * iReports360 — the same two filters `loadFarVisitHolds` applies, test and real together as the page
+ * counts them. Asked under the page's own gate. Throws on a failed read, never answers 0 for one.
+ */
+export async function countFarVisitHoldsWaiting(viewer: PhoenixCrmViewer): Promise<number> {
+  if (!canDecideFarVisitHolds(viewer)) throw forbiddenError("Only the SFE Manager or the Super Admin reads the held visits.");
+  const supabase = getSupabaseAdmin();
+  // Paged: a read that grows with the field lies at 1,000 rows (Phoenix CRM rule).
+  const holds = await fetchAllRowsKeyset<Row>(
+    () => supabase.from("phoenix_crm_far_visit_holds").select("visit_id").eq("status", "sfe_pending"),
+    { cursorColumn: "visit_id", cursorOf: (row) => String(row.visit_id) },
+  );
+  const visitIds = [...new Set(holds.map((row) => String(row.visit_id)))];
+  let saved = 0;
+  for (let start = 0; start < visitIds.length; start += 200) {
+    const part = visitIds.slice(start, start + 200);
+    const visits = await supabase.from("phoenix_crm_visits").select("id", { count: "exact", head: true }).in("id", part).is("imported_from_ireports360_at", null);
+    throwIfError(visits.error);
+    saved += visits.count ?? 0;
+  }
+  return saved;
 }

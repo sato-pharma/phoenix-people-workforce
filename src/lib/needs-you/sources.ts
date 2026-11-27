@@ -83,7 +83,8 @@ import { countDirectOrderPendingValidations } from "@/lib/direct-orders/pharmacy
 import { countDirectOrderAwaitingFast, getDirectOrderUnbookedBadge } from "@/lib/direct-orders/service";
 import { getMarketAwarenessDecisionBadge } from "@/lib/market-awareness/service";
 import { getMarketingApproverBadge } from "@/lib/marketing-requests/service";
-import { getProbationRows, isProbationDecisionOutstanding } from "@/lib/probation/service";
+import { probationDecisionsDue } from "@/lib/probation/decisions-due";
+import { getProbationRows } from "@/lib/probation/service";
 import { getResignationsDashboardData } from "@/lib/resignations/service";
 import { listUnpublishedClosings } from "@/lib/sales/monthly-closing-publication";
 import { ACTION_HUB_MODULE_LABELS, type ActionHubItem } from "@/components/action-center/types";
@@ -717,13 +718,8 @@ const contractRenewals: NeedsYouAdapter = {
 const probationDecisions: NeedsYouAdapter = {
   id: "probation-decisions",
   load: async (access) => {
-    const rows = await getProbationRows(access);
-    const outstanding = rows.filter(
-      (row) =>
-        isActiveLifecycleStatus(row.employment_status) &&
-        isProbationDecisionOutstanding(row) &&
-        row.days_remaining <= lifecycleRiskWindows.probationCriticalDays,
-    );
+    // The filter lives in probation/decisions-due.ts so the "Probation" sidebar shortcut counts the same rows.
+    const outstanding = probationDecisionsDue(await getProbationRows(access));
     if (outstanding.length === 0) return EMPTY;
     const past = outstanding.filter((row) => row.days_remaining < 0);
     return ok([

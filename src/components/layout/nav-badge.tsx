@@ -52,14 +52,20 @@ export function NavBadge({
 }): ReactNode {
   const [count, setCount] = useState<number | null>(null);
   const [overdue, setOverdue] = useState(false);
+  const [unavailable, setUnavailable] = useState(false);
   useEffect(
     () =>
-      subscribeNavBadge(src, (nextCount, nextOverdue) => {
+      subscribeNavBadge(src, (nextCount, nextOverdue, nextUnavailable) => {
         setCount(nextCount);
         setOverdue(nextOverdue);
+        setUnavailable(nextUnavailable);
       }),
     [src],
   );
+  // A count the server could NOT read is said so, never drawn as an empty queue (owner, 27 Nov 2026: "a count
+  // that cannot be read must show as unavailable, never as 0"). Only a slot whose server answer carries
+  // `unavailable: true` reaches this; a refusal (the viewer may not see that queue) still draws nothing.
+  if (unavailable) return <UnavailableNavBadge compact={compact} dark={dark} />;
   if (!count) return null;
   // Graduated urgency, in three dimensions rather than one. THE MOTION IS DELIBERATE AND STAYS
   // (owner, 2026-09-04): the pump is what makes a pending item catch the eye from across the
@@ -152,6 +158,36 @@ export function NavBadge({
   );
 }
 
+/** The quiet mark for a count that could not be read: a dash, square, still, and named for a screen reader. */
+export function UnavailableNavBadge({ compact, dark }: { compact: boolean; dark: boolean }): ReactNode {
+  const label = "Count unavailable — the number could not be read";
+  if (compact) {
+    return (
+      <span
+        aria-label={label}
+        className={cn("absolute -right-0.5 -top-0.5 h-2.5 w-2.5 ring-2", dark ? "bg-slate-500 ring-slate-900" : "bg-slate-400 ring-white")}
+        data-nav-badge-unavailable=""
+        role="status"
+        title={label}
+      />
+    );
+  }
+  return (
+    <span
+      aria-label={label}
+      className={cn(
+        "ml-auto min-w-[18px] px-1 py-0.5 text-center text-phx-2xs font-black leading-none",
+        dark ? "text-slate-400 ring-1 ring-white/20" : "text-slate-500 ring-1 ring-slate-300",
+      )}
+      data-nav-badge-unavailable=""
+      role="status"
+      title={label}
+    >
+      –
+    </span>
+  );
+}
+
 /**
  * The ONE map from a nav item's `navBadge` key to the endpoint that counts it. Every surface — the sidebar's
  * label row, its icon rail, the horizontal rows and a collapsed heading's total — reads its src from here,
@@ -206,6 +242,21 @@ export function navBadgeSrc(navBadge: NavigationSectionItem["navBadge"]): string
       return "/api/approvals/crm-queues/pending-count?queue=late-visits";
     case "recorded-visits-pending":
       return "/api/approvals/crm-queues/pending-count?queue=recorded-visits";
+    // The owner's seven queue shortcuts (27 Nov 2026), one batched slot each.
+    case "owner-list-adds":
+      return "/api/approvals/owner-queues/pending-count?queue=list-adds";
+    case "owner-far-visit-holds":
+      return "/api/approvals/owner-queues/pending-count?queue=far-visit-holds";
+    case "owner-double-visit-requests":
+      return "/api/approvals/owner-queues/pending-count?queue=double-visit-requests";
+    case "owner-visit-asks":
+      return "/api/approvals/owner-queues/pending-count?queue=visit-asks";
+    case "owner-probation":
+      return "/api/approvals/owner-queues/pending-count?queue=probation";
+    case "owner-contract-renewals":
+      return "/api/approvals/owner-queues/pending-count?queue=contract-renewals";
+    case "owner-held-emails":
+      return "/api/approvals/owner-queues/pending-count?queue=held-emails";
     default:
       return null;
   }

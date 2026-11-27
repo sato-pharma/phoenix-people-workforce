@@ -409,7 +409,7 @@ function NavRow({
       <Link
         aria-current={active ? "page" : undefined}
         aria-label={rail ? (locked ? `${item.label} — locked` : item.label) : undefined}
-        title={locked ? `${item.label} — locked temporarily by the system administrator` : undefined}
+        title={locked ? `${item.label} — locked temporarily by the system administrator` : item.fullLabel}
         className={cn(
           "relative flex w-full items-center text-phx-md font-semibold transition-colors duration-150",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/60 focus-visible:ring-offset-2",
