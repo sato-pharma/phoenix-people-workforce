@@ -119,7 +119,7 @@ the browser on another machine.
   until Finance records the hand-over.** So Ahmed's first action is "Hand to <name>" on the day each book changes
   hands.
 - **Finance's desk:** Direct Orders → Receipt Books, at `/admin/direct-orders/receipts`. It shows only for Ahmed
-  El Maraghy and the Super Admin. It has five parts:
+  El Maraghy and the Super Admin. It has six parts:
   - "Approved with no receipt": red after 7 days (14 until 27 Nov).
   - "Approved with no receipt book" (PR 829, owner 27 Nov: "Flag them"): from the first hand-out on, every
     approved order raised by someone who held no book that day. Nothing before the first hand-out is listed.
@@ -130,6 +130,9 @@ the browser on another machine.
     - "Record lost": cancels the book's unused receipts, in one database call. Works on a spare still in store too
       (the first version's database check refused that).
     - A red line under the counts: how many approved orders still owe a receipt from that book.
+  - "Without a receipt — N waiting for the CEO, N approved" (PR 840): every order Finance asked to stand
+    without a receipt, with its reason. Finance asks from the order's own page ("Ask the CEO to approve it
+    without a receipt"); only the CEO decides.
   - "Cancel a spoiled receipt": a used receipt can never be cancelled.
   - "Receipts entered and cancelled".
 - **The receipt panel ("DELIVERY RECEIPT")** sits under the order detail, on both order pages.
@@ -181,10 +184,14 @@ the browser on another machine.
 - **The area managers' guide:**
   1. Know your receipt, with the sample.
   2. On paper.
-  3. On Phoenix within 14 days. This section has the panel DRAWING, captioned as a drawing. 🔴 Since 27 Nov
-     the rule is 7 days and a late receipt blocks the manager's next order: update this guide too.
-  4. Rules.
-  5. Refusal messages.
+  3. On Phoenix within 7 days. This section has the panel DRAWING, captioned as a drawing. Its note says a
+     late receipt stops the manager's new orders and the final approval of his waiting ones.
+  4. Rules, with the 27 Nov rules: a late receipt blocks; nothing paid on the same product, no second order;
+     part-paid or a late payer, only Dr Anwar finishes it; an order without a receipt only with his approval.
+  5. Refusal messages, with the two new ones ("… no new order can be raised until then", "This pharmacy has
+     not paid anything on its earlier order of …").
+- The guides were rebuilt for these rules on 27 Nov ~16:20, after PR 840 shipped. The 14-day versions are in
+  the Guides folder's `_old versions - not for use.zip`.
 - Screenshots come from the spare's live page, signed in as Super Admin role-only, in the browser pane.
 - **Swap the drawing for a real screenshot once the first book is handed out.**
 
