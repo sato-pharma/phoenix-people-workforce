@@ -2707,6 +2707,21 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // search_path public; executable by service_role, not by anon or authenticated. Re-applying is a no-op
   // (`create or replace`, same grants).
   "20261126003900_phoenix_crm_seat_waiting_customers_in_venue.sql",
+  // The receipt-book guards (owner, 27 Nov 2026: "Fix all in PR 829", "make an undo option"). The Supabase tool
+  // declined it twice on staging (it reads the replaced books check as destructive); on the owner's choice, 27 Nov
+  // ~13:00 Cairo ("Use the SQL-file script"), applied through scripts/apply-sql-file.mjs, staging then production,
+  // which writes NO ledger row. Read back on cifwmndunmlxjhyjugxa and on ozucdzovmcqvepbozvqf (project name
+  // Phoenix HR) straight after, md5(prosrc) equal to the file's own body (LF) on both:
+  // direct_order_release_receipt c5db5926ac65c569cd375b3d9e16f092, direct_order_close_receipt_book
+  // be5c5fe115546050cc80798664753155, direct_order_receipts_guard 319b4aa0e8a8eef8be7c9be19e793c22,
+  // direct_order_receipt_books_guard 953abd607ff7e76c752b876ed74dfd76, direct_order_receipt_releases_append_only
+  // 3ef4c6335f6f0f24fd65e3b6df1f9b71; all security invoker, executable by postgres and service_role only; the three
+  // triggers in place; direct_order_receipt_releases has row-level security, grants to postgres and service_role
+  // only. A rolled-back rehearsal on staging passed 23 of 23 guard checks; rows unchanged on both (16 books in
+  // store, 800 receipts unused, 0 releases). After the apply, one `drop policy if exists` line was added before
+  // `create policy` so a second run is a no-op too (`create or replace`, `if not exists`, `drop ... if exists`); the
+  // function bodies, and so the digests above, are unchanged.
+  "20261127121951_direct_order_receipt_guards.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

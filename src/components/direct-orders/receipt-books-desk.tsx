@@ -53,8 +53,9 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
 
 /**
  * Finance's Receipt Books desk (owner, 26 Nov 2026: "Finance", "14 days").
- * Approved orders still owing a receipt, the sixteen books and who holds each, the spoiled-page
- * cancel, and the receipts entered. Every action is checked again on the server.
+ * Approved orders still owing a receipt, orders raised by someone holding no book (owner, 27 Nov
+ * 2026: "Flag them"), the sixteen books and who holds each, the spoiled-page cancel, and the receipts
+ * entered. Every action is checked again on the server.
  */
 export function ReceiptBooksDesk({ register }: { register: DirectOrderReceiptRegister }) {
   const router = useRouter();
@@ -117,6 +118,38 @@ export function ReceiptBooksDesk({ register }: { register: DirectOrderReceiptReg
         )}
       </Panel>
 
+      <Panel title={`Approved with no receipt book — ${register.noBook.length}`}>
+        {register.noBook.length === 0 ? (
+          <p className="text-phx-sm text-slate-600">
+            Every order approved since the first book was handed out was raised by a manager holding a book.
+          </p>
+        ) : (
+          <>
+            <p className="mb-2 text-phx-sm text-slate-600">
+              Raised by someone who held no receipt book on the day it was approved, so no signed page stands behind it. A book handed to them later can still prove it.
+            </p>
+            <ul className="divide-y divide-slate-200">
+              {register.noBook.map((order) => (
+                <li className="grid grid-cols-1 gap-1 py-2 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)] sm:gap-3" key={order.requestId}>
+                  <div className="min-w-0">
+                    <Link className="break-words text-phx-sm font-bold text-slate-900 underline-offset-2 hover:underline" href={`/admin/direct-orders/${order.requestId}?from=/admin/direct-orders/receipts`}>
+                      {order.pharmacyName}
+                    </Link>
+                    <p className="break-words text-phx-xs text-slate-500">
+                      {order.productName} · {money(order.salesValue)}
+                    </p>
+                  </div>
+                  <p className="break-words text-phx-sm text-slate-700">{order.requesterName}</p>
+                  <p className="text-phx-sm font-bold text-rose-700">
+                    Approved {cairoDate(order.decidedAt)} · {order.days} day{order.days === 1 ? "" : "s"}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </Panel>
+
       <Panel title="The receipt books">
         <ul className="divide-y divide-slate-200">
           {register.books.map((book) => {
@@ -137,9 +170,16 @@ export function ReceiptBooksDesk({ register }: { register: DirectOrderReceiptReg
                     {book.closedAt ? ` · ${book.status === "lost" ? "lost" : "returned"} ${cairoDate(book.closedAt)}` : ""}
                   </p>
                 </div>
-                <p className="text-phx-sm tabular-nums text-slate-700">
-                  {book.used} used · {book.voided} cancelled · {book.unused} unused
-                </p>
+                <div>
+                  <p className="text-phx-sm tabular-nums text-slate-700">
+                    {book.used} used · {book.voided} cancelled · {book.unused} unused
+                  </p>
+                  {book.owing > 0 ? (
+                    <p className="text-phx-xs font-bold text-rose-700">
+                      {book.owing} approved order{book.owing === 1 ? "" : "s"} still {book.owing === 1 ? "owes" : "owe"} a receipt from it
+                    </p>
+                  ) : null}
+                </div>
                 <div className="flex flex-wrap items-start gap-2">
                   {book.status === "in_store" && book.printedHolderHrId ? (
                     <button className={phxButtonGhostClassName} disabled={busy !== null} onClick={() => void act(key, { action: "issue", bookNo: book.bookNo, holderHrId: book.printedHolderHrId })} type="button">

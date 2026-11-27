@@ -6351,6 +6351,176 @@ ALTER FUNCTION public.deductions_publication_lines_guard_day_overlap() OWNER TO 
 COMMENT ON FUNCTION public.deductions_publication_lines_guard_day_overlap() IS 'Structural double-deduction guard: within one publication, an employee-day may be paid at most once across ALL categories. Fingerprint/CRM/No-Records-Activity can each flag the same absence day independently; without this the employee is deducted once per pipeline. Manual HR entries (source_system manual_hr) are exempt both ways — their date is a month placeholder, not a day (mirrors findDayCollisions).';
 
 --
+-- Name: direct_order_close_receipt_book(integer, text, text, text, text); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.direct_order_close_receipt_book(p_book_no integer, p_kind text, p_expected_status text, p_actor_hr_id text, p_note text) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_now timestamptz := now();
+  v_closed integer := 0;
+  v_voided integer := 0;
+begin
+  if coalesce(p_kind, '') not in ('returned', 'lost') then
+    raise exception 'A book is closed as returned or lost.' using errcode = '22023';
+  end if;
+  if (p_kind = 'returned' and coalesce(p_expected_status, '') <> 'issued')
+     or (p_kind = 'lost' and coalesce(p_expected_status, '') not in ('issued', 'in_store')) then
+    return jsonb_build_object('closed', false);
+  end if;
+  update public.direct_order_receipt_books b
+     set status = p_kind, closed_at = v_now, closed_by_hr_id = p_actor_hr_id, note = p_note, updated_at = v_now
+   where b.book_no = p_book_no and b.status = p_expected_status;
+  get diagnostics v_closed = row_count;
+  if v_closed = 0 then
+    return jsonb_build_object('closed', false);
+  end if;
+  if p_kind = 'lost' then
+    update public.direct_order_receipts r
+       set state = 'voided', voided_reason = 'Book ' || p_book_no || ' reported lost', voided_by_hr_id = p_actor_hr_id,
+           voided_at = v_now, updated_at = v_now
+     where r.book_no = p_book_no and r.state = 'unused';
+    get diagnostics v_voided = row_count;
+  end if;
+  return jsonb_build_object('closed', true, 'closed_at', v_now, 'voided', v_voided);
+end;
+$$;
+
+ALTER FUNCTION public.direct_order_close_receipt_book(p_book_no integer, p_kind text, p_expected_status text, p_actor_hr_id text, p_note text) OWNER TO postgres;
+
+--
+-- Name: direct_order_receipt_books_guard(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.direct_order_receipt_books_guard() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+begin
+  if tg_op = 'DELETE' then
+    raise exception 'A receipt book is never deleted.' using errcode = 'P0001';
+  end if;
+  if new.book_no is distinct from old.book_no or new.first_serial is distinct from old.first_serial or new.last_serial is distinct from old.last_serial then
+    raise exception 'A printed book''s number and serial range never change.' using errcode = 'P0001';
+  end if;
+  if new.status is distinct from old.status and not (
+    (old.status = 'in_store' and new.status in ('issued', 'lost'))
+    or (old.status = 'issued' and new.status in ('returned', 'lost'))
+  ) then
+    raise exception 'Receipt book % cannot go from % to %.', old.book_no, old.status, new.status using errcode = 'P0001';
+  end if;
+  if old.status <> 'in_store' and (new.holder_hr_id is distinct from old.holder_hr_id or new.issued_at is distinct from old.issued_at) then
+    raise exception 'Receipt book % has left the store: its holder and issue date never change.', old.book_no using errcode = 'P0001';
+  end if;
+  return new;
+end;
+$$;
+
+ALTER FUNCTION public.direct_order_receipt_books_guard() OWNER TO postgres;
+
+--
+-- Name: direct_order_receipt_releases_append_only(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.direct_order_receipt_releases_append_only() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+begin
+  raise exception 'A receipt release is a record: it is never changed or deleted.' using errcode = 'P0001';
+end;
+$$;
+
+ALTER FUNCTION public.direct_order_receipt_releases_append_only() OWNER TO postgres;
+
+--
+-- Name: direct_order_receipts_guard(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.direct_order_receipts_guard() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_book_status text;
+begin
+  if tg_op = 'DELETE' then
+    raise exception 'A printed receipt is never deleted.' using errcode = 'P0001';
+  end if;
+  if new.serial is distinct from old.serial or new.book_no is distinct from old.book_no or new.check_code is distinct from old.check_code then
+    raise exception 'A printed receipt''s serial, book and code never change.' using errcode = 'P0001';
+  end if;
+  if old.state = 'voided' and new.state is distinct from 'voided' then
+    raise exception 'A cancelled receipt stays cancelled.' using errcode = 'P0001';
+  end if;
+  if old.state = 'used' and (new.state is distinct from 'used' or new.request_id is distinct from old.request_id) then
+    if coalesce(current_setting('phoenix.receipt_release', true), '') is distinct from old.serial::text then
+      raise exception 'A used receipt is released from its order only through direct_order_release_receipt.' using errcode = 'P0001';
+    end if;
+  end if;
+  if old.state = 'unused' and new.state = 'used' then
+    -- FOR SHARE waits for a book being returned or recorded lost at this moment, then reads its new state.
+    select status into v_book_status from public.direct_order_receipt_books where book_no = new.book_no for share;
+    if v_book_status is distinct from 'issued' and v_book_status is distinct from 'returned' then
+      raise exception 'Receipt book % is %, so none of its receipts can be used.', new.book_no, coalesce(v_book_status, 'missing')
+        using errcode = 'P0001';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+ALTER FUNCTION public.direct_order_receipts_guard() OWNER TO postgres;
+
+--
+-- Name: direct_order_release_receipt(integer, uuid, text, text); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.direct_order_release_receipt(p_serial integer, p_request_id uuid, p_actor_hr_id text, p_reason text) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_receipt public.direct_order_receipts%rowtype;
+begin
+  if length(btrim(coalesce(p_reason, ''))) < 3 then
+    raise exception 'Write why the receipt is released.' using errcode = '22023';
+  end if;
+  if length(btrim(coalesce(p_actor_hr_id, ''))) = 0 then
+    raise exception 'A release names who made it.' using errcode = '22023';
+  end if;
+  select * into v_receipt from public.direct_order_receipts r where r.serial = p_serial for update;
+  if not found or v_receipt.state <> 'used' or v_receipt.request_id is distinct from p_request_id then
+    return jsonb_build_object('released', false);
+  end if;
+  insert into public.direct_order_receipt_releases (
+    serial, book_no, request_id, photo_storage_path, photo_content_type, used_by_hr_id, used_at, released_by_hr_id, reason
+  ) values (
+    v_receipt.serial, v_receipt.book_no, v_receipt.request_id, v_receipt.photo_storage_path, v_receipt.photo_content_type,
+    v_receipt.used_by_hr_id, v_receipt.used_at, btrim(p_actor_hr_id), btrim(p_reason)
+  );
+  perform set_config('phoenix.receipt_release', p_serial::text, true);
+  update public.direct_order_receipts r
+     set state = 'unused', request_id = null, photo_storage_path = null, photo_content_type = null,
+         used_by_hr_id = null, used_at = null, updated_at = now()
+   where r.serial = p_serial;
+  perform set_config('phoenix.receipt_release', '', true);
+  return jsonb_build_object(
+    'released', true,
+    'serial', v_receipt.serial,
+    'book_no', v_receipt.book_no,
+    'photo_storage_path', v_receipt.photo_storage_path,
+    'used_by_hr_id', v_receipt.used_by_hr_id,
+    'used_at', v_receipt.used_at
+  );
+end;
+$$;
+
+ALTER FUNCTION public.direct_order_release_receipt(p_serial integer, p_request_id uuid, p_actor_hr_id text, p_reason text) OWNER TO postgres;
+
+--
 -- Name: early_birds_candidates_guard_frozen(); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -60696,7 +60866,7 @@ CREATE TABLE public.direct_order_receipt_books (
     CONSTRAINT direct_order_receipt_books_book_no_check CHECK ((book_no > 0)),
     CONSTRAINT direct_order_receipt_books_closed CHECK (((status <> ALL (ARRAY['returned'::text, 'lost'::text])) OR (closed_at IS NOT NULL))),
     CONSTRAINT direct_order_receipt_books_first_serial_check CHECK ((first_serial > 0)),
-    CONSTRAINT direct_order_receipt_books_issued CHECK (((status = 'in_store'::text) OR ((holder_hr_id IS NOT NULL) AND (issued_at IS NOT NULL)))),
+    CONSTRAINT direct_order_receipt_books_issued CHECK (((status = 'in_store'::text) OR ((holder_hr_id IS NOT NULL) AND (issued_at IS NOT NULL)) OR ((status = 'lost'::text) AND (holder_hr_id IS NULL) AND (issued_at IS NULL)))),
     CONSTRAINT direct_order_receipt_books_range CHECK ((last_serial >= first_serial)),
     CONSTRAINT direct_order_receipt_books_status_check CHECK ((status = ANY (ARRAY['in_store'::text, 'issued'::text, 'returned'::text, 'lost'::text])))
 );
@@ -60708,6 +60878,46 @@ ALTER TABLE public.direct_order_receipt_books OWNER TO postgres;
 --
 
 COMMENT ON TABLE public.direct_order_receipt_books IS 'Printed direct-order delivery-receipt books held as custody by District Managers (owner, 26 Nov 2026). Finance issues, returns and reports them lost. Service role only. See src/lib/direct-orders/receipt-books.ts.';
+
+--
+-- Name: direct_order_receipt_releases; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.direct_order_receipt_releases (
+    id bigint NOT NULL,
+    serial integer NOT NULL,
+    book_no smallint NOT NULL,
+    request_id uuid NOT NULL,
+    photo_storage_path text,
+    photo_content_type text,
+    used_by_hr_id text,
+    used_at timestamp with time zone,
+    released_by_hr_id text NOT NULL,
+    released_at timestamp with time zone DEFAULT now() NOT NULL,
+    reason text NOT NULL,
+    CONSTRAINT direct_order_receipt_releases_reason_check CHECK ((length(btrim(reason)) >= 3))
+);
+
+ALTER TABLE public.direct_order_receipt_releases OWNER TO postgres;
+
+--
+-- Name: TABLE direct_order_receipt_releases; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.direct_order_receipt_releases IS 'Every delivery receipt released from the direct order it was entered on (owner, 27 Nov 2026: "make an undo option"): who, when, why, and the photo it carried. Append-only. Service role only. See src/lib/direct-orders/receipt-books.ts.';
+
+--
+-- Name: direct_order_receipt_releases_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.direct_order_receipt_releases ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.direct_order_receipt_releases_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
 
 --
 -- Name: direct_order_receipts; Type: TABLE; Schema: public; Owner: postgres
@@ -77700,6 +77910,13 @@ ALTER TABLE ONLY public.direct_order_receipt_books
     ADD CONSTRAINT direct_order_receipt_books_pkey PRIMARY KEY (book_no);
 
 --
+-- Name: direct_order_receipt_releases direct_order_receipt_releases_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.direct_order_receipt_releases
+    ADD CONSTRAINT direct_order_receipt_releases_pkey PRIMARY KEY (id);
+
+--
 -- Name: direct_order_receipts direct_order_receipts_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -83950,6 +84167,12 @@ CREATE INDEX direct_order_pharmacy_validations_request_idx ON public.direct_orde
 --
 
 CREATE INDEX direct_order_pharmacy_validations_status_idx ON public.direct_order_pharmacy_validations USING btree (status, requested_at DESC);
+
+--
+-- Name: direct_order_receipt_releases_request_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX direct_order_receipt_releases_request_idx ON public.direct_order_receipt_releases USING btree (request_id);
 
 --
 -- Name: direct_order_receipts_book_idx; Type: INDEX; Schema: public; Owner: postgres
@@ -90312,6 +90535,24 @@ CREATE TRIGGER deductions_decisions_touch_updated_at_trg BEFORE UPDATE ON public
 CREATE TRIGGER deductions_publication_lines_guard_day_overlap_trg BEFORE INSERT ON public.deductions_publication_lines FOR EACH ROW EXECUTE FUNCTION public.deductions_publication_lines_guard_day_overlap();
 
 --
+-- Name: direct_order_receipt_books direct_order_receipt_books_guard; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER direct_order_receipt_books_guard BEFORE DELETE OR UPDATE ON public.direct_order_receipt_books FOR EACH ROW EXECUTE FUNCTION public.direct_order_receipt_books_guard();
+
+--
+-- Name: direct_order_receipt_releases direct_order_receipt_releases_append_only; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER direct_order_receipt_releases_append_only BEFORE DELETE OR UPDATE ON public.direct_order_receipt_releases FOR EACH ROW EXECUTE FUNCTION public.direct_order_receipt_releases_append_only();
+
+--
+-- Name: direct_order_receipts direct_order_receipts_guard; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER direct_order_receipts_guard BEFORE DELETE OR UPDATE ON public.direct_order_receipts FOR EACH ROW EXECUTE FUNCTION public.direct_order_receipts_guard();
+
+--
 -- Name: direct_order_request_items direct_order_request_items_family_guard; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -92425,6 +92666,27 @@ ALTER TABLE ONLY public.direct_order_pharmacy_validations
 
 ALTER TABLE ONLY public.direct_order_pharmacy_validations
     ADD CONSTRAINT direct_order_pharmacy_validations_request_id_fkey FOREIGN KEY (request_id) REFERENCES public.direct_order_requests(id) ON DELETE SET NULL;
+
+--
+-- Name: direct_order_receipt_releases direct_order_receipt_releases_book_no_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.direct_order_receipt_releases
+    ADD CONSTRAINT direct_order_receipt_releases_book_no_fkey FOREIGN KEY (book_no) REFERENCES public.direct_order_receipt_books(book_no);
+
+--
+-- Name: direct_order_receipt_releases direct_order_receipt_releases_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.direct_order_receipt_releases
+    ADD CONSTRAINT direct_order_receipt_releases_request_id_fkey FOREIGN KEY (request_id) REFERENCES public.direct_order_requests(id);
+
+--
+-- Name: direct_order_receipt_releases direct_order_receipt_releases_serial_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.direct_order_receipt_releases
+    ADD CONSTRAINT direct_order_receipt_releases_serial_fkey FOREIGN KEY (serial) REFERENCES public.direct_order_receipts(serial);
 
 --
 -- Name: direct_order_receipts direct_order_receipts_book_no_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
@@ -96969,6 +97231,18 @@ ALTER TABLE public.direct_order_receipt_books ENABLE ROW LEVEL SECURITY;
 --
 
 CREATE POLICY direct_order_receipt_books_service_role ON public.direct_order_receipt_books TO service_role USING (true) WITH CHECK (true);
+
+--
+-- Name: direct_order_receipt_releases; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.direct_order_receipt_releases ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: direct_order_receipt_releases direct_order_receipt_releases_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY direct_order_receipt_releases_service_role ON public.direct_order_receipt_releases TO service_role USING (true) WITH CHECK (true);
 
 --
 -- Name: direct_order_receipts; Type: ROW SECURITY; Schema: public; Owner: postgres
@@ -102865,6 +103139,41 @@ GRANT ALL ON FUNCTION public.deductions_publication_lines_guard_day_overlap() TO
 GRANT ALL ON FUNCTION public.deductions_publication_lines_guard_day_overlap() TO authenticated;
 
 --
+-- Name: FUNCTION direct_order_close_receipt_book(p_book_no integer, p_kind text, p_expected_status text, p_actor_hr_id text, p_note text); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.direct_order_close_receipt_book(p_book_no integer, p_kind text, p_expected_status text, p_actor_hr_id text, p_note text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.direct_order_close_receipt_book(p_book_no integer, p_kind text, p_expected_status text, p_actor_hr_id text, p_note text) TO service_role;
+
+--
+-- Name: FUNCTION direct_order_receipt_books_guard(); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.direct_order_receipt_books_guard() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.direct_order_receipt_books_guard() TO service_role;
+
+--
+-- Name: FUNCTION direct_order_receipt_releases_append_only(); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.direct_order_receipt_releases_append_only() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.direct_order_receipt_releases_append_only() TO service_role;
+
+--
+-- Name: FUNCTION direct_order_receipts_guard(); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.direct_order_receipts_guard() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.direct_order_receipts_guard() TO service_role;
+
+--
+-- Name: FUNCTION direct_order_release_receipt(p_serial integer, p_request_id uuid, p_actor_hr_id text, p_reason text); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.direct_order_release_receipt(p_serial integer, p_request_id uuid, p_actor_hr_id text, p_reason text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.direct_order_release_receipt(p_serial integer, p_request_id uuid, p_actor_hr_id text, p_reason text) TO service_role;
+
+--
 -- Name: FUNCTION early_birds_candidates_guard_frozen(); Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -108660,6 +108969,18 @@ GRANT ALL ON TABLE public.direct_order_pharmacy_validations TO service_role;
 --
 
 GRANT ALL ON TABLE public.direct_order_receipt_books TO service_role;
+
+--
+-- Name: TABLE direct_order_receipt_releases; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.direct_order_receipt_releases TO service_role;
+
+--
+-- Name: SEQUENCE direct_order_receipt_releases_id_seq; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON SEQUENCE public.direct_order_receipt_releases_id_seq TO service_role;
 
 --
 -- Name: TABLE direct_order_receipts; Type: ACL; Schema: public; Owner: postgres

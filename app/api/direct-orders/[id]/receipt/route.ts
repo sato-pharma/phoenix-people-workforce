@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { recordDirectOrderReceipt } from "@/lib/direct-orders/receipt-books";
+import { recordDirectOrderReceipt, releaseDirectOrderReceipt } from "@/lib/direct-orders/receipt-books";
 import { toApiError } from "@/lib/http/api-errors";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
@@ -13,6 +13,9 @@ export const dynamic = "force-dynamic";
  *
  * Every rule lives in the service — the requester or Finance only, the code must match the serial,
  * the book must be issued to the requester, and the receipt is claimed once. This route decides nothing.
+ *
+ * `{ action: "release", reason }` takes a receipt off an order it was entered on by mistake — Finance
+ * or the Administrator only, with a written reason (owner, 27 Nov 2026: "make an undo option").
  */
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -20,7 +23,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (csrf) return csrf;
     const access = await resolveAccessContext(request);
     const { id } = await context.params;
-    const body = (await request.json().catch(() => ({}))) as { serial?: unknown; code?: unknown; photoDataUrl?: unknown };
+    const body = (await request.json().catch(() => ({}))) as { action?: unknown; reason?: unknown; serial?: unknown; code?: unknown; photoDataUrl?: unknown };
+    if (body.action === "release") {
+      const released = await releaseDirectOrderReceipt(access, { requestId: id, reason: body.reason ?? null });
+      return NextResponse.json({ success: true, message: released.message });
+    }
     const result = await recordDirectOrderReceipt(access, {
       requestId: id,
       serial: body.serial ?? null,
