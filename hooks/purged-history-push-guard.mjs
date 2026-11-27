@@ -22,6 +22,7 @@
  * Stand-down, the owner's own words only:  PHX_OLD_HISTORY_PUSH_OK=1 <the same command>
  */
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 
 const OLD_ROOT = '23e3b9db14a1b04c99776a3554c9d196bd9bd3fe';
 const GIT_PUSH = /(?:^|[\n|&;(])\s*(?:[A-Za-z_]\w*=\S+\s+)*git(?:\.exe)?((?:\s+-C\s+(?:"[^"]*"|'[^']*'|\S+)|\s+-c\s+\S+)*)\s+push\b([^\n|&;]*)/gi;
@@ -73,6 +74,6 @@ function main(raw) {
 }
 
 let buf = '';
-process.stdin.setEncoding('utf8');
-process.stdin.on('data', (d) => { buf += d; });
-process.stdin.on('end', () => { try { main(buf); } catch { /* fail open */ } process.exit(0); });
+try { buf = readFileSync(0, 'utf8'); } catch { /* fail open */ }
+try { main(buf); } catch { /* fail open */ }
+process.exit(0);

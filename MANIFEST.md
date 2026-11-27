@@ -10,7 +10,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `hooks/cloud-first-router.mjs` | 5388 | `38817a5603e0abe6` |
 | `hooks/compact-summary-log.mjs` | 4793 | `3a0a55fdeba8da84` |
 | `hooks/dev-server-reaper.mjs` | 44955 | `8c3d38d30cd80ad6` |
-| `hooks/dispatch.json` | 3039 | `c4af358124679cf5` |
+| `hooks/dispatch.json` | 3533 | `71cc1ecfcc960ccb` |
 | `hooks/effort-advisor.mjs` | 5509 | `1c6149ac5f7b6e07` |
 | `hooks/hook-dispatch-worker.mjs` | 1362 | `6524ba3dcd6cb8c6` |
 | `hooks/hook-dispatch.mjs` | 19624 | `ebb6d5829dfda238` |
@@ -22,7 +22,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `hooks/next-step-capture.mjs` | 75971 | `933a4def2ad423c4` |
 | `hooks/phoenix-context-anywhere.mjs` | 8491 | `f60fbc78be048f19` |
 | `hooks/plan-mode-auto-approve.mjs` | 3356 | `b21cbb7a72bb3135` |
-| `hooks/purged-history-push-guard.mjs` | 4636 | `d6c3ef91d583bf6c` |
+| `hooks/purged-history-push-guard.mjs` | 4622 | `88a9d3d0c544c96e` |
 | `hooks/python-repl-guard.mjs` | 27239 | `8efac615462f3676` |
 | `hooks/relay-capture.mjs` | 16966 | `1755b4c845483f71` |
 | `hooks/relay-cli.mjs` | 7305 | `ce153d5b858b69e1` |
