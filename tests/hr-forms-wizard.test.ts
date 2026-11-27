@@ -146,6 +146,9 @@ function testTheScreenIsTheWizard() {
   assert.ok(!/<FormsDrive[\s/>]/u.test(manager), "nor the folder drive above it");
   assert.ok(manager.includes("editAny || target <= furthest"), "Edit any form opens every step");
   assert.ok(manager.includes("path === \"leaver\" && !editAny"), "and lists every person on the leaver path");
+  // A different package starts over with nobody chosen: a new hire must never reach Form 6.
+  const choosePath = manager.slice(manager.indexOf("const choosePath = "), manager.indexOf("const chooseEmployee = "));
+  assert.ok(choosePath.includes('if (value !== path) void selectEmployee("");'), "changing the package clears the person");
   for (const page of ["app/(admin)/hiring-pack/page.tsx", "app/employee-portals/hiring-pack/page.tsx"]) {
     assert.ok(code(page).includes('canEditAnyForm={access.role === "Super Admin"}'), `${page} offers Edit any form to the Super Admin only`);
   }

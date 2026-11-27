@@ -1582,8 +1582,9 @@ export function HiringPackManager({
 
   /**
    * THE LEAVER PATH LISTS LEAVERS — the owner's bug report, 2026-09-13: "if i choose a document
-   * related to resignations the drop list of employees who resigned appear". The person already
-   * loaded stays in the list, or the box would empty itself while their pack is still on screen. A
+   * related to resignations the drop list of employees who resigned appear". Changing the package
+   * clears the person (`choosePath`), so a joiner never reaches the leaver papers; the person loaded
+   * on this path stays in the list, or the box would empty itself while their pack is on screen. A
    * certificate of experience for somebody still employed is issued from "Another paper", which
    * lists everyone. The Super Admin's "Edit any form" lists everyone on every path.
    */
@@ -1750,7 +1751,14 @@ export function HiringPackManager({
     });
   };
 
+  /**
+   * A DIFFERENT PACKAGE STARTS OVER WITH NOBODY CHOSEN (owner, 2026-11-27, on a new hire left loaded
+   * after going back and choosing Leaver: "she is a new hire — Form 6 for her?"). A joiner's pack
+   * must never carry into the leaver papers, nor a leaver's into a contract. Choosing the same
+   * package again keeps the person.
+   */
   const choosePath = (value: HrFormsPath) => {
+    if (value !== path) void selectEmployee("");
     setPath(value);
     setOtherChoice(null);
     setPreview(null);
