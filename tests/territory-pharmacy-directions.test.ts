@@ -190,6 +190,16 @@ export function runTerritoryPharmacyDirectionsTests() {
   assert.equal(listingNamesPharmacy("يونس لتجارةوتوزيع الادوية", "صيدلية يونس"), false);
   assert.equal(listingNamesPharmacy("الرواد لتجارة وتوزيع الادوية", "شركة الرواد لتجارة وتوزيع الادوية"), true);
   assert.equal(listingNamesPharmacy("مستشفى الرحمة اكتوبر", "مستشفى الرحمة", "6 اكتوبر"), true);
+  //     A pharmacy only to a listing that says it is one: never the university, the society or a clinic.
+  assert.equal(listingNamesPharmacy("صيدلية جامعة الازهر - اسيوط", "جامعة الأزهر فرع اسيوط", "مدينة أسيوط"), false);
+  assert.equal(listingNamesPharmacy("صيدلية الجمعية التعاونية للبترول - بمسطرد", "الجمعية التعاونية للبترول", "مسطرد"), false);
+  assert.equal(listingNamesPharmacy("مراد صادق مرزوق", "دكتور مراد صادق", "روض الفرج"), false);
+  assert.equal(listingNamesPharmacy("مراد صادق مرزوق", "صيدلية دكتور مراد صادق", "روض الفرج"), true);
+
+  // 15. "عبد …" and "ابو …" are one name: a first name alone is still not the shop.
+  assert.equal(listingNamesPharmacy("عبد الرحمن غلوش م.نصر", "صيدلية د. عبد الرحمن", "مدينة نصر"), false);
+  assert.equal(listingNamesPharmacy("احمد عبدالبديع تهامى", "صيدليه د احمد عبد البديع", "شبين القناطر"), true, "joined or apart, one word");
+  assert.equal(listingNamesPharmacy("انجي محمد ابوزيد", "صيدلية انجي أبو زيد", "بور سعيد"), true);
 
   // 14. The verdict: within 5 km of the brick, exactly one passing place, a failed lookup never guessed.
   const centre = { latitude: 30.0, longitude: 31.2 };
