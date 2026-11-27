@@ -47,9 +47,10 @@ function Original({ title, original }: { title: string; original: DirectOrderRec
 }
 
 /**
- * The verified print of an order's delivery receipt (owner, 27 Nov 2026). A photographed page shows
- * «مُصوَّر — غير صالح» by design, so a photocopy is never proof; this page is — both originals as they
- * were entered on Phoenix, with who entered each and when, and who printed it.
+ * The verified print of an order's delivery receipt (owner, 27 Nov 2026). A photo of an original is not
+ * an original (a black-and-white copy loses the yellow «أصل» ground and shows the red serial black), so a
+ * photocopy is never proof; this page is — both originals as they were entered on Phoenix, with who
+ * entered each and when, and who printed it.
  *
  * DELIBERATELY OUTSIDE BOTH SHELLS, under /print, so the paper holds the receipt and nothing else. The
  * cost is that the shell's gate is gone, so it is repeated here, and it is the SAME gate as the Receipt
@@ -105,7 +106,7 @@ export default async function DirectOrderReceiptPrintPage({ params }: { params: 
       <footer className="mt-5 border-t border-slate-400 pt-2 text-[10px] text-slate-600">
         Printed from Phoenix on {cairoDateTime(print.printedAt)}
         {print.printedByName ? ` by ${print.printedByName}` : ""}. The paper originals stay in the receipt book and with the manager; the carbon copy is the
-        customer&apos;s. A photocopy of a receipt page is never proof — it prints marked as a copy.
+        customer&apos;s. A photocopy of a receipt page is never proof — an original carries the yellow ORIGINAL ground and a red serial.
       </footer>
     </main>
   );
