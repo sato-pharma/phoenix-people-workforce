@@ -7,7 +7,9 @@
 //   1. CONFIRMED ON SITE — a point a rep captured standing at the shop (a validated marketing pharmacy,
 //      an approved direct-order venue, or a Phoenix CRM pharmacy place), tied to THIS distributor's
 //      customer code. Directions go to the exact point.
-//   2. GOOGLE MAPS SEARCH BY NAME — every other pharmacy with a usable name opens a Google Maps search
+//   2. ITS OWN GOOGLE LISTING — a top pharmacy Phoenix matched ONCE to its exact Google Maps place
+//      (pharmacy-place-match.ts; he chose "Free top-2,616 match"). The link opens that listing.
+//   3. GOOGLE MAPS SEARCH BY NAME — every other pharmacy with a usable name opens a Google Maps search
 //      for "صيدلية <its name> <its brick's town>". Google's own search runs on the rep's phone and shows
 //      the shop's listing, whose name he checks before he drives.
 //
@@ -53,7 +55,7 @@ const MIN_NAME_LETTERS = 3;
  * payment terms ("نقدي" cash, "اجل" credit) and the sheets' single-letter channel marks ("ن", "ن.م").
  * Left in, they make Google look for a shop that does not exist under that name.
  */
-const SHEET_NAME_MARKS: ReadonlySet<string> = new Set(["ن", "ن.م", "نم", "نقدي", "نقدى", "اجل", "آجل", "أجل"]);
+export const SHEET_NAME_MARKS: ReadonlySet<string> = new Set(["ن", "ن.م", "نم", "نقدي", "نقدى", "اجل", "آجل", "أجل"]);
 
 export type PharmacySourceRow = {
   clientCode: string;
@@ -68,6 +70,13 @@ export type ConfirmedPharmacyPoint = Point & {
   clientCode: string;
 };
 
+/** A Google place Phoenix matched to one (distributor, customer code) — the place id only. */
+export type MatchedPharmacyPlace = {
+  distributorCode: string;
+  clientCode: string;
+  placeId: string;
+};
+
 export type PickDirectionsInput = {
   /** Every distributor row behind ONE pharmacy card (one customer code). */
   sources: readonly PharmacySourceRow[];
@@ -75,6 +84,8 @@ export type PickDirectionsInput = {
   displayName: string;
   /** Confirmed points for any of those (distributor, code) pairs; the picker filters them again. */
   confirmedPoints: readonly ConfirmedPharmacyPoint[];
+  /** Matched Google places for any of those pairs; used only when they all agree on one place. */
+  matchedPlaces?: readonly MatchedPharmacyPlace[];
   /** Brick id → its name (the town), added to the search. */
   brickNames: ReadonlyMap<string, string>;
   /** Brick id → its centre, for the mistyped-code check. A brick with no centre skips that check. */
@@ -94,6 +105,14 @@ function distributorFamily(code: string): string {
 export function googleMapsDirectionsUrl(destination: Point): string {
   const value = `${destination.latitude.toFixed(6)},${destination.longitude.toFixed(6)}`;
   return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(value)}`;
+}
+
+/**
+ * One exact Google Maps listing: the search text is what shows if the place id cannot be read, the
+ * place id is what Google opens. Free — no Google service is called to build it.
+ */
+export function googleMapsPlaceUrl(searchText: string, placeId: string): string {
+  return `${googleMapsSearchUrl(searchText)}&query_place_id=${encodeURIComponent(placeId)}`;
 }
 
 /** A Google Maps search — the phone opens the Maps app on the matching listings. */
@@ -144,6 +163,23 @@ function pickConfirmedPoint(input: PickDirectionsInput): Point | null {
   return usable.every((point) => haversineKm(point, first) <= CONFIRMED_POINTS_AGREE_KM) ? first : null;
 }
 
+/**
+ * The one matched Google place for a card, or null. Like a confirmed point, it is not trusted when the
+ * card's code belongs to two distributors (two shops may share it), or when its pairs matched
+ * different places.
+ */
+function pickMatchedPlace(input: PickDirectionsInput): string | null {
+  const families = new Set(input.sources.map((source) => distributorFamily(normalizeCode(source.distributorCode))));
+  if (families.size > 1) return null;
+  const pairs = new Set(input.sources.map((source) => `${normalizeCode(source.distributorCode)}|${source.clientCode.trim()}`));
+  const placeIds = new Set(
+    (input.matchedPlaces ?? [])
+      .filter((place) => place.placeId.trim() && pairs.has(`${normalizeCode(place.distributorCode)}|${place.clientCode.trim()}`))
+      .map((place) => place.placeId.trim()),
+  );
+  return placeIds.size === 1 ? [...placeIds][0] : null;
+}
+
 /** Where tapping this pharmacy's name sends a rep — or null, and then the name is not a link. */
 export function pickPharmacyDirections(input: PickDirectionsInput): TerritoryPharmacyDirections | null {
   if (input.sources.length === 0) return null;
@@ -154,5 +190,8 @@ export function pickPharmacyDirections(input: PickDirectionsInput): TerritoryPha
   }
 
   const searchText = pharmacySearchText(input.displayName, input.brickNames.get(input.sources[0].brickId));
-  return searchText ? { kind: "google_search", url: googleMapsSearchUrl(searchText), searchText } : null;
+  if (!searchText) return null;
+  const placeId = pickMatchedPlace(input);
+  if (placeId) return { kind: "google_place", url: googleMapsPlaceUrl(searchText, placeId), searchText };
+  return { kind: "google_search", url: googleMapsSearchUrl(searchText), searchText };
 }
