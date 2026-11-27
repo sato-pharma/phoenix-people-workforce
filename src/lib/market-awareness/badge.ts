@@ -2,6 +2,7 @@ import { APPROVALS_SLA_THRESHOLDS, slaTone } from "@/components/approvals-hub/sl
 import type { AccessContext } from "@/lib/auth/permissions";
 import type { MarketAwarenessApproverSlot } from "@/lib/market-awareness/approvers";
 import type { MarketAwarenessStatus } from "@/lib/market-awareness/types";
+import { canonicalHrIdKey } from "@/lib/hr-id";
 import { canDecideStep, currentStep } from "@/lib/market-awareness/workflow";
 
 /**
@@ -64,6 +65,17 @@ export function summarizeMarketAwarenessDecisionBadge(input: {
   const mine = input.rows.filter((row) => {
     const step = currentStep(row.status as MarketAwarenessStatus);
     if (!step) return false;
+    // The Super Admin may decide any step, but a power to step in is not his turn (owner, 27 Nov 2026:
+    // "only mine" — his badge read 1 for an activity waiting on the NSM). His badge counts only a group
+    // slot assigned to HIM by name; the CEO step stays the CEO's number.
+    if (input.access.role === "Super Admin") {
+      const own = canonicalHrIdKey(input.access.hrId ?? "");
+      return (
+        step === "group" &&
+        own !== "" &&
+        row.approvers.some((slot) => slot.decision === null && slot.assignedHrId !== null && canonicalHrIdKey(slot.assignedHrId) === own)
+      );
+    }
     return canDecideStep({
       access: input.access,
       actorLineId: input.actorLineId ?? null,

@@ -14,6 +14,7 @@ import { getMarketingApproverBadge } from "@/lib/marketing-requests/service";
 import { countOpenDeductionsDisputes } from "@/lib/deductions/comments";
 import { assertDeductionsReadActor } from "@/lib/deductions/permissions";
 import { listPendingPrivateCalendarDataDisputes } from "@/lib/private-calendar/disputes";
+import { loadSuperAdminCrmQueueBadges } from "@/lib/phoenix-crm/server/needs-you";
 import {
   getExcuseAwaitingBadge,
   getPlanAwaitingBadge,
@@ -114,8 +115,11 @@ export async function loadBadgeCounts(
         assertDeductionsReadActor(access);
         return { count: await countOpenDeductionsDisputes() };
       })(),
+      // The Super Admin's own Phoenix CRM queues (owner, 27 Nov 2026). Zeros for every other role, asked
+      // before the Phoenix CRM viewer is built, so the rest of the company pays nothing for it.
+      loadSuperAdminCrmQueueBadges(access),
     ]);
-    const [plan, vacation, excuse, hub, directOrders, directOrdersUnbooked, directOrderValidations, marketing, marketAwareness, calendarDisputes, deductionDisputes] = settled;
+    const [plan, vacation, excuse, hub, directOrders, directOrdersUnbooked, directOrderValidations, marketing, marketAwareness, calendarDisputes, deductionDisputes, crmQueues] = settled;
     return {
       // A refusal is the viewer's standing and reads the same every time; any other rejection, or a
       // domain reporting `available: false`, keeps this response out of the 20 s memory.
@@ -144,6 +148,11 @@ export async function loadBadgeCounts(
           marketAwareness.status === "fulfilled" ? marketAwareness.value : { count: 0, overdue: false },
         calendarDisputes: calendarDisputes.status === "fulfilled" ? calendarDisputes.value : { count: 0 },
         deductionDisputes: deductionDisputes.status === "fulfilled" ? deductionDisputes.value : { count: 0 },
+        placeChecks: crmQueues.status === "fulfilled" ? crmQueues.value.placeChecks : { count: 0 },
+        sfeRecommendedChecks: crmQueues.status === "fulfilled" ? crmQueues.value.sfeRecommendedChecks : { count: 0 },
+        cameraReviews: crmQueues.status === "fulfilled" ? crmQueues.value.cameraReviews : { count: 0 },
+        lateVisits: crmQueues.status === "fulfilled" ? crmQueues.value.lateVisits : { count: 0 },
+        recordedVisits: crmQueues.status === "fulfilled" ? crmQueues.value.recordedVisits : { count: 0 },
       },
     };
   });
@@ -175,5 +184,10 @@ export function emptyBadgeCounts() {
     marketAwareness: { count: 0, overdue: false },
     calendarDisputes: { count: 0 },
     deductionDisputes: { count: 0 },
+    placeChecks: { count: 0 },
+    sfeRecommendedChecks: { count: 0 },
+    cameraReviews: { count: 0 },
+    lateVisits: { count: 0 },
+    recordedVisits: { count: 0 },
   };
 }

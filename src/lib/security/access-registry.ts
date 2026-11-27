@@ -2971,6 +2971,10 @@ export const accessRegistry = [
   sessionApi({ methods: ["GET"], pattern: "/api/approvals/excuse/pending-count", permission: { resource: "leave", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/approvals/plan/pending-count", permission: { resource: "weekly_plans", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/approvals/direct-orders/pending-count", permission: { resource: "direct_orders", action: "read" } }),
+  // The Super Admin's own Phoenix CRM queues (Place Checks, SFE Recommendations, Camera Reviews, Late Visits,
+  // Visit Recording) as badge counts. The domain helper answers zeros to anyone but the Super Admin and asks
+  // each count under the deciding page's own gate.
+  sessionApi({ methods: ["GET"], pattern: "/api/approvals/crm-queues/pending-count", permission: { resource: "phoenix_crm", action: "read" }, guard: "domain-helper" }),
   // Tick several leave or excuse requests and Approve all / Reject all. No permission to declare:
   // each request goes through its own decision service (decideVacationRequest asserts leave:approve,
   // decideExcuseRequestAsManager admits only the assigned manager), exactly as the single routes do.

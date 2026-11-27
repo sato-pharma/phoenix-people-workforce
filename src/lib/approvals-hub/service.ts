@@ -357,7 +357,30 @@ async function getVacationAwaitingForBadge(access: AccessContext): Promise<Vacat
     });
     return null;
   });
-  return (await partitionVacationApprovals(access, source?.centerRows ?? [], source?.scopedRows ?? [])).awaiting;
+  return (await partitionVacationApprovals(access, source?.centerRows ?? [], source?.scopedRows ?? [])).awaiting.filter((row) =>
+    isVacationViewersTurn(access, row),
+  );
+}
+
+/**
+ * Whether a leave request waiting in this viewer's list is actually his TURN — what the sidebar number
+ * counts (owner, 27 Nov 2026: "only mine"). The list itself keeps every row he can act on, the stalled-
+ * approver override included; the badge does not, because a power to step in for a manager who has not
+ * answered is not a request waiting on him. Measured that day: the Super Admin's Leave number read 1 for a
+ * request whose turn was the NSM's.
+ *
+ * His turn = the active step (the lowest-ordered pending one) is named to him, or it is the HR step and he
+ * decides as HR. A legacy sick leave carries no ordered steps and is already turn-checked upstream
+ * (`getSickLeaveTurnsForViewer`), so it is kept as it is.
+ */
+function isVacationViewersTurn(access: AccessContext, row: VacationActionCenterRow): boolean {
+  if (row.approvalSteps.length === 0) return true;
+  const active = row.approvalSteps
+    .filter((step) => step.status === "pending")
+    .sort((left, right) => left.order - right.order)[0];
+  if (!active) return false;
+  if (isViewer(active.approverHrId, access.hrId?.trim() ?? "")) return true;
+  return active.stepKey === "hr" && row.viewerStepKind === "hr";
 }
 
 /**

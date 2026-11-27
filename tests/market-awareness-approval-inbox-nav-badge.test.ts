@@ -150,10 +150,26 @@ export function runMarketAwarenessApprovalInboxNavBadgeTests() {
       0,
       "4: the group who already approved must not keep counting it — their step is done",
     );
+    // Owner, 27 Nov 2026 ("only mine"): the Super Admin may act on any step, but his badge counts only
+    // what waits on him by name — the CEO step is the CEO's number, and so is a group slot of someone else's.
     assert.equal(
       summarizeMarketAwarenessDecisionBadge({ access: SUPER_ADMIN, now: NOW, rows }).count,
+      0,
+      "4: the CEO step is not the Super Admin's turn, though he could step in",
+    );
+    assert.equal(
+      summarizeMarketAwarenessDecisionBadge({ access: SUPER_ADMIN, now: NOW, rows: [row({ status: "pending_group" })] }).count,
+      0,
+      "4: a group slot assigned to someone else is not the Super Admin's turn either",
+    );
+    assert.equal(
+      summarizeMarketAwarenessDecisionBadge({
+        access: SUPER_ADMIN,
+        now: NOW,
+        rows: [row({ approvers: [{ approverRole: "nsm", lineId: 1, assignedHrId: "A-99", decision: null }], status: "pending_group" })],
+      }).count,
       1,
-      "4: Super Admin can act on any step",
+      "4: a group slot assigned to the Super Admin by name IS his turn",
     );
   }
 
@@ -352,7 +368,7 @@ export function runMarketAwarenessApprovalInboxNavBadgeTests() {
     const navBadge = readFileSync("src/components/layout/nav-badge.tsx", "utf8");
     assert.match(
       navBadge,
-      /case "market-awareness-approvals-pending":\s*\n\s*return <NavBadge[^>]*src="\/api\/market-awareness\/pending-count"[^>]*\/>;/,
+      /case "market-awareness-approvals-pending":\s*\n\s*return "\/api\/market-awareness\/pending-count";/,
       "12: the shared badge switch must resolve the awareness badge to its count API",
     );
     const portalLayout = readFileSync(

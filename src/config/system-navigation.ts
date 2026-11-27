@@ -164,7 +164,7 @@ export type NavigationSectionItem = {
    */
   exact?: boolean;
   activeTab?: string;
-  navBadge?: "direct-orders-needs-action" | "direct-orders-approvals-pending" | "direct-orders-unbooked" | "approvals-hub-pending" | "vacation-approvals-pending" | "excuse-approvals-pending" | "plan-approvals-pending" | "marketing-approvals-pending" | "market-awareness-approvals-pending" | "calendar-disputes-pending" | "deduction-disputes-pending";
+  navBadge?: "direct-orders-needs-action" | "direct-orders-approvals-pending" | "direct-orders-unbooked" | "approvals-hub-pending" | "vacation-approvals-pending" | "excuse-approvals-pending" | "plan-approvals-pending" | "marketing-approvals-pending" | "market-awareness-approvals-pending" | "calendar-disputes-pending" | "deduction-disputes-pending" | "place-checks-pending" | "sfe-recommended-checks-pending" | "camera-reviews-pending" | "late-visits-pending" | "recorded-visits-pending";
 };
 
 export type NavigationSection = {
@@ -2841,6 +2841,12 @@ export type AdminToolsPageItem = {
   href: `/${string}`;
   icon: LucideIcon;
   label: string;
+  /**
+   * The pending-count badge the card's rail row carries once its hub is promoted into the sidebar
+   * (owner, 27 Nov 2026: a queue that is his alone must show its number on the row). The hub page
+   * itself ignores it — a card has nowhere to draw a badge.
+   */
+  navBadge?: NavigationSectionItem["navBadge"];
   permissions?: readonly NavigationPermission[];
   roles?: readonly PhoenixRole[];
 };
@@ -4940,6 +4946,7 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     description: "Validations Google Maps had no listing for. Each waits for you to approve or reject; the rep is told only that the system is checking.",
     permissions: [{ resource: "phoenix_crm", action: "approve" }],
     roles: ["Super Admin", "SFE Manager"],
+    navBadge: "place-checks-pending",
   },
   {
     // The place checks the SFE Manager recommended to validate or not, waiting for the Super Admin's decision
@@ -4948,10 +4955,13 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     // page and every decision route; this card only draws the link.
     href: "/admin/field-crm/sfe-recommendations",
     icon: MessageSquareQuote,
-    label: "SFE Recommendations",
+    // "SFE Recommended", not "SFE Recommendations": with its number beside it the longer word ran 7px past the rail
+    // (sidebar-label-width, 27 Nov 2026). The page keeps its own full title.
+    label: "SFE Recommended",
     description: "The place checks the SFE Manager recommended to validate or not, each waiting for your decision.",
     permissions: [{ resource: "phoenix_crm", action: "update" }],
     roles: ["Super Admin"],
+    navBadge: "sfe-recommended-checks-pending",
   },
   {
     // The reps who must record each visit before logging it (owner, 2026-10-16: "this only works to who
@@ -4963,6 +4973,7 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     description: "Choose the reps who record the conversation before logging a visit, and listen to, download or delete any recording.",
     permissions: [{ resource: "phoenix_crm", action: "update" }],
     roles: ["Super Admin"],
+    navBadge: "recorded-visits-pending",
   },
   {
     // Every photo the Phoenix Camera sent, and the ones that wait for the Super Admin's decision (owner, 20 Nov
@@ -4974,6 +4985,7 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     description: "Every photo the Phoenix Camera sent waits here for your decision: approve or reject it, raise one rep's day on the manager's approval, and set the daily limit.",
     permissions: [{ resource: "phoenix_crm", action: "update" }],
     roles: ["Super Admin"],
+    navBadge: "camera-reviews-pending",
   },
   {
     // A visit a phone held for want of signal that reached Phoenix after its day closed, filed whole for the Super Admin
@@ -4985,6 +4997,7 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     description: "Visits sent after their day closed, or logged with no location. Approve each onto the day it was pressed, or reject it.",
     permissions: [{ resource: "phoenix_crm", action: "update" }],
     roles: ["Super Admin"],
+    navBadge: "late-visits-pending",
   },
   {
     // Any rep, a switch and the dates (owner, 2026-11-03: "open or close this feature by a toggle or be able to
@@ -5904,6 +5917,7 @@ function hubRowsFor(
       label: HUB_ROW_RAIL_LABELS[card.href] ?? card.label,
       permissions: card.permissions,
       roles: card.roles,
+      ...(card.navBadge ? { navBadge: card.navBadge } : {}),
     }));
   return hub.anchorIsAModule === true && anchorRow !== undefined ? [anchorRow, ...cards] : cards;
 }

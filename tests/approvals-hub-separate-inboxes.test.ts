@@ -172,7 +172,7 @@ export function runApprovalsHubSeparateInboxesTests() {
   const navBadge = read("src/components/layout/nav-badge.tsx");
   assert.match(
     navBadge,
-    /case "calendar-disputes-pending":[\s\S]{0,200}src="\/api\/private-calendar\/disputes\/pending-count"/,
+    /case "calendar-disputes-pending":[\s\S]{0,200}"\/api\/private-calendar\/disputes\/pending-count"/,
     "the one navBadge switch must map the new kind to its endpoint, or the row renders with no badge at all",
   );
   assert.match(
@@ -302,7 +302,7 @@ export function runApprovalsHubSeparateInboxesTests() {
   );
   assert.match(
     read("src/components/layout/nav-badge.tsx"),
-    /case "deduction-disputes-pending":[\s\S]{0,200}src="\/api\/deductions\/disputes\/pending-count"/,
+    /case "deduction-disputes-pending":[\s\S]{0,200}"\/api\/deductions\/disputes\/pending-count"/,
     "the one navBadge switch must map the new kind to its endpoint",
   );
   assert.match(

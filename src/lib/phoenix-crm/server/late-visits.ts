@@ -108,6 +108,22 @@ function visitLabelOf(kind: LateVisitKind, body: Row): string {
   return body.visitType === "out_of_plan" || body.visitType === "out_of_list" ? "Off plan" : "Planned";
 }
 
+/**
+ * How many late visits wait for the Super Admin — the number on his "Late Visits" sidebar row (owner, 27 Nov
+ * 2026: a queue that is his alone shows its count beside the row). The same rows the page lists under
+ * pending: real entries only. A head count, so it never reads a row; it THROWS on a failed read, and the
+ * badge loader turns that into a zero for the badge alone.
+ */
+export async function countLateVisitsWaiting(): Promise<number> {
+  const { count, error } = await getSupabaseAdmin()
+    .from(TABLE)
+    .select("id", { count: "exact", head: true })
+    .eq("status", "pending")
+    .eq("is_test", false);
+  if (error) throw error;
+  return count ?? 0;
+}
+
 export async function loadLateVisits(viewer: PhoenixCrmViewer): Promise<LateVisitsBoard> {
   assertSuperAdmin(viewer);
   const since = new Date(Date.now() - DECIDED_SHOWN_DAYS * 24 * 60 * 60 * 1000).toISOString();

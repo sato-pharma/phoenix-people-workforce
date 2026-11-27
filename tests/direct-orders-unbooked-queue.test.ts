@@ -194,8 +194,8 @@ export function runDirectOrdersUnbookedQueueTests() {
   assert.ok(badgeFn.length > 0, "getDirectOrderUnbookedBadge must exist");
   assert.match(
     badgeFn,
-    /if \(!canSetDirectOrderSalesMonth\(access\)\) return \{ count: 0, overdue: false \};/,
-    "a viewer who cannot book a sales month must always see a zero count",
+    /if \(!ownsDirectOrderBookingQueue\(access\)\) return \{ count: 0, overdue: false \};/,
+    "only Finance, whose desk books the sales month, sees this count: the Super Admin may book, but the queue is not his turn, and counting it showed him 67 orders that never waited on him",
   );
   assert.match(
     badgeFn,

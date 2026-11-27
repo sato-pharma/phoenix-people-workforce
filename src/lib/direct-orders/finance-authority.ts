@@ -40,6 +40,16 @@ function isDirectOrderFinanceOfficer(access: DirectOrderFinanceAccess): boolean 
 }
 
 /** System admins act for anyone; kept separate so the Finance test above stays a single concern. */
+/**
+ * Whose QUEUE the unbooked orders are — the one person the sidebar number is for (owner, 27 Nov 2026: "I
+ * have no role in direct orders, so you are misleading me"). Finance books the month; the Super Admin can
+ * still book one (`canAssignDirectOrderSalesMonth`), but a power to step in is not a queue of his, so the
+ * badge is drawn for Finance alone.
+ */
+export function ownsDirectOrderBookingQueue(access: DirectOrderFinanceAccess): boolean {
+  return isDirectOrderFinanceOfficer(access);
+}
+
 function isSystemAdmin(access: DirectOrderFinanceAccess): boolean {
   return access.scope === "system" || access.role === "Super Admin";
 }

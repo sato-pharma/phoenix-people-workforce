@@ -52,7 +52,16 @@
  * `canAdminister` is true — a true zero with no query for everyone else.
  */
 
-import { canAdminister, readsTeamReports, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import type { AccessContext } from "@/lib/auth/permissions";
+import {
+  canAdminister,
+  canEnterMissedRecords,
+  readsTeamReports,
+  resolvePhoenixCrmViewer,
+  type PhoenixCrmViewer,
+} from "@/lib/phoenix-crm/server/access";
+import { countCameraItemsWaiting } from "@/lib/phoenix-crm/server/camera-items";
+import { countLateVisitsWaiting } from "@/lib/phoenix-crm/server/late-visits";
 import {
   countPhoenixCrmListRequestsWaitingForYou,
   countPhoenixCrmOffPlanVisitsWaitingForYou,
@@ -185,5 +194,55 @@ export async function loadPhoenixCrmDecisionCounts(viewer: PhoenixCrmViewer): Pr
     recordedVisits: recorded.count,
     oldestRecordedVisitAt: recorded.oldestAt,
     isTest: seats.isTest,
+  };
+}
+
+/** The five Phoenix CRM queues that wait on the Super Admin alone, as sidebar badge slots. */
+export type SuperAdminCrmQueueBadges = {
+  placeChecks: { count: number };
+  sfeRecommendedChecks: { count: number };
+  cameraReviews: { count: number };
+  lateVisits: { count: number };
+  recordedVisits: { count: number };
+};
+
+const NO_CRM_QUEUE_BADGES: SuperAdminCrmQueueBadges = {
+  placeChecks: { count: 0 },
+  sfeRecommendedChecks: { count: 0 },
+  cameraReviews: { count: 0 },
+  lateVisits: { count: 0 },
+  recordedVisits: { count: 0 },
+};
+
+/**
+ * The numbers on the Super Admin's own Phoenix CRM rows — Place Checks, SFE Recommendations, Camera Reviews,
+ * Late Visits and Visit Recording (owner, 27 Nov 2026: "are there things that are mine that are not showing?").
+ * Each of those queues is decided by him alone, and until this none of the five rows carried a number, so a
+ * held place or a late visit waited with nothing on the rail to say so.
+ *
+ * Every count is asked under the SAME gate as the page that decides it (`canDecideValidationReviews`,
+ * `canEnterMissedRecords`, `canAdminister`), so the number is only ever drawn for the person who can clear it
+ * — the SFE Manager, who reads Place Checks and only recommends, gets 0. Anyone who is not a Super Admin
+ * returns zeros before the Phoenix CRM viewer is even built. The counts are the ones Needs You already uses,
+ * so the badge and that board cannot disagree. It throws on a failed read; the batched loader turns a throw
+ * into zero slots for the badge alone.
+ */
+export async function loadSuperAdminCrmQueueBadges(access: AccessContext): Promise<SuperAdminCrmQueueBadges> {
+  if (access.role !== "Super Admin") return NO_CRM_QUEUE_BADGES;
+  const viewer = await resolvePhoenixCrmViewer(access);
+  const decidesPlaces = canDecideValidationReviews(viewer);
+  const decidesLateAndCamera = canEnterMissedRecords(viewer);
+  const [places, camera, late, recorded] = await Promise.all([
+    decidesPlaces ? countValidationReviewsWaiting() : Promise.resolve({ count: 0, oldestAt: null, sfeRecommended: { count: 0, oldestAt: null } }),
+    decidesLateAndCamera ? countCameraItemsWaiting() : Promise.resolve({ count: 0, oldestAt: null }),
+    decidesLateAndCamera ? countLateVisitsWaiting() : Promise.resolve(0),
+    canAdminister(viewer) ? countRecordedVisitsWaiting() : Promise.resolve({ count: 0, oldestAt: null }),
+  ]);
+  return {
+    placeChecks: { count: places.count },
+    sfeRecommendedChecks: { count: places.sfeRecommended.count },
+    cameraReviews: { count: camera.count },
+    lateVisits: { count: late },
+    recordedVisits: { count: recorded.count },
   };
 }
