@@ -929,7 +929,21 @@ function testTheLibanoEmailGoesToTheInsurerAndTheTestToTheOwnerAlone() {
   assert.equal(real.input.replyTo, "omar.anwar@satopharma.com");
   assert.ok(real.input.externalRecipients.includes("Policy.Admin@Libano-suisse-takaful.com"), "the insurer is declared to the recipient guard");
   assert.match(real.input.html, /automated email from Phoenix Workforce/);
+  assert.match(real.input.text, /automated email from Phoenix Workforce/, "the plain-text copy says it too");
   assert.match(real.input.html, /Ahmed &lt;Ali&gt;/, "a name is escaped, never written into the email as markup");
+  assert.ok(!real.input.html.includes("Ahmed <Ali>"), "the raw name never reaches the html");
+  // The signed Beyond authorisation's gold identity (owner, 27 Nov 2026): the gold layer, the microtext frame,
+  // the two-weight title, the HR Manager's sign-off block, the document code, and nothing an email client drops.
+  assert.ok(real.input.html.includes("#A8843F") && real.input.html.includes("#C9A45C"), "the letter wears the gold layer");
+  assert.ok(real.input.html.includes("SATO PHARMA L.L.C. &middot; HUMAN RESOURCES"), "the microtext frame");
+  assert.match(real.input.html, /Medical insurance <b[^>]*>deletions<\/b>/, "the two-weight title");
+  assert.ok(real.input.html.includes("Name and title") && real.input.html.includes("Omar Anwar Gawish") && real.input.html.includes("HR Manager, Human Resources"), "the sign-off block");
+  assert.ok(real.input.html.includes("SATO-DIS-2026-01 v1.0"), "the document code in the running foot");
+  assert.match(real.input.html, /\/brand\/sato-pharma-logo-on-light\.png/);
+  assert.ok(!/border-radius|linear-gradient|box-shadow|<svg|@font-face/i.test(real.input.html), "square, flat, and nothing Outlook drops");
+  assert.match(real.input.html, /Last covered day/, "a deletion names the last covered day");
+  assert.match(real.input.html, /30 Nov 2026/, "the day is the plain calendar day, never shifted by a time zone");
+  assert.ok(!real.input.html.includes("TEST SEND"), "the real letter carries no test notice");
   assert.equal(real.input.attachments.length, 1);
   assert.equal(real.input.attachments[0]!.filename, base.fileName);
   assert.deepEqual([...Buffer.from(real.input.attachments[0]!.content, "base64")], [...workbook], "the attachment is the very workbook Export builds");
@@ -943,6 +957,10 @@ function testTheLibanoEmailGoesToTheInsurerAndTheTestToTheOwnerAlone() {
   assert.ok(![...test.input.to, ...test.input.cc, ...test.input.externalRecipients].some((address) => /libano/i.test(address)), "a test never names the insurer");
   assert.equal(test.input.subject, "TEST - Deletion 27/11/2026");
   assert.match(test.input.html, /TEST SEND/);
+  assert.match(test.input.text, /TEST SEND/);
+  const additions = planLibanoMovementEmail({ ...base, kind: "additions" });
+  assert.match(additions.input.html, /Medical insurance <b[^>]*>additions<\/b>/);
+  assert.ok(additions.input.html.includes("Cover starts") && additions.input.html.includes(">Plan<"), "an addition names the plan and the day cover starts");
   assert.deepEqual([...Buffer.from(test.input.attachments[0]!.content, "base64")], [...workbook], "a test carries the same file");
   assert.notEqual(test.dedupeKey, real.dedupeKey, "a test never stands in for the real send");
   assert.notEqual(planLibanoMovementEmail({ ...base, atIso: "2026-11-26T23:31:00.000Z", test: true }).dedupeKey, test.dedupeKey, "a test can be sent again a minute later");
