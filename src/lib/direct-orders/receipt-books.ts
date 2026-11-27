@@ -914,7 +914,8 @@ export type ReceiptRegisterBook = {
   owing: number;
 };
 
-export type ReceiptRegisterOrder = {
+/** What every list on the desk says about an order. */
+export type ReceiptRegisterOrderBase = {
   requestId: string;
   requesterName: string;
   pharmacyName: string;
@@ -923,6 +924,9 @@ export type ReceiptRegisterOrder = {
   decidedAt: string | null;
   /** Days since the order was approved. */
   days: number;
+};
+
+export type ReceiptRegisterOrder = ReceiptRegisterOrderBase & {
   standing: "waiting" | "overdue";
   /** The day the goods left the warehouse, and the due date of each original it set. */
   exitDate: string;
@@ -935,7 +939,7 @@ export type ReceiptRegisterOrder = {
 };
 
 /** An approved order whose warehouse exit Finance has not recorded yet — nothing counts until it is. */
-export type ReceiptRegisterAwaitingExit = Omit<ReceiptRegisterOrder, "standing" | "exitDate" | "custodyDue" | "deliveryDue" | "deliveryEntered" | "lateness">;
+export type ReceiptRegisterAwaitingExit = ReceiptRegisterOrderBase & { custodyEntered: boolean };
 
 export type ReceiptRegisterEntry = {
   serialLabel: string;
@@ -957,10 +961,10 @@ export type DirectOrderReceiptRegister = {
   /** Orders with the exit recorded and an original still to enter, the latest first. */
   missing: ReceiptRegisterOrder[];
   /** Approved since the first book went out, raised by someone who held no book that day (owner, 27 Nov 2026: "Flag them"). */
-  noBook: Omit<ReceiptRegisterOrder, "standing">[];
+  noBook: ReceiptRegisterOrderBase[];
   recent: ReceiptRegisterEntry[];
   /** Orders asked to stand without a receipt: waiting on the CEO, or approved by him (owner, 27 Nov 2026). */
-  withoutReceipt: (Omit<ReceiptRegisterOrder, "standing" | "days"> & {
+  withoutReceipt: (Omit<ReceiptRegisterOrderBase, "days"> & {
     status: "pending" | "approved";
     reason: string;
     askedAt: string;
