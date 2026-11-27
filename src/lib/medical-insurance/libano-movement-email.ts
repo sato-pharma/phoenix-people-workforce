@@ -109,7 +109,9 @@ export function buildLibanoMovementEmail(input: {
   const what = additions ? `add ${people} to` : `delete ${people} from`;
   const sheet = additions ? "Additions" : "Deletions";
   const dayWord = additions ? "Cover starts" : "Last covered day";
-  const automatedNote = `This is an automated email from Phoenix Workforce, Sato Pharma's HR system, sent on behalf of ${LIBANO_EMAIL_SENDER_NAME}, HR Manager. Replies go straight to the HR Manager.`;
+  // Exactly these words and no more (owner, 27 Nov 2026: "this is an automated email from Phoenix Workforce, Sato
+  // Pharma HR system only"). The reply still reaches the HR Manager through the Reply-To.
+  const automatedNote = "This is an automated email from Phoenix Workforce, Sato Pharma HR system.";
   const signer = {
     line: "Human Resources · Sato Pharma · Head Office, Cairo",
     nameBold: "Gawish",

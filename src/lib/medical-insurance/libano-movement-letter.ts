@@ -206,11 +206,13 @@ export function renderLibanoMovementLetter(content: LibanoLetterContent): { html
 
   const body =
     testNotice +
-    paragraph(escapeHtml(content.salutation)) +
+    // The greeting and the valediction in bold navy (owner, 27 Nov 2026: "make the Dear Libano-Suisse team bold and
+    // blue, and make the kind regards bold and blue").
+    paragraph(escapeHtml(content.salutation), `color:${LETTER_NAVY};font-weight:700`) +
     content.paragraphsHtml.map((html) => paragraph(html)).join("") +
     peopleTable(content) +
     paragraph(escapeHtml(content.closing)) +
-    paragraph(escapeHtml(content.valediction), "margin:0 0 16px") +
+    paragraph(escapeHtml(content.valediction), `margin:0 0 16px;color:${LETTER_NAVY};font-weight:700`) +
     signature(content) +
     `<p style="margin:20px 0 0;color:${SOFT};font-family:${FONT};font-size:11px;line-height:17px">${escapeHtml(content.automatedNote)}</p>` +
     runningFoot(content);

@@ -930,6 +930,9 @@ function testTheLibanoEmailGoesToTheInsurerAndTheTestToTheOwnerAlone() {
   assert.ok(real.input.externalRecipients.includes("Policy.Admin@Libano-suisse-takaful.com"), "the insurer is declared to the recipient guard");
   assert.match(real.input.html, /automated email from Phoenix Workforce/);
   assert.match(real.input.text, /automated email from Phoenix Workforce/, "the plain-text copy says it too");
+  assert.ok(real.input.html.includes(">This is an automated email from Phoenix Workforce, Sato Pharma HR system.</p>"), "the automated note is exactly the owner's words, nothing more");
+  assert.match(real.input.html, /color:#0A527D;font-weight:700">Dear Libano-Suisse team,<\/p>/, "the greeting is bold navy");
+  assert.match(real.input.html, /color:#0A527D;font-weight:700">Kind regards,<\/p>/, "the valediction is bold navy");
   assert.match(real.input.html, /Ahmed &lt;Ali&gt;/, "a name is escaped, never written into the email as markup");
   assert.ok(!real.input.html.includes("Ahmed <Ali>"), "the raw name never reaches the html");
   // An EMAIL, not a letter (owner, 27 Nov 2026: "It very looks like a PDF. I wanted email … remove the part above
