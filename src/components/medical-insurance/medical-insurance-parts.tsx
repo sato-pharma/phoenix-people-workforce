@@ -29,6 +29,13 @@ export async function sendJson(url: string, method: "DELETE" | "PATCH" | "POST",
   );
 }
 
+/** Posts a JSON body and answers the server's JSON reply; a refusal keeps the server's own words. */
+export async function postJsonAnswer<T>(url: string, body: unknown): Promise<T> {
+  const response = await fetch(url, { body: JSON.stringify(body), headers: { "content-type": "application/json" }, method: "POST" });
+  await readAnswer(response);
+  return (await response.json()) as T;
+}
+
 /** Posts a JSON body and saves the file that comes back under the name the server gave it. */
 export async function downloadPosted(url: string, body: unknown, fallbackName: string) {
   await saveAnswerFile(await fetch(url, { body: JSON.stringify(body), headers: { "content-type": "application/json" }, method: "POST" }), fallbackName);

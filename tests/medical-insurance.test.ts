@@ -38,6 +38,8 @@ import { LIBANO_TABLE_OF_BENEFITS } from "../src/lib/medical-insurance/benefits.
 import { buildMedicalInsuranceMonthlyCostWorkbook } from "../src/lib/medical-insurance/cost-workbook.ts";
 import { buildMonthlySplit, EMPLOYEE_MINIMUM_OWN_SHARE_MONTHLY, LIFE_INSURANCE_PER_PERSON_MONTHLY, monthlyCoverPiastres, quoteMonthlyCost, splitOwnCover } from "../src/lib/medical-insurance/monthly-split.ts";
 import { employeeRecordWords } from "../src/lib/medical-insurance/view.ts";
+import { planLibanoMovementEmail } from "../src/lib/medical-insurance/libano-movement-email.ts";
+import type { LibanoMemberLine } from "../src/lib/medical-insurance/workbooks.ts";
 import {
   buildLibanoMemberFileWorkbook,
   libanoDay,
@@ -899,6 +901,62 @@ function testASeatNeverHoldsAnAmount() {
   assert.match(moneyShape.slice(0, moneyShape.indexOf("};")), /monthlySplit: MonthlySplit;/, "the monthly split rides only in the money view");
 }
 
+// The Send and Send test buttons (owner, 27 Nov 2026). Built with a fake workbook: nothing is ever sent here.
+function testTheLibanoEmailGoesToTheInsurerAndTheTestToTheOwnerAlone() {
+  const line = (fullName: string, memberType: LibanoMemberLine["memberType"]): LibanoMemberLine => ({
+    adherentNumber: null,
+    birthDate: "1990-01-01",
+    category: "A",
+    day: "2026-11-30",
+    fullName,
+    gender: "M",
+    memberType,
+    nationalId: null,
+    phone: null,
+    principalNumber: null,
+    staffNumber: "A-2",
+  });
+  const rows = [line("Ahmed <Ali>", "employee"), line("Mona Ali", "spouse")];
+  const workbook = new Uint8Array([80, 75, 3, 4]);
+  // 01:30 in Cairo on the 27th is still the 26th in UTC: the subject carries Cairo's day.
+  const base = { atIso: "2026-11-26T23:30:00.000Z", fileName: "Libano-Suisse-members-deletions-2026-11-27.xlsx", kind: "deletions" as const, policyNumber: "P-1", rows, systemFromAddress: "phoenix@send.satopharma.com", workbook };
+
+  const real = planLibanoMovementEmail(base);
+  assert.deepEqual(real.input.to, ["Policy.Admin@Libano-suisse-takaful.com"]);
+  assert.deepEqual(real.input.cc, ["ahmed.elshazly@libano-suisse-takaful.com", "omar.anwar@satopharma.com"]);
+  assert.equal(real.input.subject, "Deletion 27/11/2026");
+  assert.equal(real.input.from, "Omar Gawish via Phoenix Workforce <phoenix@send.satopharma.com>");
+  assert.equal(real.input.replyTo, "omar.anwar@satopharma.com");
+  assert.ok(real.input.externalRecipients.includes("Policy.Admin@Libano-suisse-takaful.com"), "the insurer is declared to the recipient guard");
+  assert.match(real.input.html, /automated email from Phoenix Workforce/);
+  assert.match(real.input.html, /Ahmed &lt;Ali&gt;/, "a name is escaped, never written into the email as markup");
+  assert.equal(real.input.attachments.length, 1);
+  assert.equal(real.input.attachments[0]!.filename, base.fileName);
+  assert.deepEqual([...Buffer.from(real.input.attachments[0]!.content, "base64")], [...workbook], "the attachment is the very workbook Export builds");
+  assert.equal(planLibanoMovementEmail({ ...base, atIso: "2026-11-27T15:00:00.000Z" }).dedupeKey, real.dedupeKey, "a second press the same day never reaches the insurer twice");
+
+  const test = planLibanoMovementEmail({ ...base, test: true });
+  assert.deepEqual(test.input.to, ["omar.anwar@satopharma.com"], "a test goes to the owner alone");
+  assert.deepEqual(test.input.cc, [], "a test copies nobody");
+  assert.ok(![...test.input.to, ...test.input.cc, ...test.input.externalRecipients].some((address) => /libano/i.test(address)), "a test never names the insurer");
+  assert.equal(test.input.subject, "TEST - Deletion 27/11/2026");
+  assert.match(test.input.html, /TEST SEND/);
+  assert.deepEqual([...Buffer.from(test.input.attachments[0]!.content, "base64")], [...workbook], "a test carries the same file");
+  assert.notEqual(test.dedupeKey, real.dedupeKey, "a test never stands in for the real send");
+  assert.notEqual(planLibanoMovementEmail({ ...base, atIso: "2026-11-26T23:31:00.000Z", test: true }).dedupeKey, test.dedupeKey, "a test can be sent again a minute later");
+
+  assert.throws(() => planLibanoMovementEmail({ ...base, rows: [] }), /Nobody is on the file/, "an empty file is never sent");
+
+  const registry = readFileSync("src/lib/security/access-registry.ts", "utf8");
+  assert.ok(registry.includes(`pattern: "/api/medical-insurance/movement-file/send", permission: { resource: "medical_insurance", action: "export" }`));
+  const route = readFileSync("app/api/medical-insurance/movement-file/send/route.ts", "utf8");
+  assert.ok(route.includes("assertSameOriginMutation(request)") && route.includes(`assertPermission(access, "medical_insurance", "export")`));
+  const service = readFileSync("src/lib/medical-insurance/service.ts", "utf8");
+  assert.ok(service.includes(`sendDurableEmail({ input: plan.input, sender: "phoenix" }`), "the button email goes through the durable outbox");
+  const page = readFileSync("src/components/medical-insurance/medical-insurance-actions.tsx", "utf8");
+  assert.ok(page.includes("Send test to me") && page.includes("Send to Libano-Suisse") && page.includes("<SendConfirm"));
+}
+
 function testNothingHereSendsOrPays() {
   for (const file of ["src/lib/medical-insurance/service.ts", "src/lib/medical-insurance/workbooks.ts", "src/lib/medical-insurance/compare.ts", "src/lib/medical-insurance/cost.ts", "src/lib/medical-insurance/monthly-split.ts", "src/lib/medical-insurance/cost-workbook.ts"]) {
     const source = readFileSync(file, "utf8");
@@ -927,6 +985,7 @@ export async function runMedicalInsuranceTests() {
   testEachBillIsComparedWithThePlan();
   await testTheMemberFileIsTheInsurersOwnSheet();
   testASeatNeverHoldsAnAmount();
+  testTheLibanoEmailGoesToTheInsurerAndTheTestToTheOwnerAlone();
   testNothingHereSendsOrPays();
 }
 

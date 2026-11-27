@@ -1451,7 +1451,7 @@ function memberLine(row: MemberDbRow, rows: ReadonlyMap<string, MemberDbRow>, em
  */
 export async function prepareLibanoMemberFile(
   body: Record<string, unknown>,
-): Promise<{ policyId: string; policy: { startsOn: string; endsOn: string }; kind: LibanoMemberFileKind; rows: LibanoMemberLine[] }> {
+): Promise<{ policyId: string; policyNumber: string | null; policy: { startsOn: string; endsOn: string }; kind: LibanoMemberFileKind; rows: LibanoMemberLine[] }> {
   const kind = body.kind;
   if (kind !== "additions" && kind !== "deletions" && kind !== "everyone") throw new MedicalInsuranceInputError("Choose additions, deletions or everyone covered.");
   const asOf = todayInCairo();
@@ -1471,6 +1471,7 @@ export async function prepareLibanoMemberFile(
       kind,
       policy: { endsOn: policy.endsOn, startsOn: policy.startsOn },
       policyId: policy.id,
+      policyNumber: policy.policyNumber,
       rows: [...ordered, ...orphans].map((row) => memberLine(row, rowsById, state.employeeRows, row.coverage_starts_on)),
     };
   }
@@ -1506,7 +1507,7 @@ export async function prepareLibanoMemberFile(
     if (rows.length > LIBANO_DELETIONS_SHEET_ROWS) {
       throw new MedicalInsuranceInputError(`Libano-Suisse's deletions sheet holds ${LIBANO_DELETIONS_SHEET_ROWS} people, families included; this file has ${rows.length}. Tick fewer and export twice.`);
     }
-    return { kind, policy: { endsOn: policy.endsOn, startsOn: policy.startsOn }, policyId: policy.id, rows };
+    return { kind, policy: { endsOn: policy.endsOn, startsOn: policy.startsOn }, policyId: policy.id, policyNumber: policy.policyNumber, rows };
   }
 
   const rows = actions.map((action): LibanoMemberLine => {
@@ -1537,7 +1538,95 @@ export async function prepareLibanoMemberFile(
   if (gaps.length > 0) {
     throw new MedicalInsuranceInputError(`Libano-Suisse's file needs a date of birth and sex for everyone. Fill them on the Employee Master, or untick: ${gaps.join(", ")}.`);
   }
-  return { kind, policy: { endsOn: policy.endsOn, startsOn: policy.startsOn }, policyId: policy.id, rows };
+  return { kind, policy: { endsOn: policy.endsOn, startsOn: policy.startsOn }, policyId: policy.id, policyNumber: policy.policyNumber, rows };
+}
+
+export type LibanoMovementEmailOutcome = {
+  status: "sent" | "queued" | "not_sent";
+  /** A test send: to the owner alone, never the insurer. */
+  test: boolean;
+  subject: string;
+  to: string[];
+  cc: string[];
+  people: number;
+  message: string;
+};
+
+/**
+ * The Send button beside Export (owner, 27 Nov 2026): the ticked people's Additions or Deletions workbook,
+ * the very file Export builds, emailed to Libano-Suisse's policy administration, copying the account manager
+ * and the owner (./libano-movement-email.ts holds who, what and why). Through the durable outbox, so a
+ * provider failure waits and retries instead of being lost. The register does not change.
+ *
+ * `test: true` is the Send test button: the very same email and file, to the owner alone and nobody at the
+ * insurer, so he can check it before the real one leaves (owner, 27 Nov 2026).
+ */
+export async function sendLibanoMovementEmail(access: AccessContext, body: Record<string, unknown>): Promise<LibanoMovementEmailOutcome> {
+  await assertPermission(access, "medical_insurance", "export");
+  if (body.kind !== "additions" && body.kind !== "deletions") throw new MedicalInsuranceInputError("Only an additions or a deletions file is sent to Libano-Suisse.");
+
+  const [{ emailNotificationsEnabled }, { sendDurableEmail, isQueuedForRetry }, { systemEmail }, { writeAuditLog }, sheet, mail, { medicalInsuranceFileDay }] = await Promise.all([
+    import("@/lib/notifications/email"),
+    import("@/lib/notifications/durable-email"),
+    import("@/config/system-settings"),
+    import("@/lib/admin/audit"),
+    import("./libano-movement-sheet"),
+    import("./libano-movement-email"),
+    import("./workbooks"),
+  ]);
+  if (!emailNotificationsEnabled()) throw new MedicalInsuranceInputError("Email sending is switched off in Phoenix, so nothing was sent.");
+
+  const file = await prepareLibanoMemberFile(body);
+  if (file.kind === "everyone") throw new MedicalInsuranceInputError("Only an additions or a deletions file is sent to Libano-Suisse.");
+  const kind = file.kind;
+  const test = body.test === true;
+  const atIso = new Date().toISOString();
+  const workbook = await sheet.buildLibanoMovementWorkbook({ kind, policy: { ...file.policy, holder: sheet.LIBANO_BRANCH_NAME }, rows: file.rows });
+  const plan = mail.planLibanoMovementEmail({
+    atIso,
+    fileName: `Libano-Suisse-members-${kind}-${medicalInsuranceFileDay(atIso)}.xlsx`,
+    kind,
+    policyNumber: file.policyNumber,
+    rows: file.rows,
+    systemFromAddress: systemEmail.defaultFromEmail,
+    test,
+    workbook,
+  });
+
+  const base = { cc: plan.input.cc, people: file.rows.length, subject: plan.input.subject, test, to: plan.input.to };
+  let outcome: LibanoMovementEmailOutcome;
+  try {
+    const result = await sendDurableEmail({ input: plan.input, sender: "phoenix" }, { dedupeKey: plan.dedupeKey });
+    if (result.skipped) {
+      outcome = isQueuedForRetry(result.reason)
+        ? { ...base, message: result.reason, status: "queued" }
+        : { ...base, message: `Not sent: ${result.reason || "the email was closed without sending."}`, status: "not_sent" };
+    } else {
+      outcome = {
+        ...base,
+        message: test
+          ? `Test sent to ${plan.input.to.join(", ")} only. Nothing went to Libano-Suisse.`
+          : `Sent to ${plan.input.to.join(", ")}, copying ${plan.input.cc.join(", ")}.`,
+        status: "sent",
+      };
+    }
+  } catch (error) {
+    if (!isQueuedForRetry(error)) throw error;
+    outcome = { ...base, message: (error as Error).message, status: "queued" };
+  }
+
+  if (outcome.status !== "not_sent") {
+    // The email is out or waiting in the outbox, so a missed audit row is logged by writeAuditLog, never thrown back.
+    await writeAuditLog({
+      actorLoginId: access.loginId ?? null,
+      entityId: file.policyId,
+      entityType: "medical_insurance_export",
+      summary: test
+        ? `${outcome.status === "sent" ? "Emailed" : "Queued"} a TEST of the ${kind} file for ${file.rows.length} ${file.rows.length === 1 ? "person" : "people"} to ${plan.input.to.join(", ")} only`
+        : `${outcome.status === "sent" ? "Emailed" : "Queued"} the ${kind} file for ${file.rows.length} ${file.rows.length === 1 ? "person" : "people"} to Libano-Suisse ("${plan.input.subject}")`,
+    });
+  }
+  return outcome;
 }
 
 // ── The register feeds the Employee Master what it is missing (owner, 27 Nov 2026) ──────────────────────
