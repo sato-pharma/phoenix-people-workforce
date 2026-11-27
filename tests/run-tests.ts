@@ -186,6 +186,7 @@ import { runSyntheticJourneysLivenessTests } from "./synthetic-journeys-liveness
 import { runPayrollEngineHardeningTests } from "./payroll-engine-hardening.test.ts";
 import { runPayrollSheetMappingTests } from "./payroll-sheet-mapping.test.ts";
 import { runPayrollUploadTemplateTests } from "./payroll-upload-template.test.ts";
+import { runPayrollStoredTemplateHoldsNoPeopleTests } from "./payroll-stored-template-holds-no-people.test.ts";
 import { runPayrollExportHouseIdentityTests } from "./payroll-export-house-identity.test.ts";
 import { runPayrollPhoenixLookTests } from "./payroll-phoenix-look.test.ts";
 import { runAutomatedPayrollPayModeOrderTests } from "./automated-payroll-pay-mode-order.test.ts";
@@ -3772,6 +3773,7 @@ await runTest("payroll exports (house identity, computed bands, held in words, s
 await runTest("automated payroll exports keep the Phoenix look (exempt from the house identity)", runPayrollPhoenixLookTests);
 await runTest("automated payroll exports put One Part employees first, then a separator, then Two Parts", runAutomatedPayrollPayModeOrderTests);
 await runTest("payroll upload template (house identity, captions cannot outscore the header row)", runPayrollUploadTemplateTests);
+await runTest("payroll stored template holds no people (2026-11-27: a template is a layout, never a record): the stored file's people and totals rows are empty and name no HR id, and the plain-template download clears every people row whatever the stored file holds", runPayrollStoredTemplateHoldsNoPeopleTests);
 await runTest("payroll workflow", runPayrollWorkflowTests);
 await runTest("automated payroll split (Part 1/2 freeze + FP-in-Part-1 + reconcile)", runAutomatedPayrollSplitTests);
 await runTest("automated payroll export order (fixed HR-ID sequence)", runAutomatedPayrollExportOrderTests);
