@@ -4955,7 +4955,9 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     // page and every decision route; this card only draws the link.
     href: "/admin/field-crm/sfe-recommendations",
     icon: MessageSquareQuote,
-    label: "SFE Recommendations",
+    // "SFE Recommended", not "SFE Recommendations": with its number beside it the longer word ran 7px past the rail
+    // (sidebar-label-width, 27 Nov 2026). The page keeps its own full title.
+    label: "SFE Recommended",
     description: "The place checks the SFE Manager recommended to validate or not, each waiting for your decision.",
     permissions: [{ resource: "phoenix_crm", action: "update" }],
     roles: ["Super Admin"],
