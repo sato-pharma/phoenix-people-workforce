@@ -933,6 +933,8 @@ function testTheLibanoEmailGoesToTheInsurerAndTheTestToTheOwnerAlone() {
   assert.equal(real.input.attachments.length, 1);
   assert.equal(real.input.attachments[0]!.filename, base.fileName);
   assert.deepEqual([...Buffer.from(real.input.attachments[0]!.content, "base64")], [...workbook], "the attachment is the very workbook Export builds");
+  const fromArrayBuffer = planLibanoMovementEmail({ ...base, workbook: workbook.slice().buffer });
+  assert.deepEqual([...Buffer.from(fromArrayBuffer.input.attachments[0]!.content, "base64")], [...workbook], "the workbook builder answers an ArrayBuffer, and it is attached byte for byte");
   assert.equal(planLibanoMovementEmail({ ...base, atIso: "2026-11-27T15:00:00.000Z" }).dedupeKey, real.dedupeKey, "a second press the same day never reaches the insurer twice");
 
   const test = planLibanoMovementEmail({ ...base, test: true });

@@ -132,7 +132,7 @@ export function planLibanoMovementEmail(input: {
   systemFromAddress: string;
   /** A TEST send (see buildLibanoMovementEmail). */
   test?: boolean;
-  workbook: Uint8Array;
+  workbook: ArrayBuffer | Uint8Array;
 }): {
   dedupeKey: string;
   input: {
@@ -162,7 +162,7 @@ export function planLibanoMovementEmail(input: {
   return {
     dedupeKey,
     input: {
-      attachments: [{ content: Buffer.from(input.workbook).toString("base64"), contentType: XLSX_TYPE, filename: input.fileName }],
+      attachments: [{ content: Buffer.from(new Uint8Array(input.workbook)).toString("base64"), contentType: XLSX_TYPE, filename: input.fileName }],
       cc: recipients.cc,
       externalRecipients: recipients.external,
       from: libanoMovementFrom(input.systemFromAddress),
