@@ -306,6 +306,12 @@ export type DoubleVisitDashboardData = {
     byLine: DoubleVisitBreakdownRow[];
   };
   kpis: DoubleVisitKpis;
+  /**
+   * HR ids (as `managerSummaries[].managerHrId` carries them) of the double-visitors in this window
+   * who have left the company. A leaver's name is never surfaced as a live double-visitor (owner,
+   * 2026-09-29), so a consumer listing managers drops these. Absent on an empty dashboard.
+   */
+  leaverManagerHrIds?: string[];
   managerSummaries: DoubleVisitManagerSummary[];
   mrScores: DoubleVisitMrScore[];
   neglectedMrs: DoubleVisitMrScore[];

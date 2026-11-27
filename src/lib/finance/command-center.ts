@@ -3,6 +3,8 @@ import { unstable_cache } from "next/cache.js";
 import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
 import { getFinanceAvailability } from "@/lib/automated-payroll/run-service";
 import { FINANCE_DASHBOARD_CACHE_TAG } from "@/lib/dashboard/invalidation";
+import { ownsDirectOrderBookingQueue } from "@/lib/direct-orders/finance-authority";
+import { resolveHrIdsForRole } from "@/lib/notifications/role-recipients";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { logError } from "@/lib/observability/log";
 
@@ -136,10 +138,22 @@ export type FinanceCommandCenterData = {
     committedSpend: number;
     requiredRoi: number;
     executedCount: number;
-    /** Approved, carrying a pay date, never executed — the queue that means money is owed. */
+    /**
+     * Approved, carrying a pay date, never executed — the queue that means money is owed. A
+     * `finance_hold` is NOT in it (migration 20261127161548): the Super Admin paused it on purpose
+     * and only he releases it, so it is nobody's turn to pay.
+     */
     dueUnexecutedCount: number;
     dueUnexecutedValue: number;
     dueOldest: string | null;
+    /**
+     * Spend genuinely waiting on Finance to pay: the requests standing at the Finance Execution step
+     * (their status is still `pending_approval` while that rung is current) plus the
+     * approved-not-executed queue above. Optional only because a payload from the function before
+     * 20261127161548 lacks it — `marketingSpendToPay` is the one reader.
+     */
+    toPayCount?: number;
+    toPayValue?: number;
     inApprovalCount: number;
     missingPaymentProof: number;
     missingInvoice: number;
@@ -220,10 +234,74 @@ function emptyData(): FinanceCommandCenterData {
       approvedCount: 0, awaitingMyStep: 0, committedSpend: 0, dueOldest: null, dueUnexecutedCount: 0,
       dueUnexecutedValue: 0, executedCount: 0, inApprovalCount: 0, invoiceOverdueCount: 0,
       invoiceOverdueOldest: null, invoiceOverdueValue: 0, missingInvoice: 0,
-      missingPaymentProof: 0, requiredRoi: 0,
+      missingPaymentProof: 0, requiredRoi: 0, toPayCount: 0, toPayValue: 0,
     },
     leave: { awaitingMyDecision: 0 },
   };
+}
+
+/**
+ * "Marketing spend to pay" — what is genuinely waiting on Finance to pay. Pure.
+ *
+ * Reads the RPC's `toPay*` figures (the Finance Execution step plus approved-not-executed). Before
+ * 20261127161548 the tile read `dueUnexecuted*`, whose status filter could not see a request at the
+ * Finance Execution step — its status is still `pending_approval` — so on 27 Nov 2026 it showed one
+ * deliberate hold (EGP 5,500) while 16 requests, EGP 88,700, sat at his step. A payload from the
+ * older function has no `toPay*` keys; it falls back to `dueUnexecuted*` rather than printing a dash.
+ */
+export function marketingSpendToPay(
+  marketing: Pick<FinanceCommandCenterData["marketing"], "dueUnexecutedCount" | "dueUnexecutedValue" | "toPayCount" | "toPayValue">,
+): { count: number; value: number } {
+  if (typeof marketing.toPayCount === "number" && typeof marketing.toPayValue === "number") {
+    return { count: marketing.toPayCount, value: marketing.toPayValue };
+  }
+  return { count: marketing.dueUnexecutedCount, value: marketing.dueUnexecutedValue };
+}
+
+/**
+ * The "Net payroll" tile: the latest committed month's net, and the people THAT net was paid to.
+ * Pure.
+ *
+ * It used to pair October's net (paid to 116 people) with today's payroll-eligible headcount, two
+ * populations from two dates under one figure. The subline now names the batch the figure comes
+ * from — "116 paid · 10/2026". Only when no month is committed yet does it fall back to the
+ * standing roster's net, and then it says so.
+ */
+export function netPayrollTile(
+  data: Pick<FinanceCommandCenterData, "headcount" | "payroll">,
+): { net: number; sub: string } {
+  const latest = data.payroll.committed[data.payroll.committed.length - 1] ?? null;
+  if (latest) {
+    const [year, month] = String(latest.period ?? "").split("-");
+    const period = year && month ? `${month}/${year}` : String(latest.period ?? "");
+    return { net: latest.net, sub: `${Math.round(latest.employees).toLocaleString("en-US")} paid · ${period}` };
+  }
+  return {
+    net: data.headcount.standingNet,
+    sub: `${Math.round(data.headcount.payrollEligible).toLocaleString("en-US")} payroll-eligible · not yet paid`,
+  };
+}
+
+/**
+ * Whose seat the Finance Manager's queue is computed for, given the current holders of the
+ * Finance Manager role. Pure.
+ *
+ * One holder: that person. Several: the one who also holds Finance's direct-order duty
+ * (`ownsDirectOrderBookingQueue`, the existing authority for the unbooked-orders queue that is
+ * part of this same total), else the first by HR id so the answer is stable. None: null — the
+ * caller names the seat as unavailable instead of quietly counting nobody's queue.
+ */
+export function pickFinanceManagerSeat(holders: readonly string[]): string | null {
+  // A spread, not Array.from: tests/finance-command-center.test.ts counts `.from(` as a table read.
+  const ids = [...new Set(holders.map((id) => String(id ?? "").trim()).filter(Boolean))].sort();
+  if (ids.length === 0) return null;
+  return ids.find((hrId) => ownsDirectOrderBookingQueue({ hrId, role: "Finance Manager", scope: "self" })) ?? ids[0]!;
+}
+
+/** The Finance Manager's own HR id, read from who holds the role today (never a literal). */
+async function resolveFinanceManagerHrId(): Promise<string | null> {
+  const { hrIds } = await resolveHrIdsForRole("Finance Manager", "Finance overview seat");
+  return pickFinanceManagerSeat(hrIds);
 }
 
 /** The period whose finance sheets the dashboard offers — the current Cairo month. */
@@ -240,7 +318,18 @@ function currentBusinessPeriod(): { month: number; year: number } {
 
 export async function getFinanceCommandCenterData(
   access: AccessContext,
-  options?: { trendMonths?: number },
+  options?: {
+    trendMonths?: number;
+    /**
+     * Whose queues the per-person figures ("Awaiting you" / "In the finance queue", his marketing
+     * step, his leave decisions) are counted for. `viewer` (the default) is the Finance Manager's
+     * own page. `finance-manager` is the Super Admin's overview, whose band is labelled "The Finance
+     * Manager's headline figures": computed for the viewer it counted the Super Admin's own leave
+     * decisions and missed the Finance Manager's Finance Execution steps (27 Nov 2026: 178 against
+     * his true 185).
+     */
+    queueOwner?: "viewer" | "finance-manager";
+  },
 ): Promise<FinanceCommandCenterView> {
   // The page's own role gate is the boundary; this is the defence-in-depth re-check every
   // finance surface performs. `payroll:read` is the narrowest grant that every tile here sits
@@ -248,9 +337,20 @@ export async function getFinanceCommandCenterData(
   // the page by a role_permission_overrides row.
   await assertPermission(access, "payroll", "read");
 
-  const actorHrId = String(access.hrId ?? access.loginId ?? "").trim();
   const trendMonths = Math.max(1, Math.min(24, options?.trendMonths ?? 6));
   const unavailable: string[] = [];
+
+  let actorHrId = String(access.hrId ?? access.loginId ?? "").trim();
+  if (options?.queueOwner === "finance-manager") {
+    const seat = await resolveFinanceManagerHrId();
+    if (seat) {
+      actorHrId = seat;
+    } else {
+      // Never the viewer's own queues under the Finance Manager's name, and never a silent zero.
+      actorHrId = "";
+      unavailable.push("The Finance Manager's own queues (nobody could be read as the current Finance Manager)");
+    }
+  }
 
   // Both sources resolve independently so one failing degrades a section instead of the page.
   // A throw here would take out a landing page; a named unavailable source is honest and
