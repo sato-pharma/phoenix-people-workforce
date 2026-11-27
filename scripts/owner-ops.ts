@@ -54,6 +54,9 @@
 //                 reset, side-loading and force-stop — on top of the six they already carry, and says
 //                 what each one costs the rep. It only ever ADDS. `no_install_apps` and `no_config_wifi`
 //                 are refused by name, and mobile data is reported as what no Android lock can hold.
+//   end-insurance-cover updateMedicalInsuranceMember (owner, 27 Nov 2026: "End the three resigned
+//                 employees' insurance cover"). Ends each named employee's cover on the day and with the
+//                 reason the Add/Remove screen gives; refuses anyone the screen does not list to remove.
 //   sync-insurance-master syncEmployeeMasterFromMedicalInsurance   (owner, 27 Nov 2026: "synchronize from
 //                 medical insurance module to employee master the needed data"). The Libano-Suisse card
 //                 number goes onto the Employee Master; national ID, birth date, gender and mobile only where
@@ -937,6 +940,39 @@ async function runSyncInsuranceMaster(plan: Extract<OwnerOpsPlan, { job: "sync-i
   return { employees: [], focus: {}, proofDone: true };
 }
 
+async function runEndInsuranceCover(plan: Extract<OwnerOpsPlan, { job: "end-insurance-cover" }>, owner: AccessContext) {
+  const { assertPermission } = await import("@/lib/auth/permissions");
+  const { getMedicalInsuranceView, updateMedicalInsuranceMember } = await import("@/lib/medical-insurance/service");
+  // The same check the Add/Remove screen's PATCH makes before it ends anyone.
+  await assertPermission(owner, "medical_insurance", "update");
+  const view = await getMedicalInsuranceView();
+  if (!view) throw new Error("there is no medical insurance policy in force");
+  const removals = new Map(view.actions.filter((action) => action.kind === "remove" && action.memberId && action.hrId).map((action) => [action.hrId!.toUpperCase(), action]));
+  const chosen = plan.hrIds.map((hrId) => ({ action: removals.get(hrId.toUpperCase()) ?? null, hrId }));
+  const missing = chosen.filter((item) => !item.action).map((item) => item.hrId);
+  // Never a guessed end day: someone the screen does not list to remove is not this job's to end.
+  if (missing.length > 0) throw new Error(`the Add/Remove screen lists no removal for ${missing.join(", ")} — nothing was ended`);
+  const verb = plan.apply ? "Ending" : "Would end";
+  const memberIds: string[] = [];
+  for (const { action } of chosen) {
+    const item = action!;
+    console.log(`  ${verb} ${item.name} (${item.hrId}) — cover ends ${item.effectiveOn}${item.voidFromStart ? " (voided from its first day)" : ""}: ${item.reason}`);
+    await updateMedicalInsuranceMember(owner, item.memberId!, { action: "end", coverageEnd: item.effectiveOn, endReason: item.reason });
+    memberIds.push(item.memberId!);
+  }
+
+  // The proof: each person's row, and their family's, as the register holds them now.
+  const { getSupabaseAdmin } = await import("@/lib/supabase/server");
+  const { data, error } = await getSupabaseAdmin()
+    .from("medical_insurance_members")
+    .select("hr_id, full_name, member_type, coverage_starts_on, coverage_ends_on, end_reason")
+    .or(`id.in.(${memberIds.join(",")}),principal_member_id.in.(${memberIds.join(",")})`);
+  if (error) throw new Error(`the proof read failed: ${error.message}`);
+  console.log(`\nPROOF — the register rows as they are now${plan.apply ? "" : " (the dry run changed nothing)"}:`);
+  for (const row of (data ?? []) as Array<Record<string, unknown>>) console.log(`  ${JSON.stringify(row)}`);
+  return { employees: [], focus: {}, proofDone: true };
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   if (argv.includes("--help") || argv.includes("-h")) {
@@ -985,6 +1021,7 @@ async function main() {
     else if (plan.job === "match-app-version") outcome = await runMatchAppVersion(plan, owner.access);
     else if (plan.job === "lock-rep-tablets") outcome = await runLockRepTablets(plan, owner.access);
     else if (plan.job === "sync-insurance-master") outcome = await runSyncInsuranceMaster(plan, owner.access);
+    else if (plan.job === "end-insurance-cover") outcome = await runEndInsuranceCover(plan, owner.access);
     else outcome = await runPinPharmacy(plan, owner.access);
   } catch (error) {
     refused = errorText(error);

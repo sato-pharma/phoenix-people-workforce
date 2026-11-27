@@ -177,6 +177,7 @@
     {"pattern":"/api/marketing-requests/vendors","file":null,"reasons":["registry:mutation"]},
     {"pattern":"/api/marketing-requests/venue-merge","file":null,"reasons":["registry:mutation"]},
     {"pattern":"/api/medical-insurance/cost-letter","file":"app/api/medical-insurance/cost-letter/route.ts","reasons":["file:content-disposition","file:pdf","registry:export","writes:audit-write"]},
+    {"pattern":"/api/medical-insurance/cost/export","file":"app/api/medical-insurance/cost/export/route.ts","reasons":["registry:export","writes:audit-write"]},
     {"pattern":"/api/medical-insurance/documents/:id","file":"app/api/medical-insurance/documents/[id]/route.ts","reasons":["writes:audit-write"]},
     {"pattern":"/api/medical-insurance/invoices/documents/:id","file":"app/api/medical-insurance/invoices/documents/[id]/route.ts","reasons":["writes:audit-write"]},
     {"pattern":"/api/medical-insurance/members/export","file":"app/api/medical-insurance/members/export/route.ts","reasons":["registry:export","writes:audit-write"]},
