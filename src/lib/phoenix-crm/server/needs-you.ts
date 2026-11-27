@@ -55,7 +55,6 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import {
   canAdminister,
-  canDecideValidationReviews,
   canEnterMissedRecords,
   readsTeamReports,
   resolvePhoenixCrmViewer,
