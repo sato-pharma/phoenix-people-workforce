@@ -194,6 +194,9 @@ export function runPhoenixCrmImportedHistoryTests() {
     "src/lib/phoenix-crm/server/double-visit-plans.ts": 1,
     "src/lib/phoenix-crm/server/insight-reports.ts": 1,
     "src/lib/phoenix-crm/server/integrity-board.ts": 2,
+    // The late-visit copy check (27 Nov 2026) asks the missed-record door's own "already visited" question, and that
+    // door counts a copied visit too (missed-records.ts above), so a row it closes is exactly one Approve would refuse.
+    "src/lib/phoenix-crm/server/late-visit-duplicates.ts": 1,
     "src/lib/phoenix-crm/server/list.ts": 2,
     "src/lib/phoenix-crm/server/manager-customer-marks.ts": 1,
     "src/lib/phoenix-crm/server/manager-plan-report.ts": 1,
