@@ -250,7 +250,8 @@ async function cropToCard(bytes: Buffer): Promise<IdPicture | null> {
     .removeAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
-  const raw = { channels: info.channels, height: info.height, width: info.width };
+  // sharp types a raw image's channel count as 1 | 2 | 3 | 4, and removeAlpha() leaves 1 or 3.
+  const raw = { channels: info.channels as 1 | 2 | 3 | 4, height: info.height, width: info.width };
   const ask = await sharp(data, { raw })
     .resize({ fit: "inside", height: CARD_ASK_MAX_EDGE_PX, width: CARD_ASK_MAX_EDGE_PX, withoutEnlargement: true })
     .jpeg({ quality: 82 })
@@ -264,7 +265,7 @@ async function cropToCard(bytes: Buffer): Promise<IdPicture | null> {
   // A thin border of the photo all round: the cut lands on the desk, never on the card.
   const card = warpCard({ ...raw, data: new Uint8Array(data) }, refined, size.width, size.height, ID_CARD_BORDER_SHARE * size.width);
   if (!card) return null;
-  const jpeg = await sharp(Buffer.from(card.data), { raw: { channels: card.channels, height: card.height, width: card.width } })
+  const jpeg = await sharp(Buffer.from(card.data), { raw: { channels: card.channels as 1 | 2 | 3 | 4, height: card.height, width: card.width } })
     .jpeg({ mozjpeg: true, quality: 85 })
     .toBuffer();
   return { bytes: new Uint8Array(jpeg), contentType: "image/jpeg", heightPx: card.height, widthPx: card.width };
