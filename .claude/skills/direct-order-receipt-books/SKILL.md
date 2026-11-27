@@ -58,7 +58,9 @@ has to rediscover it. The code side is module memory: the first bullet of `.clau
 | `Guides\دفاتر إيصالات الطلبات المباشرة - ملخص للإدارة.pdf` | management summary, 4 pages |
 | `Guides\دليل العمل - إيصالات الطلبات المباشرة - لمديري المناطق.pdf` | area managers' guide, 3 pages |
 | `Guides\عينة دفتر - دفتر 01 القاهرة - إيصالان للعرض.pdf` | sample book, 7 pages, 1.1 MB, codes NOT in Phoenix |
-| `Guides\مسودة الإيميل - مقترح دفاتر الإيصالات.txt` | the Arabic proposal email draft |
+| `Guides\مسودة الإيميل - مقترح دفاتر الإيصالات.txt` | the Arabic proposal email draft (5 attachments) |
+| `Guides\تعليمات الطباعة - للمطبعة.pdf` | printer's instructions, 2 pages: spec, 3-part sets, proof copier test, secrecy |
+| `Guides\اختبار العلامة المخفية - ماكينة التصوير.pdf` | office copier test: instructions + one sample receipt (codes NOT in Phoenix) |
 | `Guides\_img\desk-top.png`, `desk-bottom.png` | real screenshots of Finance's desk |
 
 A copy of both generators is in this skill's `generator/` folder, so they survive the laptop. To use the copy,
@@ -92,6 +94,12 @@ put `managers.json` beside it.
   4. **Microtext line** at 2.6 pt: `SATOPHARMA` + serial + code + part, repeated. It reads as a hairline and does
      not survive a copy.
   5. **QR code** carrying `SATO-DO|<serial>|<code>`. Phoenix does not scan it yet, so never claim it does.
+- **Print spec, written by Claude on 27 Nov and NOT yet confirmed by the owner or the printer:**
+  - each receipt is a 3-part self-copying (NCR) set with all plies WHITE, so the hidden watermark stays tuned;
+  - the order is Original on top, then Copy 1, then Copy 2;
+  - only the Copy 1 ply is perforated to tear out;
+  - the cover and 50 sets are bound in file order and cannot be taken apart;
+  - spoiled pages go back to Finance, and the files are deleted from the printer's machines.
 - **Printing conditions (in the email):**
   - Print the files as they are, at 600 dpi, with no scaling and no image "enhancement".
   - **Photocopy one page of the printer's proof BEFORE the full run** and confirm the hidden words appear.
@@ -181,7 +189,15 @@ put `managers.json` beside it.
 
 ## Still open (when he asks)
 
-- The physical copier test on a printed proof.
+- The physical copier test. Two ways to do it:
+  - on an office printer, now: `اختبار العلامة المخفية - ماكينة التصوير.pdf`, page 2, printed at 100% then
+    photocopied;
+  - on the printer's proof, before the full run.
+  A session cannot do this test.
 - Swapping the guide's drawing for the real entry screen after the first hand-over.
+  - Production renders no panel until a book is issued.
+  - Staging has the tables and the 800 rows, but `/api/dev-auth` answers 404 there, so a session cannot sign in to
+    photograph it.
+  - Never record a fake hand-over on production to get the picture.
 - The book files' route to the printer: USB is proposed.
 - Dr Anwar and Ahmed's decision on whether a missing receipt holds the sales month.
