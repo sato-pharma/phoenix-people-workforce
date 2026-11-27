@@ -29,6 +29,16 @@ import {
 import { haversineKm, isUsablePoint } from "@/lib/pharmacy-search/geo";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored: a mistyped --aply must not look up nothing
+// and say so quietly, nor a mistyped --limt spend the month's allowance (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "territory-match-pharmacy-places",
+  entry: import.meta.url,
+  known: ["--apply", "--limit", "--budget", "--log"],
+});
+
 /** This script's own lookups per Cairo month. */
 const MONTHLY_BUDGET = 2000;
 /** Never more, whatever --budget says: the rest of the free 5,000 is Phoenix CRM's. */
