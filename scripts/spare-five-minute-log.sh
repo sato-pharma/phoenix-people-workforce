@@ -2,7 +2,7 @@
 # Runs ON THE SPARE as user phoenix every 5 minutes, from the timer phoenix-five-minute-log (installed at
 # ~/phoenix/five-minute-log.sh). Source: ~/.claude/scripts/spare-five-minute-log.sh on the main laptop.
 # Owner, 2026-11-23: "Do 5, 27, 30".
-#  #5  ~/phoenix/link-delay.log  - 20 pings each to the main laptop (192.168.1.46) and the router: average, worst, lost.
+#  #5  ~/phoenix/link-delay.log  - 20 pings each to the main laptop and the router, on whatever network the spare is on: average, worst, lost.
 #  #30 ~/phoenix/dev-memory.log  - the live dev server's memory (phoenix-dev), a preview's (phoenix-preview) if one runs,
 #      memory available to the whole spare and swap in use, in MB. A slow leak shows as the live number climbing day
 #      over day at the same hour (the 04:00 restart resets it).
@@ -16,7 +16,13 @@ ping_line() {   # $1 name, $2 address -> "name avg=.. max=.. lost=..%"
   local rtt; rtt=$(printf '%s\n' "$out" | sed -n 's#.*= [0-9.]*/\([0-9.]*\)/\([0-9.]*\)/.*#avg=\1ms max=\2ms#p')
   echo "$1 ${rtt:-avg=- max=-} lost=${lost:-100}%"
 }
-echo "$ts $(ping_line laptop 192.168.1.46) | $(ping_line router 192.168.1.1)" >> "$D/link-delay.log"
+# 27 Nov: the addresses are read live, not fixed to the home network - at the office (Wi-Fi 605) the fixed home
+# addresses read 100% lost while the link was fine. Router = the default gateway; laptop = the machine holding an SSH
+# session to the spare (the tunnel), else the home laptop's address.
+router=$(ip -4 route show default 2>/dev/null | awk '{print $3; exit}'); router=${router:-192.168.1.1}
+laptop=$(ss -tnH state established '( sport = :22 )' 2>/dev/null | awk '{print $NF}' | sed 's/:[0-9]*$//' | head -n1)
+laptop=${laptop:-192.168.1.46}
+echo "$ts $(ping_line laptop "$laptop") | $(ping_line router "$router")" >> "$D/link-delay.log"
 
 unit_mb() {   # memory of a systemd unit's processes, MB (0 when not running)
   local cg; cg=$(systemctl show -p ControlGroup --value "$1" 2>/dev/null)

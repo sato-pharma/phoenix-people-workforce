@@ -8,6 +8,10 @@
 #   card up again; the fallback /etc/systemd/network/20-phoenix-wifi.network (phoenix-netfix) keeps the card managed even
 #   if netplan's own file goes missing. It tells "password refused" apart from "password accepted, no address".
 #   A password with " or \ in it is written escaped so the settings file stays valid.
+# v4 (27 Nov): it ADDS the network and keeps every one the spare already knew. v3 replaced the file, so joining the
+#   work Wi-Fi "605" (owner's first time at work with the spare, 27 Nov) made it forget the home Wi-Fi.
+#   Joining a network away from home also needs SSH let in from that network:
+#   sudo ufw allow from <network>/24 to any port 22 proto tcp   (the firewall allows only the home network by default).
 set -u
 W=$(ls /sys/class/net | grep '^wl' | head -n1)
 if [ -z "$W" ]; then echo "No Wi-Fi card found."; exit 1; fi
@@ -30,6 +34,22 @@ network:
           password: "$(esc "$P")"
 EOF
 chmod 600 "$F"
+# v4: keep every network the spare already knew, so joining a new one never forgets the old.
+if [ -f "$F.last-good" ] && command -v python3 >/dev/null 2>&1; then
+  python3 - "$F" "$F.last-good" "$W" <<'PY' || echo "(Could not keep the other Wi-Fi networks; only this one is saved.)"
+import sys, os, yaml
+cur, old, w = sys.argv[1], sys.argv[2], sys.argv[3]
+a = yaml.safe_load(open(cur)); b = yaml.safe_load(open(old)) or {}
+ap = a["network"]["wifis"][w]["access-points"]
+for wifi in ((b.get("network") or {}).get("wifis") or {}).values():
+    for name, conf in ((wifi or {}).get("access-points") or {}).items():
+        ap.setdefault(name, conf)
+os.umask(0o077)
+open(cur, "w").write(yaml.safe_dump(a, default_flow_style=False, sort_keys=False))
+print("Wi-Fi networks the spare knows: " + ", ".join(ap.keys()))
+PY
+  chmod 600 "$F"
+fi
 if ! netplan generate 2>/tmp/wifi-join.err; then
   echo "Those settings could not be saved:"; sed -E 's/(password).*/\1 <hidden>/I' /tmp/wifi-join.err | tail -3
   [ -f "$F.last-good" ] && cp "$F.last-good" "$F" && netplan generate 2>/dev/null

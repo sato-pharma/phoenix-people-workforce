@@ -10,7 +10,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `hooks/cloud-first-router.mjs` | 5388 | `38817a5603e0abe6` |
 | `hooks/compact-summary-log.mjs` | 4793 | `3a0a55fdeba8da84` |
 | `hooks/dev-server-reaper.mjs` | 44955 | `8c3d38d30cd80ad6` |
-| `hooks/dispatch.json` | 3533 | `71cc1ecfcc960ccb` |
+| `hooks/dispatch.json` | 4246 | `3e85b3fcde748f2e` |
 | `hooks/effort-advisor.mjs` | 5509 | `1c6149ac5f7b6e07` |
 | `hooks/hook-dispatch-worker.mjs` | 1362 | `6524ba3dcd6cb8c6` |
 | `hooks/hook-dispatch.mjs` | 19624 | `ebb6d5829dfda238` |
@@ -32,6 +32,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `hooks/scratchpad-guard.mjs` | 44614 | `0b44eb7c90c9d361` |
 | `hooks/session-census.mjs` | 13231 | `255cc0191545ab46` |
 | `hooks/session-start-dispatch.mjs` | 13235 | `13f1f75576642dde` |
+| `hooks/spare-screen-mirror.mjs` | 5002 | `21eef274298a9e8a` |
 | `hooks/spawn-probe.mjs` | 2523 | `8201ad53322df322` |
 | `hooks/speak-arabic-reply.mjs` | 1004 | `6109f9c0a86891ea` |
 | `hooks/speak-on-request.mjs` | 3539 | `07e2f80bc1deaa39` |
@@ -127,7 +128,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/spare-disk-health.sh` | 5229 | `4a42ea75288a1b23` |
 | `scripts/spare-e2e-run.sh` | 5323 | `d0a3a315303eec54` |
 | `scripts/spare-e2e.ps1` | 4575 | `b4152c82b18c9da6` |
-| `scripts/spare-five-minute-log.sh` | 2175 | `526fd96756372ca5` |
+| `scripts/spare-five-minute-log.sh` | 2743 | `e9a006ddb43a098b` |
 | `scripts/spare-follow-production.ps1` | 10282 | `bf796a8e957ed2a9` |
 | `scripts/spare-laptop-ssh-setup.ps1` | 3560 | `c701f0d120aa2857` |
 | `scripts/spare-netfix.sh` | 8000 | `1d73232b0b621c8c` |
@@ -138,6 +139,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/spare-preview.ps1` | 15734 | `02b7e2064cf78101` |
 | `scripts/spare-rebuild.ps1` | 16316 | `5b795fcfadebcab4` |
 | `scripts/spare-role-check.sh` | 7234 | `9bea84102225c1f4` |
+| `scripts/spare-screen-stream.mjs` | 3929 | `cdeb283945002b63` |
 | `scripts/spare-shots.mjs` | 3122 | `42a38285765b8e88` |
 | `scripts/spare-shots.ps1` | 8181 | `5638640d2fe1c6bb` |
 | `scripts/spare-speed-report.mjs` | 9228 | `6bbe3962da5667e2` |
@@ -147,7 +149,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/spare-test-one.ps1` | 5526 | `ca5f2ffe5c9bcd54` |
 | `scripts/spare-test.ps1` | 10493 | `909990d33d58f9a5` |
 | `scripts/spare-tunnel.ps1` | 7135 | `a530b9c9c157e4c1` |
-| `scripts/spare-wifi-join.sh` | 3380 | `bbbf2fcef1f535c8` |
+| `scripts/spare-wifi-join.sh` | 4630 | `23e6b69f39ec8975` |
 | `scripts/spare-wifi-rejoin.sh` | 5266 | `5a6a6736e2cd1647` |
 | `scripts/spare.ps1` | 2341 | `87027b073fc6b6c2` |
 | `scripts/speak-arabic-reply.py` | 11489 | `e32d41c7adc5e013` |
