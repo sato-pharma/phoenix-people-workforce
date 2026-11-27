@@ -1452,6 +1452,7 @@ import { runHiringDocumentsStatusNotesTests } from "./hiring-documents-status-no
 import { runHiringPackInsuranceWageTests } from "./hiring-pack-insurance-wage.test.ts";
 import { runHiringPackCompanyDetailsTests } from "./hiring-pack-company-details.test.ts";
 import { runHiringPackBankAccountLetterTests } from "./hiring-pack-bank-account-letter.test.ts";
+import { runHiringPackIdCardCropTests } from "./hiring-pack-id-card-crop.test.ts";
 import { runHiringPackPaperEditorTests } from "./hiring-pack-paper-editor.test.ts";
 import { runHiringPackCustomTemplateRenderTests } from "./hiring-pack-custom-template-render.test.ts";
 import { runHiringPackCustomTemplateTests } from "./hiring-pack-custom-templates.test.ts";
@@ -13031,6 +13032,10 @@ await runTest("rollup settle: the roll-up reads a file over 1 MiB, so a suite-re
 await runTest(
   "bank account letter: the original letter's seven columns in its order, right to left, base salary as a plain integer, everyone without FAB ticked, heading repeats and no row splits, no seal, audited before the file",
   runHiringPackBankAccountLetterTests,
+);
+await runTest(
+  "bank letter ID pages: each card cut to its edges with a thin border kept round it, laid flat and landscape, the right way up from its corner order; a misread corner snaps to the outermost edge, never a printed line; a reading that is no card is refused",
+  runHiringPackIdCardCropTests,
 );
 
 await runTest("Pedia Sharkia 1 and 2: off the organogram, counted to Hany Saad from October, published months unmoved", runPediaSharkiaHanySaadHoldTests);

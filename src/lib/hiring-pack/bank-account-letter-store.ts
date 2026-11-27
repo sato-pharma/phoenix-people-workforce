@@ -19,6 +19,15 @@ import {
   type IdPicture,
   type StoredIdFile,
 } from "./bank-letter-id-pages.ts";
+import { findIdCardCorners } from "./id-card-corners.ts";
+import {
+  cardCropSize,
+  ID_CARD_BORDER_SHARE,
+  isPlausibleCardQuad,
+  quadFromThousandths,
+  refineCardQuad,
+  warpCard,
+} from "./id-card-crop.ts";
 
 // The people the bank account-opening letter can list: the active staff, read from the employee
 // record and the Arabic job title on the hiring profile — the same two places HR Forms prints from.
@@ -223,13 +232,54 @@ async function loadSharp(): Promise<SharpFactory> {
 /** The long edge a side is printed from: ~240 dpi across the 170 mm box, a few hundred KB a side. */
 const ID_PICTURE_MAX_EDGE_PX = 1600;
 
+/** The long edge the photo is read at for the crop: enough for a sharp 1,600 px card, light enough to warp. */
+const CARD_SOURCE_MAX_EDGE_PX = 2400;
+/** The long edge of the copy shown to the corner reader. */
+const CARD_ASK_MAX_EDGE_PX = 1280;
+
 /**
- * One stored picture, made ready for the page: turned upright (phones record the turn in EXIF rather
- * than in the pixels), capped at 1,600 px and written as JPEG. If the image library cannot load, a
- * JPEG or PNG goes in as it is, at its own proportion; anything else is left out.
+ * The photo cut to the card and laid flat, landscape, in the card's own proportion (owner,
+ * 2026-11-27: "crop exactly to the card … make it landscape"). Null when the corners cannot be found
+ * or do not make a card — the caller then prints the photo as it was.
+ */
+async function cropToCard(bytes: Buffer): Promise<IdPicture | null> {
+  const sharp = await loadSharp();
+  const { data, info } = await sharp(bytes)
+    .rotate()
+    .resize({ fit: "inside", height: CARD_SOURCE_MAX_EDGE_PX, width: CARD_SOURCE_MAX_EDGE_PX, withoutEnlargement: true })
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const raw = { channels: info.channels, height: info.height, width: info.width };
+  const ask = await sharp(data, { raw })
+    .resize({ fit: "inside", height: CARD_ASK_MAX_EDGE_PX, width: CARD_ASK_MAX_EDGE_PX, withoutEnlargement: true })
+    .jpeg({ quality: 82 })
+    .toBuffer();
+  const corners = await findIdCardCorners(ask);
+  const quad = corners ? quadFromThousandths(corners, info.width, info.height) : null;
+  if (!quad || !isPlausibleCardQuad(quad, info.width, info.height)) return null;
+  const grey = await sharp(data, { raw }).greyscale().blur(1.2).toColourspace("b-w").raw().toBuffer();
+  const refined = refineCardQuad({ data: new Uint8Array(grey), height: info.height, width: info.width }, quad);
+  const size = cardCropSize();
+  // A thin border of the photo all round: the cut lands on the desk, never on the card.
+  const card = warpCard({ ...raw, data: new Uint8Array(data) }, refined, size.width, size.height, ID_CARD_BORDER_SHARE * size.width);
+  if (!card) return null;
+  const jpeg = await sharp(Buffer.from(card.data), { raw: { channels: card.channels, height: card.height, width: card.width } })
+    .jpeg({ mozjpeg: true, quality: 85 })
+    .toBuffer();
+  return { bytes: new Uint8Array(jpeg), contentType: "image/jpeg", heightPx: card.height, widthPx: card.width };
+}
+
+/**
+ * One stored picture, made ready for the page: cut to the card and laid flat, landscape, whenever
+ * the card's corners can be found (`cropToCard`); otherwise turned upright (phones record the turn
+ * in EXIF rather than in the pixels), capped at 1,600 px and written as JPEG. If the image library
+ * cannot load, a JPEG or PNG goes in as it is, at its own proportion; anything else is left out.
  */
 async function preparePicture(bytes: Buffer): Promise<IdPicture | null> {
   try {
+    const card = await cropToCard(bytes).catch(() => null);
+    if (card) return card;
     const sharp = await loadSharp();
     const { data, info } = await sharp(bytes)
       .rotate()
