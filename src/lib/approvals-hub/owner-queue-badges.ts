@@ -2,11 +2,11 @@
 // his sidebar "that show how many items are waiting in each, so he can work his queues from the sidebar").
 //
 //   Add to List          → "Add a customer to the list"                       countListAddRequestsWaiting
-//   Visits Held for SFE  → "Visits held for SFE (far visits)"                 countFarVisitHoldsWaiting
+//   Far Visits Held      → "Visits held for SFE (far visits)"                 countFarVisitHoldsWaiting
 //   Double Visits        → "Double-visit request (up to 3 days)"              countDoubleVisitRequestsWaiting
 //   Visit Asks           → "Visit ask: double, product manager or chain"      countVisitAsksWaiting
-//   Probation            → "Probation"                                        countProbationDecisionsDue
-//   Contract Renewal     → "Contract renewal"                                 countOpenContractRenewals
+//   Probation Due        → "Probation"                                        countProbationDecisionsDue
+//   Open Renewals        → "Contract renewal"                                 countOpenContractRenewals
 //   Held Emails          → "Held emails (a check stopped the send)"           countHeldNotificationReviews
 //
 // Every count is the domain's own function — none is re-counted here — and each is asked under the SAME

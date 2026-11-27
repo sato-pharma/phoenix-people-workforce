@@ -216,8 +216,10 @@ export function runApprovalsHubSeparateInboxesTests() {
   );
   assert.deepEqual(
     approvalsDomain.groups.map((group) => group.sectionIds).flat(),
-    ["approvals-hub"],
-    "the Approvals domain holds exactly the approvals-hub section — a second id here would draw rows nobody asked to be under this tab",
+    // + "owner-queues": the owner's seven queue shortcuts, which he asked for under this door
+    // (27 Nov 2026), Super Admin only, each pinned by tests/owner-queue-shortcuts.test.ts.
+    ["approvals-hub", "owner-queues"],
+    "the Approvals domain holds exactly the approvals-hub section and the owner's queue shortcuts — another id here would draw rows nobody asked to be under this tab",
   );
   assert.equal(
     adminSidebarDomains.findIndex((domain) => domain.id === "approvals"),

@@ -6,8 +6,8 @@ import type { AccessContext } from "../src/lib/auth/permissions.ts";
 import { forbiddenError } from "../src/lib/http/api-errors.ts";
 import { adminNavigationSections } from "../src/config/system-navigation.ts";
 import { adminSidebarDomains } from "../src/config/sidebar-domains.ts";
-import { getSections, type PermissionLookup } from "../src/lib/navigation/active-path.ts";
-import { permissionActions, permissionMatrix, permissionResources, type PhoenixRole } from "../src/lib/auth/permissions.ts";
+import { getSections } from "../src/lib/navigation/active-path.ts";
+import { buildPermissionLookup, permissionMatrix, type PhoenixRole } from "../src/lib/auth/permissions.ts";
 import { subscribeNavBadge, _resetNavBadgeChannels } from "../src/lib/nav-badge-store.ts";
 
 /**
@@ -35,15 +35,7 @@ const SEVEN_FULL_LABELS = [
   "Held emails (a check stopped the send)",
 ];
 
-function lookupForRole(role: PhoenixRole): PermissionLookup {
-  const lookup: PermissionLookup = {};
-  for (const resource of permissionResources) {
-    for (const action of permissionActions) {
-      lookup[`${resource}:${action}`] = permissionMatrix[role][resource]?.includes(action) ?? false;
-    }
-  }
-  return lookup;
-}
+const lookupForRole = (role: PhoenixRole) => buildPermissionLookup(permissionMatrix, role);
 
 const asAccess = (role: string) => ({ role, hrId: "B-10", loginId: "test", scope: "all" }) as unknown as AccessContext;
 
