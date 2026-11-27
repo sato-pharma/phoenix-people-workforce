@@ -34,7 +34,8 @@
 ## Inbox — new notes land here
 
 - [27 Nov private spell, then KEEP PUBLIC](the-repo-is-private-since-2026-11-27.md) — owner 10:49: repo stays PUBLIC (Actions cost); going private silently cut Railway's git source from every service; spare runner removed.
-- [Receipt books: everything is in the `direct-order-receipt-books` skill](direct-order-receipt-books-everything.md) — books, security marks, guides, sample, proposal email, never-email rules, open items (PR 818).
+- [Receipt books: everything is in the `direct-order-receipt-books` skill](direct-order-receipt-books-everything.md) — books, security marks, guides, sample, proposal email, never-email rules, open items (PR 827).
+- [History purge decided, runs tonight](history-purge-planned-2026-11-27.md) — payroll + 39 removed data files off GitHub history, local copies kept, ~455 old branches deleted, after Railway deploys again.
 
 
 
