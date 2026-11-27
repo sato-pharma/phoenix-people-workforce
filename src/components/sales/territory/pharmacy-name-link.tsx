@@ -29,17 +29,27 @@ export function PharmacyNameLink({ pharmacy, className }: { pharmacy: TerritoryP
   );
 }
 
-/** The line under the name that says where the link goes, or that there is no location yet. */
+/**
+ * The line under the name that says where the link goes, or that there is no location yet. An
+ * address goes on its own right-to-left line: inside the English sentence its digits and commas took
+ * the sentence's direction and the house number printed at the wrong end (preview of PR 821).
+ */
 export function PharmacyDirectionsNote({ pharmacy, className }: { pharmacy: TerritoryPharmacy; className?: string }) {
+  const address = pharmacy.directions?.kind === "distributor_address" ? pharmacy.directions.address : null;
   return (
-    <p
+    <div
       className={cn(
         "break-words text-phx-xs font-semibold leading-snug",
         pharmacy.directions ? "text-slate-600" : "text-slate-500",
         className,
       )}
     >
-      {directionsNote(pharmacy.directions)}
-    </p>
+      <p>{directionsNote(pharmacy.directions)}</p>
+      {address ? (
+        <p className="text-left text-slate-800" dir="rtl" lang="ar">
+          {address}
+        </p>
+      ) : null}
+    </div>
   );
 }

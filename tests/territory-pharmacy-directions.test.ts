@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import { addressDestination, pickPharmacyDirections, type PickDirectionsInput } from "../src/lib/sales/territory/pharmacy-directions.ts";
 import { directionsFromLocationRows } from "../src/lib/sales/territory/pharmacy-directions-sources.ts";
+import { directionsNote } from "../src/lib/sales/territory/drilldown-words.ts";
 
 // The Territory Drilldown pharmacy name opens Google Maps directions (owner, 27 Nov 2026: "make sure
 // the pharmacies address are correct and that this update will correct work not make reps waste time
@@ -151,4 +152,10 @@ export function runTerritoryPharmacyDirectionsTests() {
   assert.equal(rows.get("1001")?.address, "ش 26 يوليو بجوار المطافي، العياط، مصر");
   assert.equal(rows.get("2002")?.kind, "confirmed_on_site");
   assert.equal(rows.has("3003"), false, "another distributor with no confirmed point has no entry");
+
+  // 10. The English note never carries the Arabic address: inside an English line its house number
+  //     printed at the wrong end (seen on the PR 821 preview), so the address gets its own RTL line.
+  const note = directionsNote(byAddress);
+  assert.equal(/[؀-ۿ]/.test(note), false, `the note must not embed the address: ${note}`);
+  assert.equal(note.includes("70"), false);
 }
