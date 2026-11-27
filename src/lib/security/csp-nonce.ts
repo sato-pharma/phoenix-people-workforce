@@ -18,6 +18,8 @@
  * the document was actually served with, read-only.
  */
 
+import { inlineScriptLiteral } from "./inline-script-literal";
+
 const NONCE_SHAPE = /^[A-Za-z0-9+/_-]+={0,2}$/;
 const CAPTURED_NONCE_KEY = "__phxCspNonce";
 
@@ -30,9 +32,9 @@ export function isCspNonce(value: unknown): value is string {
  * Runs first in <body> with the page nonce: keeps `document.currentScript.nonce` (the nonce this
  * document was served with) on `window`, read-only. A page served without a nonce keeps nothing.
  */
-export const CSP_NONCE_CAPTURE_BOOT_SCRIPT = `(function(){try{var s=document.currentScript;var n=s&&s.nonce;if(n&&!(${JSON.stringify(
+export const CSP_NONCE_CAPTURE_BOOT_SCRIPT = `(function(){try{var s=document.currentScript;var n=s&&s.nonce;if(n&&!(${inlineScriptLiteral(
   CAPTURED_NONCE_KEY,
-)} in window)){Object.defineProperty(window,${JSON.stringify(CAPTURED_NONCE_KEY)},{value:n});}}catch(e){}})();`;
+)} in window)){Object.defineProperty(window,${inlineScriptLiteral(CAPTURED_NONCE_KEY)},{value:n});}}catch(e){}})();`;
 
 /** The nonce this document was served with; undefined on the server and on a page without one. */
 export function documentScriptNonce(): string | undefined {

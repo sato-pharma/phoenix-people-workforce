@@ -39,17 +39,19 @@
  * error boundary React has, so its worst case must be "the browser behaves as it did before".
  */
 
+import { inlineScriptLiteral } from "@/lib/security/inline-script-literal";
+
 /** Where the count of redirected calls lives on `window`. */
 export const DOM_GUARD_COUNTER_KEY = "__phxDomGuard";
 
 /** Set once the prototype is patched, so a second copy of the script is a no-op. */
 const DOM_GUARD_INSTALLED_KEY = "__phxDomGuardInstalled";
 
-export const DOM_TRANSLATE_GUARD_BOOT_SCRIPT = `(function(){try{var w=window;if(typeof Node!=="function"||!Node.prototype||w[${JSON.stringify(
+export const DOM_TRANSLATE_GUARD_BOOT_SCRIPT = `(function(){try{var w=window;if(typeof Node!=="function"||!Node.prototype||w[${inlineScriptLiteral(
   DOM_GUARD_INSTALLED_KEY,
-)}])return;w[${JSON.stringify(DOM_GUARD_INSTALLED_KEY)}]=true;var p=Node.prototype,rc=p.removeChild,ib=p.insertBefore,warned={};function note(k){w[${JSON.stringify(
+)}])return;w[${inlineScriptLiteral(DOM_GUARD_INSTALLED_KEY)}]=true;var p=Node.prototype,rc=p.removeChild,ib=p.insertBefore,warned={};function note(k){w[${inlineScriptLiteral(
   DOM_GUARD_COUNTER_KEY,
-)}]=(w[${JSON.stringify(DOM_GUARD_COUNTER_KEY)}]||0)+1;if(!warned[k]&&w.console&&w.console.warn){warned[k]=1;w.console.warn("Phoenix kept the page running: "+k+" named a node something outside the app (usually a browser translation) had already moved.");}}p.removeChild=function(c){if(c&&c.parentNode!==this){note("removeChild");if(c.parentNode&&this.contains(c))return rc.call(c.parentNode,c);return c;}return rc.apply(this,arguments);};p.insertBefore=function(n,r){if(r&&r.parentNode!==this){note("insertBefore");var a=r;while(a&&a.parentNode!==this)a=a.parentNode;return ib.call(this,n,a||null);}return ib.apply(this,arguments);};}catch(e){}})();`;
+)}]=(w[${inlineScriptLiteral(DOM_GUARD_COUNTER_KEY)}]||0)+1;if(!warned[k]&&w.console&&w.console.warn){warned[k]=1;w.console.warn("Phoenix kept the page running: "+k+" named a node something outside the app (usually a browser translation) had already moved.");}}p.removeChild=function(c){if(c&&c.parentNode!==this){note("removeChild");if(c.parentNode&&this.contains(c))return rc.call(c.parentNode,c);return c;}return rc.apply(this,arguments);};p.insertBefore=function(n,r){if(r&&r.parentNode!==this){note("insertBefore");var a=r;while(a&&a.parentNode!==this)a=a.parentNode;return ib.call(this,n,a||null);}return ib.apply(this,arguments);};}catch(e){}})();`;
 
 /**
  * The reporter's marker for a page where the guard redirected at least one call, or null.

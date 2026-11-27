@@ -3346,6 +3346,7 @@ import { runExpenseDeskEmptyLaneTests } from "./expense-desk-empty-lane.test.ts"
 import { runExpenseDeskAmountBoxTests } from "./expense-desk-amount-box.test.ts";
 import { runExpenseRequestDeleteOwnerOnlyTests } from "./expense-request-delete-owner-only.test.ts";
 import { runExpenseDeskOrphanTripsTests } from "./expense-desk-orphan-trips.test.ts";
+import { runCodeqlHardeningTests } from "./codeql-hardening.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -13163,6 +13164,7 @@ await runTest("Expense Approvals, a paid trip whose request was deleted (owner, 
 await runTest("Expense Approvals, changing a decided claim (owner, 2026-11-23: make me able to reject even if approved in history): an approved claim no payroll has taken can be rejected with a reason and never approved again or reduced, a rejected claim is approved in full and never at the idle-day cut, a claim a payroll took or whose payroll already ran is refused on every version, the verdict kept for the agreement meter stays the first decision's, approving a claim the Super Admin rejected sends no submission alert, the buttons are the desk's own on the History row and in the opened trip, and the pre-July sheet trips stay read-only", runExpenseDeskDecidedChangeTests);
 await runTest("Rep visits export (owner, 2026-11-24: one rep and a range as the workbook he reviewed, plus a Cover): the range stops at today and at 186 days, the Cover reads name, area, line, salary, hiring date, birth date and an age right around the birthday with a missing figure in words never 0, Every day is an Excel table with one record row per day and Visits summing to visits only, Visits per day lists every day with its type, two customers never share a repeat colour in one month, and the export is the Super Admin's alone, rate-limited and audited", runRepVisitsExportTests);
 await runTest("Rep effectiveness review (owner, 2026-11-25: the questions the managers asked on one rep as Excel and PDF, the customer count first): one pharmacy is one distributor customer that bought net above zero, a return, a direct order and a wholesaler shared across areas are not buyers, no total adds units of different products, the growth bridge adds up to the change, the months the rep held stand apart from the area's history, the PDF keeps the ink rule, and the review is for the Super Admin alone, rate-limited and audited", runRepEffectivenessExportTests);
+await runTest("Code-scanning hardening (27 Nov 2026): every inline boot script writes its values through one escaper that never closes the script, a Brevo message id and a speciality are trimmed in linear time, the LinkedIn slug is cut after an anchored host, and a download button follows only a path under /api/ on this site", runCodeqlHardeningTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

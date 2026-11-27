@@ -19,7 +19,9 @@ export function findLinkedInUrl(text: string): string | null {
   const matches = [...text.matchAll(LINKEDIN)].map((match) => match[0]);
   if (matches.length === 0) return null;
   const best = matches.sort((a, b) => b.length - a.length)[0];
-  const slug = best.replace(/^.*linkedin\.com\/(?:in|pub)\//i, "").replace(/\/+$/, "");
+  // `best` is a LINKEDIN match, so the only thing before the host is the scheme and a short
+  // subdomain — the same prefix LINKEDIN itself allows, and nothing wider.
+  const slug = best.replace(/^(?:https?:\/\/)?(?:[a-z]{2,3}\.)?linkedin\.com\/(?:in|pub)\//i, "").replace(/\/+$/, "");
   return slug ? `https://www.linkedin.com/in/${slug}` : null;
 }
 

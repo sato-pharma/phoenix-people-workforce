@@ -208,12 +208,20 @@ function cleaned(value: string): string {
 
 /** How a spelling is looked up: cleaned, lower case, Arabic letter forms folded, end dots dropped. */
 function keyOf(value: string): string {
-  return cleaned(value)
-    .toLowerCase()
-    .replace(/[أإآ]/g, "ا")
-    .replace(/ى/g, "ي")
-    .replace(/[.،,;:]+$/g, "")
-    .trim();
+  return withoutEndDots(
+    cleaned(value)
+      .toLowerCase()
+      .replace(/[أإآ]/g, "ا")
+      .replace(/ى/g, "ي"),
+  ).trim();
+}
+
+/** The end dots and commas, taken off one character at a time from the end. */
+const END_DOTS = new Set([".", "،", ",", ";", ":"]);
+function withoutEndDots(value: string): string {
+  let end = value.length;
+  while (end > 0 && END_DOTS.has(value[end - 1])) end -= 1;
+  return value.slice(0, end);
 }
 
 const CANONICAL_BY_KEY = new Map<string, string>([
@@ -221,8 +229,12 @@ const CANONICAL_BY_KEY = new Map<string, string>([
   ...Object.entries(ALIASES).map(([alias, name]) => [keyOf(alias), name] as const),
 ]);
 
-/** Where two specialties typed in one box are split: + & , / ، and the words "and" / "و". */
-const COMBINED_SEPARATOR = /\s*(?:\+|&|,|،|\/|\band\b)\s*|\s+و(?=\S)/i;
+/**
+ * Where two specialties typed in one box are split: + & , / ، and the words "and" / "و".
+ * It is only ever run on `cleaned` text, where every run of white space is already one plain space,
+ * so one optional space either side matches exactly what `\s*` did.
+ */
+const COMBINED_SEPARATOR = / ?(?:\+|&|,|،|\/|\band\b) ?| و(?=\S)/i;
 
 /**
  * The ONE name on the list for any spelling of a speciality, or the text itself (cleaned) when it
