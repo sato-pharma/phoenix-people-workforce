@@ -510,6 +510,8 @@ export type AuditEntityType =
   | "medical_insurance_exception"
   | "medical_insurance_export"
   | "medical_insurance_invoice"
+  // The register's card number and blank identity fields written into an employee's record (2026-11-27).
+  | "medical_insurance_master_sync"
   | "medical_insurance_member"
   // The policy number and the rate card (Libano-Suisse, 2026-11-17): a rate decides every amount.
   | "medical_insurance_policy"

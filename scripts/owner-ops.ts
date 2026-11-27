@@ -906,7 +906,7 @@ async function runSyncInsuranceMaster(plan: Extract<OwnerOpsPlan, { job: "sync-i
   const { describeMasterSyncChange, MASTER_SYNC_FIELD_LABELS } = await import("@/lib/medical-insurance/master-sync");
   const result = await syncEmployeeMasterFromMedicalInsurance(owner);
   const verb = plan.apply ? "Filled" : "Would fill";
-  console.log(`\nPolicy ${result.policyNumber}. ${verb} ${result.updated.length} employee record(s):`);
+  console.log(`\nPolicy ${result.policyNumber ?? "(not numbered yet)"}. ${verb} ${result.updated.length} employee record(s):`);
   for (const update of result.updated) console.log(`  ${update.name} (${update.hrId}) — ${update.changes.map(describeMasterSyncChange).join("; ")}`);
   if (result.failed.length > 0) {
     console.log(`\nNot written (${result.failed.length}):`);

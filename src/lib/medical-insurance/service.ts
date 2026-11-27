@@ -1501,7 +1501,7 @@ export async function prepareLibanoMemberFile(
 // ── The register feeds the Employee Master what it is missing (owner, 27 Nov 2026) ──────────────────────
 
 export type EmployeeMasterSyncResult = {
-  policyNumber: string;
+  policyNumber: string | null;
   updated: MasterSyncUpdate[];
   failed: Array<{ hrId: string; name: string; error: string }>;
   differences: MasterSyncDifference[];
@@ -1574,7 +1574,8 @@ export async function syncEmployeeMasterFromMedicalInsurance(access: AccessConte
     for (const change of update.changes) query = change.from === null ? query.is(change.field, null) : query.eq(change.field, change.from);
     // A script has no request to carry the actor, so the person is named here (src/lib/supabase/request-actor.ts).
     if (access.loginId) query = query.setHeader("x-phoenix-actor-login-id", access.loginId);
-    if (access.hrId) query = query.setHeader("x-phoenix-actor-hr-id", hrIdForStorage(access.hrId));
+    const actorHrId = access.hrId ? hrIdForStorage(access.hrId) : null;
+    if (actorHrId) query = query.setHeader("x-phoenix-actor-hr-id", actorHrId);
     const { data, error } = await query.select("hr_id");
     if (error) {
       failed.push({ error: error.message, hrId: update.hrId, name: update.name });
@@ -1587,8 +1588,8 @@ export async function syncEmployeeMasterFromMedicalInsurance(access: AccessConte
     await writeRequiredAuditLog({
       actorLoginId: access.loginId ?? null,
       entityId: update.hrId,
-      entityType: "employee",
-      summary: `Filled ${update.name}'s Employee Master from the medical insurance register (policy ${policy.policyNumber}): ${update.changes.map(describeMasterSyncChange).join("; ")}`,
+      entityType: "medical_insurance_master_sync",
+      summary: `Filled ${update.name}'s Employee Master from the medical insurance register (policy ${policy.policyNumber ?? "not numbered yet"}): ${update.changes.map(describeMasterSyncChange).join("; ")}`,
     });
     updated.push(update);
   }
