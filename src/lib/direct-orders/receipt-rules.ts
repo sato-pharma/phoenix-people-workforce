@@ -4,8 +4,8 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 // The delivery-receipt books — the rules (owner, 26 Nov 2026: "Build the check").
 //
 // Every District Manager holds a numbered receipt book as custody. Each page carries a six-digit
-// serial and a six-character random code printed beside it. At delivery the venue signs and stamps
-// the page; the manager enters the serial, the code and a photo of the signed page on the order.
+// serial and a six-character random code printed beside it, on all three sheets of the receipt (see
+// TWO ORIGINALS AND A COPY below); the manager enters the serial, the code and a photo of each original.
 //
 // What the check stops:
 //   - an invented page: its code will not match the serial (31^6 ≈ 887 million combinations);
@@ -15,9 +15,9 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 // What it cannot stop, and says so: a colluding venue, and a real page whose handwritten quantities
 // do not match the order — Finance compares the photo with the order lines.
 //
-// Finance issues, returns and reports a book lost (owner: "Finance"). An approved order with no
-// receipt 7 days after approval is flagged on Finance's desk, and its manager raises no new order until
-// it is entered (owner, 26 Nov 2026: "14 days"; 27 Nov: «حد اقصى اسبوع»). An order raised by
+// Finance issues, returns and reports a book lost (owner: "Finance"). An approved order with an
+// original past its due date is flagged on Finance's desk, and its manager raises no new order until
+// it is entered (owner, 27 Nov 2026; the due dates are below). An order raised by
 // someone who held no book is flagged too, from the day the first book was handed out (owner, 27 Nov
 // 2026: "Flag them"). A page from a returned book is still accepted for an order approved while its
 // manager held it (owner, 27 Nov 2026: "Allow late entry"), and Finance can undo a receipt entered on
@@ -29,6 +29,14 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 // استاذ احمد"; he chose "Anwar approves in Phoenix"). Finance asks on the order with a written reason;
 // the CEO approves or refuses it. An approved one leaves Finance's overdue and no-book lists.
 //
+// TWO ORIGINALS AND A COPY (owner, 27 Nov 2026, "Go, build it"). Every receipt is three sheets under one
+// serial and code: Original 1, the manager's signed custody of the goods (it stays in the book); Original 2,
+// the delivery page the customer signs and stamps (it stays with the manager); and the carbon copy of
+// Original 2, torn off for the customer. Both originals are photographed onto the order. Finance records
+// the day the goods left the warehouse, and both deadlines count from the NEXT day: Original 1 within 3
+// calendar days, Original 2 within 6 working days with Friday off. Before Finance records the exit, nothing
+// is late. Original 1 is entered first and claims the receipt; Original 2 is added to that same receipt.
+//
 // Pure: every function takes plain rows and returns a decision, so the tests need no database.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -36,12 +44,92 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 export const RECEIPT_CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 export const RECEIPT_CODE_LENGTH = 6;
 /**
- * An approved order is flagged when no receipt is entered 7 days after approval (owner, 27 Nov 2026:
- * «حد اقصى اسبوع» — it was 14 days from 26 Nov), and its manager raises no new order until it is.
+ * Original 1 — the manager's custody page — is due within 3 CALENDAR days, counted from the day after
+ * the goods left the warehouse (owner, 27 Nov 2026: left on day 1, counted from day 2).
  */
-export const RECEIPT_OVERDUE_DAYS = 7;
+export const CUSTODY_DUE_DAYS = 3;
+/** Original 2 — the customer's delivery page — within 6 WORKING days from the same day, Friday off. */
+export const DELIVERY_DUE_WORKING_DAYS = 6;
+/** The weekly day off the working-day count skips (Date.getUTCDay: 5 = Friday). */
+const WEEKLY_DAY_OFF = 5;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** "2026-11-27" — the Cairo calendar day of an instant. */
+export function cairoDateKeyOf(at: Date): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo", year: "numeric", month: "2-digit", day: "2-digit" }).format(at);
+}
+
+function dateKeyToUtc(key: string): number {
+  const [y, m, d] = key.split("-").map(Number);
+  return Date.UTC(y, m - 1, d);
+}
+
+function utcToDateKey(ms: number): string {
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+/** A real calendar day written YYYY-MM-DD, or null. */
+export function parseDateKey(raw: unknown): string | null {
+  const text = String(raw ?? "").trim();
+  if (!DATE_KEY.test(text)) return null;
+  return utcToDateKey(dateKeyToUtc(text)) === text ? text : null;
+}
+
+/** Whole calendar days from `from` to `to` (both YYYY-MM-DD); negative when `to` is earlier. */
+export function daysBetweenDateKeys(from: string, to: string): number {
+  return Math.round((dateKeyToUtc(to) - dateKeyToUtc(from)) / DAY_MS);
+}
+
+/**
+ * The last day each original may be entered, from the warehouse exit day. Left Thursday: Original 1 by
+ * Sunday (Fri, Sat, Sun), Original 2 by the next Thursday (Sat to Thu, the Friday skipped).
+ */
+export function receiptDueDates(exitDate: string): { custodyDue: string; deliveryDue: string } {
+  const start = dateKeyToUtc(exitDate);
+  const custodyDue = utcToDateKey(start + CUSTODY_DUE_DAYS * DAY_MS);
+  let day = start;
+  let counted = 0;
+  while (counted < DELIVERY_DUE_WORKING_DAYS) {
+    day += DAY_MS;
+    if (new Date(day).getUTCDay() !== WEEKLY_DAY_OFF) counted += 1;
+  }
+  return { custodyDue, deliveryDue: utcToDateKey(day) };
+}
+
+/** What has been entered on an order so far, and the exit day Finance recorded. */
+export type ReceiptProgress = {
+  /** Original 1, the custody page — entered first; it claims the receipt. */
+  custodyEntered: boolean;
+  /** Original 2, the customer's delivery page. */
+  deliveryEntered: boolean;
+  /** The Cairo day the goods left the warehouse, or null while Finance has not recorded it. */
+  exitDate: string | null;
+};
+
+export type ReceiptLateness = {
+  /** The original whose due date passed first — the custody page is always due first. */
+  original: "custody" | "delivery";
+  dueDate: string;
+  daysLate: number;
+};
+
+/**
+ * Is an original past its due date today? Null while nothing is late — including before Finance records
+ * the warehouse exit, since both deadlines count from it. The custody page is checked first: it is due first.
+ */
+export function receiptLateness(progress: ReceiptProgress, todayCairo: string): ReceiptLateness | null {
+  if (!progress.exitDate) return null;
+  const due = receiptDueDates(progress.exitDate);
+  if (!progress.custodyEntered && todayCairo > due.custodyDue) {
+    return { original: "custody", dueDate: due.custodyDue, daysLate: daysBetweenDateKeys(due.custodyDue, todayCairo) };
+  }
+  if (!progress.deliveryEntered && todayCairo > due.deliveryDue) {
+    return { original: "delivery", dueDate: due.deliveryDue, daysLate: daysBetweenDateKeys(due.deliveryDue, todayCairo) };
+  }
+  return null;
+}
 
 export type ReceiptBookStatus = "in_store" | "issued" | "returned" | "lost";
 export type ReceiptState = "unused" | "used" | "voided";
@@ -87,7 +175,10 @@ export type ReceiptRefusalReason =
   | "code_mismatch"
   | "receipt_used"
   | "receipt_voided"
-  | "order_without_receipt";
+  | "order_without_receipt"
+  | "custody_not_entered"
+  | "delivery_entered"
+  | "other_receipt";
 
 /** Why an attempt was refused before or after the rules ran — each one is written on the order too. */
 export type ReceiptAttemptRefusal =
@@ -97,7 +188,8 @@ export type ReceiptAttemptRefusal =
   | "bad_code"
   | "bad_photo"
   | "claim_lost"
-  | "book_changed";
+  | "book_changed"
+  | "delivery_lost";
 
 /** "000123" — the serial exactly as it is printed. */
 export function formatReceiptSerial(serial: number): string {
@@ -166,7 +258,10 @@ export function checkReceiptForOrder(input: {
     return refuse("order_without_receipt", "The CEO approved this order to stand without a receipt, so no receipt is entered on it.");
   }
   if (input.orderReceiptSerial !== null) {
-    return refuse("order_has_receipt", `This order already has receipt ${formatReceiptSerial(input.orderReceiptSerial)}. An order takes one receipt.`);
+    return refuse(
+      "order_has_receipt",
+      `Original 1 of receipt ${formatReceiptSerial(input.orderReceiptSerial)} is already entered on this order. An order takes one receipt; enter its Original 2 below.`,
+    );
   }
   if (!receipt || !book) {
     return refuse("no_such_receipt", `There is no receipt ${label} in any Sato Pharma receipt book. Check the number printed at the top of the page.`);
@@ -196,6 +291,63 @@ export function checkReceiptForOrder(input: {
   }
   if (receipt.state === "voided") {
     return refuse("receipt_voided", `Receipt ${label} was cancelled${receipt.voidedReason ? `: ${receipt.voidedReason}` : ""}.`);
+  }
+  return { ok: true };
+}
+
+/**
+ * May Original 2 — the customer's delivery page — be added to this order? Only once Original 1 claimed a
+ * receipt for it, only once, and only from that same receipt: the typed number and code must be the ones
+ * printed on it (all three sheets carry them). A wrong code is refused before "already entered" is said.
+ */
+export function checkDeliveryForOrder(input: {
+  order: OrderForReceipt;
+  serial: number;
+  typedCode: string;
+  /** The receipt Original 1 claimed for this order, or null when Original 1 is not entered yet. */
+  orderReceipt: ReceiptRow | null;
+  deliveryEntered: boolean;
+  withoutReceiptApproved?: boolean;
+}): ReceiptDecision {
+  const label = formatReceiptSerial(input.serial);
+  if (input.order.status !== "approved" || input.order.reversalOfRequestId) {
+    return refuse("order_not_approved", "A receipt is entered once the order is approved.");
+  }
+  if (input.withoutReceiptApproved) {
+    return refuse("order_without_receipt", "The CEO approved this order to stand without a receipt, so no receipt is entered on it.");
+  }
+  if (!input.orderReceipt) {
+    return refuse(
+      "custody_not_entered",
+      "Enter Original 1 — the custody page you signed when the goods left the warehouse — first. Original 2 is added to the same receipt.",
+    );
+  }
+  const own = formatReceiptSerial(input.orderReceipt.serial);
+  if (input.orderReceipt.serial !== input.serial) {
+    return refuse("other_receipt", `This order's receipt is ${own}. Original 2 carries the same number as Original 1.`);
+  }
+  if (input.orderReceipt.checkCode !== input.typedCode) {
+    return refuse("code_mismatch", `The code does not match receipt ${label}. Type the six characters printed beside the number.`);
+  }
+  if (input.deliveryEntered) {
+    return refuse("delivery_entered", `Original 2 of receipt ${own} is already entered on this order.`);
+  }
+  return { ok: true };
+}
+
+/**
+ * May Finance record the day this order left the warehouse? Only an approved original order, a real
+ * day, never in the future and never before the day the order was approved.
+ */
+export function checkWarehouseExit(input: { order: OrderForReceipt; exitDate: string | null; todayCairo: string }): ReceiptDecisionPlain {
+  if (input.order.status !== "approved" || input.order.reversalOfRequestId) {
+    return { ok: false, message: "Only an approved order leaves the warehouse." };
+  }
+  if (!input.exitDate) return { ok: false, message: "Choose the day the goods left the warehouse." };
+  if (input.exitDate > input.todayCairo) return { ok: false, message: "The warehouse exit cannot be a day that has not come yet." };
+  const approvedDay = input.order.decidedAt ? cairoDateKeyOf(new Date(input.order.decidedAt)) : null;
+  if (approvedDay && input.exitDate < approvedDay) {
+    return { ok: false, message: "The goods cannot leave the warehouse before the order was approved." };
   }
   return { ok: true };
 }
@@ -243,7 +395,7 @@ export function receiptRolloutStart(books: readonly ReceiptBookRow[]): number | 
  * `no_book`: approved after the rollout, but its requester held no book that day, so no signed page
  * stands behind it. Flagged on Finance's desk at once (owner, 27 Nov 2026: "Flag them").
  */
-export type ReceiptStanding = "has_receipt" | "not_required" | "waiting" | "overdue" | "no_book" | "without_receipt";
+export type ReceiptStanding = "has_receipt" | "not_required" | "awaiting_exit" | "waiting" | "overdue" | "no_book" | "without_receipt";
 
 /** Whole days since approval, Cairo-agnostic (a duration, not a date). */
 export function daysSinceApproval(decidedAt: string | null, now: Date): number | null {
@@ -254,30 +406,34 @@ export function daysSinceApproval(decidedAt: string | null, now: Date): number |
 }
 
 /**
- * Where an order stands on its receipt. `waiting` inside the 7 days, `overdue` from day 7 on, and
- * `no_book` when its requester held no book on the day it was approved, after the rollout began.
- * `without_receipt` when the CEO approved it to stand without one — never flagged after that.
- * Only an approved original order owes one — a reversal, a rejection or a cancellation never does.
+ * Where an order stands on its receipt. `has_receipt` once BOTH originals are entered. `awaiting_exit`
+ * while Finance has not recorded the warehouse exit (nothing counts yet), then `waiting` until an
+ * original passes its due date and `overdue` after. `no_book` when its requester held no book on the day
+ * it was approved, after the rollout began. `without_receipt` when the CEO approved it to stand without
+ * one — never flagged after that. Only an approved original order owes one — a reversal, a rejection or
+ * a cancellation never does.
  */
 export function classifyOrderReceipt(input: {
   order: OrderForReceipt;
   books: readonly ReceiptBookRow[];
-  hasReceipt: boolean;
+  progress: ReceiptProgress;
   now: Date;
   /** The CEO approved this order to stand without a receipt. */
   withoutReceiptApproved?: boolean;
 }): ReceiptStanding {
-  if (input.hasReceipt) return "has_receipt";
+  const { progress } = input;
+  if (progress.custodyEntered && progress.deliveryEntered) return "has_receipt";
   if (input.order.status !== "approved" || input.order.reversalOfRequestId) return "not_required";
   if (input.withoutReceiptApproved) return "without_receipt";
-  if (!bookHeldAtApproval(input.order, input.books)) {
+  // Original 1 entered proves a book stood behind the order, whenever it was handed over.
+  if (!progress.custodyEntered && !bookHeldAtApproval(input.order, input.books)) {
     const rollout = receiptRolloutStart(input.books);
     const decided = input.order.decidedAt ? Date.parse(input.order.decidedAt) : Number.NaN;
     if (rollout === null || !Number.isFinite(decided) || decided < rollout) return "not_required";
     return "no_book";
   }
-  const days = daysSinceApproval(input.order.decidedAt, input.now) ?? 0;
-  return days >= RECEIPT_OVERDUE_DAYS ? "overdue" : "waiting";
+  if (!progress.exitDate) return "awaiting_exit";
+  return receiptLateness(progress, cairoDateKeyOf(input.now)) ? "overdue" : "waiting";
 }
 
 /** The book a manager may write a receipt from today: the one issued to him and still open. */
@@ -364,7 +520,7 @@ export type NoReceiptRow = {
 };
 
 /** The standings that owe a receipt — only these may be asked to stand without one. */
-const OWES_RECEIPT: ReadonlySet<ReceiptStanding> = new Set<ReceiptStanding>(["waiting", "overdue", "no_book"]);
+const OWES_RECEIPT: ReadonlySet<ReceiptStanding> = new Set<ReceiptStanding>(["awaiting_exit", "waiting", "overdue", "no_book"]);
 
 /**
  * May Finance ask the CEO to let this order stand without a receipt? Only an approved order that owes

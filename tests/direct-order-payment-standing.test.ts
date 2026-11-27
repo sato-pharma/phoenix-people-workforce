@@ -18,7 +18,8 @@ import { withPostgrestStandIn, type Row, type StandIn } from "./support/postgres
 
 // ─────────────────────────────────────────────────────────────────────────────
 // What a pharmacy still owes, and the late delivery receipt (owner, 27 Nov 2026):
-//   «حد اقصى اسبوع ولا ينفذ له اوردارات اخرى فى حاله عدم رفعه» — a receipt past 7 days stops the
+//   «حد اقصى اسبوع ولا ينفذ له اوردارات اخرى فى حاله عدم رفعه» — a receipt original past its due date
+//   (counted from Finance's warehouse exit: Original 1 in 3 days, Original 2 in 6 working days) stops the
 //   manager who raised the order from raising another;
 //   «اى اوردر لاى عميل لم يسدد قيمه الاوردر الاول لا يتم خروج اوردر تانى له من نفس الصنف» — nothing
 //   paid on an earlier order of the SAME product refuses the new one; another product is untouched;
@@ -98,12 +99,18 @@ function pureTests() {
 
   assert.equal(lateReceiptRefusal([]), null);
   assert.match(
-    String(lateReceiptRefusal([{ requestId: "a", pharmacyName: "El Shifa Pharmacy", days: 9 }, { requestId: "b", pharmacyName: "El Nour Pharmacy", days: 12 }])),
-    /2 of your approved orders have had no delivery receipt entered for more than 7 days \(the oldest 12 days, El Nour Pharmacy\)/,
+    String(
+      lateReceiptRefusal([
+        { requestId: "a", pharmacyName: "El Shifa Pharmacy", days: 9, original: "custody" },
+        { requestId: "b", pharmacyName: "El Nour Pharmacy", days: 12, original: "delivery" },
+      ]),
+    ),
+    /^2 of your approved orders have an original receipt past its due date \(the longest overdue 12 days late: Original 2, the customer's signed and stamped page, El Nour Pharmacy\)\. Enter them first; no new order can be raised until then\.$/,
+    "the manager is told which original is late (owner, 27 Nov 2026: two originals and a copy)",
   );
   assert.match(
-    String(lateReceiptRefusal([{ requestId: "a", pharmacyName: "El Shifa Pharmacy", days: 9 }], "approver")),
-    /^The manager who raised this order has 1 approved order that has had no delivery receipt entered for more than 7 days \(the oldest 9 days, El Shifa Pharmacy\)\. This order cannot be approved until that receipt is entered\.$/,
+    String(lateReceiptRefusal([{ requestId: "a", pharmacyName: "El Shifa Pharmacy", days: 1, original: "custody" }], "approver")),
+    /^The manager who raised this order has 1 approved order with an original receipt past its due date \(the longest overdue 1 day late: Original 1, the custody page, El Shifa Pharmacy\)\. This order cannot be approved until it is entered\.$/,
     "the approver is told whose receipt holds the order",
   );
 
@@ -143,7 +150,15 @@ function tables(): Record<string, Row[]> {
     direct_order_receipt_books: [
       { book_no: 1, first_serial: 1, last_serial: 50, printed_holder_hr_id: "AI-0001", holder_hr_id: "AI-0001", status: "issued", issued_at: "2026-12-01T08:00:00.000Z", closed_at: null },
     ],
-    direct_order_receipts: [{ serial: 9, book_no: 1, check_code: "HJ4MN5", state: "used", request_id: ORDER_USED }],
+    direct_order_receipts: [
+      { serial: 9, book_no: 1, check_code: "HJ4MN5", state: "used", request_id: ORDER_USED, delivery_entered_at: "2026-12-11T09:00:00.000Z" },
+    ],
+    // Finance's warehouse exits: A left Thursday 10 Dec (Original 1 due 13 Dec), B on 17 Dec (due 20 Dec).
+    direct_order_warehouse_exits: [
+      { request_id: ORDER_A, exit_date: "2026-12-10" },
+      { request_id: ORDER_B, exit_date: "2026-12-17" },
+      { request_id: ORDER_USED, exit_date: "2026-12-09" },
+    ],
     direct_order_no_receipt_requests: [],
     direct_order_requests: [
       // Momen's: A approved 10 Dec, B 15 Dec, the used one 9 Dec with its receipt.
@@ -176,14 +191,30 @@ async function rejectsWith(promise: Promise<unknown>, pattern: RegExp, label: st
 const at = (iso: string) => new Date(iso);
 
 async function behaviourTests() {
-  // 1. The late receipt: 7 days, the manager who raised it, and only an order owing a receipt.
+  // 1. The late original: due from the warehouse exit, the manager who raised it, and only an order owing one.
   {
     const standIn: StandIn = { tables: tables() };
     await withPostgrestStandIn(standIn, async () => {
-      assert.deepEqual(await listLateReceiptsForRequester("AI-0001", at("2026-12-16T10:00:00.000Z")), [], "6 days after approval is still inside the week");
-      const late = await listLateReceiptsForRequester("AI-0001", at("2026-12-17T10:00:00.000Z"));
-      assert.deepEqual(late, [{ requestId: ORDER_A, pharmacyName: "El Shifa Pharmacy", days: 7 }], "from day 7 it is late; the order with its receipt never is");
-      assert.deepEqual((await listLateReceiptsForRequester("ai-0001", NOW)).map((o) => [o.requestId, o.days]), [[ORDER_A, 10]], "the HR id matches whatever its case; B, 5 days old, is not late yet");
+      assert.deepEqual(await listLateReceiptsForRequester("AI-0001", at("2026-12-13T10:00:00.000Z")), [], "Original 1 on its due day is not late");
+      const late = await listLateReceiptsForRequester("AI-0001", at("2026-12-14T10:00:00.000Z"));
+      assert.deepEqual(
+        late,
+        [{ requestId: ORDER_A, pharmacyName: "El Shifa Pharmacy", days: 1, original: "custody" }],
+        "the day after it is late; the order with both originals never is",
+      );
+      assert.deepEqual(
+        (await listLateReceiptsForRequester("ai-0001", NOW)).map((o) => [o.requestId, o.days]),
+        [[ORDER_A, 7]],
+        "the HR id matches whatever its case; B, due today, is not late yet",
+      );
+      const exitB = standIn.tables.direct_order_warehouse_exits.find((row) => row.request_id === ORDER_B)!;
+      standIn.tables.direct_order_warehouse_exits.splice(standIn.tables.direct_order_warehouse_exits.indexOf(exitB), 1);
+      assert.deepEqual(
+        (await listLateReceiptsForRequester("AI-0001", at("2027-02-01T10:00:00.000Z"))).map((o) => o.requestId),
+        [ORDER_A],
+        "with no exit recorded an order is never late, however long ago it was approved",
+      );
+      standIn.tables.direct_order_warehouse_exits.push(exitB);
       assert.deepEqual(await listLateReceiptsForRequester("PD-0012", NOW), [], "another manager is not held by Momen's receipts");
 
       standIn.tables.direct_order_no_receipt_requests.push({ request_id: ORDER_A, status: "pending" });
@@ -194,16 +225,16 @@ async function behaviourTests() {
       standIn.tables.direct_order_no_receipt_requests.length = 0;
       await rejectsWith(
         assertDirectOrderMayBeRaised({ requesterHrId: "AI-0001", pharmacyId: "ph-2", productCodes: ["GUA-1"], now: at("2026-12-17T10:00:00.000Z") }),
-        /no delivery receipt entered for more than 7 days.*no new order can be raised/,
+        /an original receipt past its due date.*no new order can be raised/,
         "the late manager raises no new order, for any pharmacy",
       );
       // At the last approval the same late receipt holds an order already climbing.
       await rejectsWith(
         assertRequesterHasNoLateReceipts("AI-0001", at("2026-12-17T10:00:00.000Z")),
-        /^The manager who raised this order has 1 approved order .*cannot be approved until that receipt is entered/,
+        /^The manager who raised this order has 1 approved order .*cannot be approved until it is entered/,
         "an order raised before the receipt went late is not finished",
       );
-      await assertRequesterHasNoLateReceipts("AI-0001", at("2026-12-16T10:00:00.000Z"));
+      await assertRequesterHasNoLateReceipts("AI-0001", at("2026-12-13T10:00:00.000Z"));
 
       // A book Finance recorded lost: its receipts can never be entered, so they never hold the manager.
       Object.assign(standIn.tables.direct_order_receipt_books[0], { status: "lost", closed_at: "2026-12-16T08:00:00.000Z" });
@@ -218,10 +249,11 @@ async function behaviourTests() {
     const many = Array.from({ length: 230 }, (_, index) => `aaaaaaaa-aaaa-4aaa-8aaa-${String(index).padStart(12, "0")}`);
     for (const [index, id] of many.entries()) {
       standIn.tables.direct_order_requests.push({ id, product_code: IVY, requester_hr_id: "AI-0001", status: "approved", decided_at: "2026-12-05T09:00:00.000Z", reversal_of_request_id: null, pharmacy_id: "ph-2", product_name: "Ivyronc", sales_value: 100, remaining_amount: 0, collection_date: "2026-12-30" });
-      standIn.tables.direct_order_receipts.push({ serial: 100 + index, book_no: 1, check_code: "HJ4MN5", state: "used", request_id: id });
+      standIn.tables.direct_order_receipts.push({ serial: 100 + index, book_no: 1, check_code: "HJ4MN5", state: "used", request_id: id, delivery_entered_at: "2026-12-06T09:00:00.000Z" });
+      standIn.tables.direct_order_warehouse_exits.push({ request_id: id, exit_date: "2026-12-05" });
     }
     const seen = await withPostgrestStandIn(standIn, async () => {
-      assert.deepEqual((await listLateReceiptsForRequester("AI-0001", NOW)).map((o) => o.requestId), [ORDER_A], "every one of the 230 with its receipt is seen as having it");
+      assert.deepEqual((await listLateReceiptsForRequester("AI-0001", NOW)).map((o) => o.requestId), [ORDER_A], "every one of the 230 with both originals is seen as having them");
     });
     const receiptReads = seen.filter((entry) => entry.kind === "read" && entry.table === "direct_order_receipts");
     assert.equal(receiptReads.length, 3, "233 orders are read in three batches of at most 100");

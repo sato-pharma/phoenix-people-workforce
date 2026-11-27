@@ -17,7 +17,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 //   • a pharmacy with any order still owing money after its recorded collection date is "not committed":
 //     its new order is flagged and, again, only Dr Anwar's own approval finishes it;
 //   • another product (Ivyronc, Guamusin) is untouched by the same-product rule.
-// And the receipt rule beside it: a manager with a delivery receipt past its 7 days raises no new order.
+// And the receipt rule beside it: a manager with a receipt original past its due date raises no new order.
 //
 // "Owed" is the stored `remaining_amount` — value less cash collected less marketing settlements, written
 // by every collection and settlement — or the whole value when nothing was ever recorded (it is null then).
@@ -207,12 +207,13 @@ export async function loadPharmacyPaymentStanding(input: {
 export function lateReceiptRefusal(late: readonly LateReceiptOrder[], audience: "requester" | "approver" = "requester"): string | null {
   if (late.length === 0) return null;
   const oldest = late.reduce((a, b) => (b.days > a.days ? b : a));
+  const which = oldest.original === "custody" ? "Original 1, the custody page" : "Original 2, the customer's signed and stamped page";
   const detail =
-    `had no delivery receipt entered for more than 7 days (the oldest ${oldest.days} days, ${oldest.pharmacyName})`;
+    `an original receipt past its due date (the longest overdue ${oldest.days} day${oldest.days === 1 ? "" : "s"} late: ${which}, ${oldest.pharmacyName})`;
   if (audience === "approver") {
     return (
-      `The manager who raised this order has ${late.length} approved order${late.length === 1 ? " that has" : "s that have"} ${detail}. ` +
-      `This order cannot be approved until ${late.length === 1 ? "that receipt is" : "those receipts are"} entered.`
+      `The manager who raised this order has ${late.length} approved order${late.length === 1 ? "" : "s"} with ${detail}. ` +
+      `This order cannot be approved until ${late.length === 1 ? "it is" : "they are"} entered.`
     );
   }
   return (
@@ -222,7 +223,7 @@ export function lateReceiptRefusal(late: readonly LateReceiptOrder[], audience: 
 }
 
 /**
- * At the last approval: an order whose manager now has a delivery receipt past its 7 days is not
+ * At the last approval: an order whose manager now has an original receipt past its due date is not
  * finished (owner, 27 Nov 2026: «ولا ينفذ له اوردارات اخرى»). This covers an order already climbing when
  * the receipt went late, and one revived from hold.
  */
@@ -232,8 +233,9 @@ export async function assertRequesterHasNoLateReceipts(requesterHrId: string, no
 }
 
 /**
- * Refuse a new order before anything is written (owner, 27 Nov 2026): the requester has a delivery
- * receipt past its 7 days, or the pharmacy has not paid anything on an earlier order of the same
+ * Refuse a new order before anything is written (owner, 27 Nov 2026): the requester has an original
+ * receipt past its due date (Original 1 three days, Original 2 six working days after the warehouse
+ * exit), or the pharmacy has not paid anything on an earlier order of the same
  * product. Everything else — a part-paid product, a late payer — climbs, and is stopped at the CEO's
  * step instead (`assertPaymentStandingAllowsFinalApproval`).
  */

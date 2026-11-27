@@ -112,6 +112,33 @@ the browser on another machine.
   - **Photocopy one page of the printer's proof BEFORE the full run** and confirm the hidden words appear.
   - 🔴 This physical copier test has NOT been done yet.
 
+## 🔴 Two originals and a copy (owner, 27 Nov 2026 ~17:10) — the design every sheet moves to
+
+After Dr Anwar asked what the original and Copy 2 were for, the owner settled it: «نخليه 3 نسخ… نسخة في الدفتر
+ونسخة يشحنها لأحمد المراغي ونسخة مع الصيدلي», then the final design:
+
+- **Original 1 — the manager's custody page.** He signs that he received the goods (date, value), that they are
+  in his custody and that not delivering them is a breach of trust; the law articles are printed on it (drafted
+  from Labour Law 14/2025 and Penal Code art. 341, strong, for the lawyer to approve — never an invented article
+  number). It stays in the book; its photo goes on Phoenix.
+- **Original 2 — the customer's delivery page.** No manager details. The customer signs and stamps it; its carbon
+  copy is torn off for the customer. The manager keeps Original 2 and enters its photo.
+- **Due dates** count from the day after Ahmed El Maraghy records the warehouse exit: Original 1 in 3 calendar
+  days, Original 2 in 6 working days, Friday off. Phoenix verifies both, and a photo printed from Phoenix shows
+  «مُصوَّر — غير صالح», so Finance prints the "verified on Phoenix" page instead.
+- Phoenix side: PR 844 (`docs/direct-order-receipt-books.md`, "Two originals and a copy").
+- **Optional book — the owner's sentence, 27 Nov ~18:45, "add this sentence every where":** «استلام الدفاتر اختياري،
+  وفي حالة عدم الاستلام لا يحق للمدير عمل أي أوردر بيع مباشر نهائيًا.» It is `OPTIONAL_AR` in both generator
+  files: rule 1 on the book cover, a paragraph on the custody acknowledgement, the summary's first rows and the
+  managers' guide's lead and first rule; both videos and the email carry it too. Never drop it from a rebuild.
+- **Paper rebuilt 27 Nov ~18:30–19:00** in `_staging-two-originals/` (`books-v2`, `sample-v3`, `guides-v2`):
+  the two zones are pinned with `position:absolute` (zone A bottom 61.4mm, height 78mm; zone B bottom 15mm,
+  height 44mm), so the three sheets line up; the spill check also fails on zone overlap, content leaving a zone,
+  and a part line that wraps. 16 × 151 pages, 800 of 800 codes on all three sheets, register sha unchanged.
+- **The videos speak Egyptian colloquial** (owner, 27 Nov ~19:05: "pure arabic local egyptian voice"): Gemini's
+  "Charon" voice through `~/.claude/scripts/speak-arabic-reply.py`, never the Salma fallback; check a narration by
+  transcribing it before sending.
+
 ## Phoenix (PR 812, live since 27 Nov 00:23)
 
 - Tables `direct_order_receipt_books` and `direct_order_receipts`. All 800 codes are seeded on production.
@@ -119,8 +146,8 @@ the browser on another machine.
   until Finance records the hand-over.** So Ahmed's first action is "Hand to <name>" on the day each book changes
   hands.
 - **Finance's desk:** Direct Orders → Receipt Books, at `/admin/direct-orders/receipts`. It shows only for Ahmed
-  El Maraghy and the Super Admin. It has five parts:
-  - "Approved with no receipt": red after 7 days (14 until 27 Nov).
+  El Maraghy and the Super Admin. It has six parts:
+  - "Approved with no receipt": red once an original is past its due date (PR 844; before it, 7 days from approval).
   - "Approved with no receipt book" (PR 829, owner 27 Nov: "Flag them"): from the first hand-out on, every
     approved order raised by someone who held no book that day. Nothing before the first hand-out is listed.
   - The 16 books, with these buttons:
@@ -130,6 +157,9 @@ the browser on another machine.
     - "Record lost": cancels the book's unused receipts, in one database call. Works on a spare still in store too
       (the first version's database check refused that).
     - A red line under the counts: how many approved orders still owe a receipt from that book.
+  - "Without a receipt — N waiting for the CEO, N approved" (PR 840): every order Finance asked to stand
+    without a receipt, with its reason. Finance asks from the order's own page ("Ask the CEO to approve it
+    without a receipt"); only the CEO decides.
   - "Cancel a spoiled receipt": a used receipt can never be cancelled.
   - "Receipts entered and cancelled".
 - **The receipt panel ("DELIVERY RECEIPT")** sits under the order detail, on both order pages.
@@ -181,10 +211,14 @@ the browser on another machine.
 - **The area managers' guide:**
   1. Know your receipt, with the sample.
   2. On paper.
-  3. On Phoenix within 14 days. This section has the panel DRAWING, captioned as a drawing. 🔴 Since 27 Nov
-     the rule is 7 days and a late receipt blocks the manager's next order: update this guide too.
-  4. Rules.
-  5. Refusal messages.
+  3. On Phoenix within 7 days. This section has the panel DRAWING, captioned as a drawing. Its note says a
+     late receipt stops the manager's new orders and the final approval of his waiting ones.
+  4. Rules, with the 27 Nov rules: a late receipt blocks; nothing paid on the same product, no second order;
+     part-paid or a late payer, only Dr Anwar finishes it; an order without a receipt only with his approval.
+  5. Refusal messages, with the two new ones ("… no new order can be raised until then", "This pharmacy has
+     not paid anything on its earlier order of …").
+- The guides were rebuilt for these rules on 27 Nov ~16:20, after PR 840 shipped. The 14-day versions are in
+  the Guides folder's `_old versions - not for use.zip`.
 - Screenshots come from the spare's live page, signed in as Super Admin role-only, in the browser pane.
 - **Swap the drawing for a real screenshot once the first book is handed out.**
 

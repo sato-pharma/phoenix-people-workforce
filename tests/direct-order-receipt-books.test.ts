@@ -8,27 +8,38 @@ import {
   decideDirectOrderWithoutReceipt,
   issueDirectOrderReceiptBook,
   listDirectOrderWithoutReceiptToDecide,
+  listLateReceiptsForRequester,
   loadDirectOrderReceiptPanel,
+  loadDirectOrderReceiptPrint,
   loadDirectOrderReceiptRegister,
+  recordDirectOrderDelivery,
   recordDirectOrderReceipt,
+  recordDirectOrderWarehouseExit,
   releaseDirectOrderReceipt,
 } from "../src/lib/direct-orders/receipt-books.ts";
 import {
   bookHeldAtApproval,
+  cairoDateKeyOf,
   checkBookIssue,
+  checkDeliveryForOrder,
   checkNoReceiptAsk,
   checkNoReceiptDecision,
   checkReceiptForOrder,
   checkReceiptRelease,
   checkReceiptVoid,
+  checkWarehouseExit,
   classifyOrderReceipt,
   normalizeReceiptCode,
+  parseDateKey,
   parseReceiptSerial,
+  receiptDueDates,
   receiptEntryBookFor,
+  receiptLateness,
   receiptRolloutStart,
   type NoReceiptRow,
   type OrderForReceipt,
   type ReceiptBookRow,
+  type ReceiptProgress,
   type ReceiptRow,
 } from "../src/lib/direct-orders/receipt-rules.ts";
 import { withPostgrestStandIn, writesTo, type Row, type StandIn } from "./support/postgrest-stand-in.ts";
@@ -50,6 +61,12 @@ import { withPostgrestStandIn, writesTo, type Row, type StandIn } from "./suppor
 // returned book still proves an order approved while it was held; Finance can take a receipt off the
 // wrong order with a reason; every refused attempt is written on the order; a hand-out names a
 // person still at work; and closing a book is one database call.
+//
+// TWO ORIGINALS AND A COPY (owner, 27 Nov 2026, "Go, build it"): Original 1 is the manager's signed
+// custody of the goods and claims the receipt; Original 2 is the page the customer signs and stamps,
+// added to the same receipt once. Finance records the day the goods left the warehouse; from the next
+// day Original 1 is due in 3 calendar days and Original 2 in 6 working days, Friday off. Nothing is
+// late before the exit is recorded, and the order "has its receipt" only with both originals in.
 //
 // An order with no receipt stands only with the CEO's approval (owner, 27 Nov 2026: "صلاحيه عمل اى
 // اوردر بدون ايصال هى صلاحيه انور فقط لاغير"; he chose "Anwar approves in Phoenix"): Finance asks
@@ -154,14 +171,42 @@ function pureTests() {
   assert.equal(reasonOf(check({ order: order({ reversalOfRequestId: "r" }) })), "order_not_approved", "a reversal never takes a receipt");
   assert.equal(reasonOf(check({ orderReceiptSerial: 3 })), "order_has_receipt", "an order takes one receipt");
 
-  // The 7-day flag, and its cutover: each book's own issue date.
+  // The due dates (owner, 27 Nov 2026): counted from the day AFTER the exit. 10 Dec 2026 is a Thursday.
+  assert.deepEqual(receiptDueDates("2026-12-10"), { custodyDue: "2026-12-13", deliveryDue: "2026-12-17" }, "left Thursday: Original 1 by Sunday, Original 2 by the next Thursday, the Friday skipped");
+  assert.deepEqual(receiptDueDates("2026-12-12"), { custodyDue: "2026-12-15", deliveryDue: "2026-12-19" }, "left Saturday: the Friday inside the week is skipped");
+  assert.deepEqual(receiptDueDates("2026-12-11"), { custodyDue: "2026-12-14", deliveryDue: "2026-12-17" }, "left on a Friday: the count starts Saturday");
+  assert.deepEqual(receiptDueDates("2026-12-30"), { custodyDue: "2027-01-02", deliveryDue: "2027-01-06" }, "across the year end");
+  assert.equal(parseDateKey("2026-12-10"), "2026-12-10");
+  assert.equal(parseDateKey("2026-02-30"), null, "never a day that does not exist");
+  assert.equal(parseDateKey("10/12/2026"), null);
+  assert.equal(cairoDateKeyOf(new Date("2026-12-10T22:30:00.000Z")), "2026-12-11", "the Cairo day, not the UTC day");
+
+  const progress = (overrides: Partial<ReceiptProgress> = {}): ReceiptProgress => ({ custodyEntered: false, deliveryEntered: false, exitDate: "2026-12-10", ...overrides });
+  assert.equal(receiptLateness(progress({ exitDate: null }), "2027-03-01"), null, "nothing is late before Finance records the exit");
+  assert.equal(receiptLateness(progress(), "2026-12-13"), null, "Original 1 on its due day is not late");
+  assert.deepEqual(receiptLateness(progress(), "2026-12-14"), { original: "custody", dueDate: "2026-12-13", daysLate: 1 }, "Original 1 the day after is late");
+  assert.equal(receiptLateness(progress({ custodyEntered: true }), "2026-12-17"), null, "Original 2 on its due day is not late");
+  assert.deepEqual(receiptLateness(progress({ custodyEntered: true }), "2026-12-19"), { original: "delivery", dueDate: "2026-12-17", daysLate: 2 }, "Original 2 after its working week is late");
+  assert.deepEqual(receiptLateness(progress(), "2026-12-19")?.original, "custody", "the custody page is said first: it was due first");
+  assert.equal(receiptLateness(progress({ custodyEntered: true, deliveryEntered: true }), "2027-03-01"), null);
+
+  // The standing, and its cutover: each book's own issue date.
   const books = [book()];
   const at = (days: number) => new Date(Date.parse("2026-12-10T09:00:00.000Z") + days * DAY);
-  assert.equal(classifyOrderReceipt({ order: order(), books, hasReceipt: false, now: at(6) }), "waiting", "day 6 still inside the window");
-  assert.equal(classifyOrderReceipt({ order: order(), books, hasReceipt: false, now: at(7) }), "overdue", "flagged from day 7 (owner, 27 Nov: a week at most)");
-  assert.equal(classifyOrderReceipt({ order: order(), books, hasReceipt: true, now: at(30) }), "has_receipt");
+  const none = progress({ exitDate: null });
+  assert.equal(classifyOrderReceipt({ order: order(), books, progress: none, now: at(60) }), "awaiting_exit", "before the exit is recorded nothing counts, however long");
+  assert.equal(classifyOrderReceipt({ order: order(), books, progress: progress(), now: at(3) }), "waiting", "Original 1 on its due day");
+  assert.equal(classifyOrderReceipt({ order: order(), books, progress: progress(), now: at(4) }), "overdue", "Original 1 past its 3 days");
+  assert.equal(classifyOrderReceipt({ order: order(), books, progress: progress({ custodyEntered: true }), now: at(7) }), "waiting", "Original 2 on its due day");
+  assert.equal(classifyOrderReceipt({ order: order(), books, progress: progress({ custodyEntered: true }), now: at(8) }), "overdue", "Original 2 past its 6 working days");
+  assert.equal(classifyOrderReceipt({ order: order(), books, progress: progress({ custodyEntered: true, deliveryEntered: true }), now: at(30) }), "has_receipt", "both originals in");
   assert.equal(
-    classifyOrderReceipt({ order: order({ decidedAt: "2026-11-20T09:00:00.000Z" }), books, hasReceipt: false, now: NOW }),
+    classifyOrderReceipt({ order: order(), books, progress: progress({ custodyEntered: true, exitDate: null }), now: at(30) }),
+    "awaiting_exit",
+    "Original 1 alone is not the receipt: the order still owes Original 2",
+  );
+  assert.equal(
+    classifyOrderReceipt({ order: order({ decidedAt: "2026-11-20T09:00:00.000Z" }), books, progress: none, now: NOW }),
     "not_required",
     "an order approved before the manager received his book never owes a receipt",
   );
@@ -170,24 +215,56 @@ function pureTests() {
     null,
     "a book returned before the approval does not count",
   );
-  assert.equal(classifyOrderReceipt({ order: order({ status: "rejected" }), books, hasReceipt: false, now: NOW }), "not_required");
+  assert.equal(classifyOrderReceipt({ order: order({ status: "rejected" }), books, progress: none, now: NOW }), "not_required");
 
   // No book (owner, 27 Nov 2026: "Flag them"): after the first book went out, an order raised by
   // someone holding none is flagged — never silently excused.
   const stranger = order({ requesterHrId: "NS-0001", decidedAt: "2026-12-12T09:00:00.000Z" });
-  assert.equal(classifyOrderReceipt({ order: stranger, books, hasReceipt: false, now: NOW }), "no_book", "a no-book order after the rollout is flagged");
-  assert.equal(classifyOrderReceipt({ order: stranger, books, hasReceipt: true, now: NOW }), "has_receipt", "a book handed over later can still prove it");
+  assert.equal(classifyOrderReceipt({ order: stranger, books, progress: none, now: NOW }), "no_book", "a no-book order after the rollout is flagged");
   assert.equal(
-    classifyOrderReceipt({ order: order({ requesterHrId: "NS-0001", decidedAt: "2026-11-20T09:00:00.000Z" }), books, hasReceipt: false, now: NOW }),
+    classifyOrderReceipt({ order: stranger, books, progress: progress({ custodyEntered: true, deliveryEntered: true }), now: NOW }),
+    "has_receipt",
+    "a book handed over later can still prove it",
+  );
+  assert.equal(
+    classifyOrderReceipt({ order: stranger, books, progress: progress({ custodyEntered: true }), now: NOW }),
+    "overdue",
+    "once Original 1 is in, the order is held to its due dates like any other",
+  );
+  assert.equal(
+    classifyOrderReceipt({ order: order({ requesterHrId: "NS-0001", decidedAt: "2026-11-20T09:00:00.000Z" }), books, progress: none, now: NOW }),
     "not_required",
     "nothing approved before the first book went out is flagged",
   );
   assert.equal(
-    classifyOrderReceipt({ order: stranger, books: [book({ status: "in_store", holderHrId: null, issuedAt: null })], hasReceipt: false, now: NOW }),
+    classifyOrderReceipt({ order: stranger, books: [book({ status: "in_store", holderHrId: null, issuedAt: null })], progress: none, now: NOW }),
     "not_required",
     "while every book is still in store, nothing is flagged",
   );
-  assert.equal(classifyOrderReceipt({ order: order({ requesterHrId: "NS-0001", status: "rejected" }), books, hasReceipt: false, now: NOW }), "not_required");
+  assert.equal(classifyOrderReceipt({ order: order({ requesterHrId: "NS-0001", status: "rejected" }), books, progress: none, now: NOW }), "not_required");
+
+  // Original 2: after Original 1, from the same receipt, once.
+  const claimed = receipt({ state: "used", requestId: order().id });
+  const delivery = (input: Partial<Parameters<typeof checkDeliveryForOrder>[0]> = {}) => {
+    const decision = checkDeliveryForOrder({ order: order(), serial: 7, typedCode: "AB3K7Q", orderReceipt: claimed, deliveryEntered: false, ...input });
+    return decision.ok ? "ok" : decision.reason;
+  };
+  assert.equal(delivery(), "ok", "the same number and code as Original 1");
+  assert.equal(delivery({ orderReceipt: null }), "custody_not_entered", "Original 1 is entered first");
+  assert.equal(delivery({ serial: 8 }), "other_receipt", "Original 2 carries the same number as Original 1");
+  assert.equal(delivery({ typedCode: "ZZZZZZ" }), "code_mismatch", "an invented Original 2 is refused");
+  assert.equal(delivery({ typedCode: "ZZZZZZ", deliveryEntered: true }), "code_mismatch", "a wrong code is refused BEFORE 'already entered' is said");
+  assert.equal(delivery({ deliveryEntered: true }), "delivery_entered", "Original 2 is entered once");
+  assert.equal(delivery({ order: order({ status: "cancelled" }) }), "order_not_approved");
+  assert.equal(delivery({ withoutReceiptApproved: true }), "order_without_receipt");
+
+  // The warehouse exit: an approved order, a real day, never ahead of today or behind the approval.
+  assert.equal(checkWarehouseExit({ order: order(), exitDate: "2026-12-11", todayCairo: "2026-12-20" }).ok, true);
+  assert.equal(checkWarehouseExit({ order: order(), exitDate: "2026-12-10", todayCairo: "2026-12-20" }).ok, true, "the approval day itself");
+  assert.equal(checkWarehouseExit({ order: order(), exitDate: "2026-12-09", todayCairo: "2026-12-20" }).ok, false, "never before the approval");
+  assert.equal(checkWarehouseExit({ order: order(), exitDate: "2026-12-21", todayCairo: "2026-12-20" }).ok, false, "never a day that has not come");
+  assert.equal(checkWarehouseExit({ order: order(), exitDate: null, todayCairo: "2026-12-20" }).ok, false);
+  assert.equal(checkWarehouseExit({ order: order({ status: "pending_approval" }), exitDate: "2026-12-11", todayCairo: "2026-12-20" }).ok, false, "only an approved order leaves");
   assert.equal(
     receiptRolloutStart([book({ issuedAt: "2026-12-03T00:00:00.000Z" }), book({ bookNo: 2, issuedAt: "2026-12-01T08:00:00.000Z" })]),
     Date.parse("2026-12-01T08:00:00.000Z"),
@@ -237,12 +314,12 @@ function pureTests() {
   };
   const pendingAsk: NoReceiptRow = { ...approvedAsk, status: "pending", decidedByHrId: null, decidedAt: null };
   assert.equal(
-    classifyOrderReceipt({ order: order(), books: [book()], hasReceipt: false, now: NOW, withoutReceiptApproved: true }),
+    classifyOrderReceipt({ order: order(), books: [book()], progress: progress(), now: NOW, withoutReceiptApproved: true }),
     "without_receipt",
     "an order the CEO approved without a receipt is never flagged overdue",
   );
   assert.equal(
-    classifyOrderReceipt({ order: order(), books: [book()], hasReceipt: true, now: NOW, withoutReceiptApproved: true }),
+    classifyOrderReceipt({ order: order(), books: [book()], progress: progress({ custodyEntered: true, deliveryEntered: true }), now: NOW, withoutReceiptApproved: true }),
     "has_receipt",
     "a receipt still counts first",
   );
@@ -300,6 +377,7 @@ function tables(): Record<string, Row[]> {
       { id: "ph-2", pharmacy_name: "El Nour Pharmacy" },
     ],
     direct_order_receipt_releases: [],
+    direct_order_warehouse_exits: [],
     direct_order_no_receipt_requests: [],
     direct_order_events: [],
     audit_logs: [],
@@ -332,8 +410,14 @@ function databaseFunctions(): StandIn["rpc"] {
       if (!r || r.state !== "used" || r.request_id !== args.p_request_id) return { released: false };
       standIn.tables.direct_order_receipt_releases.push({ serial: r.serial, request_id: r.request_id, reason: args.p_reason, released_by_hr_id: args.p_actor_hr_id });
       const before = { ...r };
-      Object.assign(r, { state: "unused", request_id: null, photo_storage_path: null, used_by_hr_id: null, used_at: null });
-      return { released: true, serial: before.serial, book_no: before.book_no, photo_storage_path: before.photo_storage_path, used_by_hr_id: before.used_by_hr_id, used_at: before.used_at };
+      Object.assign(r, {
+        state: "unused", request_id: null, photo_storage_path: null, used_by_hr_id: null, used_at: null,
+        delivery_photo_storage_path: null, delivery_photo_content_type: null, delivery_entered_by_hr_id: null, delivery_entered_at: null,
+      });
+      return {
+        released: true, serial: before.serial, book_no: before.book_no, photo_storage_path: before.photo_storage_path,
+        delivery_photo_storage_path: before.delivery_photo_storage_path ?? null, used_by_hr_id: before.used_by_hr_id, used_at: before.used_at,
+      };
     },
   };
 }
@@ -528,7 +612,8 @@ async function behaviourTests() {
       const register = await loadDirectOrderReceiptRegister(ADMIN);
       assert.deepEqual(register.noBook.map((o) => o.requestId), [ORDER_C], "flagged after the rollout, never before it");
       assert.equal(register.noBook[0].pharmacyName, "El Nour Pharmacy");
-      assert.deepEqual(register.missing.map((o) => o.requestId).sort(), [ORDER_A, ORDER_B].sort());
+      assert.deepEqual(register.awaitingExit.map((o) => o.requestId).sort(), [ORDER_A, ORDER_B].sort(), "no exit recorded: they wait for Finance");
+      assert.deepEqual(register.missing, [], "and nothing is due yet");
       assert.equal(register.books.find((b) => b.bookNo === 1)?.owing, 2, "the book row says how many orders still owe a receipt from it");
       await rejectsWith(loadDirectOrderReceiptRegister(MOMEN), /Finance's/, "the desk is Finance's");
     });
@@ -550,7 +635,7 @@ async function behaviourTests() {
       Object.assign(asks[0], { id: "ask-1", status: "pending", asked_at: "2026-12-19T09:00:00.000Z", decided_by_hr_id: null, decided_at: null, decision_note: null });
 
       const waiting = await loadDirectOrderReceiptRegister(ADMIN);
-      assert.deepEqual(waiting.missing.map((o) => o.requestId).sort(), [ORDER_A, ORDER_B].sort(), "a waiting ask still owes its receipt");
+      assert.deepEqual(waiting.awaitingExit.map((o) => o.requestId).sort(), [ORDER_A, ORDER_B].sort(), "a waiting ask still owes its receipt");
       assert.deepEqual(waiting.withoutReceipt.map((o) => [o.requestId, o.status]), [[ORDER_A, "pending"]], "Finance sees the ask waiting");
       await rejectsWith(askDirectOrderWithoutReceipt(ADMIN, { requestId: ORDER_A, reason: "asking twice" }), /already waiting/, "one ask waits at a time");
 
@@ -571,7 +656,7 @@ async function behaviourTests() {
       assert.deepEqual(eventTypes, ["receipt_waiver_asked", "receipt_waiver_approved"], "both are on the order's history");
 
       const after = await loadDirectOrderReceiptRegister(ADMIN);
-      assert.deepEqual(after.missing.map((o) => o.requestId), [ORDER_B], "the approved order leaves the missing-receipt list");
+      assert.deepEqual(after.awaitingExit.map((o) => o.requestId), [ORDER_B], "the approved order leaves the missing-receipt lists");
       assert.equal(after.books.find((b) => b.bookNo === 1)?.owing, 1, "and the book no longer counts it as owing");
       assert.deepEqual(after.withoutReceipt.map((o) => [o.requestId, o.status, o.waiverDecidedAt]), [[ORDER_A, "approved", asks[0].decided_at]]);
       await withStoredUploads(async () => {
@@ -589,6 +674,104 @@ async function behaviourTests() {
       assert.equal(panel.entryBook, null, "the panel offers no entry form");
       assert.equal(panel.mayAskWithoutReceipt, false, "nor a second ask");
       assert.equal(panel.withoutReceipt?.status, "approved");
+    });
+  }
+
+  // 13. Two originals (owner, 27 Nov 2026): Finance records the exit, Original 1 then Original 2, the
+  //     late hold counts from the exit, and the verified print shows both.
+  {
+    const standIn: StandIn = { tables: tables() };
+    await withPostgrestStandIn(standIn, async (seen) => {
+      const exits = standIn.tables.direct_order_warehouse_exits;
+      await rejectsWith(recordDirectOrderWarehouseExit(MOMEN, { requestId: ORDER_A, exitDate: "2026-12-10", now: NOW }), /Only Finance/, "the manager never records the exit");
+      await rejectsWith(recordDirectOrderWarehouseExit(ADMIN, { requestId: ORDER_A, exitDate: "2026-12-09", now: NOW }), /before the order was approved/, "never before the approval");
+      await rejectsWith(recordDirectOrderWarehouseExit(ADMIN, { requestId: ORDER_A, exitDate: "2026-12-21", now: NOW }), /has not come yet/, "never a day ahead");
+      assert.equal(exits.length, 0, "a refused exit writes nothing");
+
+      // Nothing is late before the exit, however long ago the approval was.
+      assert.deepEqual(await listLateReceiptsForRequester("AI-0001", NOW), [], "no exit recorded: the manager is not held");
+
+      await recordDirectOrderWarehouseExit(ADMIN, { requestId: ORDER_A, exitDate: "2026-12-10", now: NOW });
+      assert.equal(exits.length, 1);
+      assert.equal(exits[0].exit_date, "2026-12-10");
+      assert.equal(exits[0].recorded_by_hr_id, "B-10");
+      const late = await listLateReceiptsForRequester("AI-0001", NOW);
+      assert.deepEqual(late.map((row) => [row.requestId, row.original, row.days]), [[ORDER_A, "custody", 7]], "Original 1 due 13 Dec, read on 20 Dec: 7 days late");
+
+      // Original 2 cannot come first.
+      await withStoredUploads(async () => {
+        await rejectsWith(
+          recordDirectOrderDelivery(MOMEN, { requestId: ORDER_A, serial: "7", code: "AB3K7Q", photoDataUrl: PHOTO }),
+          /Enter Original 1/,
+          "Original 2 waits for Original 1",
+        );
+        await recordDirectOrderReceipt(MOMEN, { requestId: ORDER_A, serial: "7", code: "AB3K7Q", photoDataUrl: PHOTO });
+      });
+      const afterCustody = await listLateReceiptsForRequester("AI-0001", NOW);
+      assert.deepEqual(afterCustody.map((row) => [row.original, row.days]), [["delivery", 3]], "now Original 2 — due 17 Dec — is the late one");
+
+      const panel = await loadDirectOrderReceiptPanel(MOMEN, ORDER_A);
+      assert.ok(panel && !("unavailable" in panel));
+      assert.equal(panel.mayEnterDelivery, true, "the manager is offered Original 2");
+      assert.equal(panel.entryBook, null, "and no second Original 1");
+      assert.equal(panel.mayRecordExit, false, "the exit is Finance's");
+      assert.equal(panel.mayPrint, false, "the verified print is Finance's");
+      assert.deepEqual(panel.exit && [panel.exit.date, panel.exit.custodyDue, panel.exit.deliveryDue], ["2026-12-10", "2026-12-13", "2026-12-17"]);
+
+      await withStoredUploads(async () => {
+        await rejectsWith(
+          recordDirectOrderDelivery(MOMEN, { requestId: ORDER_A, serial: "8", code: "C9D2EF", photoDataUrl: PHOTO }),
+          /same number as Original 1/,
+          "Original 2 from another receipt is refused",
+        );
+        await rejectsWith(
+          recordDirectOrderDelivery(MOMEN, { requestId: ORDER_A, serial: "7", code: "ZZZZZZ", photoDataUrl: PHOTO }),
+          /code does not match/,
+          "an invented Original 2 is refused",
+        );
+        await rejectsWith(
+          recordDirectOrderDelivery(STRANGER, { requestId: ORDER_A, serial: "7", code: "AB3K7Q", photoDataUrl: PHOTO }),
+          /Only the manager who raised this order, or Finance/,
+          "a stranger is refused",
+        );
+        const before = writesTo(seen, "direct_order_receipts").length;
+        await recordDirectOrderDelivery(MOMEN, { requestId: ORDER_A, serial: "000007", code: "ab3k7q", photoDataUrl: PHOTO });
+        const writes = writesTo(seen, "direct_order_receipts").slice(before);
+        assert.equal(writes.length, 1, "one write adds Original 2");
+        assert.equal(writes[0].params.get("request_id"), `eq.${ORDER_A}`, "only while the receipt is still on this order");
+        assert.equal(writes[0].params.get("delivery_photo_storage_path"), "is.null", "and only while Original 2 is empty");
+        await rejectsWith(
+          recordDirectOrderDelivery(MOMEN, { requestId: ORDER_A, serial: "7", code: "AB3K7Q", photoDataUrl: PHOTO }),
+          /already entered/,
+          "Original 2 is entered once",
+        );
+      });
+      const row = standIn.tables.direct_order_receipts.find((r) => r.serial === 7);
+      assert.equal(row?.delivery_entered_by_hr_id, "AI-0001");
+      assert.ok(String(row?.delivery_photo_storage_path).includes("-delivery-"), "Original 2 is its own photo");
+      assert.ok(String(row?.photo_storage_path).includes("-custody-"), "beside Original 1's");
+      assert.deepEqual(await listLateReceiptsForRequester("AI-0001", NOW), [], "both originals in: the manager is free");
+
+      const register = await loadDirectOrderReceiptRegister(ADMIN);
+      assert.deepEqual(register.awaitingExit.map((o) => o.requestId), [ORDER_B], "ORDER_A has its receipt; ORDER_B still waits for its exit");
+      assert.deepEqual(register.missing, []);
+      assert.equal(register.recent.find((e) => e.serialLabel === "000007")?.deliveryEntered, true);
+
+      const print = await loadDirectOrderReceiptPrint(ADMIN, ORDER_A);
+      assert.equal(print?.serialLabel, "000007");
+      assert.equal(print?.exitDate, "2026-12-10");
+      assert.ok(print?.delivery, "the print carries Original 2");
+      assert.equal(print?.pharmacyName, "El Shifa Pharmacy");
+      await rejectsWith(loadDirectOrderReceiptPrint(MOMEN, ORDER_A), /Finance's/, "the verified print is Finance's");
+      assert.equal(await loadDirectOrderReceiptPrint(ADMIN, ORDER_B), null, "no receipt, nothing to print");
+
+      // A correction keeps the old day in the audit log.
+      await recordDirectOrderWarehouseExit(ADMIN, { requestId: ORDER_B, exitDate: "2026-12-12", now: NOW });
+      await recordDirectOrderWarehouseExit(ADMIN, { requestId: ORDER_B, exitDate: "2026-12-13", now: NOW });
+      assert.equal(exits.filter((e) => e.request_id === ORDER_B).length, 1, "one row per order");
+      assert.equal(exits.find((e) => e.request_id === ORDER_B)?.exit_date, "2026-12-13");
+      const corrected = standIn.tables.direct_order_events.filter((e) => e.event_type === "warehouse_exit_recorded").at(-1);
+      assert.equal((corrected?.metadata as { previousDate?: string } | undefined)?.previousDate, "2026-12-12", "the corrected day is kept on the order's history");
     });
   }
 

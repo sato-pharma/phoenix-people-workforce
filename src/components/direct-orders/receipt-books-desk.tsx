@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { adminPanelClassName, adminPanelDepthClassName, adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
+import { WarehouseExitField } from "@/components/direct-orders/direct-order-receipt-panel";
 import { FormField } from "@/components/ui/form-kit";
 import {
   phxButtonAccentClassName,
@@ -14,8 +15,8 @@ import {
   phxFormErrorClassName,
   phxSelectClassName,
 } from "@/components/ui/form-tokens";
-import type { DirectOrderReceiptRegister, ReceiptRegisterBook } from "@/lib/direct-orders/receipt-books";
-import { cairoDate, cairoDateTime } from "@/lib/format/cairo-datetime";
+import type { DirectOrderReceiptRegister, ReceiptRegisterBook, ReceiptRegisterOrder } from "@/lib/direct-orders/receipt-books";
+import { cairoDate, cairoDateTime, utcDate } from "@/lib/format/cairo-datetime";
 import { cn } from "@/lib/utils";
 
 const STATUS_LABEL: Record<ReceiptRegisterBook["status"], string> = {
@@ -51,9 +52,19 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
   );
 }
 
+/** Where one order stands on its two originals, in a line. */
+function originalsLine(order: ReceiptRegisterOrder): string {
+  const custody = order.custodyEntered ? "Original 1 in" : `Original 1 due ${utcDate(order.custodyDue)}`;
+  const delivery = order.deliveryEntered ? "Original 2 in" : `Original 2 due ${utcDate(order.deliveryDue)}`;
+  const late = order.lateness ? ` · ${order.lateness.daysLate} day${order.lateness.daysLate === 1 ? "" : "s"} late` : "";
+  return `Left the warehouse ${utcDate(order.exitDate)} · ${custody} · ${delivery}${late}`;
+}
+
 /**
- * Finance's Receipt Books desk (owner, 26 Nov 2026: "Finance"; 27 Nov: 7 days).
- * Approved orders still owing a receipt, orders raised by someone holding no book (owner, 27 Nov
+ * Finance's Receipt Books desk (owner, 26 Nov 2026: "Finance"; 27 Nov: two originals and a copy).
+ * Approved orders waiting for Finance to record the day the goods left the warehouse (nothing is due
+ * until then), orders with an original still to enter — Original 1 within 3 days of the exit, Original
+ * 2 within 6 working days, Friday off — orders raised by someone holding no book (owner, 27 Nov
  * 2026: "Flag them"), the orders asked to stand without a receipt (the CEO decides each, owner,
  * 27 Nov 2026), the sixteen books and who holds each, the spoiled-page cancel, and the receipts
  * entered. Every action is checked again on the server.
@@ -86,16 +97,49 @@ export function ReceiptBooksDesk({ register }: { register: DirectOrderReceiptReg
 
   const overdue = register.missing.filter((order) => order.standing === "overdue");
   const waiting = register.missing.filter((order) => order.standing === "waiting");
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 
   return (
     <div className="space-y-5">
       {message ? <p className={`border border-slate-300 bg-white px-3 py-2 text-phx-sm font-bold text-slate-800 ${adminPanelDepthClassName}`}>{message}</p> : null}
       {error ? <p className={phxFormErrorClassName}>{error}</p> : null}
 
-      <Panel title={`Approved with no receipt — ${overdue.length} past ${register.overdueDays} days, ${waiting.length} within`}>
+      <Panel title={`Waiting for the warehouse exit — ${register.awaitingExit.length}`}>
+        {register.awaitingExit.length === 0 ? (
+          <p className="text-phx-sm text-slate-600">Every approved order has its warehouse exit day recorded.</p>
+        ) : (
+          <>
+            <p className="mb-2 text-phx-sm text-slate-600">
+              Record the day the goods left the warehouse. Both due dates count from the next day: Original 1 within {register.custodyDueDays} days, Original 2 within{" "}
+              {register.deliveryDueWorkingDays} working days, Friday off. Until it is recorded, nothing on the order is late.
+            </p>
+            <ul className="divide-y divide-slate-200">
+              {register.awaitingExit.map((order) => (
+                <li className="grid grid-cols-1 gap-2 py-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,2fr)] lg:gap-3" key={order.requestId}>
+                  <div className="min-w-0">
+                    <Link className="break-words text-phx-sm font-bold text-slate-900 underline-offset-2 hover:underline" href={`/admin/direct-orders/${order.requestId}?from=/admin/direct-orders/receipts`}>
+                      {order.pharmacyName}
+                    </Link>
+                    <p className="break-words text-phx-xs text-slate-500">
+                      {order.productName} · {money(order.salesValue)} · {order.requesterName}
+                    </p>
+                  </div>
+                  <p className="text-phx-sm text-slate-600">
+                    Approved {cairoDate(order.decidedAt)} · {order.days} day{order.days === 1 ? "" : "s"}
+                    {order.custodyEntered ? " · Original 1 in" : ""}
+                  </p>
+                  <WarehouseExitField exitDate={null} requestId={order.requestId} todayCairo={today} />
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </Panel>
+
+      <Panel title={`An original still to enter — ${overdue.length} late, ${waiting.length} not yet due`}>
         {register.missing.length === 0 ? (
           <p className="text-phx-sm text-slate-600">
-            Every approved order of a manager holding a book has its receipt. Orders approved before the manager received a book never owe one.
+            Every order whose goods left the warehouse has both originals on Phoenix. Orders approved before the manager received a book never owe one.
           </p>
         ) : (
           <ul className="divide-y divide-slate-200">
@@ -110,9 +154,7 @@ export function ReceiptBooksDesk({ register }: { register: DirectOrderReceiptReg
                   </p>
                 </div>
                 <p className="break-words text-phx-sm text-slate-700">{order.requesterName}</p>
-                <p className={cn("text-phx-sm", order.standing === "overdue" ? "font-bold text-rose-700" : "text-slate-600")}>
-                  Approved {cairoDate(order.decidedAt)} · {order.days} day{order.days === 1 ? "" : "s"}
-                </p>
+                <p className={cn("text-phx-sm", order.standing === "overdue" ? "font-bold text-rose-700" : "text-slate-600")}>{originalsLine(order)}</p>
               </li>
             ))}
           </ul>
@@ -317,9 +359,12 @@ export function ReceiptBooksDesk({ register }: { register: DirectOrderReceiptReg
                 </p>
                 <p className="min-w-0 break-words text-phx-sm text-slate-700">
                   {entry.state === "used" && entry.requestId ? (
-                    <Link className="underline-offset-2 hover:underline" href={`/admin/direct-orders/${entry.requestId}?from=/admin/direct-orders/receipts`}>
-                      {entry.pharmacyName ?? "Open the order"}
-                    </Link>
+                    <>
+                      <Link className="underline-offset-2 hover:underline" href={`/admin/direct-orders/${entry.requestId}?from=/admin/direct-orders/receipts`}>
+                        {entry.pharmacyName ?? "Open the order"}
+                      </Link>
+                      <span className="text-slate-500">{entry.deliveryEntered ? " · both originals in" : " · Original 2 still to enter"}</span>
+                    </>
                   ) : (
                     `Cancelled${entry.voidedReason ? ` — ${entry.voidedReason}` : ""}`
                   )}

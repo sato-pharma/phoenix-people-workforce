@@ -299,11 +299,12 @@ export const MODULES = [
   {
     id: "direct-order-receipts",
     title: "Direct orders — the delivery-receipt books",
-    scope: "The printed receipt books: custody, entering a receipt on an order, the 7-day flag and the late manager's block, the undo, an order standing without a receipt on the CEO's approval, and the paper books' documents.",
+    scope: "The printed receipt books: custody, entering a receipt on an order, the two originals, the warehouse exit and the due dates, the late manager's block, the verified print, the undo, an order standing without a receipt on the CEO's approval, and the paper books' documents.",
     globs: [
       "src/lib/direct-orders/{receipt-books,receipt-rules}.ts",
-      "src/components/direct-orders/{direct-order-receipt-panel,receipt-books-desk}.tsx",
+      "src/components/direct-orders/{direct-order-receipt-panel,receipt-books-desk,receipt-print-button}.tsx",
       "app/**/direct-orders/**/receipt*/**",
+      "app/print/direct-order-receipt/**",
       "tests/direct-order-receipt-books*",
       "supabase/migrations/*direct_order*receipt*",
     ],

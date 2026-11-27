@@ -9207,7 +9207,7 @@ await runTest(
 );
 
 await runTest(
-  "direct order payment standing (a delivery receipt past 7 days stops its manager raising a new order; nothing paid on an earlier order of the same product refuses the new one, another product is raised; part-paid or a late payer is finished only by the CEO, never the Super Admin; a failed read fails closed)",
+  "direct order payment standing (a receipt original past its due date stops its manager raising a new order; nothing paid on an earlier order of the same product refuses the new one, another product is raised; part-paid or a late payer is finished only by the CEO, never the Super Admin; a failed read fails closed)",
   runDirectOrderPaymentStandingTests,
 );
 
