@@ -45595,6 +45595,86 @@ ALTER FUNCTION public.phx_territory_area_pharmacy_sources(p_area_codes text[], p
 COMMENT ON FUNCTION public.phx_territory_area_pharmacy_sources(p_area_codes text[], p_periods text[], p_lines text[]) IS 'Territory Drilldown: each listed pharmacy''s distributor rows (latest name, address, brick) over the same rows as phx_territory_area_pharmacies — feeds the Google Maps directions link.';
 
 --
+-- Name: phx_territory_pharmacies_to_match(text[], numeric, integer); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phx_territory_pharmacies_to_match(p_periods text[], p_share numeric, p_limit integer) RETURNS TABLE(distributor_code text, client_code text, client_name text, brick_id text, brick_name text, brick_latitude double precision, brick_longitude double precision, sales_value numeric, sales_rank bigint)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    SET statement_timeout TO '60s'
+    AS $$
+#variable_conflict use_column
+begin
+  return query
+  with base as (
+    select
+      btrim(r.client_code) as cc,
+      upper(btrim(coalesce(r.distributor_code, ''))) as d,
+      r.client_name,
+      coalesce(nullif(btrim(r.brick_id), ''), '(unmapped)') as brick_id,
+      r.product_code, r.period, r.total_qty, r.is_direct, r.direct_value,
+      r.latest_row_created_at
+    from public.source_of_sales_customer_directory_rollup r
+    join public.source_of_sales_import_batches b on b.id = r.batch_id and b.status = 'validated'
+    where r.period = any (p_periods)
+      and r.client_code is not null
+      and btrim(coalesce(r.distributor_code, '')) <> ''
+      and lower(btrim(coalesce(r.official_line, ''))) in ('cns', 'pedia', 'anti infective')
+      and upper(btrim(coalesce(r.product_code, ''))) not in ('LA003', 'LA004', 'SS001')
+  ),
+  prices as (
+    select distinct bs.product_code, bs.period, public.phx_factory_price(bs.product_code, bs.period) as price
+    from base bs
+  ),
+  valued as (
+    select bs.d, bs.cc,
+      sum(case when bs.is_direct then coalesce(bs.direct_value, 0) else coalesce(bs.total_qty, 0) * coalesce(pr.price, 0) end) as v
+    from base bs
+    left join prices pr on pr.product_code = bs.product_code and pr.period = bs.period
+    group by bs.d, bs.cc
+  ),
+  ranked as (
+    select vl.d, vl.cc, vl.v,
+      row_number() over (order by vl.v desc, vl.d, vl.cc) as rn,
+      sum(vl.v) over (order by vl.v desc, vl.d, vl.cc) - vl.v as cum_before,
+      sum(vl.v) over () as tot
+    from valued vl
+    where vl.v > 0
+  ),
+  latest as (
+    select distinct on (bs.d, bs.cc) bs.d, bs.cc, bs.client_name, bs.brick_id
+    from base bs
+    order by bs.d, bs.cc, bs.latest_row_created_at desc nulls last
+  )
+  select rk.d, rk.cc, lt.client_name, lt.brick_id, bk.brick_name, g.latitude, g.longitude, rk.v, rk.rn
+  from ranked rk
+  join latest lt on lt.d = rk.d and lt.cc = rk.cc
+  left join public.source_of_sales_bricks bk on bk.brick_id = lt.brick_id
+  left join lateral (
+    select gl.latitude, gl.longitude
+    from public.geo_locations gl
+    where gl.source_type = 'brick_centroid' and gl.source_key = lt.brick_id
+    limit 1
+  ) g on true
+  where rk.cum_before < p_share * rk.tot
+    and not exists (
+      select 1 from public.territory_pharmacy_place_matches m
+      where m.distributor_code = rk.d and m.client_code = rk.cc and m.status <> 'lookup_failed'
+    )
+  order by rk.rn
+  limit greatest(coalesce(p_limit, 0), 0);
+end;
+$$;
+
+ALTER FUNCTION public.phx_territory_pharmacies_to_match(p_periods text[], p_share numeric, p_limit integer) OWNER TO postgres;
+
+--
+-- Name: FUNCTION phx_territory_pharmacies_to_match(p_periods text[], p_share numeric, p_limit integer); Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON FUNCTION public.phx_territory_pharmacies_to_match(p_periods text[], p_share numeric, p_limit integer) IS 'Territory Drilldown: pharmacies ranked by sales value down to a share of the total, not yet matched to a Google place — feeds scripts/territory/match-pharmacy-places.ts.';
+
+--
 -- Name: phx_territory_resolve_sos_area_codes(text); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -74077,6 +74157,30 @@ CREATE TABLE public.telegram_connections (
 ALTER TABLE public.telegram_connections OWNER TO postgres;
 
 --
+-- Name: territory_pharmacy_place_matches; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.territory_pharmacy_place_matches (
+    distributor_code text NOT NULL,
+    client_code text NOT NULL,
+    status text NOT NULL,
+    google_place_id text,
+    search_text text NOT NULL,
+    brick_id text,
+    looked_up_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT territory_pharmacy_place_matches_check CHECK (((status = 'matched'::text) = (google_place_id IS NOT NULL))),
+    CONSTRAINT territory_pharmacy_place_matches_status_check CHECK ((status = ANY (ARRAY['matched'::text, 'no_match'::text, 'ambiguous'::text, 'lookup_failed'::text])))
+);
+
+ALTER TABLE public.territory_pharmacy_place_matches OWNER TO postgres;
+
+--
+-- Name: TABLE territory_pharmacy_place_matches; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.territory_pharmacy_place_matches IS 'Territory Drilldown: the Google Maps place each top pharmacy was matched to (place id only), or why not. Written by scripts/territory/match-pharmacy-places.ts; read by the drilldown (pharmacy-directions-sources.ts).';
+
+--
 -- Name: territory_preview_links; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -81261,6 +81365,13 @@ ALTER TABLE ONLY public.telegram_connections
 
 ALTER TABLE ONLY public.telegram_connections
     ADD CONSTRAINT telegram_connections_pkey PRIMARY KEY (id);
+
+--
+-- Name: territory_pharmacy_place_matches territory_pharmacy_place_matches_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.territory_pharmacy_place_matches
+    ADD CONSTRAINT territory_pharmacy_place_matches_pkey PRIMARY KEY (distributor_code, client_code);
 
 --
 -- Name: territory_preview_links territory_preview_links_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
@@ -89527,6 +89638,12 @@ CREATE INDEX telegram_connections_hr_id_idx ON public.telegram_connections USING
 --
 
 CREATE UNIQUE INDEX telegram_connections_user_active_idx ON public.telegram_connections USING btree (user_id) WHERE (status = ANY (ARRAY['pending'::text, 'connected'::text, 'failed'::text]));
+
+--
+-- Name: territory_pharmacy_place_matches_looked_up_at_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX territory_pharmacy_place_matches_looked_up_at_idx ON public.territory_pharmacy_place_matches USING btree (looked_up_at);
 
 --
 -- Name: territory_preview_links_creator_idx; Type: INDEX; Schema: public; Owner: postgres
@@ -101556,6 +101673,12 @@ ALTER TABLE public.teams ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.telegram_connections ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: territory_pharmacy_place_matches; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.territory_pharmacy_place_matches ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: territory_preview_links; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
@@ -106226,6 +106349,13 @@ GRANT ALL ON FUNCTION public.phx_territory_area_pharmacy_locations(p_area_codes 
 
 REVOKE ALL ON FUNCTION public.phx_territory_area_pharmacy_sources(p_area_codes text[], p_periods text[], p_lines text[]) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.phx_territory_area_pharmacy_sources(p_area_codes text[], p_periods text[], p_lines text[]) TO service_role;
+
+--
+-- Name: FUNCTION phx_territory_pharmacies_to_match(p_periods text[], p_share numeric, p_limit integer); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phx_territory_pharmacies_to_match(p_periods text[], p_share numeric, p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phx_territory_pharmacies_to_match(p_periods text[], p_share numeric, p_limit integer) TO service_role;
 
 --
 -- Name: FUNCTION phx_territory_resolve_sos_area_codes(p_canonical_area_code text); Type: ACL; Schema: public; Owner: postgres
@@ -111196,6 +111326,12 @@ GRANT ALL ON SEQUENCE public.teams_id_seq TO service_role;
 --
 
 GRANT ALL ON TABLE public.telegram_connections TO service_role;
+
+--
+-- Name: TABLE territory_pharmacy_place_matches; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.territory_pharmacy_place_matches TO service_role;
 
 --
 -- Name: TABLE territory_preview_links; Type: ACL; Schema: public; Owner: postgres
