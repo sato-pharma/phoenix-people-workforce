@@ -875,10 +875,24 @@ function payrollTemplatePath() {
   return path.join(process.cwd(), templateFileName);
 }
 
-async function exactTemplateResponse() {
-  const now = new Date();
+/**
+ * The plain "download the template" workbook — the stored file, restyled, with EVERY people row
+ * empty.
+ *
+ * This path restyles rows 1-5 of the stored `Phoneix system template.xlsx` and used to serve rows
+ * 6-126 exactly as stored, so whatever rows the stored file carried went out to anyone holding
+ * payroll read, whatever their payroll scope. The template is a layout, never a record: the stored
+ * file is kept empty, and the people rows are cleared here as well, so a filled copy put back by
+ * mistake still leaves this download blank. Pinned by
+ * `tests/payroll-stored-template-holds-no-people.test.ts`.
+ */
+export async function buildExactTemplateWorkbook(now: Date = new Date()) {
   const workbook = await loadPayrollTemplateWorkbook();
   const sheet = workbook.worksheets[0] ?? workbook.addWorksheet("Payroll Upload");
+
+  for (let row = dataStartRow; row <= templateDataEndRow; row += 1) {
+    clearRowValues(sheet, row);
+  }
 
   applyPayrollUploadMasthead(workbook, sheet, now.getMonth() + 1, now.getFullYear());
   writeBankDetailsSectionRow(sheet, dataStartRow - 2);
@@ -892,6 +906,12 @@ async function exactTemplateResponse() {
   };
   upsertWorkingDaysCalcSheet(workbook, now.getMonth() + 1, now.getFullYear());
   upsertSalaryPolicySheet(workbook);
+
+  return workbook;
+}
+
+async function exactTemplateResponse() {
+  const workbook = await buildExactTemplateWorkbook();
   const buffer = await workbook.xlsx.writeBuffer();
 
   return new Response(buffer, {
