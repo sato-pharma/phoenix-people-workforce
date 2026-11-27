@@ -62057,6 +62057,29 @@ ALTER SEQUENCE public.employee_history_id_seq OWNER TO postgres;
 ALTER SEQUENCE public.employee_history_id_seq OWNED BY public.employee_history.id;
 
 --
+-- Name: employee_id_card_names; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.employee_id_card_names (
+    hr_id text NOT NULL,
+    name_ar text NOT NULL,
+    first_name text NOT NULL,
+    father_name text NOT NULL,
+    last_name text NOT NULL,
+    source_file_id uuid,
+    read_by text NOT NULL,
+    read_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE public.employee_id_card_names OWNER TO postgres;
+
+--
+-- Name: TABLE employee_id_card_names; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.employee_id_card_names IS 'The name printed on each employee''s national ID card, read from the card they uploaded (Arabic as printed, and first / father / last in English for the insurer''s sheet). Written by src/lib/employees/id-card-name.ts only.';
+
+--
 -- Name: employee_linkage_health; Type: VIEW; Schema: public; Owner: postgres
 --
 
@@ -66619,6 +66642,7 @@ CREATE TABLE public.medical_insurance_members (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     contact_email text,
+    outside_staff boolean DEFAULT false NOT NULL,
     CONSTRAINT medical_insurance_members_category_check CHECK ((category = ANY (ARRAY['A'::text, 'B'::text, 'C'::text]))),
     CONSTRAINT medical_insurance_members_check CHECK (((coverage_ends_on IS NULL) OR (coverage_ends_on >= coverage_starts_on))),
     CONSTRAINT medical_insurance_members_check1 CHECK (((member_type = 'employee'::text) = (principal_member_id IS NULL))),
@@ -66640,6 +66664,12 @@ COMMENT ON TABLE public.medical_insurance_members IS 'Who is on the policy, with
 --
 
 COMMENT ON COLUMN public.medical_insurance_members.contact_email IS 'An address typed for a register row with no HR id. Nothing sends to it: the owner ruled on 2026-11-21 that no Medical Cover Statement is emailed to a person on the policy with no employee record.';
+
+--
+-- Name: COLUMN medical_insurance_members.outside_staff; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.medical_insurance_members.outside_staff IS 'Covered on Sato''s policy but not a Phoenix employee, kept on by the owner''s decision: the add list no longer asks who they are.';
 
 --
 -- Name: medical_insurance_policies; Type: TABLE; Schema: public; Owner: postgres
@@ -78275,6 +78305,13 @@ ALTER TABLE ONLY public.employee_hiring_profile
 
 ALTER TABLE ONLY public.employee_history
     ADD CONSTRAINT employee_history_pkey PRIMARY KEY (id);
+
+--
+-- Name: employee_id_card_names employee_id_card_names_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.employee_id_card_names
+    ADD CONSTRAINT employee_id_card_names_pkey PRIMARY KEY (hr_id);
 
 --
 -- Name: employee_locations employee_locations_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
@@ -93032,6 +93069,20 @@ ALTER TABLE ONLY public.employee_history
     ADD CONSTRAINT employee_history_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.teams(id) ON DELETE SET NULL;
 
 --
+-- Name: employee_id_card_names employee_id_card_names_hr_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.employee_id_card_names
+    ADD CONSTRAINT employee_id_card_names_hr_id_fkey FOREIGN KEY (hr_id) REFERENCES public.employees(hr_id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+--
+-- Name: employee_id_card_names employee_id_card_names_source_file_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.employee_id_card_names
+    ADD CONSTRAINT employee_id_card_names_source_file_id_fkey FOREIGN KEY (source_file_id) REFERENCES public.hiring_document_files(id) ON DELETE SET NULL;
+
+--
 -- Name: employee_locations employee_locations_employee_hr_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -97657,6 +97708,12 @@ ALTER TABLE public.employee_hiring_profile ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.employee_history ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: employee_id_card_names; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.employee_id_card_names ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: employee_locations; Type: ROW SECURITY; Schema: public; Owner: postgres
@@ -109299,6 +109356,12 @@ GRANT ALL ON TABLE public.employee_history TO service_role;
 GRANT ALL ON SEQUENCE public.employee_history_id_seq TO anon;
 GRANT ALL ON SEQUENCE public.employee_history_id_seq TO authenticated;
 GRANT ALL ON SEQUENCE public.employee_history_id_seq TO service_role;
+
+--
+-- Name: TABLE employee_id_card_names; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.employee_id_card_names TO service_role;
 
 --
 -- Name: TABLE employee_linkage_health; Type: ACL; Schema: public; Owner: postgres

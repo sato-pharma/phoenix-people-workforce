@@ -82,6 +82,8 @@ export type MedicalInsuranceView = {
   policy: MedicalInsurancePolicyView;
   counts: MedicalInsuranceCounts;
   actions: MedicalInsuranceAction[];
+  /** Joiners already on the register whose cover starts within the last 14 days or later: they can be sent again. */
+  sentRecently: MedicalInsuranceAction[];
   exceptions: KeptException[];
   members: MedicalInsuranceMemberRow[];
   movements: MedicalInsuranceMovement[];
