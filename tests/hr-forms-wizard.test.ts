@@ -146,6 +146,14 @@ function testTheScreenIsTheWizard() {
   assert.ok(!/<FormsDrive[\s/>]/u.test(manager), "nor the folder drive above it");
   assert.ok(manager.includes("editAny || target <= furthest"), "Edit any form opens every step");
   assert.ok(manager.includes("path === \"leaver\" && !editAny"), "and lists every person on the leaver path");
+  // ONE STEP HOLDS EVERYTHING ABOUT ITS PAPER: its own fields, its card, then the paper drawn under
+  // them — no separate details step to fill first and come back from.
+  assert.ok(!manager.includes('kind: "details"'), "there is no separate details step");
+  assert.ok(manager.includes('current.paper === "contract" ? renderJoinerFields(pack, [IDENTITY_GROUP, TERMS_GROUP], true)'), "the contract step carries the contract's own fields");
+  assert.ok(manager.includes('current.paper === "form1" ? renderJoinerFields(pack, [IDENTITY_GROUP, FORM1_GROUP], false)'), "Form 1's step carries Form 1's boxes");
+  assert.ok(manager.includes('current.paper === "form6" ? renderExitFields(pack, [DEPARTURE_GROUP], true)'), "Form 6's step carries the departure");
+  assert.ok(manager.includes('-${paperRedraw}`}'), "a save draws the paper under its fields again");
+  assert.equal(manager.split("setPaperRedraw((value) => value + 1);").length - 1, 3, "every one of the three saves redraws it");
   // A different package starts over with nobody chosen: a new hire must never reach Form 6.
   const choosePath = manager.slice(manager.indexOf("const choosePath = "), manager.indexOf("const chooseEmployee = "));
   assert.ok(choosePath.includes('if (value !== path) void selectEmployee("");'), "changing the package clears the person");

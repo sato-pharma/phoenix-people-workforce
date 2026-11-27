@@ -282,6 +282,18 @@ const TERM_FIELDS: readonly HiringFieldDef[] = [
   },
 ];
 
+/** Which joining field groups a paper's step shows (owner, 2026-11-27: each paper's fields in its own step). */
+const IDENTITY_GROUP = "identity";
+const FORM1_GROUP = "form1";
+const TERMS_GROUP = "terms";
+type JoinerGroup = typeof IDENTITY_GROUP | typeof FORM1_GROUP | typeof TERMS_GROUP;
+
+/** Which leaving field groups a paper's step shows. */
+const DEPARTURE_GROUP = "departure";
+const AGREEMENT_GROUP = "agreement";
+const PARTY_GROUP = "party";
+type ExitGroup = typeof DEPARTURE_GROUP | typeof AGREEMENT_GROUP | typeof PARTY_GROUP;
+
 const NUMBER_KEYS = new Set<keyof HiringPackProfileInput>([
   "contractDurationMonths",
   "underperformanceThresholdPct",
@@ -746,7 +758,6 @@ const EDITOR_ANCHOR_ID = "hr-forms-paper-editor";
 type WizardStepKind =
   | { kind: "path" }
   | { kind: "employee" }
-  | { kind: "details" }
   | { kind: "paper"; paper: LeaverStep }
   | { kind: "company" }
   | { kind: "other" }
@@ -1077,6 +1088,8 @@ export function HiringPackManager({
    * resolves to".
    */
   const [preview, setPreview] = useState<OpenPaper | null>(null);
+  // Bumped by every save of a paper's fields, so the paper drawn under them is drawn again from the saved values.
+  const [paperRedraw, setPaperRedraw] = useState(0);
   /**
    * The uploaded company templates — read ONCE here and shared with everything that shows them.
    *
@@ -1229,6 +1242,7 @@ export function HiringPackManager({
       }
       applyPack((await response.json()) as HiringPackData);
       setNotice("Saved. The documents will print with these values.");
+      setPaperRedraw((value) => value + 1);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save.");
     } finally {
@@ -1263,6 +1277,7 @@ export function HiringPackManager({
       }
       applyPack((await response.json()) as HiringPackData);
       setNotice("Saved. The exit documents will print with these values.");
+      setPaperRedraw((value) => value + 1);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save.");
     } finally {
@@ -1293,6 +1308,7 @@ export function HiringPackManager({
       }
       applyPack((await response.json()) as HiringPackData);
       setNotice("Saved to the employee record.");
+      setPaperRedraw((value) => value + 1);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save.");
     } finally {
@@ -1678,7 +1694,6 @@ export function HiringPackManager({
         : [
             { kind: "path" },
             { kind: "employee" },
-            { kind: "details" },
             ...paperSteps.map((paper): WizardStepKind => ({ kind: "paper", paper })),
             ...(companyPapers.length > 0 ? [{ kind: "company" } as WizardStepKind] : []),
             { kind: "finish" },
@@ -1699,8 +1714,6 @@ export function HiringPackManager({
         };
       case "employee":
         return { description: employee?.fullName ?? "Who the papers are for", label: "Employee", title: "Who is it for?" };
-      case "details":
-        return { description: "What the papers print", label: "Details", title: "The details the papers print" };
       case "paper": {
         const status = stepStatus(kind) ?? { state: "open" as const };
         return {
@@ -1771,10 +1784,10 @@ export function HiringPackManager({
     setOtherChoice(null);
     void selectEmployee(hrId).then((loaded) => {
       if (!loaded) return;
-      // A new person starts their papers at the beginning; the furthest step is theirs, not the
-      // previous person's.
-      setStep(3);
+      // A new person starts their papers at the first paper, drawn under its fields; the furthest
+      // step is theirs, not the previous person's.
       setFurthest(3);
+      goTo(3);
     });
   };
 
@@ -1850,6 +1863,405 @@ export function HiringPackManager({
       />
     );
   };
+
+  /** What was filled automatically and what the papers still ask for — on the first paper's step. */
+  const renderGapsBand = () =>
+    blockingGaps.length > 0 || advisoryGaps.length > 0 || autoFilled.length > 0 ? (
+                <div className="border border-phx-line bg-white p-4 shadow-none sm:p-5">
+                  <div className="flex flex-col gap-3">
+                  {autoFilled.length > 0 ? (
+                    <div className="flex flex-col gap-1.5">
+                      <p className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.12em] text-emerald-700">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        {autoFilled.length} filled automatically — nobody needs to type{" "}
+                        {autoFilled.length === 1 ? "it" : "them"}
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {autoFilled.map((value) => (
+                          <Badge key={value} tone="ok">
+                            {AUTO_FILLED_LABELS[value].labelEn} · from {AUTO_FILLED_LABELS[value].source}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {blockingGaps.length > 0 ? (
+                    <div className="flex flex-col gap-1.5">
+                      <p className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.12em] text-rose-700">
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        {blockingGaps.length} value{blockingGaps.length === 1 ? "" : "s"} the
+                        documents ask for — they print blank rather than guessed
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {blockingGaps.map((gap) => (
+                          <Badge key={gap.field} tone="danger">
+                            {gap.labelEn} · {gap.labelAr}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {advisoryGaps.length > 0 ? (
+                    <div className="flex flex-col gap-1.5">
+                      <p className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.12em] text-sky-700">
+                        <CalendarCheck className="h-3.5 w-3.5" />
+                        {advisoryGaps.length} to fill in later — the documents print without them
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {advisoryGaps.map((gap) => (
+                          <Badge key={gap.field} tone="info">
+                            {gap.labelEn} · {gap.labelAr}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <p className="text-xs leading-5 text-phx-ink-faint">
+                    Employee-record values are fixed on the employee below. Company-settings values
+                    are the company&apos;s own registration numbers, and are missing for every
+                    employee until they are supplied once.
+                  </p>
+                  </div>
+                </div>
+              ) : null;
+
+  /** "What Phoenix already knows" — the employee record the papers print from, on the first paper's step. */
+  const renderFacts = (person: NonNullable<typeof employee>) => {
+    const employee = person;
+    return (
+            <AdminTableShell
+              action={
+                canManage ? (
+                  <Button
+                    className="h-10 gap-2"
+                    disabled={busy === "save-facts"}
+                    onClick={() => void saveFacts()}
+                  >
+                    {busy === "save-facts" ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Save className="h-4 w-4" />
+                    )}
+                    Save
+                  </Button>
+                ) : undefined
+              }
+              description="Editing here writes straight to the employee record — every other screen reads the change from the same place."
+              title={`What Phoenix already knows · ${employee.fullName}`}
+            >
+              <div className="flex flex-col gap-6 px-5 py-5 sm:px-6">
+                <div className="border-l-[3px] border-phx-accent pl-3 sm:max-w-xs">
+                  <span className={factLabelClassName}>HR ID</span>
+                  <p className="mt-1 text-sm font-bold text-phx-ink" dir="auto">
+                    {employee.hrId}
+                  </p>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {FACTS_TEXT_FIELDS.map((field) => (
+                    <div key={field.key}>
+                      <label className={labelClassName} htmlFor={`hiring-pack-fact-${field.key}`}>
+                        {field.labelEn} <span className="text-phx-ink-faint">{field.labelAr}</span>
+                      </label>
+                      <Input
+                        className={inputClassName}
+                        disabled={!canManage}
+                        id={`hiring-pack-fact-${field.key}`}
+                        onChange={(event) =>
+                          setFactsForm((current) => ({ ...current, [field.key]: event.target.value }))
+                        }
+                        type={field.kind}
+                        value={factsForm[field.key] ?? ""}
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-[0.1em] text-phx-ink">
+                    Salary, line and department
+                  </h3>
+                  <p className="mt-0.5 text-xs font-semibold text-phx-ink-soft">
+                    {employee.departed
+                      ? "This person has left, so these stay locked here — pay after departure runs through the resignation/settlement workflow, not this screen."
+                      : "Changes here go through the same record the payroll and organogram tools read."}
+                  </p>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {/*
+                      READ ONLY ON THE SALARY-BLIND SEAT. The HR Operations Specialist sees and prints
+                      the salary here (owner, 2026-11-02, "FULL MODULE"), but payroll reads this field
+                      and changing pay was not named, so the server drops one she sends
+                      (factsInputForViewer) and the box says so by being locked.
+                    */}
+                    <div>
+                      <label className={labelClassName} htmlFor="hiring-pack-fact-baseSalary">
+                        Base salary <span className="text-phx-ink-faint">الأجر الأساسي · EGP</span>
+                      </label>
+                      <Input
+                        className={inputClassName}
+                        disabled={!canManage || employee.departed || salaryReadOnly}
+                        id="hiring-pack-fact-baseSalary"
+                        inputMode="decimal"
+                        onChange={(event) =>
+                          setFactsForm((current) => ({ ...current, baseSalary: event.target.value }))
+                        }
+                        type="number"
+                        value={factsForm.baseSalary ?? ""}
+                      />
+                      {salaryReadOnly ? (
+                        <p className="mt-1 text-phx-xs font-semibold text-phx-ink-faint">
+                          You print this figure. Only the HR Manager changes it.
+                        </p>
+                      ) : null}
+                    </div>
+                    <div>
+                      <label className={labelClassName} htmlFor="hiring-pack-fact-insuranceWage">
+                        Insurance wage <span className="text-phx-ink-faint">الأجر التأميني · EGP</span>
+                      </label>
+                      <Input
+                        className={inputClassName}
+                        disabled
+                        id="hiring-pack-fact-insuranceWage"
+                        value={
+                          typedInsuranceWage === null ? "" : typedInsuranceWage.toLocaleString("en-US")
+                        }
+                      />
+                      <p className="mt-1 text-phx-xs font-semibold text-phx-ink-faint">
+                        Base ÷ {INSURANCE_WAGE_DIVISOR}, up to the{" "}
+                        {INSURANCE_WAGE_CEILING.toLocaleString("en-US")} ceiling. Change the base
+                        salary and this follows.
+                      </p>
+                    </div>
+                    <div>
+                      <label className={labelClassName} htmlFor="hiring-pack-fact-lineId">
+                        Line <span className="text-phx-ink-faint">الخط</span>
+                      </label>
+                      {lines.length > 0 ? (
+                        <SearchableSelect
+                          className={cn(inputClassName, "w-full")}
+                          disabled={!canManage || employee.departed}
+                          id="hiring-pack-fact-lineId"
+                          onValueChange={(value) =>
+                            setFactsForm((current) => ({ ...current, lineId: value }))
+                          }
+                          placeholder="Select a line"
+                          value={factsForm.lineId ?? ""}
+                        >
+                          <option value="">Not set</option>
+                          {lines.map((line) => (
+                            <option key={line.id} value={String(line.id)}>
+                              {line.name}
+                            </option>
+                          ))}
+                        </SearchableSelect>
+                      ) : (
+                        <>
+                          <Input className={inputClassName} disabled id="hiring-pack-fact-lineId" value="" />
+                          <p className="mt-1 text-phx-xs font-semibold text-phx-ink-faint">
+                            The line list did not load — reload the page to edit this.
+                          </p>
+                        </>
+                      )}
+                    </div>
+                    <div>
+                      <label className={labelClassName} htmlFor="hiring-pack-fact-department">
+                        Department <span className="text-phx-ink-faint">الإدارة</span>
+                      </label>
+                      <Input
+                        className={inputClassName}
+                        disabled
+                        id="hiring-pack-fact-department"
+                        value={employee.departmentAr ?? ""}
+                      />
+                      <p className="mt-1 text-phx-xs font-semibold text-phx-ink-faint">
+                        This is what the papers print, and it is not the line. Change it on the
+                        employee record.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </AdminTableShell>
+    );
+  };
+
+  /** The joining fields a paper prints, with their own Save. Hidden from a seat limited to its papers. */
+  const renderJoinerFields = (
+    activePack: HiringPackData,
+    groups: readonly JoinerGroup[],
+    withNotes: boolean,
+  ) =>
+    scoped ? null : (
+      <AdminTableShell
+        action={
+          canManage ? (
+            <Button className="h-10 gap-2" disabled={busy === "save"} onClick={() => void save()}>
+              {busy === "save" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Save
+            </Button>
+          ) : undefined
+        }
+        description="What this paper asks for that the employee record cannot answer. Save, and the paper below is drawn again."
+        title="What you fill in"
+      >
+        <div className="flex flex-col gap-6 px-5 py-5 sm:px-6">
+          {groups.map((group) =>
+            group === IDENTITY_GROUP ? (
+              <FieldGroup
+                disabled={!canManage}
+                fields={IDENTITY_FIELDS}
+                form={form}
+                key={group}
+                onChange={setForm}
+                subtitle="Printed on the contract and on Form 1."
+                suggestions={
+                  activePack.suggestedJobTitleAr ? { jobTitleAr: activePack.suggestedJobTitleAr } : undefined
+                }
+                title="Identity and job"
+              />
+            ) : group === FORM1_GROUP ? (
+              <FieldGroup
+                action={
+                  canManage && factsForm.residenceAddress?.trim() ? (
+                    <Button
+                      onClick={() =>
+                        setForm((current) => ({ ...current, addressStreet: factsForm.residenceAddress ?? "" }))
+                      }
+                      size="xs"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <Copy className="h-3 w-3" />
+                      Copy the address on file
+                    </Button>
+                  ) : undefined
+                }
+                disabled={!canManage}
+                fields={FORM1_FIELDS}
+                form={form}
+                key={group}
+                onChange={setForm}
+                subtitle="Printed on Form 1 only. The code fields are boxes on the government form and hold numbers. Street can be copied from the address on file — building, sheyakha, qism and governorate codes still need typing."
+                title="Form 1 details"
+              />
+            ) : (
+              <FieldGroup
+                disabled={!canManage || contractTermsReadOnly}
+                fields={TERM_FIELDS}
+                form={form}
+                key={group}
+                onChange={setForm}
+                subtitle={contractTermsReadOnly ? "You print these terms. Only the HR Manager changes them." : `Blank uses the standard term — ${activePack.terms.durationMonths} months, ${activePack.terms.probationMonths}-month probation, ${activePack.terms.underperformanceThresholdPct}% over ${activePack.terms.underperformanceMonths} months, ${activePack.terms.trainingBondMonths}-month training bond.`}
+                title="Contract terms"
+              />
+            ),
+          )}
+          {withNotes ? (
+            <div>
+              <label className={labelClassName} htmlFor="hiring-pack-notes">
+                Notes <span className="text-phx-ink-faint">ملاحظات</span>
+              </label>
+              <textarea
+                className={cn(inputClassName, "h-24 w-full resize-y px-3 py-2 leading-relaxed")}
+                disabled={!canManage}
+                id="hiring-pack-notes"
+                onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
+                placeholder="Internal only. Never printed on either document."
+                value={form.notes}
+              />
+            </div>
+          ) : null}
+        </div>
+      </AdminTableShell>
+    );
+
+  /** The leaving fields a paper prints, with their own Save — which also saves the exit route. */
+  const renderExitFields = (
+    activePack: HiringPackData,
+    groups: readonly ExitGroup[],
+    withNotes: boolean,
+  ) => (
+    <AdminTableShell
+      action={
+        canManage ? (
+          <Button className="h-10 gap-2" disabled={busy === "save-exit"} onClick={() => void saveExit()}>
+            {busy === "save-exit" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            Save exit details
+          </Button>
+        ) : undefined
+      }
+      description="Filled in when somebody leaves. Name, national ID, address and job title are reused from what was typed at hiring. Save, and the paper below is drawn again."
+      title="End of service"
+    >
+      <div className="flex flex-col gap-6 px-5 py-5 sm:px-6">
+        {groups.includes(DEPARTURE_GROUP) && activePack.exit ? (
+          <div className="border-l-[3px] border-phx-accent pl-3">
+            <span className={factLabelClassName}>Recorded departure</span>
+            <p className="mt-1 text-sm font-bold text-phx-ink">
+              Last working day {formatDate(activePack.exit.lastWorkingDate)}
+              {activePack.exit.status ? ` · ${activePack.exit.status}` : ""}
+            </p>
+            <p className="mt-1 text-xs font-semibold text-phx-ink-soft">
+              From the resignation record. Type a date below only if the paper says something different —
+              that record copies one date into four columns, so it is a starting point rather than a
+              confirmation.
+            </p>
+          </div>
+        ) : null}
+        {groups.map((group) =>
+          group === PARTY_GROUP ? (
+            <FieldGroup
+              disabled={!canManage}
+              fields={EXIT_PARTY_FIELDS}
+              form={exitForm}
+              key={group}
+              onChange={setExitForm}
+              subtitle="Blank uses the manager who signs employment contracts as الطرف الأول."
+              title="Who signs"
+            />
+          ) : group === AGREEMENT_GROUP ? (
+            <FieldGroup
+              disabled={!canManage}
+              fields={EXIT_FIELDS.filter((field) => field.key === "agreementDate")}
+              form={exitForm}
+              key={group}
+              onChange={setExitForm}
+              subtitle="The day the agreement is signed, not the last working day."
+              title="Agreement"
+            />
+          ) : (
+            <FieldGroup
+              disabled={!canManage}
+              fields={EXIT_FIELDS.filter((field) => field.key !== "agreementDate")}
+              form={exitForm}
+              key={group}
+              onChange={setExitForm}
+              subtitle="The last working day is what Form 6 files with the Authority — it is the value on these forms that costs money if it is wrong."
+              title="Departure"
+            />
+          ),
+        )}
+        {withNotes ? (
+          <div>
+            <label className={labelClassName} htmlFor="hiring-pack-exit-notes">
+              Exit notes <span className="text-phx-ink-faint">ملاحظات</span>
+            </label>
+            <textarea
+              className={cn(inputClassName, "h-24 w-full resize-y px-3 py-2 leading-relaxed")}
+              disabled={!canManage}
+              id="hiring-pack-exit-notes"
+              onChange={(event) => setExitForm((current) => ({ ...current, notes: event.target.value }))}
+              placeholder="Internal only. Never printed on any exit document."
+              value={exitForm.notes}
+            />
+          </div>
+        ) : null}
+      </div>
+    </AdminTableShell>
+  );
 
   /** "Another paper": every folder but the two packages, plus the papers issued to anyone. */
   const otherFolders = useMemo(() => {
@@ -2034,394 +2446,21 @@ export function HiringPackManager({
             </div>
           ) : null}
 
-          {current.kind === "details" && pack && employee ? (
+          {current.kind === "paper" && pack && employee ? (
             <div className="flex flex-col gap-5">
-              {blockingGaps.length > 0 || advisoryGaps.length > 0 || autoFilled.length > 0 ? (
-                <div className="border border-phx-line bg-white p-4 shadow-none sm:p-5">
-                  <div className="flex flex-col gap-3">
-                  {autoFilled.length > 0 ? (
-                    <div className="flex flex-col gap-1.5">
-                      <p className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.12em] text-emerald-700">
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        {autoFilled.length} filled automatically — nobody needs to type{" "}
-                        {autoFilled.length === 1 ? "it" : "them"}
-                      </p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {autoFilled.map((value) => (
-                          <Badge key={value} tone="ok">
-                            {AUTO_FILLED_LABELS[value].labelEn} · from {AUTO_FILLED_LABELS[value].source}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {blockingGaps.length > 0 ? (
-                    <div className="flex flex-col gap-1.5">
-                      <p className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.12em] text-rose-700">
-                        <AlertTriangle className="h-3.5 w-3.5" />
-                        {blockingGaps.length} value{blockingGaps.length === 1 ? "" : "s"} the
-                        documents ask for — they print blank rather than guessed
-                      </p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {blockingGaps.map((gap) => (
-                          <Badge key={gap.field} tone="danger">
-                            {gap.labelEn} · {gap.labelAr}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {advisoryGaps.length > 0 ? (
-                    <div className="flex flex-col gap-1.5">
-                      <p className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.12em] text-sky-700">
-                        <CalendarCheck className="h-3.5 w-3.5" />
-                        {advisoryGaps.length} to fill in later — the documents print without them
-                      </p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {advisoryGaps.map((gap) => (
-                          <Badge key={gap.field} tone="info">
-                            {gap.labelEn} · {gap.labelAr}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  <p className="text-xs leading-5 text-phx-ink-faint">
-                    Employee-record values are fixed on the employee below. Company-settings values
-                    are the company&apos;s own registration numbers, and are missing for every
-                    employee until they are supplied once.
-                  </p>
-                  </div>
-                </div>
-              ) : null}
-
-            <AdminTableShell
-              action={
-                canManage ? (
-                  <Button
-                    className="h-10 gap-2"
-                    disabled={busy === "save-facts"}
-                    onClick={() => void saveFacts()}
-                  >
-                    {busy === "save-facts" ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Save className="h-4 w-4" />
-                    )}
-                    Save
-                  </Button>
-                ) : undefined
-              }
-              description="Editing here writes straight to the employee record — every other screen reads the change from the same place."
-              title={`What Phoenix already knows · ${employee.fullName}`}
-            >
-              <div className="flex flex-col gap-6 px-5 py-5 sm:px-6">
-                <div className="border-l-[3px] border-phx-accent pl-3 sm:max-w-xs">
-                  <span className={factLabelClassName}>HR ID</span>
-                  <p className="mt-1 text-sm font-bold text-phx-ink" dir="auto">
-                    {employee.hrId}
-                  </p>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {FACTS_TEXT_FIELDS.map((field) => (
-                    <div key={field.key}>
-                      <label className={labelClassName} htmlFor={`hiring-pack-fact-${field.key}`}>
-                        {field.labelEn} <span className="text-phx-ink-faint">{field.labelAr}</span>
-                      </label>
-                      <Input
-                        className={inputClassName}
-                        disabled={!canManage}
-                        id={`hiring-pack-fact-${field.key}`}
-                        onChange={(event) =>
-                          setFactsForm((current) => ({ ...current, [field.key]: event.target.value }))
-                        }
-                        type={field.kind}
-                        value={factsForm[field.key] ?? ""}
-                      />
-                    </div>
-                  ))}
-                </div>
-
-                <div>
-                  <h3 className="text-sm font-black uppercase tracking-[0.1em] text-phx-ink">
-                    Salary, line and department
-                  </h3>
-                  <p className="mt-0.5 text-xs font-semibold text-phx-ink-soft">
-                    {employee.departed
-                      ? "This person has left, so these stay locked here — pay after departure runs through the resignation/settlement workflow, not this screen."
-                      : "Changes here go through the same record the payroll and organogram tools read."}
-                  </p>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    {/*
-                      READ ONLY ON THE SALARY-BLIND SEAT. The HR Operations Specialist sees and prints
-                      the salary here (owner, 2026-11-02, "FULL MODULE"), but payroll reads this field
-                      and changing pay was not named, so the server drops one she sends
-                      (factsInputForViewer) and the box says so by being locked.
-                    */}
-                    <div>
-                      <label className={labelClassName} htmlFor="hiring-pack-fact-baseSalary">
-                        Base salary <span className="text-phx-ink-faint">الأجر الأساسي · EGP</span>
-                      </label>
-                      <Input
-                        className={inputClassName}
-                        disabled={!canManage || employee.departed || salaryReadOnly}
-                        id="hiring-pack-fact-baseSalary"
-                        inputMode="decimal"
-                        onChange={(event) =>
-                          setFactsForm((current) => ({ ...current, baseSalary: event.target.value }))
-                        }
-                        type="number"
-                        value={factsForm.baseSalary ?? ""}
-                      />
-                      {salaryReadOnly ? (
-                        <p className="mt-1 text-phx-xs font-semibold text-phx-ink-faint">
-                          You print this figure. Only the HR Manager changes it.
-                        </p>
-                      ) : null}
-                    </div>
-                    <div>
-                      <label className={labelClassName} htmlFor="hiring-pack-fact-insuranceWage">
-                        Insurance wage <span className="text-phx-ink-faint">الأجر التأميني · EGP</span>
-                      </label>
-                      <Input
-                        className={inputClassName}
-                        disabled
-                        id="hiring-pack-fact-insuranceWage"
-                        value={
-                          typedInsuranceWage === null ? "" : typedInsuranceWage.toLocaleString("en-US")
-                        }
-                      />
-                      <p className="mt-1 text-phx-xs font-semibold text-phx-ink-faint">
-                        Base ÷ {INSURANCE_WAGE_DIVISOR}, up to the{" "}
-                        {INSURANCE_WAGE_CEILING.toLocaleString("en-US")} ceiling. Change the base
-                        salary and this follows.
-                      </p>
-                    </div>
-                    <div>
-                      <label className={labelClassName} htmlFor="hiring-pack-fact-lineId">
-                        Line <span className="text-phx-ink-faint">الخط</span>
-                      </label>
-                      {lines.length > 0 ? (
-                        <SearchableSelect
-                          className={cn(inputClassName, "w-full")}
-                          disabled={!canManage || employee.departed}
-                          id="hiring-pack-fact-lineId"
-                          onValueChange={(value) =>
-                            setFactsForm((current) => ({ ...current, lineId: value }))
-                          }
-                          placeholder="Select a line"
-                          value={factsForm.lineId ?? ""}
-                        >
-                          <option value="">Not set</option>
-                          {lines.map((line) => (
-                            <option key={line.id} value={String(line.id)}>
-                              {line.name}
-                            </option>
-                          ))}
-                        </SearchableSelect>
-                      ) : (
-                        <>
-                          <Input className={inputClassName} disabled id="hiring-pack-fact-lineId" value="" />
-                          <p className="mt-1 text-phx-xs font-semibold text-phx-ink-faint">
-                            The line list did not load — reload the page to edit this.
-                          </p>
-                        </>
-                      )}
-                    </div>
-                    <div>
-                      <label className={labelClassName} htmlFor="hiring-pack-fact-department">
-                        Department <span className="text-phx-ink-faint">الإدارة</span>
-                      </label>
-                      <Input
-                        className={inputClassName}
-                        disabled
-                        id="hiring-pack-fact-department"
-                        value={employee.departmentAr ?? ""}
-                      />
-                      <p className="mt-1 text-phx-xs font-semibold text-phx-ink-faint">
-                        This is what the papers print, and it is not the line. Change it on the
-                        employee record.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </AdminTableShell>
-
-              {path === "newHire" ? (
-                <>
-                {scoped ? null : (
-                <AdminTableShell
-                  action={
-                    canManage ? (
-                      <Button
-                        className="h-10 gap-2"
-                        disabled={busy === "save"}
-                        onClick={() => void save()}
-                      >
-                        {busy === "save" ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Save className="h-4 w-4" />
-                        )}
-                        Save
-                      </Button>
-                    ) : undefined
-                  }
-                  description="Everything the two documents ask for that the employee record cannot answer."
-                  title="What you fill in"
-                >
-                  <div className="flex flex-col gap-6 px-5 py-5 sm:px-6">
-                    <FieldGroup
-                      disabled={!canManage}
-                      fields={IDENTITY_FIELDS}
-                      form={form}
-                      onChange={setForm}
-                      subtitle="Printed on both documents."
-                      suggestions={
-                        pack.suggestedJobTitleAr ? { jobTitleAr: pack.suggestedJobTitleAr } : undefined
-                      }
-                      title="Identity and job"
-                    />
-                    <FieldGroup
-                      action={
-                        canManage && factsForm.residenceAddress?.trim() ? (
-                          <Button
-                            onClick={() =>
-                              setForm((current) => ({
-                                ...current,
-                                addressStreet: factsForm.residenceAddress ?? "",
-                              }))
-                            }
-                            size="xs"
-                            type="button"
-                            variant="ghost"
-                          >
-                            <Copy className="h-3 w-3" />
-                            Copy the address on file
-                          </Button>
-                        ) : undefined
-                      }
-                      disabled={!canManage}
-                      fields={FORM1_FIELDS}
-                      form={form}
-                      onChange={setForm}
-                      subtitle="Printed on Form 1 only. The code fields are boxes on the government form and hold numbers. Street can be copied from the address on file above — building, sheyakha, qism and governorate codes still need typing."
-                      title="Form 1 details"
-                    />
-                    <FieldGroup
-                      disabled={!canManage || contractTermsReadOnly}
-                      fields={TERM_FIELDS}
-                      form={form}
-                      onChange={setForm}
-                      subtitle={contractTermsReadOnly ? "You print these terms. Only the HR Manager changes them." : `Blank uses the standard term — ${pack.terms.durationMonths} months, ${pack.terms.probationMonths}-month probation, ${pack.terms.underperformanceThresholdPct}% over ${pack.terms.underperformanceMonths} months, ${pack.terms.trainingBondMonths}-month training bond.`}
-                      title="Contract terms"
-                    />
-                    <div>
-                      <label className={labelClassName} htmlFor="hiring-pack-notes">
-                        Notes <span className="text-phx-ink-faint">ملاحظات</span>
-                      </label>
-                      <textarea
-                        className={cn(inputClassName, "h-24 w-full resize-y px-3 py-2 leading-relaxed")}
-                        disabled={!canManage}
-                        id="hiring-pack-notes"
-                        onChange={(event) =>
-                          setForm((current) => ({ ...current, notes: event.target.value }))
-                        }
-                        placeholder="Internal only. Never printed on either document."
-                        value={form.notes}
-                      />
-                    </div>
-                  </div>
-                </AdminTableShell>
-                )}
-                </>
-              ) : null}
-
-              {path === "leaver" ? (
-<>
-                <AdminTableShell
-                  action={
-                    canManage ? (
-                      <Button
-                        className="h-10 gap-2"
-                        disabled={busy === "save-exit"}
-                        onClick={() => void saveExit()}
-                      >
-                        {busy === "save-exit" ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Save className="h-4 w-4" />
-                        )}
-                        Save exit details
-                      </Button>
-                    ) : undefined
-                  }
-                  description="Filled in when somebody leaves. Everything else on these forms — name, national ID, address, job title — is reused from what was typed at hiring."
-                  title="End of service"
-                >
-                  <div className="flex flex-col gap-6 px-5 py-5 sm:px-6">
-                    {pack.exit ? (
-                      <div className="border-l-[3px] border-phx-accent pl-3">
-                        <span className={factLabelClassName}>Recorded departure</span>
-                        <p className="mt-1 text-sm font-bold text-phx-ink">
-                          Last working day {formatDate(pack.exit.lastWorkingDate)}
-                          {pack.exit.status ? ` · ${pack.exit.status}` : ""}
-                        </p>
-                        <p className="mt-1 text-xs font-semibold text-phx-ink-soft">
-                          From the resignation record. Type a date below only if the paper says something
-                          different — that record copies one date into four columns, so it is a starting
-                          point rather than a confirmation.
-                        </p>
-                      </div>
-                    ) : null}
-
-
-                    <FieldGroup
-                      disabled={!canManage}
-                      fields={EXIT_FIELDS}
-                      form={exitForm}
-                      onChange={setExitForm}
-                      subtitle="The last working day is what Form 6 files with the Authority — it is the value on these forms that costs money if it is wrong."
-                      title="Departure"
-                    />
-                    <FieldGroup
-                      disabled={!canManage}
-                      fields={EXIT_PARTY_FIELDS}
-                      form={exitForm}
-                      onChange={setExitForm}
-                      subtitle="Blank uses the manager who signs employment contracts as الطرف الأول."
-                      title="Who signs"
-                    />
-                    <div>
-                      <label className={labelClassName} htmlFor="hiring-pack-exit-notes">
-                        Exit notes <span className="text-phx-ink-faint">ملاحظات</span>
-                      </label>
-                      <textarea
-                        className={cn(inputClassName, "h-24 w-full resize-y px-3 py-2 leading-relaxed")}
-                        disabled={!canManage}
-                        id="hiring-pack-exit-notes"
-                        onChange={(event) =>
-                          setExitForm((current) => ({ ...current, notes: event.target.value }))
-                        }
-                        placeholder="Internal only. Never printed on any exit document."
-                        value={exitForm.notes}
-                      />
-                    </div>
-                  </div>
-                </AdminTableShell>
-</>
-              ) : null}
-            </div>
-          ) : null}
-
-          {current.kind === "paper" && pack ? (
-            current.paper === EXIT_FORM_STEP ? (
-              <div className="flex flex-col gap-5">
+              {/*
+                ONE STEP HOLDS EVERYTHING ABOUT ITS PAPER (owner, 2026-11-27: "I fill the details of the
+                contract and it is rendered under them; I edit it and print it from its place, and when
+                I move to the next page I am done with the contract"). The paper's own fields first,
+                then its card, then the paper itself, drawn again after every save.
+              */}
+              {current.paper === paperSteps[0] ? renderGapsBand() : null}
+              {current.paper === paperSteps[0] ? renderFacts(employee) : null}
+              {current.paper === "contract" ? renderJoinerFields(pack, [IDENTITY_GROUP, TERMS_GROUP], true) : null}
+              {current.paper === "form1" ? renderJoinerFields(pack, [IDENTITY_GROUP, FORM1_GROUP], false) : null}
+              {current.paper === "form6" ? renderExitFields(pack, [DEPARTURE_GROUP], true) : null}
+              {current.paper === EXIT_FORM_STEP ? (
+              <>
                     <div>
                       <div className="mb-3">
                         <h3 className="text-sm font-black uppercase tracking-[0.1em] text-phx-ink">
@@ -2444,14 +2483,16 @@ export function HiringPackManager({
                               )}
                               disabled={!canManage}
                               key={route.value}
-                              onClick={() =>
+                              onClick={() => {
                                 setExitForm((current) => ({
                                   ...current,
                                   // Pressing the chosen route again clears it, which is the only way
                                   // back to "not decided yet" once somebody has clicked the wrong one.
                                   exitRoute: selected ? "" : route.value,
-                                }))
-                              }
+                                }));
+                                // The chosen exit form is drawn under the step at once, like every paper.
+                                setPreview(selected ? null : { documentKey: route.value, versionId: null });
+                              }}
                               type="button"
                             >
                               <div className="flex items-center justify-between gap-2">
@@ -2471,24 +2512,11 @@ export function HiringPackManager({
                         })}
                       </div>
                     </div>
-                {canManage ? (
-                  <div>
-                    <Button
-                      className="h-10 gap-2"
-                      disabled={busy === "save-exit"}
-                      onClick={() => void saveExit()}
-                      type="button"
-                      variant="secondary"
-                    >
-                      {busy === "save-exit" ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Save className="h-4 w-4" />
-                      )}
-                      Save the choice
-                    </Button>
-                  </div>
-                ) : null}
+                {renderExitFields(
+                  pack,
+                  exitRoute === "mutualTermination" ? [AGREEMENT_GROUP, PARTY_GROUP] : [PARTY_GROUP],
+                  false,
+                )}
                 {/*
                   Only the chosen route's paper is offered. The two exit forms assert incompatible facts
                   about the same departure — one is signed, never both.
@@ -2504,10 +2532,11 @@ export function HiringPackManager({
                     </span>
                   </AdminCallout>
                 )}
-              </div>
-            ) : (
-              renderPaperCard(current.paper, pack)
-            )
+              </>
+              ) : (
+                renderPaperCard(current.paper, pack)
+              )}
+            </div>
           ) : null}
 
           {current.kind === "company" && pack ? (
@@ -2649,7 +2678,7 @@ export function HiringPackManager({
                 copies={resolveCopyCount(copies[preview.documentKey], preview.documentKey)}
                 documentLabel={documentLabel(preview.documentKey, customTemplateNames)}
                 hrId={pack.employee.hrId}
-                key={`${pack.employee.hrId}-${preview.documentKey}-${preview.versionId ?? "current"}`}
+                key={`${pack.employee.hrId}-${preview.documentKey}-${preview.versionId ?? "current"}-${paperRedraw}`}
                 onClose={() => setPreview(null)}
                 onIssueReference={() =>
                   issuePaperReference({
