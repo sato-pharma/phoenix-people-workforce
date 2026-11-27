@@ -147,7 +147,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/spare-wifi-join.sh` | 3380 | `bbbf2fcef1f535c8` |
 | `scripts/spare-wifi-rejoin.sh` | 5266 | `5a6a6736e2cd1647` |
 | `scripts/spare.ps1` | 2341 | `87027b073fc6b6c2` |
-| `scripts/speak-arabic-reply.py` | 10796 | `eb6660dc0539b589` |
+| `scripts/speak-arabic-reply.py` | 11489 | `e32d41c7adc5e013` |
 | `scripts/tests/archive/lock-racer.mjs` | 561 | `48a1e54132cc6dce` |
 | `scripts/tests/archive/run-all.mjs` | 4108 | `5ae84e5c757c2d1c` |
 | `scripts/tests/archive/test-busy-lock.mjs` | 7494 | `6cdb2fcde5618427` |

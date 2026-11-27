@@ -34,7 +34,12 @@ PID = HOME / "player.pid"
 VOICE = "ar-EG-SalmaNeural"  # fallback only
 # Tried in order: each model has its own free allowance (10 a day on the free key, 20 Nov 2026), so a refused
 # one (429) hands over to the next, and Salma speaks only when all four are spent.
-GEMINI_MODELS = ("gemini-3.8-flash-tts", "gemini-3.1-flash-tts-preview", "gemini-2.5-flash-preview-tts", "gemini-3.8-flash-lite-tts")
+# The 3.8 models SPEAK any direction put before the text (27 Nov 2026: every Arabic reply opened with the instruction
+# "اقرا الكلام ده باللهجه المصريه..." read aloud, proven by transcribing the audio; an English "Say this in ...:" was
+# spoken too, and they refuse systemInstruction with 400). So the two that obey a direction go first and get it; the
+# 3.8 pair get the bare text only (proven clean by transcription the same day).
+GEMINI_MODELS = ("gemini-3.1-flash-tts-preview", "gemini-2.5-flash-preview-tts", "gemini-3.8-flash-tts", "gemini-3.8-flash-lite-tts")
+GEMINI_SPEAKS_DIRECTION = {"gemini-3.8-flash-tts", "gemini-3.8-flash-lite-tts"}
 GEMINI_VOICE = "Charon"
 GEMINI_STYLE = (
     "اقرأ الكلام ده باللهجة المصرية العامية، بصوت طبيعي ودافي زي واحد قاهري بيتكلم مع صاحبه، "
@@ -142,18 +147,20 @@ def synthesize_gemini(text: str, target: Path, style: str) -> None:
     key = gemini_key()
     if not key:
         raise RuntimeError("no GEMINI_API_KEY")
-    body = {
-        "contents": [{"parts": [{"text": style + text}]}],
-        "generationConfig": {
-            "responseModalities": ["AUDIO"],
-            "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": GEMINI_VOICE}}},
-        },
-    }
+    def body_for(model: str) -> dict:
+        spoken = text if model in GEMINI_SPEAKS_DIRECTION else style + text
+        return {
+            "contents": [{"parts": [{"text": spoken}]}],
+            "generationConfig": {
+                "responseModalities": ["AUDIO"],
+                "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": GEMINI_VOICE}}},
+            },
+        }
     refused = []
     for model in GEMINI_MODELS:
         request = urllib.request.Request(
             f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-            data=json.dumps(body).encode("utf-8"),
+            data=json.dumps(body_for(model)).encode("utf-8"),
             headers={"Content-Type": "application/json", "x-goog-api-key": key},
         )
         try:
