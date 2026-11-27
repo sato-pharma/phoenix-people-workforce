@@ -2329,6 +2329,7 @@ import { runPhoenixCrmPharmacyCallTests } from "./phoenix-crm-pharmacy-calls.tes
 import { runPhoenixCrmPharmacyVisitLoggedTests } from "./phoenix-crm-pharmacy-visit-logged.test.ts";
 import { runPhoenixCrmRefusedReadingsTests } from "./phoenix-crm-refused-readings.test.ts";
 import { runPhoenixCrmSignedOutAnswers401Tests } from "./phoenix-crm-signed-out-answers-401.test.ts";
+import { runPhoenixCrmClientHangupTests } from "./phoenix-crm-client-hangup.test.ts";
 import { runPhoenixCrmRefusedReadingsBoardTests } from "./phoenix-crm-refused-readings-board.test.ts";
 import { runPhoenixCrmValidationProgressTests } from "./phoenix-crm-validation-progress.test.ts";
 import { runPhoenixCrmVisitFarRefusalTests } from "./phoenix-crm-visit-far-refusal.test.ts";
@@ -8381,6 +8382,10 @@ await runTest(
 await runTest(
   "a Phoenix CRM save from someone whose sign-in ENDED answers 401 signed_out, never 403 (24 Oct 2026, 02:35:58 Cairo: a district manager's session reached its absolute expiry mid-plan, his next half-day save 24 seconds later was refused 403 as if he were not allowed, and he signed in again 6 seconds after. Pinned: assertPermission marks the GUEST refusal SignedOutRefusal, right after canAccess and before the module lock, keeping its Forbidden: prefix so every other route answers as before; an ordinary refusal carries no mark; phoenixCrmFailure answers the mark 401 signed_out BEFORE the 403 mapping; and the CRM client still turns a 401 into its signed-out sentence)",
   runPhoenixCrmSignedOutAnswers401Tests,
+);
+await runTest(
+  "a phone hanging up mid-way through a Phoenix CRM save is not an error (27 Nov 2026: 23 of 25 'Phoenix CRM request failed' rows in a week were Node's own 'aborted' ECONNRESET from abortIncoming, two of them a rep's plan saves whose neighbours landed). Pinned: only that exact code AND message is matched, never an upstream socket hang up, a read ECONNRESET, an AbortError, PostgREST's timeout or 'Connection closed.'; phoenixCrmFailure answers it 499 before toApiError and the error log)",
+  runPhoenixCrmClientHangupTests,
 );
 
 await runTest(
