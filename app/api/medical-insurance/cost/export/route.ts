@@ -34,6 +34,7 @@ export async function GET(request: Request) {
       asOf: cost.asOf,
       exportedByName: cost.exporterName ?? access.loginId ?? "Phoenix user",
       generatedAtIso,
+      numbers: cost.numbers,
       policy: cost.policy,
       split: cost.split,
     });
