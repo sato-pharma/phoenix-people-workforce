@@ -5,11 +5,13 @@
 //
 // A joining-form photo is a phone shot of a card on a desk: background all round, often upright
 // (portrait) or at a slant. The ID page after the bank letter must show the card alone, flat and
-// landscape. Four corners of the card — found on the server (`id-card-corners.ts`) and given in
-// the order the card READS (top-left of its printed text first) — are warped onto a rectangle in
-// the card's own proportion, ISO/IEC 7810 ID-1, 85.6 × 54 mm, with a thin border of the photo kept
-// all round so the cut never runs into the card. That one warp removes the
-// background, squares a slanted shot and turns a sideways or upside-down card the right way up.
+// landscape. The card's four corners are found on the server (`id-card-corners.ts`), in any order.
+// They are put in clockwise order HERE, by geometry, starting on a long side, so the warp can never
+// mirror the card and always lays it landscape (owner, 2026-11-27, after two cards came out mirrored
+// when a reader's "reading order" was trusted). They are warped onto a rectangle in the card's own
+// proportion, ISO/IEC 7810 ID-1, 85.6 × 54 mm, with a thin border of the photo kept all round so the
+// cut never runs into the card. The flat card is then either upright or upside down, and one more
+// question (or the back's barcode, which runs along the bottom) says which.
 //
 // Pure arithmetic on raw RGB pixels: no imaging library, so it is tested to the pixel.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -32,6 +34,12 @@ export const ID_CARD_CROP_WIDTH_PX = 1600;
  * 3% of an 85.6 mm card is about 2.5 mm a side: the cut always lands on the desk, never on the card.
  */
 export const ID_CARD_BORDER_SHARE = 0.03;
+
+/**
+ * How far a corner reading is pushed out from the card's centre before the edge search, as a share of
+ * the card's size: the search then walks in from the desk to the real edge and never starts inside it.
+ */
+export const ID_CARD_READ_MARGIN_SHARE = 0.05;
 
 /** The cropped card's size: always landscape, always the card's own proportion. */
 export function cardCropSize(width = ID_CARD_CROP_WIDTH_PX): { width: number; height: number } {
@@ -80,6 +88,67 @@ export function isPlausibleCardQuad(quad: CardQuad, imageWidth: number, imageHei
   const right = distance(quad[1], quad[2]);
   const ratio = (top + bottom) / (left + right);
   return ratio > 1.0 && ratio < 2.6;
+}
+
+/**
+ * The four corners in clockwise order on screen (y grows downward), whatever order they were read in.
+ * Clockwise is what a card lying face up looks like from above, so the warp never mirrors it.
+ */
+export function orderQuadClockwise(points: readonly Point[]): CardQuad | null {
+  if (points.length !== 4 || points.some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y))) return null;
+  const cx = points.reduce((sum, p) => sum + p.x, 0) / 4;
+  const cy = points.reduce((sum, p) => sum + p.y, 0) / 4;
+  const sorted = [...points].sort((a, b) => Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx));
+  return [sorted[0], sorted[1], sorted[2], sorted[3]];
+}
+
+/** The same clockwise quad, started so its first side is a LONG side: it then warps landscape, that side on top. */
+export function landscapeQuad(quad: CardQuad): CardQuad {
+  const across = distance(quad[0], quad[1]) + distance(quad[2], quad[3]);
+  const down = distance(quad[1], quad[2]) + distance(quad[3], quad[0]);
+  return across >= down ? quad : [quad[1], quad[2], quad[3], quad[0]];
+}
+
+/**
+ * The quad pushed out from its centre by `share` of its size, kept within the photo (a corner may sit
+ * just off it). A corner reading lands a little inside the card as often as outside; pushed out, the
+ * edge search below starts on the desk and walks in to the card's real edge, so a side is never shaved.
+ */
+export function expandQuad(quad: CardQuad, share: number, imageWidth: number, imageHeight: number): CardQuad {
+  const cx = quad.reduce((sum, p) => sum + p.x, 0) / 4;
+  const cy = quad.reduce((sum, p) => sum + p.y, 0) / 4;
+  const clamp = (value: number, size: number) => Math.min(1.02 * size, Math.max(-0.02 * size, value));
+  const out = quad.map((p) => ({ x: clamp(cx + (p.x - cx) * (1 + share), imageWidth), y: clamp(cy + (p.y - cy) * (1 + share), imageHeight) }));
+  return [out[0], out[1], out[2], out[3]];
+}
+
+/**
+ * Where a flat, landscape card's barcode band is: the back of an Egyptian ID carries a dense 2-D
+ * barcode across its BOTTOM when it reads upright. Measured as the mean step in grey from pixel to
+ * pixel along each row, in the top and bottom 30% of the card (inside `border`). "top" means the card
+ * is upside down. Null when neither band clearly holds a barcode (a front, or a blurred back).
+ */
+export function barcodeBand(grey: GreyImage, border = 0): "top" | "bottom" | null {
+  const x0 = Math.round(border);
+  const x1 = grey.width - Math.round(border) - 1;
+  const inner = grey.height - 2 * Math.round(border);
+  const energy = (from: number, to: number) => {
+    let sum = 0;
+    let count = 0;
+    for (let y = Math.round(from); y < Math.round(to); y += 2) {
+      for (let x = x0; x < x1; x += 1) {
+        sum += Math.abs(grey.data[y * grey.width + x + 1] - grey.data[y * grey.width + x]);
+        count += 1;
+      }
+    }
+    return count > 0 ? sum / count : 0;
+  };
+  const top = energy(border, border + 0.3 * inner);
+  const bottom = energy(border + 0.7 * inner, border + inner);
+  const high = Math.max(top, bottom);
+  const low = Math.max(1, Math.min(top, bottom));
+  if (high < 18 || high / low < 2.2) return null;
+  return top > bottom ? "top" : "bottom";
 }
 
 /** Solves the 8×8 system of a homography by Gaussian elimination with partial pivoting. */

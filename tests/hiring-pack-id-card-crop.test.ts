@@ -2,14 +2,18 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { readCornerAnswer } from "../src/lib/hiring-pack/id-card-corners.ts";
+import { readCornerAnswer, readOrientationAnswer } from "../src/lib/hiring-pack/id-card-corners.ts";
 import {
   applyHomography,
+  barcodeBand,
   cardCropSize,
+  expandQuad,
   homography,
   ID_CARD_ASPECT,
   ID_CARD_BORDER_SHARE,
   isPlausibleCardQuad,
+  landscapeQuad,
+  orderQuadClockwise,
   quadFromThousandths,
   refineCardQuad,
   warpCard,
@@ -24,8 +28,10 @@ import {
 // small bit around it"). Every picture here is a drawn, made-up card — never a real ID. What this pins:
 //   1. the warp lands every card corner where it belongs and the picture is landscape, in the card's
 //      proportion, plus the border;
-//   2. a card photographed upright and upside down still comes out the right way up — the corner
-//      ORDER, not the photo, says which way the card reads;
+//   2. the corners are ORDERED BY GEOMETRY (clockwise, a long side first), so a card standing on its
+//      side comes out landscape, and a reading given in the mirror order can never mirror the card;
+//      which way up it reads is asked of the flat card afterwards, and the back's barcode band answers
+//      when the model cannot;
 //   3. the whole card is inside the picture with desk showing on every side: nothing of it is cut;
 //   4. a corner reading a few per cent off is snapped back onto the card's real edges;
 //   5. a reading that cannot be a card (crossed, tiny, off the photo) is refused, and the photo is
@@ -100,9 +106,9 @@ export async function runHiringPackIdCardCropTests() {
   assert.ok(size.width > size.height, "the card is always printed landscape");
   assert.ok(Math.abs(size.width / size.height - ID_CARD_ASPECT) < 0.005, "in the ID-1 card's own proportion");
 
-  // ── 2 + 3. an UPRIGHT card (the usual phone shot) comes out landscape, right way up, uncut ────
-  // The card stands on its long side in a portrait photo; its printing reads top-to-bottom, so its
-  // own top-left corner is the photo's top-RIGHT. The stripe marks the card's top edge.
+  // ── 2 + 3. a card standing on its side (the usual phone shot) comes out landscape and uncut ────
+  // The card stands on its long side in a portrait photo; the stripe marks one long edge. The corners
+  // are given in no particular order, as the reader may answer them.
   const upright: CardQuad = [
     { x: 700, y: 200 },
     { x: 690, y: 1000 },
@@ -111,8 +117,14 @@ export async function runHiringPackIdCardCropTests() {
   ];
   const photo = drawPhoto(upright);
   assert.ok(isPlausibleCardQuad(upright, PHOTO_W, PHOTO_H), "an upright card is a plausible card");
+  const ordered = landscapeQuad(orderQuadClockwise([upright[2], upright[0], upright[3], upright[1]])!);
+  assert.deepEqual(ordered, upright, "ordered clockwise and started on a long side, whatever order the corners came in");
+  // The mirror order (counter-clockwise) gives the SAME quad: the card can never come out mirrored.
+  const mirrored = [upright[3], upright[2], upright[1], upright[0]];
+  assert.deepEqual(landscapeQuad(orderQuadClockwise(mirrored)!), ordered, "a counter-clockwise reading is put back clockwise — never a mirror image");
+  assert.equal(orderQuadClockwise([upright[0], upright[1], upright[2]]), null, "three corners are no card");
   const border = Math.round(ID_CARD_BORDER_SHARE * size.width);
-  const card = warpCard(photo.rgb, upright, size.width, size.height, border)!;
+  const card = warpCard(photo.rgb, ordered, size.width, size.height, border)!;
   assert.equal(card.width, size.width + 2 * border, "the picture is the card plus the border, side to side");
   assert.equal(card.height, size.height + 2 * border, "and top to bottom");
   assert.ok(card.width > card.height, "landscape");
@@ -124,20 +136,47 @@ export async function runHiringPackIdCardCropTests() {
   assert.ok(columnMean(card, card.width - 1 - mid, border, card.height - border) < 90, "desk right of the card: the right edge is not cut");
   // Just inside each edge is card — the whole card, edge to edge, is in the picture.
   const stripeRow = border + Math.round(size.height * 0.05);
-  assert.ok(rowMean(card, stripeRow, border + 20, card.width - border - 20) < 40, "the card's top stripe is at the TOP: the card reads the right way up");
+  assert.ok(rowMean(card, stripeRow, border + 20, card.width - border - 20) < 40, "the stripe's long edge is laid along the top");
   assert.ok(rowMean(card, card.height - border - 6, border + 20, card.width - border - 20) > 190, "card at the bottom edge, no stripe");
   assert.ok(columnMean(card, border + 6, border + size.height * 0.2, border + size.height * 0.9) > 190, "card along the left edge");
   assert.ok(columnMean(card, card.width - border - 7, border + size.height * 0.2, border + size.height * 0.9) > 190, "card along the right edge");
 
-  // An UPSIDE-DOWN landscape card: the corner order turns it the right way up.
+  // An UPSIDE-DOWN landscape card: geometry alone lays it flat, unmirrored, its stripe along the
+  // BOTTOM; turning it the right way up is the next step's.
   const flipped: CardQuad = [
     { x: 760, y: 820 },
     { x: 140, y: 830 },
     { x: 150, y: 440 },
     { x: 750, y: 430 },
   ];
-  const flippedCard = warpCard(drawPhoto(flipped).rgb, flipped, size.width, size.height, border)!;
-  assert.ok(rowMean(flippedCard, stripeRow, border + 20, flippedCard.width - border - 20) < 40, "an upside-down card is turned the right way up");
+  const flippedCard = warpCard(drawPhoto(flipped).rgb, landscapeQuad(orderQuadClockwise(flipped)!), size.width, size.height, border)!;
+  assert.ok(flippedCard.width > flippedCard.height, "an upside-down landscape card stays landscape");
+  assert.ok(rowMean(flippedCard, flippedCard.height - 1 - stripeRow, border + 20, flippedCard.width - border - 20) < 40, "its stripe lies along the bottom, ready to be turned");
+
+  // The corner reading is pushed out a little before the edge search, and never far off the photo.
+  const pushed = expandQuad(upright, 0.05, PHOTO_W, PHOTO_H);
+  assert.ok(pushed[0].x > upright[0].x && pushed[0].y < upright[0].y, "each corner moves away from the centre");
+  assert.ok(Math.abs(pushed[0].x - upright[0].x) < 20, "by a few per cent, no more");
+  const whole: CardQuad = [{ x: 0, y: 0 }, { x: 900, y: 0 }, { x: 900, y: 1200 }, { x: 0, y: 1200 }];
+  assert.deepEqual(expandQuad(whole, 0.5, PHOTO_W, PHOTO_H)[0], { x: -18, y: -24 }, "and never more than 2% past the photo's edge");
+
+  // Which way up: the back's barcode band runs along the BOTTOM when the card reads upright.
+  const bandW = 600;
+  const bandH = 380;
+  const barcodeCard = (bandAtTop: boolean): GreyImage => {
+    const data = new Uint8Array(bandW * bandH).fill(210);
+    for (let y = 0; y < bandH; y += 1) {
+      if (bandAtTop ? y >= bandH * 0.25 : y <= bandH * 0.75) continue;
+      for (let x = 0; x < bandW; x += 1) data[y * bandW + x] = ((x * 7 + y * 3) >> 2) % 2 === 0 ? 30 : 220;
+    }
+    return { data, height: bandH, width: bandW };
+  };
+  assert.equal(barcodeBand(barcodeCard(false)), "bottom", "a back with its barcode along the bottom reads upright");
+  assert.equal(barcodeBand(barcodeCard(true)), "top", "a barcode along the top means the card is upside down");
+  assert.equal(barcodeBand({ data: new Uint8Array(bandW * bandH).fill(210), height: bandH, width: bandW }), null, "no barcode (a front) decides nothing");
+  assert.equal(readOrientationAnswer({ orientation: "upside_down" }), "upside_down", "the model's answer is read strictly");
+  assert.equal(readOrientationAnswer({ orientation: "unsure" }), null, "unsure decides nothing");
+  assert.equal(readOrientationAnswer({ orientation: "sideways" }), null, "anything else decides nothing");
 
   // ── 4. a corner reading a few per cent off is snapped onto the real edges ─────────────────────
   const misread: CardQuad = [
@@ -173,10 +212,10 @@ export async function runHiringPackIdCardCropTests() {
   assert.equal(isPlausibleCardQuad(offPhoto, PHOTO_W, PHOTO_H), false, "a corner far off the photo is a misread");
 
   // The corner reader's answer is read strictly.
-  const answer = { bottom_left: { x: 1, y: 2 }, bottom_right: { x: 3, y: 4 }, found: true, top_left: { x: 5, y: 6 }, top_right: { x: 7, y: 8 } };
-  assert.deepEqual(readCornerAnswer(answer), [{ x: 5, y: 6 }, { x: 7, y: 8 }, { x: 3, y: 4 }, { x: 1, y: 2 }], "corners come back in reading order");
+  const answer = { corner_1: { x: 5, y: 6 }, corner_2: { x: 7, y: 8 }, corner_3: { x: 3, y: 4 }, corner_4: { x: 1, y: 2 }, found: true };
+  assert.deepEqual(readCornerAnswer(answer), [{ x: 5, y: 6 }, { x: 7, y: 8 }, { x: 3, y: 4 }, { x: 1, y: 2 }], "the four corners come back as answered");
   assert.equal(readCornerAnswer({ ...answer, found: false }), null, "no card found → no crop");
-  assert.equal(readCornerAnswer({ ...answer, top_left: { x: "5", y: 6 } }), null, "a corner that is not two numbers → no crop");
+  assert.equal(readCornerAnswer({ ...answer, corner_1: { x: "5", y: 6 } }), null, "a corner that is not two numbers → no crop");
   assert.deepEqual(quadFromThousandths([{ x: 500, y: 250 }, { x: 1000, y: 250 }, { x: 1000, y: 750 }, { x: 500, y: 750 }], 900, 1200)?.[0], { x: 450, y: 300 }, "thousandths become pixels");
   assert.equal(quadFromThousandths([{ x: 1, y: 1 }], 900, 1200), null, "three or five corners are no card");
 
@@ -185,6 +224,8 @@ export async function runHiringPackIdCardCropTests() {
   assert.ok(store.includes("const card = await cropToCard(bytes).catch(() => null);"), "every side is cut to the card first, and a failed crop never loses the picture");
   assert.ok(store.includes("ID_CARD_BORDER_SHARE * size.width"), "the crop keeps the border round the card");
   assert.ok(store.includes("isPlausibleCardQuad(quad, info.width, info.height)"), "a reading that cannot be a card is never warped");
+  assert.ok(store.includes("orderQuadClockwise(read)") && store.includes("landscapeQuad(ordered)"), "the corners are ordered by geometry before the warp: never mirrored, always landscape");
+  assert.ok(store.includes("findIdCardOrientation(preview)") && store.includes('=== "top"') && store.includes(".rotate(upsideDown ? 180 : 0)"), "an upside-down card is turned, by the model's answer or else the barcode band");
   const corners = readFileSync(join(process.cwd(), "src/lib/hiring-pack/id-card-corners.ts"), "utf8");
   assert.ok(corners.includes("createOpenAiResponseText") && corners.includes("hasAiApiKey()"), "the corners are asked through the one AI door");
   assert.ok(corners.includes("OUTSIDE"), "the reader is told to err outside the card, never inside it");

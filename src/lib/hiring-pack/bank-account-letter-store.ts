@@ -19,11 +19,16 @@ import {
   type IdPicture,
   type StoredIdFile,
 } from "./bank-letter-id-pages.ts";
-import { findIdCardCorners } from "./id-card-corners.ts";
+import { findIdCardCorners, findIdCardOrientation } from "./id-card-corners.ts";
 import {
+  barcodeBand,
   cardCropSize,
+  expandQuad,
   ID_CARD_BORDER_SHARE,
+  ID_CARD_READ_MARGIN_SHARE,
   isPlausibleCardQuad,
+  landscapeQuad,
+  orderQuadClockwise,
   quadFromThousandths,
   refineCardQuad,
   warpCard,
@@ -257,15 +262,32 @@ async function cropToCard(bytes: Buffer): Promise<IdPicture | null> {
     .jpeg({ quality: 82 })
     .toBuffer();
   const corners = await findIdCardCorners(ask);
-  const quad = corners ? quadFromThousandths(corners, info.width, info.height) : null;
-  if (!quad || !isPlausibleCardQuad(quad, info.width, info.height)) return null;
+  const read = corners ? quadFromThousandths(corners, info.width, info.height) : null;
+  // Clockwise by geometry, a long side first: the warp can never mirror the card and always lays it
+  // landscape, whatever order the corners were read in.
+  const ordered = read ? orderQuadClockwise(read) : null;
+  if (!ordered) return null;
+  const quad = expandQuad(landscapeQuad(ordered), ID_CARD_READ_MARGIN_SHARE, info.width, info.height);
+  if (!isPlausibleCardQuad(quad, info.width, info.height)) return null;
   const grey = await sharp(data, { raw }).greyscale().blur(1.2).toColourspace("b-w").raw().toBuffer();
   const refined = refineCardQuad({ data: new Uint8Array(grey), height: info.height, width: info.width }, quad);
   const size = cardCropSize();
   // A thin border of the photo all round: the cut lands on the desk, never on the card.
-  const card = warpCard({ ...raw, data: new Uint8Array(data) }, refined, size.width, size.height, ID_CARD_BORDER_SHARE * size.width);
+  const border = ID_CARD_BORDER_SHARE * size.width;
+  const card = warpCard({ ...raw, data: new Uint8Array(data) }, refined, size.width, size.height, border);
   if (!card) return null;
-  const jpeg = await sharp(Buffer.from(card.data), { raw: { channels: card.channels as 1 | 2 | 3 | 4, height: card.height, width: card.width } })
+  const cardRaw = { channels: card.channels as 1 | 2 | 3 | 4, height: card.height, width: card.width };
+  // The flat card is upright or upside down. Asked once; when the answer is unsure, the back's
+  // barcode (along the bottom when upright) decides; with neither, it is printed as it came out.
+  const preview = await sharp(Buffer.from(card.data), { raw: cardRaw }).resize({ width: 800 }).jpeg({ quality: 80 }).toBuffer();
+  const answer = await findIdCardOrientation(preview);
+  let upsideDown = answer === "upside_down";
+  if (answer === null) {
+    const cardGrey = await sharp(Buffer.from(card.data), { raw: cardRaw }).greyscale().toColourspace("b-w").raw().toBuffer();
+    upsideDown = barcodeBand({ data: new Uint8Array(cardGrey), height: card.height, width: card.width }, border) === "top";
+  }
+  const jpeg = await sharp(Buffer.from(card.data), { raw: cardRaw })
+    .rotate(upsideDown ? 180 : 0)
     .jpeg({ mozjpeg: true, quality: 85 })
     .toBuffer();
   return { bytes: new Uint8Array(jpeg), contentType: "image/jpeg", heightPx: card.height, widthPx: card.width };
