@@ -4,8 +4,12 @@ import { createRequire } from "node:module";
 import { randomInt } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const REPO = "F:/Phoenix Workforce/phoenix-workforce";
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+// generator/ -> direct-order-receipt-books/ -> skills/ -> .claude/ -> the repo. PHOENIX_REPO overrides (the _generator copy outside the repo).
+const REPO = process.env.PHOENIX_REPO ?? path.resolve(HERE, "../../../..");
+const CHROME = process.env.CHROME ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const require = createRequire(REPO + "/package.json");
 const React = require("react");
 const { renderToStaticMarkup } = require("react-dom/server");
@@ -15,7 +19,7 @@ const ExcelJS = require("exceljs");
 
 const OUT = process.argv[2];
 const SAMPLE = process.argv.includes("--sample");
-const HERE = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
+if (!OUT || OUT.startsWith("--")) { console.error("Usage: node build.mjs <outDir> [--sample]"); process.exit(1); }
 fs.mkdirSync(OUT, { recursive: true });
 
 const PER_BOOK = 50;
@@ -38,10 +42,12 @@ const TITLE_AR = { "District Sales Manager": "مدير منطقة", "Senior Dist
 const LINE_AR = { Pedia: "خط الأطفال (Pedia)", "Anti Infective": "خط المضادات الحيوية (Anti Infective)" };
 
 // ── the register: serial ⇄ code ⇄ book ⇄ manager. Made ONCE, then reused, so a re-run never re-issues codes.
-const managers = JSON.parse(fs.readFileSync(path.join(HERE, "managers.json"), "utf8"));
 const regPath = path.join(OUT, "register.json");
+// A sample never touches a register: it refuses a folder that holds one, and its codes are minted fresh and never saved.
+if (SAMPLE && fs.existsSync(regPath)) { console.error("Refused: --sample into a folder with register.json would print REAL codes. Use a new empty folder."); process.exit(1); }
+const managers = JSON.parse(fs.readFileSync(path.join(HERE, "managers.json"), "utf8"));
 let register;
-if (fs.existsSync(regPath)) {
+if (!SAMPLE && fs.existsSync(regPath)) {
   register = JSON.parse(fs.readFileSync(regPath, "utf8"));
 } else {
   const holders = [...managers, ...Array.from({ length: SPARE_BOOKS }, () => null)];
@@ -57,7 +63,7 @@ if (fs.existsSync(regPath)) {
       })),
     };
   });
-  fs.writeFileSync(regPath, JSON.stringify(register, null, 1));
+  if (!SAMPLE) fs.writeFileSync(regPath, JSON.stringify(register, null, 1));
 }
 
 // ── the per-page seal: a guilloche rosette whose curve is set by the page's own code
@@ -297,14 +303,14 @@ function coverPage(book) {
     <tr><td>صاحب العهدة</td><td>${h ? esc(h.name) : ""}</td></tr>
     <tr><td>الوظيفة</td><td>${h ? esc(TITLE_AR[h.title] ?? "مدير منطقة") : ""}</td></tr>
     <tr><td>المنطقة / الخط</td><td>${h ? `${esc(h.area)} — ${esc(LINE_AR[h.line] ?? h.line)}` : ""}</td></tr>
-    <tr><td>تاريخ الاستلام</td><td>..... / ..... / 2026 م</td></tr>
+    <tr><td>تاريخ الاستلام</td><td>..... / ..... / 20..... م</td></tr>
   </tbody></table>
   <ol class="rules">
     <li>كل إيصال يحمل رقم إذن مسلسلاً ورمز تحقق وختماً هندسياً خاصاً به لا يتكرر في أي إيصال آخر، وتطبع العلامة المائية نفسها في خلفية الإيصال.</li>
-    <li>الإيصال الذي لا يطابق رقمه ورمزه وختمه سجل الشركة، أو به كشط أو تعديل في رقم الإذن، لا يُعتد به ولا يُحتسب بيعه.</li>
+    <li>الإيصال الذي لا يطابق رقمه ورمزه وختمه سجل الشركة، أو به كشط أو تعديل في رقم الإذن، لا يُعتد به إثباتاً للتسليم.</li>
     <li>لا يُنزع الأصل ولا الصورة الثانية من الدفتر؛ تُسلَّم الصورة الأولى وحدها لجهة التوصيل.</li>
     <li>الإيصال الملغى يبقى في الدفتر بأصله وصورتيه ويُكتب عليه «ملغى» بتوقيع صاحب العهدة.</li>
-    <li>توقيع مدير المنطقة وتوقيع جهة التوصيل وختمها شرط لاحتساب البيع.</li>
+    <li>توقيع مدير المنطقة وتوقيع جهة التوصيل وختمها شرط لاعتماد الإيصال إثباتاً للتسليم.</li>
   </ol>
   <div class="foot"><span>دفتر رقم <bdi>${pad(book.book, 2)}</bdi></span><span>من <bdi>${pad(book.first)}</bdi> إلى <bdi>${pad(book.last)}</bdi></span></div>
 </section>`;
@@ -319,7 +325,7 @@ function custodyPage(book) {
   <div class="band"></div>
   <h1>إقرار استلام عهدة (دفتر إيصالات)</h1>
   <p>أقر أنا الموقع أدناه / ${f(h?.name, 80)} المقيم في / ${f(h?.addr, 90)} والحامل لبطاقة رقم قومي / ${h ? fb(h.nid) : f(null, 55)} والعامل بوظيفة / ${f(h ? TITLE_AR[h.title] ?? "مدير منطقة" : null, 40)} لدى شركة ساتوفارما.</p>
-  <p>بأنني قد استلمت اليوم الموافق: ..... / ..... / 2026 م، من إدارة الشركة وبصفة عهدة شخصية:</p>
+  <p>بأنني قد استلمت اليوم الموافق: ..... / ..... / 20..... م، من إدارة الشركة وبصفة عهدة شخصية:</p>
   <p>عدد ( ${fb("1")} ) دفتر إيصالات، يحتوي على عدد ( ${fb(String(PER_BOOK))} ) إيصال مرقمين ومُسلسلين تسلسلاً رقمياً متتابعاً يبدأ من الرقم ( ${fb(pad(book.first))} ) وينتهي عند الرقم ( ${fb(pad(book.last))} )، وذلك لاستخدامه في مهام عملي المكلف بها.</p>
   <p>وأتعهد بالمحافظة على هذا الدفتر وكافة أصوله وصوره، واستخدامه في الأغراض المخصصة له من قِبل الشركة فقط، وعدم التصرف فيه أو إتلافه أو التلاعب ببياناته. كما ألتزم بتقديم كشف حساب وتوريد كافة المتحصلات أو المستندات الخاصة به أولاً بأول وفقاً للوائح الشركة.</p>
   <p>كما أتعهد التزاماً قاطعاً بتسليم هذا الدفتر (كعهدة مستردة بكافة كعوبه وأوراقه المستخدمة وغير المستخدمة) إلى الإدارة المختصة فور طلبه مني، أو عند انتهاء علاقة عملي بالشركة لأي سبب من الأسباب، ويُعد تسليم هذه العهدة ومراجعتها شرطاً أساسياً ولازماً لإتمام إجراءات إخلاء طرفي وصرف مستحقاتي المالية.</p>
@@ -330,7 +336,7 @@ function custodyPage(book) {
     <b>الاسم بالكامل:</b> ....................................................<br>
     <b>التوقيع:</b> ..............................................................<br>
     <b>البصمة (إبهام اليد اليمنى):</b> <span class="thumb"></span><br>
-    <b>تاريخ الاستلام:</b> ..... / ..... / 2026 م
+    <b>تاريخ الاستلام:</b> ..... / ..... / 20..... م
   </div>
   <div class="foot"><span>دفتر رقم <bdi>${pad(book.book, 2)}</bdi></span><span>من <bdi>${pad(book.first)}</bdi> إلى <bdi>${pad(book.last)}</bdi></span></div>
 </section>`;
@@ -338,7 +344,7 @@ function custodyPage(book) {
 
 const doc = (title, body) => `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(title)}</title><style>${css}</style></head><body>${body}</body></html>`;
 
-const browser = await puppeteer.launch({ executablePath: "C:/Program Files/Google/Chrome/Application/chrome.exe", headless: true, args: ["--no-first-run", "--disable-extensions"] });
+const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ["--no-first-run", "--disable-extensions"] });
 async function toPdf(html, file, shots = []) {
   const page = await browser.newPage();
   await page.setContent(html, { waitUntil: "load" });
@@ -364,17 +370,24 @@ async function toPdf(html, file, shots = []) {
 
 const books = SAMPLE ? register.slice(0, 1) : register;
 const report = [];
+let custodySpill = null;
+try {
 for (const book of books) {
   const receipts = SAMPLE ? book.receipts.slice(0, 2) : book.receipts;
   const body = [coverPage(book), ...receipts.flatMap((r, i) => PARTS.map((p) => receiptPage(book, r, i, p)))].join("\n");
   const who = book.holder ? `${book.holder.area} - ${book.holder.line}` : "Spare";
   const file = path.join(OUT, `Receipt Book ${pad(book.book, 2)} - ${who} - ${pad(book.first)}-${pad(book.last)}.pdf`);
-  const shots = book.book === 1 ? [[0, path.join(OUT, "preview-cover.png")], [1, path.join(OUT, "preview-original.png")], [2, path.join(OUT, "preview-copy1.png")], [4, path.join(OUT, "preview-next-receipt.png")]] : [];
+  const shots = !SAMPLE && book.book === 1 ? [[0, path.join(OUT, "preview-cover.png")], [1, path.join(OUT, "preview-original.png")], [2, path.join(OUT, "preview-copy1.png")], [4, path.join(OUT, "preview-next-receipt.png")]] : [];
   const spill = await toPdf(doc(`دفتر ${book.book}`, body), file, shots);
   report.push({ book: book.book, file: path.basename(file), pages: 1 + receipts.length * 3, spill });
 }
-const custodySpill = await toPdf(doc("إقرار استلام عهدة", register.map(custodyPage).join("\n")), path.join(OUT, "Book Custody Acknowledgements - all books.pdf"), [[0, path.join(OUT, "preview-custody.png")]]);
-await browser.close();
+// the custody pages carry national IDs and addresses, and the register every code: never in a sample folder
+if (!SAMPLE) custodySpill = await toPdf(doc("إقرار استلام عهدة", register.map(custodyPage).join("\n")), path.join(OUT, "Book Custody Acknowledgements - all books.pdf"), [[0, path.join(OUT, "preview-custody.png")]]);
+} finally {
+  await browser.close();
+}
+
+if (!SAMPLE) {
 
 // the register workbook
 const wb = new ExcelJS.Workbook();
@@ -386,5 +399,6 @@ ws2.columns = [{ header: "Serial", key: "s", width: 10 }, { header: "Check code"
 for (const b of register) for (const r of b.receipts) ws2.addRow({ s: pad(r.serial), c: r.code, b: b.book, n: b.holder?.name ?? "SPARE", st: "Unused" });
 for (const ws of [ws1, ws2]) { ws.getRow(1).font = { bold: true }; ws.views = [{ state: "frozen", ySplit: 1 }]; }
 await wb.xlsx.writeFile(path.join(OUT, "Receipt Book Register.xlsx"));
+}
 
 console.log(JSON.stringify({ report, custodySpill }, null, 1));

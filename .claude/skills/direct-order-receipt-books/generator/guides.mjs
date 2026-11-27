@@ -7,12 +7,26 @@
 import { createRequire } from "node:module";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const REPO = "F:/Phoenix Workforce/phoenix-workforce";
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+// generator/ -> direct-order-receipt-books/ -> skills/ -> .claude/ -> the repo. PHOENIX_REPO overrides (the _generator copy outside the repo).
+const REPO = process.env.PHOENIX_REPO ?? path.resolve(HERE, "../../../..");
+const CHROME = process.env.CHROME ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const require = createRequire(REPO + "/package.json");
 const puppeteer = require("puppeteer-core");
+const { PDFDocument } = require("pdf-lib");
 
 const OUT = process.argv[2];
+if (!OUT) { console.error("Usage: node guides.mjs <Guides folder>"); process.exit(1); }
+// the sample book (build.mjs --sample, copied into the Guides folder): its page 2, receipt 1's Original, is the copier test's page 2
+const SAMPLE_PDF = path.join(OUT, "عينة دفتر - دفتر 01 القاهرة - إيصالان للعرض.pdf");
+const missing = [path.join(OUT, "_img", "desk-top.png"), path.join(OUT, "_img", "desk-bottom.png"), SAMPLE_PDF].filter((f) => !fs.existsSync(f));
+if (missing.length) {
+  console.error(["Missing, needed before the guides can be built:", ...missing.map((f) => "  " + f),
+    "The two screenshots are Finance's Receipt Books desk (SKILL.md, The guides); the sample is build.mjs --sample."].join("\n"));
+  process.exit(1);
+}
 fs.mkdirSync(OUT, { recursive: true });
 
 const C = { deep: "#0A527D", blue: "#0A6BA6", light: "#1482C2", zebra: "#F2F6FA", hair: "#B9C7D4", muted: "#5A6B7C", body: "#1A1A1A" };
@@ -322,7 +336,7 @@ ${mast("اختبار العلامة المخفية — قبل الذهاب لل�
 <div class="note keep"><p>على شاشة الكمبيوتر قد تظهر العبارة عند تصغير الصفحة؛ هذا طبيعي، فالشاشة تتصرف مثل ماكينة التصوير. الحكم على الورق فقط.</p></div>
 `);
 
-const browser = await puppeteer.launch({ executablePath: "C:/Program Files/Google/Chrome/Application/chrome.exe", headless: true, args: ["--no-first-run", "--disable-extensions"] });
+const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ["--no-first-run", "--disable-extensions"] });
 const footer = (label) => `<div style="width:100%;font-family:Tahoma,Arial,sans-serif;font-size:7.4pt;color:${C.muted};padding:0 14mm;direction:rtl;display:flex;justify-content:space-between;"><span>${label}</span><span><span class="pageNumber"></span> / <span class="totalPages"></span></span></div>`;
 async function toPdf(html, file, label, shotBase) {
   const page = await browser.newPage();
@@ -335,8 +349,22 @@ async function toPdf(html, file, label, shotBase) {
   await pdfPage.close();
   console.log("wrote", file, Math.round(fs.statSync(file).size / 1024), "KB");
 }
+const COPIER_PAGE1 = path.join(OUT, "_copier-test-page1.pdf");
+try {
 await toPdf(management, path.join(OUT, "دفاتر إيصالات الطلبات المباشرة - ملخص للإدارة.pdf"), "دفاتر إيصالات الطلبات المباشرة — ملخص للإدارة · شركة ساتو فارما");
 await toPdf(guide, path.join(OUT, "دليل العمل - إيصالات الطلبات المباشرة - لمديري المناطق.pdf"), "دليل العمل — إيصالات الطلبات المباشرة · شركة ساتو فارما");
 await toPdf(printer, path.join(OUT, "تعليمات الطباعة - للمطبعة.pdf"), "تعليمات طباعة دفاتر الإيصالات · شركة ساتو فارما");
 await toPdf(copier, path.join(OUT, "_copier-test-page1.pdf"), "اختبار العلامة المخفية · شركة ساتو فارما");
-await browser.close();
+} finally {
+  await browser.close();
+}
+
+// the copier test = its instructions page + the sample's receipt 1 Original (page 2 of the sample book)
+const merged = await PDFDocument.create();
+for (const [file, pages] of [[COPIER_PAGE1, null], [SAMPLE_PDF, [1]]]) {
+  const src = await PDFDocument.load(fs.readFileSync(file));
+  for (const pg of await merged.copyPages(src, pages ?? src.getPageIndices())) merged.addPage(pg);
+}
+const COPIER = path.join(OUT, "اختبار العلامة المخفية - ماكينة التصوير.pdf");
+fs.writeFileSync(COPIER, await merged.save());
+console.log("wrote", COPIER, merged.getPageCount(), "pages");

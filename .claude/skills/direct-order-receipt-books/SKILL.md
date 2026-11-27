@@ -64,7 +64,9 @@ has to rediscover it. The code side is module memory: the first bullet of `.clau
 | `Guides\_img\desk-top.png`, `desk-bottom.png` | real screenshots of Finance's desk |
 
 A copy of both generators is in this skill's `generator/` folder, so they survive the laptop. To use the copy,
-put `managers.json` beside it.
+put `managers.json` beside it. Each script finds the repo four folders up from itself, so its libraries resolve
+from any checkout. A copy kept outside the repo needs `PHOENIX_REPO=<checkout>`, and `CHROME=<chrome.exe>` sets
+the browser on another machine.
 
 ## The books
 
@@ -147,6 +149,9 @@ put `managers.json` beside it.
 
 - Run with `node guides.mjs "<Guides folder>"`. It uses puppeteer-core with headless Chrome, which prints LOCAL
   HTML, so it is allowed. Check every page with `pdftoppm -r 80`.
+- It refuses to start unless the Guides folder holds `_img\desk-top.png`, `_img\desk-bottom.png` and the
+  sample book. It writes the four PDFs, then builds the copier test with pdf-lib. That file is
+  `_copier-test-page1.pdf` plus page 2 of the sample book (receipt 1's Original).
 - **The management summary**, "ملخص للإدارة — الإدارة العليا والمالية". Dr Anwar is the CEO, so the header does
   not say "Chairman". Its sections:
   1. What was prepared.
@@ -166,9 +171,9 @@ put `managers.json` beside it.
 
 ## The sample book
 
-- Made by running `build.mjs <new empty folder> --sample` from a folder WITHOUT spaces. `HERE` is
-  URL-encoded, so a path with spaces fails with ENOENT on `managers.json`; copy `build.mjs` and `managers.json` to
-  the scratchpad first.
+- Made by running `build.mjs <new empty folder> --sample`.
+  - It refuses a folder that holds a `register.json`, mints throwaway codes and never saves them.
+  - It writes no custody acknowledgements, no register and no previews, so the folder holds only the sample.
 - An empty folder has no `register.json`, so the run mints fresh random codes. Those codes are not in Phoenix,
   which is exactly what a sample needs.
 - Before copying the sample out, confirm that none of its codes equals a real one.
@@ -183,11 +188,19 @@ put `managers.json` beside it.
   5. Roles.
   6. Points for their decision, including the sales-month question.
   7. What is needed: approval, printing under the two conditions, the hand-over.
-- Attachments: the summary, the guide, the custody acknowledgements and the sample book. The full books are
-  deliberately not attached, and the email says why.
+- Five attachments: the summary, the guide, the custody acknowledgements, the sample book and the printer's
+  instructions (`تعليمات الطباعة - للمطبعة.pdf`). The email's request for printing depends on that last one. The
+  full books are deliberately not attached, and the email says why.
 - Never send it from a business system. It is his to send.
 
 ## Still open (when he asks)
+
+- 🔴 **The 16 book PDFs, the custody PDF and the sample book's cover were built BEFORE two fixes (27 Nov 2026).**
+  - Old cover rules 2 and 5 said a sale "is not counted" without the receipt. That is the management's undecided
+    money question. The generator now says the receipt proves delivery.
+  - The dates were fixed to 2026; they are now `20.....`.
+  - Rebuild both from this skill's `generator/build.mjs`, with `managers.json` beside it, into the books folder
+    BEFORE they go to the printer. The folder's `register.json` keeps every code unchanged.
 
 - The physical copier test. Two ways to do it:
   - on an office printer, now: `اختبار العلامة المخفية - ماكينة التصوير.pdf`, page 2, printed at 100% then
