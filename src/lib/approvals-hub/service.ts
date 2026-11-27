@@ -357,8 +357,9 @@ async function getVacationAwaitingForBadge(access: AccessContext): Promise<Vacat
     });
     return null;
   });
-  const { awaiting } = await partitionVacationApprovals(access, source?.centerRows ?? [], source?.scopedRows ?? []);
-  return awaiting.filter((row) => isVacationViewersTurn(access, row));
+  return (await partitionVacationApprovals(access, source?.centerRows ?? [], source?.scopedRows ?? [])).awaiting.filter((row) =>
+    isVacationViewersTurn(access, row),
+  );
 }
 
 /**
