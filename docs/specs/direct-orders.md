@@ -89,6 +89,27 @@ correctable.
 
 Collections are separate from the month: recording cash never moves a period and never re-injects.
 
+### What a pharmacy still owes holds its next order (owner, 27 Nov 2026)
+
+His words: «اى اوردر لاى عميل لم يسدد قيمه الاوردر الاول لا يتم خروج اوردر تانى له من نفس الصنف … او نفس العميل
+بعت اوردر ايفيرونك او جواموسين مثلا ممكن تنفيذه … لو عميل غير ملتزم بمواعيد التسديد المسجله … لازم ساعتها موافقه
+منى». His choices: the same product part-paid "Goes to Dr Anwar to decide"; a late payer is "Overdue now"; the
+approver is "Dr Anwar". Module: `src/lib/direct-orders/payment-standing.ts`.
+
+- **Owed** is `remaining_amount` (value less cash less marketing settlements) or the whole `sales_value` when it
+  is null. Under 1 EGP counts as paid, because rounding has left orders a few piastres short.
+- **Same product** is the product CODE on the order lines (`direct_order_request_items`): Lacto Advanced 1, not
+  the Lacto family. Only approved original orders count. A reversal never counts, and the order being decided
+  never counts against itself.
+- **Nothing paid** on an earlier order of the same product refuses the new order at submit and again at the last
+  approval, even for the CEO. An order of another product goes ahead.
+- **Part-paid** same product, or **any** order owing money after its `collection_date` (the pharmacy is not
+  keeping its payment dates), lets the order climb. At the last approval only role CEO can finish it; the
+  Super Admin is refused on that rung.
+- Both order pages show a "Payment record" notice while the order is pending or held, listing each order it
+  owes on. A failed read says so and the gate fails closed.
+- Pinned by `tests/direct-order-payment-standing.test.ts`.
+
 ### The collection model, and exactly what it cannot represent
 
 Documented 2026-08-12 against the code, not from memory. **Nothing here was expanded** — this

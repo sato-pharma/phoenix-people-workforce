@@ -52,7 +52,7 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
 }
 
 /**
- * Finance's Receipt Books desk (owner, 26 Nov 2026: "Finance", "14 days").
+ * Finance's Receipt Books desk (owner, 26 Nov 2026: "Finance"; 27 Nov: 7 days).
  * Approved orders still owing a receipt, orders raised by someone holding no book (owner, 27 Nov
  * 2026: "Flag them"), the orders asked to stand without a receipt (the CEO decides each, owner,
  * 27 Nov 2026), the sixteen books and who holds each, the spoiled-page cancel, and the receipts

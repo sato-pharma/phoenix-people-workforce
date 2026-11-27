@@ -11,7 +11,8 @@ has to rediscover it. The code side is module memory: the first bullet of `.clau
 ## His words, and what is NOT decided
 
 - 26 Nov ~19:30: "Build the check". Book owner: **"Finance"**, meaning Ahmed El Maraghy. Flag an approved order
-  with no receipt after **"14 days"**.
+  with no receipt after **"14 days"**. 27 Nov ~15:00 he cut it to a week: «حد اقصى اسبوع ولا ينفذ له اوردارات
+  اخرى»; the manager who raised the late order is blocked from raising another ("The manager who raised it").
 - 27 Nov ~00:15: "Merge 812". PR 812 merged at 00:18 (merge sha `efbccb86b`) and served from 00:23. The error
   check stayed CLEAN for 15 minutes.
 - **NOT decided, and never decided in chat (money):** whether a missing receipt stops the order counting in that
@@ -119,7 +120,7 @@ the browser on another machine.
   hands.
 - **Finance's desk:** Direct Orders → Receipt Books, at `/admin/direct-orders/receipts`. It shows only for Ahmed
   El Maraghy and the Super Admin. It has five parts:
-  - "Approved with no receipt": red after 14 days.
+  - "Approved with no receipt": red after 7 days (14 until 27 Nov).
   - "Approved with no receipt book" (PR 829, owner 27 Nov: "Flag them"): from the first hand-out on, every
     approved order raised by someone who held no book that day. Nothing before the first hand-out is listed.
   - The 16 books, with these buttons:
@@ -180,7 +181,8 @@ the browser on another machine.
 - **The area managers' guide:**
   1. Know your receipt, with the sample.
   2. On paper.
-  3. On Phoenix within 14 days. This section has the panel DRAWING, captioned as a drawing.
+  3. On Phoenix within 14 days. This section has the panel DRAWING, captioned as a drawing. 🔴 Since 27 Nov
+     the rule is 7 days and a late receipt blocks the manager's next order: update this guide too.
   4. Rules.
   5. Refusal messages.
 - Screenshots come from the spare's live page, signed in as Super Admin role-only, in the browser pane.

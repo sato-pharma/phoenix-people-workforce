@@ -3,7 +3,9 @@ import { redirect } from "next/navigation";
 import { DirectOrderRequestDetail } from "@/components/approvals-hub/direct-order-request-detail";
 import { PharmacyValidationCapture } from "@/components/direct-orders/pharmacy-validation-capture";
 import { CancelHeldOrder } from "@/components/direct-orders/cancel-held-order";
+import { DirectOrderPaymentStandingNotice } from "@/components/direct-orders/direct-order-payment-standing-notice";
 import { DirectOrderReceiptPanel } from "@/components/direct-orders/direct-order-receipt-panel";
+import { loadDirectOrderPaymentStandingNotice } from "@/lib/direct-orders/payment-standing";
 import { loadDirectOrderReceiptPanel } from "@/lib/direct-orders/receipt-books";
 import { getDirectOrderApprovalDetail } from "@/lib/direct-orders/service";
 import { canCancelHeldDirectOrder } from "@/lib/direct-orders/cancel-visibility";
@@ -68,6 +70,15 @@ export default async function AdminMyDirectOrderDetailPage({
   // The delivery receipt (owner, 26 Nov 2026: "Build the check"). Read only for an order the viewer
   // may already see — the detail loader answered null otherwise — and never for a draft.
   const receiptPanel = detail ? await loadDirectOrderReceiptPanel(access, detail.request.id) : null;
+  // What the pharmacy still owes (owner, 27 Nov 2026), only while the order is still being decided.
+  const paymentNotice = detail
+    ? await loadDirectOrderPaymentStandingNotice({
+        requestId: detail.request.id,
+        status: detail.request.status,
+        pharmacyId: detail.pharmacy?.id ?? detail.request.pharmacyId,
+        productCodes: detail.items.map((item) => item.productCode),
+      })
+    : null;
 
   const canOpenCustomer = detail?.pharmacy ? await canOpenCustomer360(access) : false;
   const customer360Href = canOpenCustomer && detail?.pharmacy ? directOrderCustomer360Href(detail.pharmacy.id) : null;
@@ -94,6 +105,7 @@ export default async function AdminMyDirectOrderDetailPage({
           invoiceSlots={invoiceSlots ? { used: invoiceSlots.used, limit: invoiceSlots.limit } : null}
         />
       ) : null}
+      {paymentNotice ? <DirectOrderPaymentStandingNotice notice={paymentNotice} orderHrefBase="/admin/direct-orders" /> : null}
       {receiptPanel && detail ? <DirectOrderReceiptPanel requestId={detail.request.id} panel={receiptPanel} /> : null}
       {showCancel && detail ? (
         <CancelHeldOrder

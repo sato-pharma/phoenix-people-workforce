@@ -232,6 +232,7 @@ import {
 } from "@/lib/direct-orders/types";
 import { assertDirectOrderWorkflowTransition, directOrderDecisionAction } from "@/lib/direct-orders/workflow";
 import { sendDirectOrderApprovedEmail } from "@/lib/direct-orders/approved-email";
+import { assertDirectOrderMayBeRaised, assertPaymentStandingAllowsFinalApproval } from "@/lib/direct-orders/payment-standing";
 import {
   approvedStepActors,
   assertOrderCarriedBySuperAdminStands,
@@ -4428,6 +4429,15 @@ export async function submitDirectOrder(
   let pharmacy = pharmacies.get(input.pharmacyId) ?? null;
   if (!pharmacy) badRequest("Venue not found — pick an existing one or add a new venue first.");
 
+  // Refused before anything is written (owner, 27 Nov 2026): the manager has a delivery receipt past
+  // its 7 days, or this pharmacy has paid nothing on an earlier order of a product in this basket.
+  // A part-paid product or a late payer climbs, and only the CEO's own approval finishes it.
+  await assertDirectOrderMayBeRaised({
+    requesterHrId: actorHrId,
+    pharmacyId: input.pharmacyId,
+    productCodes: lines.map((line) => line.productCode),
+  });
+
   // Repair BEFORE deciding (owner rule, 2026-08-08). Pharmacies registered before auto-link exists
   // still carry their code in the name field; without this they would keep failing the hold test on
   // every future order for a code that is sitting right there. Running it here means the repair and
@@ -5014,6 +5024,16 @@ export async function decideDirectOrder(
           "Every approval already given on this request stands.",
       );
     }
+    // What the pharmacy still owes, read at the last approval (owner, 27 Nov 2026): a product it has
+    // paid nothing on is refused, and a part-paid product or a late payer is finished only by the
+    // CEO's own approval, never the Super Admin answering for that rung.
+    const items = (await loadDirectOrderItemsForRequests([request.id])).get(request.id) ?? [];
+    await assertPaymentStandingAllowsFinalApproval({
+      actorRole: access.role,
+      requestId: request.id,
+      pharmacyId: request.pharmacyId,
+      productCodes: items.length > 0 ? items.map((item) => item.productCode) : [request.productCode],
+    });
   }
 
   const action = directOrderDecisionAction({ decision: input.decision, isFinal: evaluation.isFinal });

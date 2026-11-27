@@ -2386,6 +2386,7 @@ import { runCrmNewHireKeyingTests } from "./crm-new-hire-keying.test.ts";
 import { runCrmReportsReadPhoenixTests } from "./crm-reports-read-phoenix.test.ts";
 import { runDirectOrdersBasketLabelTests } from "./direct-orders-basket-label.test.ts";
 import { runDirectOrderReceiptBooksTests } from "./direct-order-receipt-books.test.ts";
+import { runDirectOrderPaymentStandingTests } from "./direct-order-payment-standing.test.ts";
 
 import { runDirectOrdersSheetEditableColumnsTests } from "./direct-orders-sheet-editable-columns.test.ts";
 
@@ -9174,8 +9175,13 @@ await runTest(
 );
 
 await runTest(
-  "direct order receipt books (an invented page is refused by its printed code; one paper never proves two orders — the claim is a compare-and-set on an unused receipt; a page from a book not in the requester's hands is refused; flagged 14 days after approval, cut over at each book's issue date; a lost book cancels only its unused receipts)",
+  "direct order receipt books (an invented page is refused by its printed code; one paper never proves two orders — the claim is a compare-and-set on an unused receipt; a page from a book not in the requester's hands is refused; flagged 7 days after approval, cut over at each book's issue date; a lost book cancels only its unused receipts)",
   runDirectOrderReceiptBooksTests,
+);
+
+await runTest(
+  "direct order payment standing (a delivery receipt past 7 days stops its manager raising a new order; nothing paid on an earlier order of the same product refuses the new one, another product is raised; part-paid or a late payer is finished only by the CEO, never the Super Admin; a failed read fails closed)",
+  runDirectOrderPaymentStandingTests,
 );
 
 await runTest(

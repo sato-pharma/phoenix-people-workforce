@@ -154,11 +154,11 @@ function pureTests() {
   assert.equal(reasonOf(check({ order: order({ reversalOfRequestId: "r" }) })), "order_not_approved", "a reversal never takes a receipt");
   assert.equal(reasonOf(check({ orderReceiptSerial: 3 })), "order_has_receipt", "an order takes one receipt");
 
-  // The 14-day flag, and its cutover: each book's own issue date.
+  // The 7-day flag, and its cutover: each book's own issue date.
   const books = [book()];
   const at = (days: number) => new Date(Date.parse("2026-12-10T09:00:00.000Z") + days * DAY);
-  assert.equal(classifyOrderReceipt({ order: order(), books, hasReceipt: false, now: at(13) }), "waiting", "day 13 still inside the window");
-  assert.equal(classifyOrderReceipt({ order: order(), books, hasReceipt: false, now: at(14) }), "overdue", "flagged from day 14 (owner: 14 days)");
+  assert.equal(classifyOrderReceipt({ order: order(), books, hasReceipt: false, now: at(6) }), "waiting", "day 6 still inside the window");
+  assert.equal(classifyOrderReceipt({ order: order(), books, hasReceipt: false, now: at(7) }), "overdue", "flagged from day 7 (owner, 27 Nov: a week at most)");
   assert.equal(classifyOrderReceipt({ order: order(), books, hasReceipt: true, now: at(30) }), "has_receipt");
   assert.equal(
     classifyOrderReceipt({ order: order({ decidedAt: "2026-11-20T09:00:00.000Z" }), books, hasReceipt: false, now: NOW }),

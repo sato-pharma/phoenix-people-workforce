@@ -16,7 +16,8 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 // do not match the order — Finance compares the photo with the order lines.
 //
 // Finance issues, returns and reports a book lost (owner: "Finance"). An approved order with no
-// receipt 14 days after approval is flagged on Finance's desk (owner: "14 days"). An order raised by
+// receipt 7 days after approval is flagged on Finance's desk, and its manager raises no new order until
+// it is entered (owner, 26 Nov 2026: "14 days"; 27 Nov: «حد اقصى اسبوع»). An order raised by
 // someone who held no book is flagged too, from the day the first book was handed out (owner, 27 Nov
 // 2026: "Flag them"). A page from a returned book is still accepted for an order approved while its
 // manager held it (owner, 27 Nov 2026: "Allow late entry"), and Finance can undo a receipt entered on
@@ -34,8 +35,11 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 /** The printer's alphabet — no 0/O, 1/I/L, so a handwritten or misread code cannot be ambiguous. */
 export const RECEIPT_CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 export const RECEIPT_CODE_LENGTH = 6;
-/** Owner, 26 Nov 2026: an approved order is flagged when no receipt is entered 14 days after approval. */
-export const RECEIPT_OVERDUE_DAYS = 14;
+/**
+ * An approved order is flagged when no receipt is entered 7 days after approval (owner, 27 Nov 2026:
+ * «حد اقصى اسبوع» — it was 14 days from 26 Nov), and its manager raises no new order until it is.
+ */
+export const RECEIPT_OVERDUE_DAYS = 7;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -250,7 +254,7 @@ export function daysSinceApproval(decidedAt: string | null, now: Date): number |
 }
 
 /**
- * Where an order stands on its receipt. `waiting` inside the 14 days, `overdue` from day 14 on, and
+ * Where an order stands on its receipt. `waiting` inside the 7 days, `overdue` from day 7 on, and
  * `no_book` when its requester held no book on the day it was approved, after the rollout began.
  * `without_receipt` when the CEO approved it to stand without one — never flagged after that.
  * Only an approved original order owes one — a reversal, a rejection or a cancellation never does.

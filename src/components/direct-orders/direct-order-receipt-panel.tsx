@@ -186,7 +186,7 @@ export function DirectOrderReceiptPanel({ requestId, panel: given }: { requestId
         ) : (
           <p className={cn("text-phx-sm", overdue ? "font-bold text-rose-700" : "text-slate-700")}>
             {overdue
-              ? `No receipt has been entered ${days} days after approval. Finance is flagged after ${panel.overdueDays} days.`
+              ? `No receipt has been entered ${days} days after approval. After ${panel.overdueDays} days Finance is flagged and the manager who raised it cannot raise a new order until it is entered.`
               : `No receipt entered yet${days !== null ? ` — approved ${days} day${days === 1 ? "" : "s"} ago` : ""}. Enter it once the venue has signed and stamped the page.`}
           </p>
         )}

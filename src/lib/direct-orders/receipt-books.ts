@@ -894,6 +894,50 @@ async function loadApprovedOrdersSinceRollout(books: readonly ReceiptBookRow[]):
   return rows;
 }
 
+export type LateReceiptOrder = { requestId: string; pharmacyName: string; days: number };
+
+/**
+ * One manager's approved orders whose delivery receipt is past its 7 days (owner, 27 Nov 2026: «حد
+ * اقصى اسبوع ولا ينفذ له اوردارات اخرى فى حاله عدم رفعه»; he chose "The manager who raised it"). While
+ * any is listed that manager raises no new order. An order raised with no book (`no_book`) is Finance's
+ * flag, not this block, and one the CEO approved to stand without a receipt is never late.
+ */
+export async function listLateReceiptsForRequester(requesterHrId: string, now: Date = new Date()): Promise<LateReceiptOrder[]> {
+  const books = await loadBooks();
+  if (books.length === 0) return [];
+  const key = canonicalHrIdKey(requesterHrId);
+  if (!key) return [];
+  const mine = (await loadApprovedOrdersSinceRollout(books)).filter((row) => canonicalHrIdKey(row.order.requesterHrId) === key);
+  if (mine.length === 0) return [];
+  const ids = mine.map((row) => row.order.id);
+  const supabase = getSupabaseAdmin();
+  const [{ data: receiptRows, error: receiptError }, { data: askRows, error: askError }] = await Promise.all([
+    supabase.from(RECEIPTS).select("request_id").in("request_id", ids),
+    supabase.from(NO_RECEIPT).select("request_id").in("request_id", ids).eq("status", "approved"),
+  ]);
+  if (receiptError) throw receiptError;
+  if (askError) throw askError;
+  const withReceipt = new Set(((receiptRows ?? []) as { request_id: string | null }[]).map((row) => row.request_id));
+  const waived = new Set(((askRows ?? []) as { request_id: string }[]).map((row) => row.request_id));
+  const late = mine.filter(
+    (row) =>
+      classifyOrderReceipt({ order: row.order, books, hasReceipt: withReceipt.has(row.order.id), now, withoutReceiptApproved: waived.has(row.order.id) }) ===
+      "overdue",
+  );
+  if (late.length === 0) return [];
+  const { data: pharmacies, error: pharmacyError } = await supabase
+    .from("direct_order_pharmacies")
+    .select("id,pharmacy_name")
+    .in("id", [...new Set(late.map((row) => row.pharmacyId))]);
+  if (pharmacyError) throw pharmacyError;
+  const names = new Map(((pharmacies ?? []) as { id: string; pharmacy_name: string | null }[]).map((row) => [row.id, String(row.pharmacy_name ?? "").trim()]));
+  return late.map((row) => ({
+    requestId: row.order.id,
+    pharmacyName: names.get(row.pharmacyId) || "a pharmacy not on file",
+    days: daysSinceApproval(row.order.decidedAt, now) ?? 0,
+  }));
+}
+
 // ─── Finance: book custody and spoiled pages ─────────────────────────────────
 
 function parseBookNo(raw: unknown): number {
