@@ -7,17 +7,18 @@ import * as React from "react";
 import { AdminCallout, AdminPageHero } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
 import { formatLeftDay } from "@/lib/employees/left-flag";
-import { egpWords, monthWords, policyNumberWords, type MedicalInsuranceMoneyView, type MedicalInsuranceView } from "@/lib/medical-insurance/view";
+import { egpWords, monthWords, policyNumberWords, splitRegister, type MedicalInsuranceMoneyView, type MedicalInsuranceView } from "@/lib/medical-insurance/view";
 import { cn } from "@/lib/utils";
 
 import { MedicalInsuranceActionsTab } from "./medical-insurance-actions";
 import { MedicalInsuranceBenefitsTab } from "./medical-insurance-benefits";
 import { MedicalInsuranceCalculatorTab, MedicalInsuranceCostTab } from "./medical-insurance-cost";
+import { MedicalInsuranceDeletionsTab } from "./medical-insurance-deletions";
 import { MedicalInsuranceDocumentsTab } from "./medical-insurance-documents";
 import { MedicalInsuranceMembersTab } from "./medical-insurance-members";
 import { MedicalInsuranceStatementsTab } from "./medical-insurance-statements";
 
-type TabId = "actions" | "benefits" | "calculator" | "cost" | "documents" | "members" | "overview" | "statements";
+type TabId = "actions" | "benefits" | "calculator" | "cost" | "deletions" | "documents" | "members" | "overview" | "statements";
 
 type Props = {
   canCreate: boolean;
@@ -38,11 +39,13 @@ export function MedicalInsurancePage({ canCreate, canEdit, canExport, error, mon
   const [tab, setTab] = React.useState<TabId>("overview");
 
   const toAct = view ? view.counts.addNow + view.counts.removeNow + view.counts.review : 0;
+  const register = view ? splitRegister(view.members) : { deletions: [], onCover: [] };
   const tabs: Array<{ id: TabId; label: string; note: string }> = view
     ? [
         { id: "overview", label: "Overview", note: `${view.counts.covered} people covered` },
         { id: "actions", label: "Add or remove", note: toAct === 1 ? "1 to act on now" : `${toAct} to act on now` },
-        { id: "members", label: "Members", note: `${view.members.length} on the register` },
+        { id: "members", label: "Members", note: `${register.onCover.length} on cover` },
+        { id: "deletions", label: "Deletions", note: register.deletions.length === 1 ? "1 taken off, kept for good" : `${register.deletions.length} taken off, kept for good` },
         { id: "benefits", label: "Benefits", note: "Plan A, B or C" },
         ...(money ? [{ id: "cost" as const, label: "Cost and invoices", note: egpWords(money.year.totals.projected) }] : []),
         ...(money ? [{ id: "calculator" as const, label: "Cost calculator", note: "What someone would cost a month" }] : []),
@@ -88,7 +91,7 @@ export function MedicalInsurancePage({ canCreate, canEdit, canExport, error, mon
 
       {view ? (
         <>
-          <div className={cn("grid grid-cols-2 gap-px border border-phx-line bg-phx-line", money ? "lg:grid-cols-8" : "lg:grid-cols-5")} role="tablist">
+          <div className={cn("grid grid-cols-2 gap-px border border-phx-line bg-phx-line", money ? "lg:grid-cols-9" : "lg:grid-cols-6")} role="tablist">
             {tabs.map(({ id, label, note }) => (
               <button
                 aria-selected={tab === id}
@@ -107,6 +110,7 @@ export function MedicalInsurancePage({ canCreate, canEdit, canExport, error, mon
           {tab === "overview" ? <Overview money={money} onOpenActions={() => setTab("actions")} view={view} /> : null}
           {tab === "actions" ? <MedicalInsuranceActionsTab canCreate={canCreate} canEdit={canEdit} canExport={canExport} view={view} /> : null}
           {tab === "members" ? <MedicalInsuranceMembersTab canCreate={canCreate} canEdit={canEdit} canExport={canExport} view={view} /> : null}
+          {tab === "deletions" ? <MedicalInsuranceDeletionsTab canEdit={canEdit} view={view} /> : null}
           {tab === "benefits" ? <MedicalInsuranceBenefitsTab view={view} /> : null}
           {tab === "cost" && money ? <MedicalInsuranceCostTab money={money} policy={view.policy} /> : null}
           {tab === "calculator" && money ? <MedicalInsuranceCalculatorTab money={money} policy={view.policy} /> : null}

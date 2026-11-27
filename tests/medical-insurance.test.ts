@@ -37,7 +37,7 @@ import {
 import { LIBANO_TABLE_OF_BENEFITS } from "../src/lib/medical-insurance/benefits.ts";
 import { buildMedicalInsuranceMonthlyCostWorkbook } from "../src/lib/medical-insurance/cost-workbook.ts";
 import { buildMonthlySplit, EMPLOYEE_MINIMUM_OWN_SHARE_MONTHLY, LIFE_INSURANCE_PER_PERSON_MONTHLY, monthlyCoverPiastres, quoteMonthlyCost, splitOwnCover } from "../src/lib/medical-insurance/monthly-split.ts";
-import { employeeRecordWords } from "../src/lib/medical-insurance/view.ts";
+import { deletionStandingWords, employeeRecordWords, splitRegister } from "../src/lib/medical-insurance/view.ts";
 import { planLibanoMovementEmail } from "../src/lib/medical-insurance/libano-movement-email.ts";
 import type { LibanoMemberLine } from "../src/lib/medical-insurance/workbooks.ts";
 import {
@@ -987,6 +987,39 @@ function testTheLibanoEmailGoesToTheInsurerAndTheTestToTheOwnerAlone() {
   assert.ok(page.includes("Send test to me") && page.includes("Send to Libano-Suisse") && page.includes("<SendConfirm"));
 }
 
+/**
+ * Deletions never disappear and never mix with the members on cover (owner, 27 Nov 2026: "if even ended … I need
+ * them to not disappear … never mix with others … put them in a separate tab").
+ */
+function testDeletionsAreKeptApartForGood() {
+  const row = (name: string, coverageStart: string, coverageEnd: string | null) => ({ coverageEnd, coverageStart, name });
+  const register = [
+    row("Test Open", "2026-11-22", null),
+    row("Test Left", "2026-11-22", "2026-11-23"),
+    row("Test Voided", "2026-11-22", "2026-11-22"),
+    row("Test Leaving", "2026-11-22", "2026-12-15"),
+    row("Test Another Open", "2026-12-01", null),
+  ];
+  const { deletions, onCover } = splitRegister(register);
+  assert.deepEqual(onCover.map((member) => member.name), ["Test Another Open", "Test Open"], "Members holds only rows with no end");
+  assert.deepEqual(deletions.map((member) => member.name), ["Test Leaving", "Test Left", "Test Voided"], "Deletions holds every row with an end, the latest end first");
+  assert.equal(onCover.length + deletions.length, register.length, "nobody disappears: every row is in one list");
+  assert.ok(!onCover.some((member) => deletions.includes(member)), "and never in both");
+  const day = (value: string) => value;
+  assert.equal(deletionStandingWords(register[1], "2026-11-27", day), "Off the policy after 2026-11-23");
+  assert.equal(deletionStandingWords(register[2], "2026-11-27", day), "Never in force: ended on its first day");
+  assert.equal(deletionStandingWords(register[3], "2026-11-27", day), "Still covered until 2026-12-15");
+
+  const members = stripComments(readFileSync("src/components/medical-insurance/medical-insurance-members.tsx", "utf8"));
+  assert.ok(members.includes("const { onCover } = splitRegister(view.members);"), "the Members tab lists only the rows on cover");
+  assert.doesNotMatch(members, /action: "reinstate"|Cover ended/, "an ended row is never offered on the Members tab");
+  const deletionsTab = stripComments(readFileSync("src/components/medical-insurance/medical-insurance-deletions.tsx", "utf8"));
+  assert.ok(deletionsTab.includes("const { deletions } = splitRegister(view.members);"), "the Deletions tab lists every ended row");
+  assert.match(deletionsTab, /action: "reinstate"/, "Put back lives on the Deletions tab");
+  const page = stripComments(readFileSync("src/components/medical-insurance/medical-insurance-page.tsx", "utf8"));
+  assert.match(page, /id: "deletions", label: "Deletions"/, "Deletions is a tab of its own");
+}
+
 function testNothingHereSendsOrPays() {
   for (const file of ["src/lib/medical-insurance/service.ts", "src/lib/medical-insurance/workbooks.ts", "src/lib/medical-insurance/compare.ts", "src/lib/medical-insurance/cost.ts", "src/lib/medical-insurance/monthly-split.ts", "src/lib/medical-insurance/cost-workbook.ts"]) {
     const source = readFileSync(file, "utf8");
@@ -1016,6 +1049,7 @@ export async function runMedicalInsuranceTests() {
   await testTheMemberFileIsTheInsurersOwnSheet();
   testASeatNeverHoldsAnAmount();
   testTheLibanoEmailGoesToTheInsurerAndTheTestToTheOwnerAlone();
+  testDeletionsAreKeptApartForGood();
   testNothingHereSendsOrPays();
 }
 
