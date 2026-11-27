@@ -41,6 +41,21 @@ The fits-the-screen rule is unchanged and still pinned by
 `tests/territory-tree-desktop-fits-the-screen.test.ts`: no `overflow-x-auto`, no `min-w-[…]` floor,
 names wrap and are never cut.
 
+## The pharmacy name opens Google Maps (27 Nov 2026)
+
+The owner asked for the pharmacy name to open Google Maps, and for it never to send a rep to the wrong place. A name is a link in two cases:
+
+1. **Confirmed on site** — a point a rep captured at the shop (a validated marketing pharmacy, an approved direct-order venue with its live photo GPS first, or an active Phoenix CRM pharmacy place) tied to that distributor customer code. Exact directions to the point.
+2. **Google Maps search by name** — every other pharmacy with a usable name opens a Google Maps search for "صيدلية <name> <brick town>". The sheet marks ن, ن.م, نقدي and اجل and the dashes are removed; "صيدلية" is not doubled; the town is added unless the name has it. The note under the name tells the rep to check the listing name before he goes.
+
+**Why not the sheet address.** The first version routed to the Ibn Sina family or POS address (his first ruling). On the preview he reported "many of the clickables customers when press google cant find a location". Measured on 30 linked pharmacies in Cairo 1 and Giza 1: the cut-off address (about 30 characters) landed on a landmark for all 30, once 146 km away; a name search near the brick put the right shop first for about 22 of 30.
+
+**Why not Phoenix matching each shop.** That needs Google’s paid place search: about 32 dollars per 1,000 lookups after 5,000 free a month, about 1,000 dollars for the ~35,000 drilldown pharmacies. He answered "find a way to keep it free". The search link calls no Google service; it runs on the rep’s phone.
+
+A confirmed point is not used when it is more than 25 km from its brick centre (a mistyped code), when the card’s points are more than 300 m apart, or when the card’s code comes from two distributors (the Ibn Sina channels count as one); the card then gets the search link. A name with fewer than three letters gets no link.
+
+The rule is `src/lib/sales/territory/pharmacy-directions.ts` (pure). The read is `pharmacy-directions-sources.ts`: one call to `phx_territory_area_pharmacy_locations`, beside the figures; it never throws. Production, May to October: Cairo 1 CNS 400 of 404 names linked (8 confirmed), Giza 1 Pedia 116 of 116 (2 confirmed). Opening Cairo 1 costs about 0.17 s more than the figures alone. `phx_territory_area_pharmacy_sources` (20261127081222) is an earlier version left unused. Pinned by `tests/territory-pharmacy-directions.test.ts`.
+
 ## The data sync panel
 
 Pinned by `tests/territory-sync-panel-role-scoping.test.ts` and

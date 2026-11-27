@@ -2486,6 +2486,7 @@ import { runMarketingRequestCustomerScopeGuardTests } from "./marketing-request-
 import { runMarketingSalesCodeSyncRerunTests } from "./marketing-sales-code-sync-rerun.test.ts";
 import { runTerritoryAreaIndexTests } from "./territory-area-index.test.ts";
 import { runTerritoryDirectValueTests } from "./territory-direct-value.test.ts";
+import { runTerritoryPharmacyDirectionsTests } from "./territory-pharmacy-directions.test.ts";
 import {
   runDirectoryRollupUnitColumnsAgreeTests,
   runTerritoryUnitsClosingBasisTests,
@@ -6799,6 +6800,7 @@ await runTest("PostgREST or() search filters quote the term instead of stripping
 await runTest("territory drilldown root-scope line resolution (fail-closed)", runTerritoryRootScopeTests);
 await runTest("territory drilldown pharmacy line filter (defense in depth)", runTerritoryLineFilterTests);
 await runTest("territory drilldown internal self-reconciliation", runTerritoryReconciliationTests);
+await runTest("territory drilldown pharmacy name opens Google Maps only to a confirmed point or an Ibn Sina / POS address, never a guess (owner, 2026-11-27)", runTerritoryPharmacyDirectionsTests);
 await runTest(
   "territory drilldown Medical Rep region label (the rep card reads the region of the rep's own line — Qalubeya Delta (3) on Anti Infective, Beni Suef Upper Egypt on Pedia — not the line-agnostic canonical region, and never drops an area the line map omits)",
   runTerritoryRepRegionLabelTests,

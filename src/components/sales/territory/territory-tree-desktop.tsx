@@ -14,6 +14,7 @@ import type {
   TerritoryRegionNode,
 } from "@/lib/sales/territory/types";
 
+import { PharmacyDirectionsNote, PharmacyNameLink } from "./pharmacy-name-link";
 import { PharmacyTrendSparkline } from "./pharmacy-trend-sparkline";
 import { TerritoryClosingTotal } from "./territory-closing-total";
 import { MonthChipLegend, MonthChipRow } from "./territory-month-chips";
@@ -53,7 +54,7 @@ function PharmacyCard({ pharmacy }: { pharmacy: TerritoryPharmacy }) {
       <div className="border border-slate-200 bg-white px-3 py-2.5">
         <div className="flex items-start justify-between gap-2">
           <p className="min-w-0 break-words text-phx-sm font-bold leading-tight text-slate-900">
-            {pharmacy.clientName}
+            <PharmacyNameLink pharmacy={pharmacy} />
           </p>
           <div className="flex shrink-0 items-center gap-2">
             <span className="text-phx-xs font-bold tabular-nums text-slate-700">
@@ -69,6 +70,7 @@ function PharmacyCard({ pharmacy }: { pharmacy: TerritoryPharmacy }) {
             </button>
           </div>
         </div>
+        <PharmacyDirectionsNote className="mt-1" pharmacy={pharmacy} />
         <MonthChipRow className="mt-1.5" pharmacy={pharmacy} />
         {showTrend ? (
           <div className="mt-2 border-t border-slate-100 pt-2">
