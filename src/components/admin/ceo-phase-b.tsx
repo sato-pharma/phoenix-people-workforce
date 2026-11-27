@@ -30,6 +30,7 @@ import { CeoSosTables } from "@/components/admin/ceo-sos-tables";
 import type { AccessContext } from "@/lib/auth/permissions";
 import type { CeoCommandCenterData, CeoAttentionTone, CeoWeeklyTrendPoint } from "@/lib/ceo/command-center";
 import { getCeoLandingDeferred, sosPeriodDisplayLabel } from "@/lib/ceo/command-center";
+import { healthBreakdownReading } from "@/lib/ceo/health-breakdown";
 import { formatStartMinutes, type SfeCrmFieldAnalytics } from "@/lib/crm/sfe-field-analytics";
 import { formatPharmacyFigure } from "@/lib/crm/visit-count-buckets";
 import type { UncomputedRate } from "@/lib/platform/metrics";
@@ -157,15 +158,16 @@ function HealthBreakdown({
         // it into a red 0%, which on this panel is the loudest possible statement — four bars and
         // one of them screaming about a section the viewer may simply hold no grant for. Grey it
         // out, print "—", and leave the bar empty.
-        const measured = value !== null && Number.isFinite(value);
-        const pctVal = measured ? Math.round(Math.min(1, (value as number) / target) * 100) : null;
+        // The PRINTED figure is the rate itself; only the bar and its colour measure progress toward
+        // the goal. Printing rate ÷ goal read sales achievement 74.75% as "83%" (27 Nov 2026).
+        const { printedPct, progressPct: pctVal } = healthBreakdownReading(value, target);
         const statusColor =
           pctVal === null ? "#94A3B8" : pctVal >= 80 ? "#10B981" : pctVal >= 60 ? "#F59E0B" : "#F43F5E";
         return (
           <div key={label} className="flex flex-col gap-3 px-5 py-5">
             <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
             <p className="text-3xl font-black tracking-tight" style={{ color: statusColor }}>
-              {pctVal === null ? "—" : `${pctVal}%`}
+              {printedPct === null ? "—" : `${printedPct}%`}
             </p>
             {note ? <p className="-mt-2 text-phx-xs font-semibold uppercase tracking-[0.12em] text-slate-400">{note}</p> : null}
             <div className="h-1.5 w-full bg-slate-100">
