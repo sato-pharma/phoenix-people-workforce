@@ -23,3 +23,10 @@ Full plan: Appendix D of `~/.claude/plans/pasted-content-id-4b53-phoenix-enginee
 the primary's root, untracked and covered by `*.xlsx` (the `!Source of sales area database.xlsx` re-include is gone). Never
 re-track them. `tests/marketing-reference-importer.test.ts` checks the parser only where they are present, so CI skips that half.
 Their old versions stay in the history (no second purge, his choice).
+
+**OWNER, 27 Nov ~12:45 Cairo: "after PEH-010, delete the purge backup folder"** (`C:/Users/satoh/Phoenix History Purge 2026-11-27`, 1.3 GB,
+the only full pre-purge backup). Hub order: PEH-007 handover script → PEH-008 agent git identities → PEH-009 spare screenshot
+comparison → PEH-010 Railway environment branch policies → THEN this delete, done by the Hub session (059d84db). Before deleting,
+MOVE ASIDE to `C:/Users/satoh/Phoenix History Purge 2026-11-27 - kept map/`: `rewrite.git/filter-repo/commit-map` and `ref-map`
+(the purged-history push guard's rebase recipe needs the map; no personal data), `github-support-request.txt`, and
+`empty-template.xlsx` (a protected type, so it is moved and never deleted). Delete everything else.
