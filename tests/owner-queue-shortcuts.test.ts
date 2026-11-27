@@ -51,13 +51,13 @@ export async function runOwnerQueueShortcutsTests() {
   // ── 1. counts, unavailable, refusals ────────────────────────────────────────────────────────────────
   {
     const counts = [27, 98, 4, 1, 3, 1, 0];
-    const readers = Object.fromEntries(OWNER_QUEUE_KEYS.map((key, index) => [key, async () => counts[index]])) as Parameters<typeof loadOwnerQueueBadges>[1];
+    const readers = Object.fromEntries(OWNER_QUEUE_KEYS.map((key, index) => [key, async () => counts[index]])) as unknown as Parameters<typeof loadOwnerQueueBadges>[1];
     const badges = await loadOwnerQueueBadges(asAccess("Super Admin"), readers);
     OWNER_QUEUE_KEYS.forEach((key, index) => assert.deepEqual(badges[key], { count: counts[index] }, `1a: ${key} carries its reader's count`));
     assert.equal(badges.available, true, "1a: every slot read, so the answer may be remembered");
   }
   {
-    const readers = Object.fromEntries(OWNER_QUEUE_KEYS.map((key) => [key, async () => 5])) as NonNullable<Parameters<typeof loadOwnerQueueBadges>[1]>;
+    const readers = Object.fromEntries(OWNER_QUEUE_KEYS.map((key) => [key, async () => 5])) as unknown as NonNullable<Parameters<typeof loadOwnerQueueBadges>[1]>;
     readers.ownerFarVisitHolds = async () => {
       throw new Error("canceling statement due to statement timeout");
     };
@@ -83,7 +83,7 @@ export async function runOwnerQueueShortcutsTests() {
   // ── 2. nobody else pays a read ───────────────────────────────────────────────────────────────────────
   {
     let reads = 0;
-    const readers = Object.fromEntries(OWNER_QUEUE_KEYS.map((key) => [key, async () => { reads += 1; return 9; }])) as Parameters<typeof loadOwnerQueueBadges>[1];
+    const readers = Object.fromEntries(OWNER_QUEUE_KEYS.map((key) => [key, async () => { reads += 1; return 9; }])) as unknown as Parameters<typeof loadOwnerQueueBadges>[1];
     for (const role of ["CEO", "SFE Manager", "HR Operations", "District Manager", "Medical Rep"]) {
       const badges = await loadOwnerQueueBadges(asAccess(role), readers);
       OWNER_QUEUE_KEYS.forEach((key) => assert.deepEqual(badges[key], { count: 0 }, `2: ${role} gets an empty ${key}`));
