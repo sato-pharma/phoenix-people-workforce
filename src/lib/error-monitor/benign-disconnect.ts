@@ -74,3 +74,23 @@ export function isBenignClientDisconnect(error: unknown): boolean {
   const message = (error as { message?: unknown }).message;
   return typeof message === "string" && BENIGN_DISCONNECT_MESSAGES.has(message);
 }
+
+/**
+ * True ONLY for the request the client abandoned while still SENDING it — Node's own
+ * `connResetException("aborted")`, thrown from `abortIncoming` / `socketOnClose` into a route's
+ * `request.json()` when the phone drops the connection mid-upload.
+ *
+ * Narrower than `isBenignClientDisconnect` on purpose, because a route's catch also receives OUR
+ * failures: an upstream socket we opened that resets reads "socket hang up" or "read ECONNRESET",
+ * never the bare "aborted", and a timeout we set ourselves is an AbortError. Both stay real faults
+ * at a route's catch, so only the exact pair is matched — code AND message.
+ *
+ * Measured on production 2026-11-27: 23 of the 25 "Phoenix CRM request failed" rows of the week
+ * before were this mark, among them two of Gehad Alaa El Din's plan saves at 03:39 and 03:41 Cairo
+ * while her automatic saves around them landed and she sent the week at 03:49. Nobody was refused
+ * anything: the phone that would have read the answer was already gone.
+ */
+export function isAbandonedIncomingRequest(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  return (error as { code?: unknown }).code === "ECONNRESET" && (error as { message?: unknown }).message === "aborted";
+}

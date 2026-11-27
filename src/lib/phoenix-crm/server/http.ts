@@ -12,7 +12,8 @@ import { NextResponse } from "next/server";
 import { isForbiddenError } from "@/lib/auth/server";
 import { isSignedOutRefusal } from "@/lib/auth/signed-out-refusal";
 import { ApiError, toApiError } from "@/lib/http/api-errors";
-import { logError } from "@/lib/observability/log";
+import { isAbandonedIncomingRequest } from "@/lib/error-monitor/benign-disconnect";
+import { logError, logInfo } from "@/lib/observability/log";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
 export function phoenixCrmFailure(error: unknown, fallback: string): NextResponse {
@@ -31,6 +32,13 @@ export function phoenixCrmFailure(error: unknown, fallback: string): NextRespons
       { error: "signed_out", message: "Your sign-in has ended. Sign in again, then try once more.", success: false },
       { status: 401 },
     );
+  }
+  // 🔴 THE PHONE HUNG UP WHILE STILL SENDING — not a fault, and nobody is there to read the answer. Decided
+  // BEFORE toApiError, which would file it as "API error hidden from the caller", and before the log below:
+  // a quiet INFO line keeps it searchable, the error table keeps only what went wrong on our side (2026-11-27).
+  if (isAbandonedIncomingRequest(error)) {
+    logInfo("Phoenix CRM request abandoned by the client", { labels: { event: "phoenix_crm_client_hung_up" } });
+    return NextResponse.json({ error: "client_closed", message: fallback, success: false }, { status: 499 });
   }
   const apiError = toApiError(error, fallback);
   const status = isForbiddenError(error) ? 403 : apiError.status;
