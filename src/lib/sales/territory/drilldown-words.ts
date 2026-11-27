@@ -135,18 +135,15 @@ export function trendChartLabel(periods: readonly string[]): string {
 
 /** What a screen reader hears on a pharmacy name that opens directions. */
 export function directionsLinkLabel(pharmacyName: string): string {
-  return `Open Google Maps directions to ${pharmacyName}`;
+  return `Open ${pharmacyName} in Google Maps`;
 }
 
 /**
  * The line under a pharmacy's name, saying where its link goes, so a rep knows before he drives
- * whether it is a point a rep stood at or a distributor's address to check against the shop sign.
- * The address itself is NOT in this sentence: an Arabic address inside an English line loses its
- * direction (its house number lands at the wrong end), so the note prints it on a line of its own,
- * right-to-left (pharmacy-name-link.tsx).
+ * whether it is a point a rep stood at or a Google search whose listing he must check by name.
  */
-export function directionsNote(directions: { kind: "confirmed_on_site" | "distributor_address"; address: string | null } | null): string {
-  if (!directions) return "No confirmed location yet";
+export function directionsNote(directions: { kind: "confirmed_on_site" | "google_search" } | null): string {
+  if (!directions) return "No location yet";
   if (directions.kind === "confirmed_on_site") return "Directions to the spot a rep confirmed on site";
-  return "Directions to the distributor's address, check the shop sign:";
+  return "Opens Google Maps search, check the listing name before you go";
 }

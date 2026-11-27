@@ -1,4 +1,5 @@
 // The production read behind a drilldown pharmacy's Google Maps link (rule: pharmacy-directions.ts).
+// It calls no Google service: a search link is free, and a confirmed point is Phoenix's own.
 //
 // ONE call to phx_territory_area_pharmacy_locations per area, run beside the pharmacy figures: it
 // returns each pharmacy's distributor rows, the brick's name and centre, and every point a rep
@@ -76,6 +77,7 @@ export function directionsFromLocationRows(rows: readonly LocationRow[]): Map<st
   for (const [code, sources] of sourcesByCode) {
     const picked = pickPharmacyDirections({
       sources,
+      displayName: sources.find((source) => source.clientName)?.clientName ?? "",
       confirmedPoints: pointsByCode.get(code) ?? [],
       brickNames,
       brickCentroids,

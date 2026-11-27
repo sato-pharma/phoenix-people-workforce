@@ -95,15 +95,15 @@ export type TerritoryMonthPresence = {
 };
 
 /**
- * Where tapping a pharmacy's name sends a rep (pharmacy-directions.ts). `confirmed_on_site` goes to a
- * point a rep captured at the shop; `distributor_address` routes to the Ibn Sina family or POS sheet
- * address, which is shown so the rep knows it is an address and not a pin.
+ * Where tapping a pharmacy's name sends a rep (pharmacy-directions.ts). `confirmed_on_site` is
+ * directions to a point a rep captured at the shop; `google_search` opens a Google Maps search for the
+ * pharmacy by name and town, whose listing the rep checks before he drives.
  */
 export type TerritoryPharmacyDirections = {
-  kind: "confirmed_on_site" | "distributor_address";
+  kind: "confirmed_on_site" | "google_search";
   url: string;
-  /** The address the link routes to — null for a confirmed point. */
-  address: string | null;
+  /** What Google is asked for — null for a confirmed point. */
+  searchText: string | null;
 };
 
 export type TerritoryPharmacy = {
