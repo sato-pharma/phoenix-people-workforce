@@ -169,7 +169,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/tests/archive/test-verify.mjs` | 5585 | `e16c151eb7ce39c1` |
 | `scripts/tests/archive/window-racer.mjs` | 1897 | `30f7bb33449b0110` |
 | `scripts/worktree-snapshot-watch.ps1` | 18336 | `32c3cfdb5c0c74e2` |
-| `scripts/worktree-uncommitted-snapshot.mjs` | 16368 | `9a3bc1be3e603524` |
+| `scripts/worktree-uncommitted-snapshot.mjs` | 17958 | `a968c224f2a433c0` |
 | `scripts/xlsx-audit-sacl.ps1` | 9304 | `e5bcf6d5b6b3f76c` |
 | `scripts/xlsx-snapshot-fetch.ps1` | 3480 | `451a818f0760a0ff` |
 | `scripts/xlsx-snapshot-watch.ps1` | 14496 | `5ad89fa2d06b8a4b` |

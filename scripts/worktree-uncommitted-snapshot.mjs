@@ -230,10 +230,54 @@ function snapshotWorktree(wt, snapDir) {
       } else {
         entry.bundle = { bytes: fs.statSync(out).size, verified: git(wt.dir, ["bundle", "verify", out]).code === 0 };
         if (!entry.bundle.verified) problems.push(`${wt.label} — the commit bundle does not verify`);
+        else linkIfSameCommits(out, wt.label, snapDir);
       }
     }
   }
   return entry;
+}
+
+/**
+ * A bundle with the same prerequisites and refs as an earlier hour's holds the same commits, but git
+ * repacks it to different bytes every time (a worktree on an old base wrote ~380 MB an hour and filled
+ * E: on 2026-11-27). So the new copy becomes a hard link to the earlier one: every snapshot path still
+ * opens a verified bundle of the same commits, and nothing is deleted from any path.
+ */
+function bundleHeader(file) {
+  try {
+    const fd = fs.openSync(file, "r");
+    const buf = Buffer.alloc(16384);
+    const n = fs.readSync(fd, buf, 0, buf.length, 0);
+    fs.closeSync(fd);
+    const text = buf.subarray(0, n).toString("latin1");
+    const end = text.indexOf("\n\n");
+    return end < 0 ? null : text.slice(0, end);
+  } catch {
+    return null;
+  }
+}
+function linkIfSameCommits(out, label, snapDir) {
+  try {
+    const root = path.dirname(snapDir);
+    const mine = bundleHeader(out);
+    if (!mine) return;
+    const earlier = fs
+      .readdirSync(root)
+      .filter((s) => /^\d{4}-\d{2}-\d{2}_\d{4}$/.test(s) && path.join(root, s) !== snapDir)
+      .sort()
+      .reverse()
+      .slice(0, 72);
+    for (const stamp of earlier) {
+      const prior = path.join(root, stamp, label, "_unpushed-commits.bundle");
+      if (!fs.existsSync(prior) || bundleHeader(prior) !== mine) continue;
+      const tmp = out + ".link-tmp";
+      fs.linkSync(prior, tmp);
+      fs.renameSync(tmp, out);
+      return;
+    }
+  } catch {
+    // Linking is an optimisation; the verified bundle already written stays as it is.
+  }
 }
 
 /** The fingerprint of everything that exists only on this disk, so an unchanged hour writes nothing. */
