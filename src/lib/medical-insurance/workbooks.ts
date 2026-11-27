@@ -158,9 +158,17 @@ export type LibanoMemberLine = {
   phone: string | null;
   /** The day cover starts (additions, everyone) or the last covered day (deletions). */
   day: string;
+  /** The first, father and last name read from the person's national ID card (src/lib/employees/id-card-name.ts).
+   * When present it is what the insurer's sheet writes; otherwise the name is split by `splitLibanoName`. */
+  nameParts?: { first: string; father: string; last: string };
 };
 
 const RELATION = { child: "C", employee: "P", spouse: "S" } as const;
+
+/** The three names a line goes out with: the ID card's when it was read, else the name split as the draft does. */
+export function libanoNameParts(line: Pick<LibanoMemberLine, "fullName" | "nameParts">): { first: string; father: string; last: string } {
+  return line.nameParts ?? splitLibanoName(line.fullName);
+}
 
 /** First, father and the rest, as the insurer's draft splits a name: first name, father name, last name. */
 export function splitLibanoName(name: string): { first: string; father: string; last: string } {
@@ -196,9 +204,40 @@ export function libanoLineGaps(line: Pick<LibanoMemberLine, "birthDate" | "gende
   return gaps;
 }
 
+/** What an addition needs before it may go to Libano-Suisse, as the facts the add list holds for the person. */
+export type LibanoAdditionFacts = {
+  cardName: { first: string; father: string; last: string } | null;
+  birthDate: string | null | undefined;
+  gender: string | null | undefined;
+  nationalId: string | null | undefined;
+  mobileNumber: string | null | undefined;
+  hasPhoto: boolean;
+};
+
+/**
+ * Everything an addition lacks, in plain words (owner, 27 Nov 2026, rule 1: "if any data is missing, flag that person,
+ * so the email cannot be sent while this person is selected"). The name comes from the ID card the joiner uploaded,
+ * because a Phoenix name of two words sent Nourhan Abdelmoniem's Father Name blank; the personal photo goes with the
+ * sheet named by the staff ID (rule 2). An empty list means the person may be sent.
+ */
+export function libanoAdditionGaps(facts: LibanoAdditionFacts): string[] {
+  const gaps: string[] = [];
+  if (!facts.cardName) gaps.push("name from the ID card");
+  else {
+    if (!facts.cardName.first.trim()) gaps.push("first name");
+    if (!facts.cardName.father.trim()) gaps.push("father name");
+    if (!facts.cardName.last.trim()) gaps.push("last name");
+  }
+  gaps.push(...libanoLineGaps({ birthDate: facts.birthDate ?? null, gender: facts.gender ?? null }));
+  if (!String(facts.nationalId ?? "").replace(/\D/g, "")) gaps.push("national ID");
+  if (!String(facts.mobileNumber ?? "").replace(/\D/g, "")) gaps.push("mobile number");
+  if (!facts.hasPhoto) gaps.push("personal photo");
+  return gaps;
+}
+
 /** One person as the 39 cells of the insurer's sheet, every one text, in their order. */
 export function libanoMemberCells(line: LibanoMemberLine): string[] {
-  const name = splitLibanoName(line.fullName);
+  const name = libanoNameParts(line);
   const cells = new Array<string>(39).fill("");
   cells[0] = line.category; // Plan Code
   cells[1] = name.last;

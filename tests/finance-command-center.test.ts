@@ -52,6 +52,8 @@ const MIGRATION_PATHS = [
   "supabase/migrations/20260830003000_finance_command_center_invoice_overdue.sql",
   "supabase/migrations/20260922190000_finance_command_center_exit_month_upper_bound.sql",
   "supabase/migrations/20260922200000_finance_command_center_committed_trend_one_row_per_month.sql",
+  "supabase/migrations/20261015012552_finance_command_center_offset_requests_need_no_proof.sql",
+  "supabase/migrations/20261127161548_finance_command_center_own_turn_figures.sql",
 ] as const;
 
 /** The definition currently in the database — the last CREATE OR REPLACE wins. */
@@ -332,8 +334,9 @@ function testCommittedTrendIsOneRowPerMonth() {
     /key=\{month\.period\}/.test(dashboard),
     "the trend chart keys its bars on `period`, which is why a month may appear at most once",
   );
+  // The tile's read moved into the pure `netPayrollTile` (27 Nov 2026), which the tile renders.
   assert.ok(
-    /committed\[data\.payroll\.committed\.length - 1\]/.test(dashboard),
+    /committed\[data\.payroll\.committed\.length - 1\]/.test(read(SERVICE_PATH)) && /netPayrollTile\(data\)/.test(dashboard),
     "the Net payroll tile reads the LAST committed entry, which is the newest month only while months are unique",
   );
 }

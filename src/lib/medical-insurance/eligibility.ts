@@ -34,6 +34,7 @@ import {
   type Movement,
   type OpeningStatement,
 } from "./cost";
+import { wasNeverInForce } from "./monthly-split";
 
 /** How far ahead a joiner or leaver appears on the list as coming up. */
 const MEDICAL_INSURANCE_HORIZON_DAYS = 30;
@@ -64,6 +65,8 @@ export type MemberFacts = {
   coverageEnd: string | null;
   /** The member's own, else their employee record's. Prices the premium. */
   birthDate: string | null;
+  /** Covered on Sato's policy but not a Phoenix employee, kept on by the owner (owner, 27 Nov 2026: Medhat Makram Wahba). */
+  outsideStaff?: boolean;
 };
 
 export type ExceptionFacts = {
@@ -139,9 +142,17 @@ export type MedicalInsuranceAction = {
   voidFromStart?: boolean;
   /** Covered from before their first day: `effectiveOn` is the day they joined, where cover should start. */
   lateStart?: boolean;
+  /** On the policy with no HR id at all: they can be kept on as outside staff (`keep_outside`). */
+  noRecord?: boolean;
+  /** Already on the register and sent before: ticked, they go out again on an additions file, and the register is
+   * left as it is (owner, 27 Nov 2026: "I will send the email again ... I want to attach the photos"). */
+  sendAgain?: boolean;
   /** An employee's own record, shown beside them: blank for family and for someone with no record. */
   hireDate?: string | null;
   areaName?: string | null;
+  /** An addition only: what Libano-Suisse's sheet still lacks for this person (`libanoAdditionGaps`). Anything here
+   * and the person cannot be ticked, exported or sent (owner, 27 Nov 2026, rule 1). */
+  missing?: string[];
 };
 
 /**
@@ -160,7 +171,13 @@ export type MedicalInsuranceActions = {
   exceptions: KeptException[];
 };
 
+/**
+ * Covered on that day or after it. Cover ended on its own first day was never in force (`wasNeverInForce`), so it is
+ * not open even when that first day is still to come: a joiner who declined before 1 December, ended on 1 December,
+ * stayed on the remove list however often End cover was pressed (owner, 27 Nov 2026: Abdelrahman El-Shemy).
+ */
 function isOpenOn(member: MemberFacts, day: string): boolean {
+  if (wasNeverInForce(member)) return false;
   return !member.coverageEnd || member.coverageEnd >= day;
 }
 
@@ -252,6 +269,8 @@ export function buildMedicalInsuranceActions(input: {
 
     const employee = member.hrId ? employeesByHrId.get(member.hrId) : undefined;
     if (!employee) {
+      // Kept on as someone covered who is not a Phoenix employee: nothing left to ask about them.
+      if (member.outsideStaff && !member.hrId) continue;
       actions.push({
         ...base,
         effectiveOn: member.coverageStart,
@@ -260,6 +279,7 @@ export function buildMedicalInsuranceActions(input: {
         key: `review:${member.id}`,
         kind: "review",
         lineName: null,
+        noRecord: !member.hrId,
         reason: "On the policy with no Phoenix employee record",
         timing: "now",
       });

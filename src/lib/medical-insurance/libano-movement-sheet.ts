@@ -28,7 +28,7 @@ import JSZip from "jszip";
 import { LIBANO_TABLE_OF_BENEFITS } from "./benefits";
 import type { MedicalInsuranceCategory } from "./cost";
 import { LIBANO_GRACE_PERIOD_DAYS } from "./deletion-day";
-import { splitLibanoName, type LibanoMemberLine } from "./workbooks";
+import { libanoNameParts, type LibanoMemberLine } from "./workbooks";
 
 export const LIBANO_MOVEMENT_TEMPLATE_PATH = join("assets", "medical-insurance", "libano-additions-deletions.xlsx");
 
@@ -153,7 +153,7 @@ const sexLetter = (gender: string | null | undefined): Cell => {
 function fillAdditions(sheet: SheetXml, rows: readonly LibanoMemberLine[]): void {
   rows.forEach((line, index) => {
     const r = FIRST_ROW + index;
-    const name = splitLibanoName(line.fullName);
+    const name = libanoNameParts(line);
     const [year, month, date] = (line.birthDate ?? "").slice(0, 10).split("-").map(Number);
     const born = Number.isFinite(year) && Number.isFinite(month) && Number.isFinite(date) && year > 0;
     sheet.set(`B${r}`, { text: LIBANO_BRANCH_NAME });

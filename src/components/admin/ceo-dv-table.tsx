@@ -79,7 +79,7 @@ export function CeoDvTable({
               { key: "manager",       label: "Manager" },
               { key: "role",          label: "Role" },
               { key: "line",          label: "Line" },
-              { key: "distinct_mrs",  label: "Distinct MRs",       numeric: true },
+              { key: "distinct_mrs",  label: "Reps double-visited", numeric: true },
               { key: "over_focused",  label: "Over-Focused MRs",   numeric: true },
               { key: "neglected",     label: "Neglected MRs",      numeric: true },
               { key: "neglect_pct",   label: "Neglect %" },
@@ -100,8 +100,8 @@ export function CeoDvTable({
       <div className="hidden md:block">
         <table className="w-full table-fixed border-collapse text-xs">
           <colgroup>
-            <col className="w-[28%]" />
-            <col className="w-[8%]" />
+            <col className="w-[22%]" />
+            <col className="w-[14%]" />
             <col className="w-[16%]" />
             <col className="w-[22%]" />
             <col className="w-[12%]" />
@@ -110,7 +110,8 @@ export function CeoDvTable({
           <thead>
             <tr className="bg-slate-900 text-left">
               <SortableTh label="Manager · role" sortKey="managerName"        sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-sm font-black uppercase tracking-[0.12em] text-white" />
-              <SortableTh label="MRs"          sortKey="distinctMrs"        sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-sm font-black uppercase tracking-[0.12em] text-white text-right" align="right" />
+              {/* Distinct reps this manager double-visited in the window — "MRs" alone read as his team size. */}
+              <SortableTh label="Reps double-visited" sortKey="distinctMrs"        sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-sm font-black uppercase tracking-[0.12em] text-white text-right" align="right" />
               <SortableTh label="Over-Focused" sortKey="overFocusedMrCount" sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-sm font-black uppercase tracking-[0.12em] text-amber-300 text-right" align="right" />
               <SortableTh label="Neglected · %" sortKey="neglectedMrCount"   sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-sm font-black uppercase tracking-[0.12em] text-rose-300 text-right" align="right" />
               <SortableTh label="Last DV"      sortKey="daysSinceLastDv"    sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-sm font-black uppercase tracking-[0.12em] text-white text-right" align="right" />
@@ -181,7 +182,7 @@ export function CeoDvTable({
               <p className="text-sm font-semibold text-slate-900">{row.managerName}</p>
               <p className="text-slate-500">{[codeOrWords(row.roleCode), row.lineName].filter(Boolean).join(" · ") || "—"}</p>
               <p className="text-slate-700">
-                {row.distinctMrs} MRs · {row.overFocusedMrCount} over-focused · {row.neglectedMrCount ?? "—"} neglected ({pct(row.neglectIndex)})
+                {row.distinctMrs} reps double-visited · {row.overFocusedMrCount} over-focused · {row.neglectedMrCount ?? "—"} neglected ({pct(row.neglectIndex)})
               </p>
               <p className="text-slate-700">
                 Last DV {days(row.daysSinceLastDv)} · Coverage {row.coveragePct != null ? `${Math.round(row.coveragePct)}%` : "—"}

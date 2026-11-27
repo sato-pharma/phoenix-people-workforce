@@ -8,7 +8,8 @@ import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { SortableTh, TableSearchInput } from "@/components/ui/sortable-table";
 import { useSortableTable, visibleMax } from "@/components/ui/use-sortable-table";
 
-type RegionRow  = { key: string; label: string; totalValue: number; totalQty: number };
+// Value only: a region's units would add different products together (owner rule).
+type RegionRow  = { key: string; label: string; totalValue: number };
 type ProductRow = { key: string; label: string; totalValue: number; totalQty: number; line: string | null };
 
 function egp(v: number) {
@@ -23,7 +24,6 @@ function RegionTable({ rows, period }: { rows: RegionRow[]; period: string | nul
     columns: [
       { key: "label",      accessor: (r) => r.label,      type: "string", defaultDir: "asc" },
       { key: "totalValue", accessor: (r) => r.totalValue, type: "number" },
-      { key: "totalQty",   accessor: (r) => r.totalQty,   type: "number" },
     ],
     searchAccessors: [(r) => r.label],
     initialSort: { key: "totalValue", dir: "desc" },
@@ -46,35 +46,31 @@ function RegionTable({ rows, period }: { rows: RegionRow[]; period: string | nul
           columns={[
             { key: "label",      label: "Region" },
             { key: "totalValue", label: "Value (EGP)", numeric: true },
-            { key: "totalQty",   label: "Qty",         numeric: true },
             { key: "share",      label: "Share %" },
           ]}
           rows={rows.map((r) => ({
             label:      r.label,
             totalValue: r.totalValue,
-            totalQty:   r.totalQty,
             share:      grandTotal > 0 ? `${((r.totalValue / grandTotal) * 100).toFixed(1)}%` : "—",
           }))}
         />
       </div>
       <table className="w-full table-fixed border-collapse text-xs">
         <colgroup>
-          <col className="w-[40%]" />
-          <col className="w-[24%]" />
-          <col className="w-[16%]" />
+          <col className="w-[52%]" />
+          <col className="w-[28%]" />
           <col className="w-[20%]" />
         </colgroup>
         <thead>
           <tr className="bg-slate-900 text-left">
             <SortableTh label="Region" sortKey="label"      sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-phx-sm font-black uppercase tracking-[0.12em] text-white" />
             <SortableTh label="Value"  sortKey="totalValue" sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-phx-sm font-black uppercase tracking-[0.12em] text-white" align="right" />
-            <SortableTh label="Qty"    sortKey="totalQty"   sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-phx-sm font-black uppercase tracking-[0.12em] text-white" align="right" />
             <th className="px-3 py-2 text-right text-phx-sm font-black uppercase tracking-[0.12em] text-white">Share</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
           {table.rows.length === 0 ? (
-            <tr><td colSpan={4} className="px-3 py-4 text-center text-slate-400">No data.</td></tr>
+            <tr><td colSpan={3} className="px-3 py-4 text-center text-slate-400">No data.</td></tr>
           ) : table.rows.map((row) => (
             <tr key={row.key} className="bg-white hover:bg-slate-50">
               <td className="px-3 py-2">
@@ -86,7 +82,6 @@ function RegionTable({ rows, period }: { rows: RegionRow[]; period: string | nul
                 </div>
               </td>
               <td className="px-3 py-2 text-right font-bold text-slate-900">{egp(row.totalValue)}</td>
-              <td className="px-3 py-2 text-right text-slate-600">{row.totalQty.toLocaleString("en-US")}</td>
               <td className="px-3 py-2 text-right text-slate-500">
                 {grandTotal > 0 ? `${((row.totalValue / grandTotal) * 100).toFixed(1)}%` : "—"}
               </td>

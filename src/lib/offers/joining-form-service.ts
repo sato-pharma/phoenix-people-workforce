@@ -16,6 +16,7 @@ import { attachHiringDocumentFiles } from "@/lib/hiring-documents/service";
 import { joiningFormMailboxAddress } from "@/lib/new-hire-mailbox/address";
 import { openAndAnnounceNewHireMailboxes } from "@/lib/new-hire-mailbox/notify";
 import { logError, logInfo } from "@/lib/observability/log";
+import { readAndSaveIdCardName } from "@/lib/employees/id-card-name";
 import { readOfferAcceptToken } from "@/lib/offers/accept-token";
 import { announceJoiningFormBlocked } from "@/lib/offers/accepted-offer-alert";
 import { buildOfferHireDraft } from "@/lib/offers/hire-draft";
@@ -771,6 +772,10 @@ export async function submitJoiningForm(
   // its own failure exactly as before (src/lib/employees/hire-handoff.ts).
   const idPhotosFiled = await fileJoiningIdPhotos(hrId, idPhotos);
   const facePhotoOutcome = facePhoto ? await fileJoiningFacePhoto(hrId, facePhoto) : null;
+  // The name printed on the card, read once the reply has gone (owner, 27 Nov 2026): Libano-Suisse's Additions sheet
+  // takes its first, father and last name from it (src/lib/employees/id-card-name.ts). A card that cannot be read
+  // costs the acceptance nothing; the Medical Insurance add list flags him and reads it again.
+  if (idPhotosFiled) await afterResponse("joining_form_id_card_name", () => readAndSaveIdCardName(hrId, "joining-form"));
   const handoff = startHireHandoff(hrId, "joining_form");
   try {
     const hire = {

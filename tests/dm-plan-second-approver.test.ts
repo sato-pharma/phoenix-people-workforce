@@ -93,5 +93,8 @@ export function runDmPlanSecondApproverTests() {
   const hub = readFileSync(new URL("../src/lib/approvals-hub/service.ts", import.meta.url), "utf8");
   assert.ok(hub.includes("planHasSecondApprover("), "the approvals hub must let Ali open and see these plans");
   const command = readFileSync(new URL("../src/lib/ceo/command-center.ts", import.meta.url), "utf8");
-  assert.ok(command.includes("planHasSecondApprover("), "the CEO pending count must not include plans waiting on Ali");
+  // The landing's plan count is the viewer's own turn, read through the approvals hub's responder
+  // path (owner, 27 Nov 2026), which resolves the second-approver stage itself.
+  assert.ok(command.includes("getPlanAwaitingBadge(access)"), "the CEO pending count must be the viewer's own turn, which excludes plans waiting on Ali");
+  assert.ok(!command.includes(`from("employee_plan_headers")`), "the landing must not count every plan at manager_approved itself");
 }

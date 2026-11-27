@@ -1820,6 +1820,20 @@ function buildKpis(rows: DoubleVisitDbRow[]): DoubleVisitKpis {
 }
 
 /**
+ * The day a double-visit range's ages are measured from: TODAY (Cairo) when the range runs past
+ * today, otherwise the range's own last day.
+ *
+ * The default range is the whole calendar month, so its `dateTo` is the month's LAST day. Measured
+ * from that, a manager who rode along this morning read "3 days" on 27 November (owner, 27 Nov
+ * 2026: every "Last DV" on the overview was 3 days too old), and the 90-day rep windows reached
+ * three days into the future. A range that ended in the past keeps its own end, so a report on a
+ * closed month still reads as of that month.
+ */
+export function doubleVisitAsOfDate(dateTo: string, todayCairo: string): string {
+  return dateTo > todayCairo ? todayCairo : dateTo;
+}
+
+/**
  * The scoped heart of the dashboard — pure, no IO — exported so the downward-rule test drives the
  * SERVICE's own construction rather than a copy of it (a test that rebuilt this pipeline itself is
  * how an earlier attempt stayed green while the idle-manager defect shipped).
@@ -1838,8 +1852,12 @@ export function buildScopedDoubleVisitDashboardCore(input: {
   employees: EmployeeDirectoryRow[];
   rows: DoubleVisitDbRow[];
   scopeOptions?: DoubleVisitScopeOptions;
+  /** Today's Cairo date — injectable for tests; defaults to the real clock. */
+  today?: string;
 }) {
   const { access, dateTo, employees, rows, scopeOptions } = input;
+  // The day every "days since the last double visit" and every 90-day rep window is measured from.
+  const asOfDate = doubleVisitAsOfDate(dateTo, input.today ?? todayIso());
   const scopedEmployees = filterEmployeesForDoubleVisitAccess(employees, access, scopeOptions);
   const scopedRows = filterRowsForAccess(rows, access, employees, scopeOptions);
   // Visitor ROLE classification reads the FULL directory, never the scope. Built from the scope it
@@ -1864,10 +1882,10 @@ export function buildScopedDoubleVisitDashboardCore(input: {
     if (!row.visited_employee_hr_id) return true;
     return !managerHrIdKeys.has(canonicalHrIdKey(row.visited_employee_hr_id) ?? "");
   });
-  const mrScores = buildMrScores(filteredRows, scopedEmployees, dateTo);
+  const mrScores = buildMrScores(filteredRows, scopedEmployees, asOfDate);
   const executiveReports = buildExecutiveReports(mrScores, scopedEmployees, filteredRows);
   const kpis = buildKpis(filteredRows);
-  const { summaries: managerSummaries, visitedKeysByManager } = buildManagerSummariesDetailed(filteredRows, scopedEmployees, dateTo);
+  const { summaries: managerSummaries, visitedKeysByManager } = buildManagerSummariesDetailed(filteredRows, scopedEmployees, asOfDate);
   const executiveSummary = buildExecutiveSummary(managerSummaries, mrScores, kpis, scopedEmployees, visitedKeysByManager);
   return { executiveReports, executiveSummary, filteredRows, kpis, managerSummaries, mrScores, scopedEmployees };
 }
@@ -1957,6 +1975,12 @@ export async function getDoubleVisitDashboardData(input: {
       byLine: buildHeatmapRows(mrScores, "lineName", lineBuckets),
     },
     kpis: kpisValue,
+    // The double-visitors on this board who have LEFT — the same leaver rule as the dropdown above,
+    // handed to a consumer that lists managers (the CEO / System Administrator table) so it drops
+    // them by that rule instead of keeping a second copy of it.
+    leaverManagerHrIds: managerSummaries
+      .filter((summary) => isLeaverVisitor(summary.managerHrId))
+      .map((summary) => summary.managerHrId),
     managerSummaries,
     mrScores,
     neglectedMrs: mrScores.filter((score) => score.band !== "healthy"),

@@ -28,6 +28,7 @@ import type {
   FinanceCommittedMonth,
   FinancePayrollRun,
 } from "@/lib/finance/command-center";
+import { marketingSpendToPay, netPayrollTile } from "@/lib/finance/command-center";
 
 /**
  * The identity band's subject. Back, and it is the ORIGINAL band, not the thin strip.
@@ -632,15 +633,18 @@ function MoneyInMotionTiles({
   audience: "admin" | "finance";
   data: FinanceCommandCenterData;
 }) {
-  const latest = data.payroll.committed[data.payroll.committed.length - 1] ?? null;
+  // The net and the people it was paid to come from ONE batch, never October's net beside today's
+  // headcount; and the spend to pay includes the requests standing at his Finance Execution step.
+  const netPayroll = netPayrollTile(data);
+  const toPay = marketingSpendToPay(data.marketing);
   const actionTotal = financeActionTotal(data);
   return (
     <div className="grid gap-2 p-5 sm:grid-cols-2 lg:grid-cols-4">
       <MetricTile
         icon={<Wallet aria-hidden="true" className="h-3.5 w-3.5" />}
         label="Net payroll"
-        sub={`${n(data.headcount.payrollEligible)} payroll-eligible`}
-        value={egp(latest?.net ?? data.headcount.standingNet)}
+        sub={netPayroll.sub}
+        value={egp(netPayroll.net)}
       />
       <MetricTile
         icon={<ScrollText aria-hidden="true" className="h-3.5 w-3.5" />}
@@ -666,12 +670,12 @@ function MoneyInMotionTiles({
         icon={<Megaphone aria-hidden="true" className="h-3.5 w-3.5" />}
         label="Marketing spend to pay"
         sub={
-          data.marketing.dueUnexecutedCount > 0
-            ? `${n(data.marketing.dueUnexecutedCount)} approved, not executed`
+          toPay.count > 0
+            ? `${n(toPay.count)} waiting on Finance to pay`
             : "Nothing due"
         }
-        tone={data.marketing.dueUnexecutedCount > 0 ? "amber" : "emerald"}
-        value={egp(data.marketing.dueUnexecutedValue)}
+        tone={toPay.count > 0 ? "amber" : "emerald"}
+        value={egp(toPay.value)}
       />
     </div>
   );
@@ -1087,7 +1091,7 @@ export function FinanceCommandCenter({
           <PipelineStat
             label="Oldest unbooked"
             muted={data.directOrders.awaitingCount === 0}
-            sub={data.directOrders.awaitingCount > 0 ? "since approval" : "nothing waiting"}
+            sub={data.directOrders.awaitingCount > 0 ? "since collection" : "nothing waiting"}
             tone={unbookedTone(data.directOrders.awaitingCount, data.directOrders.awaitingOldest)}
             value={
               daysSince(data.directOrders.awaitingOldest) === null
@@ -1145,10 +1149,10 @@ export function FinanceCommandCenter({
           />
           <PipelineStat
             label="Due to pay"
-            muted={data.marketing.dueUnexecutedCount === 0}
-            sub={`${n(data.marketing.dueUnexecutedCount)} not executed`}
-            tone={data.marketing.dueUnexecutedCount > 0 ? "rose" : "slate"}
-            value={egp(data.marketing.dueUnexecutedValue)}
+            muted={marketingSpendToPay(data.marketing).count === 0}
+            sub={`${n(marketingSpendToPay(data.marketing).count)} not executed`}
+            tone={marketingSpendToPay(data.marketing).count > 0 ? "rose" : "slate"}
+            value={egp(marketingSpendToPay(data.marketing).value)}
           />
           <PipelineStat
             label="Executed by you"
