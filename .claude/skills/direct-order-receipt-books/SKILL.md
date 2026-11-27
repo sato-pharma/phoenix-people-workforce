@@ -112,6 +112,26 @@ the browser on another machine.
   - **Photocopy one page of the printer's proof BEFORE the full run** and confirm the hidden words appear.
   - 🔴 This physical copier test has NOT been done yet.
 
+## 🔴 Two originals and a copy (owner, 27 Nov 2026 ~17:10) — the design every sheet moves to
+
+After Dr Anwar asked what the original and Copy 2 were for, the owner settled it: «نخليه 3 نسخ… نسخة في الدفتر
+ونسخة يشحنها لأحمد المراغي ونسخة مع الصيدلي», then the final design:
+
+- **Original 1 — the manager's custody page.** He signs that he received the goods (date, value), that they are
+  in his custody and that not delivering them is a breach of trust; the law articles are printed on it (drafted
+  from Labour Law 14/2025 and Penal Code art. 341, strong, for the lawyer to approve — never an invented article
+  number). It stays in the book; its photo goes on Phoenix.
+- **Original 2 — the customer's delivery page.** No manager details. The customer signs and stamps it; its carbon
+  copy is torn off for the customer. The manager keeps Original 2 and enters its photo.
+- **Due dates** count from the day after Ahmed El Maraghy records the warehouse exit: Original 1 in 3 calendar
+  days, Original 2 in 6 working days, Friday off. Phoenix verifies both, and a photo printed from Phoenix shows
+  «مُصوَّر — غير صالح», so Finance prints the "verified on Phoenix" page instead.
+- Phoenix side: PR 844 (`docs/direct-order-receipt-books.md`, "Two originals and a copy").
+- **Still to do on paper:** redesign the sheets in `_generator/build.mjs` (and the copy in `generator/`), rebuild
+  the 16 books in a staging folder WITH a copy of `register.json` (all 800 codes, register sha unchanged), the
+  sample (`--sample-codes=TMDD9C,MVY378`), the guides (`guides.mjs`), both videos and the email draft; the
+  Copy 1 / Copy 2 wording below is the OLD design until then.
+
 ## Phoenix (PR 812, live since 27 Nov 00:23)
 
 - Tables `direct_order_receipt_books` and `direct_order_receipts`. All 800 codes are seeded on production.
@@ -120,7 +140,7 @@ the browser on another machine.
   hands.
 - **Finance's desk:** Direct Orders → Receipt Books, at `/admin/direct-orders/receipts`. It shows only for Ahmed
   El Maraghy and the Super Admin. It has six parts:
-  - "Approved with no receipt": red after 7 days (14 until 27 Nov).
+  - "Approved with no receipt": red once an original is past its due date (PR 844; before it, 7 days from approval).
   - "Approved with no receipt book" (PR 829, owner 27 Nov: "Flag them"): from the first hand-out on, every
     approved order raised by someone who held no book that day. Nothing before the first hand-out is listed.
   - The 16 books, with these buttons:

@@ -4,7 +4,9 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
   askDirectOrderWithoutReceipt,
   decideDirectOrderWithoutReceipt,
+  recordDirectOrderDelivery,
   recordDirectOrderReceipt,
+  recordDirectOrderWarehouseExit,
   releaseDirectOrderReceipt,
 } from "@/lib/direct-orders/receipt-books";
 import { toApiError } from "@/lib/http/api-errors";
@@ -14,7 +16,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Enter the delivery receipt that proves this order (owner, 26 Nov 2026: "Build the check").
+ * Enter the delivery receipt that proves this order (owner, 26 Nov 2026: "Build the check"). Every
+ * receipt has two originals and a copy (owner, 27 Nov 2026): with no action, Original 1 — the
+ * manager's custody page, which claims the receipt; `{ action: "delivery", serial, code, photoDataUrl }`
+ * adds Original 2 — the page the customer signed and stamped; `{ action: "warehouse_exit", exitDate }`
+ * is Finance recording the day the goods left the warehouse, from which both due dates count.
  *
  * Every rule lives in the service — the requester or Finance only, the code must match the serial,
  * the book must be issued to the requester, and the receipt is claimed once. This route decides nothing.
@@ -40,6 +46,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       serial?: unknown;
       code?: unknown;
       photoDataUrl?: unknown;
+      exitDate?: unknown;
     };
     if (body.action === "ask_without_receipt") {
       const asked = await askDirectOrderWithoutReceipt(access, { requestId: id, reason: body.reason ?? null });
@@ -48,6 +55,19 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (body.action === "decide_without_receipt") {
       const decided = await decideDirectOrderWithoutReceipt(access, { requestId: id, decision: body.decision ?? null, note: body.note ?? null });
       return NextResponse.json({ success: true, message: decided.message });
+    }
+    if (body.action === "warehouse_exit") {
+      const recorded = await recordDirectOrderWarehouseExit(access, { requestId: id, exitDate: body.exitDate ?? null });
+      return NextResponse.json({ success: true, message: recorded.message });
+    }
+    if (body.action === "delivery") {
+      const delivered = await recordDirectOrderDelivery(access, {
+        requestId: id,
+        serial: body.serial ?? null,
+        code: body.code ?? null,
+        photoDataUrl: body.photoDataUrl ?? null,
+      });
+      return NextResponse.json({ success: true, message: delivered.message, serial: delivered.serialLabel });
     }
     if (body.action === "release") {
       const released = await releaseDirectOrderReceipt(access, { requestId: id, reason: body.reason ?? null });

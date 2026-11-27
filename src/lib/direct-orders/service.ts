@@ -4434,8 +4434,8 @@ export async function submitDirectOrder(
   let pharmacy = pharmacies.get(input.pharmacyId) ?? null;
   if (!pharmacy) badRequest("Venue not found — pick an existing one or add a new venue first.");
 
-  // Refused before anything is written (owner, 27 Nov 2026): the manager has a delivery receipt past
-  // its 7 days, or this pharmacy has paid nothing on an earlier order of a product in this basket.
+  // Refused before anything is written (owner, 27 Nov 2026): the manager has an original receipt past
+  // its due date, or this pharmacy has paid nothing on an earlier order of a product in this basket.
   // A part-paid product or a late payer climbs, and only the CEO's own approval finishes it.
   await assertDirectOrderMayBeRaised({
     requesterHrId: actorHrId,
@@ -4830,7 +4830,7 @@ export async function reviseDirectOrder(
   const salesValue = totalSalesValue;
 
   // Sent back up the chain is raised again (owner, 27 Nov 2026): the same refusals as a new order — a
-  // delivery receipt of the requester's past its 7 days, or nothing paid on this product before.
+  // receipt original of the requester's past its due date, or nothing paid on this product before.
   if (!before.reversalOfRequestId) {
     await assertDirectOrderMayBeRaised({
       requesterHrId: before.requesterHrId,
@@ -5042,7 +5042,7 @@ export async function decideDirectOrder(
     // What the pharmacy still owes, read at the last approval (owner, 27 Nov 2026): a product it has
     // paid nothing on is refused, and a part-paid product or a late payer is finished only by the
     // CEO's own approval, never the Super Admin answering for that rung. And the manager who raised it
-    // must have no delivery receipt past its 7 days — this catches an order already climbing when the
+    // must have no receipt original past its due date — this catches an order already climbing when the
     // receipt went late, or revived from hold. A reversal undoes an order, so neither holds it.
     if (!request.reversalOfRequestId) {
       const items = (await loadDirectOrderItemsForRequests([request.id])).get(request.id) ?? [];

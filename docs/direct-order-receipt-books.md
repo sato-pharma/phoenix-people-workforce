@@ -46,9 +46,10 @@ code is never written anywhere.
 - From the first hand-out of any book (`receiptRolloutStart`), an approved order raised by someone holding NO
   book that day is `no_book`. It is listed on Finance's Receipt Books desk under "Approved with no receipt
   book", never silently excused. Nothing approved before the first hand-out is listed.
-- An order still owing a receipt 7 days after approval turns red on the desk, and the manager who raised it
-  cannot raise a new order until it is entered (see the last section). Each book's line on the desk says
-  how many approved orders still owe a receipt from it.
+- An order owes nothing until Finance records its warehouse exit (`awaiting_exit`). From the day after the
+  exit, Original 1 is due in 3 calendar days and Original 2 in 6 working days (see the last section). A late
+  original turns the order red on the desk, and the manager who raised it cannot raise a new order until it is
+  entered. Each book's line on the desk says how many approved orders still owe a receipt from it.
 
 ## Who does what
 
@@ -107,22 +108,54 @@ through Ahmed El Maraghy. He chose "Anwar approves in Phoenix".
   A refused order may be asked again, as a new row. Every ask and decision writes an audit row and an order
   event (`receipt_waiver_asked`, `receipt_waiver_approved`, `receipt_waiver_refused`).
 
-## A late receipt stops its manager's next order (27 Nov 2026)
+## Two originals and a copy, due from the warehouse exit (27 Nov 2026)
+
+The owner, 27 Nov 2026, after Dr Anwar asked what the original and the copy were for: «نخليه 3 نسخ… نسخة في
+الدفتر ونسخة يشحنها لأحمد المراغي ونسخة مع الصيدلي», then the final design: every order has **two originals and
+one copy**.
+
+- **Original 1 — the custody page.** The manager signs that he received the goods (date, value), that they are
+  in his custody and that not delivering them is a breach of trust; the law is printed on it. It stays in the
+  book and its photo is entered in Phoenix (`recordDirectOrderReceipt`, which claims the receipt for the order;
+  the photo path holds `-custody-`).
+- **Original 2 — the customer's page.** No manager details. The customer signs and stamps it; the carbon copy
+  under it is torn off for the customer. The manager keeps Original 2 and enters its photo
+  (`recordDirectOrderDelivery`): the same serial and code as Original 1, entered once, refused before Original 1.
+  It is a compare-and-set on the serial, state `used`, the order, and `delivery_photo_storage_path is null`.
+- **The warehouse exit.** Finance alone records the day the goods left the warehouse
+  (`recordDirectOrderWarehouseExit`, table `direct_order_warehouse_exits`, one row per order). Never before the
+  approval day, never a day still to come. A correction overwrites the day; the old day is kept in the audit row
+  and the order event `warehouse_exit_recorded` (`previousDate`).
+- **Due dates** (`receiptDueDates`, `src/lib/direct-orders/receipt-rules.ts`): the count starts the day after the
+  exit. Original 1 is due 3 calendar days later (`CUSTODY_DUE_DAYS`); Original 2 is due 6 working days later,
+  Friday off (`DELIVERY_DUE_WORKING_DAYS`). Example: exit Thursday 10 Dec 2026 → Original 1 due 13 Dec, Original 2
+  due 17 Dec. Days are Cairo dates.
+- **Standing:** `awaiting_exit` until the exit is recorded (it holds nobody); then `waiting` or `overdue`;
+  `has_receipt` only when both originals are in.
+- **The verified print** (`/print/direct-order-receipt/<id>`, `loadDirectOrderReceiptPrint`): Finance only. It
+  shows both originals with the order, the exit day and who entered each, so a photo Ahmed prints from Phoenix is
+  marked as verified, while a printout of a photo alone is not an original.
+- **The undo** (`direct_order_release_receipt`) clears both originals; the release row keeps both photo paths.
+- Migration `20261127173244_direct_order_receipt_two_originals.sql`: the exits table (service role only), the four
+  `delivery_*` columns on receipts (check `direct_order_receipts_delivery`) and on releases, the guard and the
+  release function replaced.
+
+## A late original stops its manager's next order (27 Nov 2026)
 
 The owner, 27 Nov 2026: «the 14 days طبعا يقلوا حد اقصى اسبوع ولا ينفذ له اوردارات اخرى فى حاله عدم رفعه فى خلال
-المده المحدده». Asked who is blocked, he chose "The manager who raised it".
+المده المحدده». Asked who is blocked, he chose "The manager who raised it". The same day the 7 days from approval
+were replaced by the two due dates above.
 
-- `RECEIPT_OVERDUE_DAYS` is **7** (it was 14). From day 7 after approval the order is `overdue`.
-- `listLateReceiptsForRequester` lists one manager's `overdue` orders. While any is listed, `submitDirectOrder`
+- `listLateReceiptsForRequester` lists one manager's orders with an original past its due date, each with
+  which original and how many days late. While any is listed, `submitDirectOrder`
   refuses a new order from that manager, for any pharmacy, before anything is written, and so does
-  `reviseDirectOrder` for an order sent back and resubmitted. The refusal names how many, the oldest and its
-  pharmacy. The last approval refuses too (`assertRequesterHasNoLateReceipts`), so an order already climbing when
-  the receipt went late, or revived from hold, is not finished until the receipt is entered.
-- Not a block: a `no_book` order (Finance's flag), an order approved from a book Finance has since recorded lost
-  (its receipt can no longer be entered, so it stays on Finance's desk), an order the CEO approved to stand
-  without a receipt, an order that has its receipt, and a reversal. An ask still waiting for the CEO does
-  **not** lift the block.
-- The manager's orders are read in batches of 100 ids: about 400 in one request overflow the address and read
-  back empty with no error.
-- The printed area managers' guide and the videos still say "within 14 days". Update them with the owner's edits.
-- Pinned by `tests/direct-order-payment-standing.test.ts`.
+  `reviseDirectOrder` for an order sent back and resubmitted. The refusal names how many, the longest overdue,
+  which original and its pharmacy. The last approval refuses too (`assertRequesterHasNoLateReceipts`), so an
+  order already climbing when the receipt went late, or revived from hold, is not finished until it is entered.
+- Not a block: an order still waiting for its warehouse exit, a `no_book` order (Finance's flag), an order
+  approved from a book Finance has since recorded lost (its receipt can no longer be entered, so it stays on
+  Finance's desk), an order the CEO approved to stand without a receipt, an order that has both originals, and a
+  reversal. An ask still waiting for the CEO does **not** lift the block.
+- The manager's orders, and the exits, are read in batches of 100 ids: about 400 in one request overflow the
+  address and read back empty with no error.
+- Pinned by `tests/direct-order-payment-standing.test.ts` and `tests/direct-order-receipt-books.test.ts`.
