@@ -100,7 +100,7 @@ export type TerritoryMonthPresence = {
  * pharmacy by name and town, whose listing the rep checks before he drives.
  */
 export type TerritoryPharmacyDirections = {
-  kind: "confirmed_on_site" | "google_search";
+  kind: "confirmed_on_site" | "google_place" | "google_search";
   url: string;
   /** What Google is asked for — null for a confirmed point. */
   searchText: string | null;

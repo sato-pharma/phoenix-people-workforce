@@ -43,14 +43,25 @@ names wrap and are never cut.
 
 ## The pharmacy name opens Google Maps (27 Nov 2026)
 
-The owner asked for the pharmacy name to open Google Maps, and for it never to send a rep to the wrong place. A name is a link in two cases:
+The owner asked for the pharmacy name to open Google Maps, and for it never to send a rep to the wrong place. A name is a link in three cases, tried in this order:
 
 1. **Confirmed on site** — a point a rep captured at the shop (a validated marketing pharmacy, an approved direct-order venue with its live photo GPS first, or an active Phoenix CRM pharmacy place) tied to that distributor customer code. Exact directions to the point.
-2. **Google Maps search by name** — every other pharmacy with a usable name opens a Google Maps search for "صيدلية <name> <brick town>". The sheet marks ن, ن.م, نقدي and اجل and the dashes are removed; "صيدلية" is not doubled; the town is added unless the name has it. The note under the name tells the rep to check the listing name before he goes.
+2. **The pharmacy's own Google listing** — a top pharmacy Phoenix matched to its exact Google Maps listing (below). The link opens that listing; the note says so.
+3. **Google Maps search by name** — every other pharmacy with a usable name opens a Google Maps search for "صيدلية <name> <brick town>". The sheet marks ن, ن.م, نقدي and اجل and the dashes are removed; "صيدلية" is not doubled; the town is added unless the name has it. The note under the name tells the rep to check the listing name before he goes.
 
 **Why not the sheet address.** The first version routed to the Ibn Sina family or POS address (his first ruling). On the preview he reported "many of the clickables customers when press google cant find a location". Measured on 30 linked pharmacies in Cairo 1 and Giza 1: the cut-off address (about 30 characters) landed on a landmark for all 30, once 146 km away; a name search near the brick put the right shop first for about 22 of 30.
 
-**Why not Phoenix matching each shop.** That needs Google’s paid place search: about 32 dollars per 1,000 lookups after 5,000 free a month, about 1,000 dollars for the ~35,000 drilldown pharmacies. He answered "find a way to keep it free". The search link calls no Google service; it runs on the rep’s phone.
+**Why not Phoenix matching every shop.** That needs Google’s place search: about 32 dollars per 1,000 lookups after 5,000 free a month, about 1,000 dollars for the ~35,000 drilldown pharmacies. He answered "find a way to keep it free". The search link calls no Google service; it runs on the rep’s phone.
+
+## The top pharmacies open their own Google listing (27 Nov 2026)
+
+Asked which upgrade to build first, he chose "Free top-2,616 match": the pharmacies carrying 80% of sales value (the three Cairo months before the current one; about 3,000 distributor customers) are looked up ONCE in Google’s place search, inside the free monthly allowance, and the listing’s place id is kept. Their link then opens the shop itself (`https://www.google.com/maps/search/?api=1&query=<search>&query_place_id=<id>`).
+
+**Free means capped.** Phoenix CRM spends from the same 5,000 free searches (about 1,700 by 27 Nov 2026), so `scripts/territory-match-pharmacy-places.ts` counts its own lookups this Cairo month from `looked_up_at` and stops at 2,000 (never above 3,000, whatever `--budget` says). What is left runs on the 1st of the next month. Run it from the code (`--apply --limit <n> --log <file>`); without `--apply` it asks Google nothing.
+
+**Every doubt is a miss** (his rule: "correct work not make reps waste time and lost"). A wrong match sends a rep to the wrong shop with no list to notice it in; a miss only leaves the search. The rule, `pharmacy-place-match.ts` (pure): the listing is within 5 km of the brick centre; every word naming the listing is in the pharmacy’s name (one letter off only from five letters: احمد is never محمد); the name’s first word is in the listing and, the town set aside, two of its words (one for a one-word name); the listing is not named only with the commonest given names; both are the same kind of place (pharmacy, distributor, hospital, nursery, centre), and a pharmacy is matched only to a listing that says it is one (never the university, cooperative or company the sheet’s pharmacy sits in, never a “دكتور …” listing that may be a clinic); "عبد …" and "ابو …" count as one name ("عبد الرحمن غلوش" is never "د. عبد الرحمن"); and no second listing passes. Two branches of one name are `ambiguous`, never a pick. Google’s listing names are never stored — only the place id, the one Places value an app may keep.
+
+The verdicts are in `territory_pharmacy_place_matches` (RLS on, server only; migration 20261127110514, with `phx_territory_pharmacies_to_match`). The drilldown reads them in `pharmacy-directions-sources.ts` (`loadMatchedPlaces`, chunks of 200 codes, never throws). A matched place is not used when the card’s code comes from two distributors or carries two different place ids; a confirmed point still wins over it. 27 Nov, the month’s 2,000 lookups (sales ranks 1 to 2,052): 434 matched, 80 two or more, 1,486 no match. Every match was read by eye; the pharmacy-word and one-name rules were added after that read caught 42 doubtful ones, and those were set back to no match. The rest of the top 80% (about 1,000) runs on 1 December.
 
 A confirmed point is not used when it is more than 25 km from its brick centre (a mistyped code), when the card’s points are more than 300 m apart, or when the card’s code comes from two distributors (the Ibn Sina channels count as one); the card then gets the search link. A name with fewer than three letters gets no link.
 

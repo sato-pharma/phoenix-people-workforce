@@ -212,6 +212,7 @@ const PINNED = [
   "scripts/sync-runtime-extras.mjs",
   "scripts/sync-worktree-env.mjs",
   "scripts/synthetic-save-report.ts",
+  "scripts/territory-match-pharmacy-places.ts",
   "scripts/vacation-retention-purge.ts",
   "scripts/validate-railway-production-secrets.mjs",
   "scripts/verify-sofico-upload.ts",
