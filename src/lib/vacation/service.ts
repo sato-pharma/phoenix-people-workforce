@@ -78,6 +78,8 @@ import {
   isHrApproverDirectReport,
   isHrOnlyChain,
   isSequentialWorkflowType,
+  OWN_HR_STEP_COMMENT,
+  ownPendingHrStep,
   resolveActionAvailability,
   resolveActiveStep,
   resolveStageLabel,
@@ -4930,6 +4932,13 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
       }).catch(() => undefined);
     });
   } else if (nextStatus === "pending_hr") {
+    // The HR approver's own request (owner rule, 27 Nov 2026): management has approved it, and the HR
+    // step left is his own — complete it in his name now instead of asking him to acknowledge himself.
+    const ownHrApproval = await completeOwnHrStep(updated.id);
+    if (ownHrApproval) {
+      invalidateExecutiveDashboardCache("leave request decision recorded", ["leave"]);
+      return ownHrApproval;
+    }
     // All management steps done — notify HR and employee, after the reply (deferVacationNotice).
     await deferVacationNotice({
       actorHrId: input.actorHrId,
@@ -4963,6 +4972,43 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
 
   invalidateExecutiveDashboardCache("leave request decision recorded", ["leave"]);
   return updated;
+}
+
+/**
+ * Complete the HR step of a request whose requester IS its HR approver (owner rule, 27 Nov 2026 —
+ * "B-10 is the system administrator account and the one who approves"). Runs only on a sequential
+ * request already at "pending_hr" (every management step approved) whose pending HR step is assigned
+ * to the requester, with any required evidence already accepted. The approval goes through
+ * applyVacationDecisionSequential exactly as his own click would — balance, payment split, event,
+ * audit row and the decision notice — recorded under his HR ID, with OWN_HR_STEP_COMMENT as its
+ * comment. Returns the approved request, or null when the rule does not apply (every other request).
+ *
+ * Exported for scripts/vacation/complete-own-hr-steps.ts, which closed the requests that were already
+ * waiting when the rule landed.
+ */
+export async function completeOwnHrStep(requestId: string): Promise<VacationRequestRecord | null> {
+  const request = await fetchVacationRequestById(requestId);
+  if (!request || request.status !== "pending_hr" || !isSequentialWorkflowType(request.vacationType)) return null;
+  if (!hasAcceptedRequiredEvidence(request)) return null;
+  const steps = await fetchVacationApprovalStepsForRequest(request.id);
+  const ownStep = ownPendingHrStep({ requesterHrId: request.employeeHrId, steps, sameHrId: hrIdsMatch });
+  if (!ownStep) return null;
+  const approved = await applyVacationDecisionSequential({
+    actorHrId: ownStep.approverHrId,
+    actorLoginId: null,
+    decision: "approve",
+    decisionComment: OWN_HR_STEP_COMMENT,
+    request,
+  });
+  await insertVacationEvent({
+    actorHrId: ownStep.approverHrId,
+    actorLoginId: null,
+    eventType: "hr_own_request_auto_acknowledged",
+    message: "The requester is this request's HR approver, so the HR step was completed in the requester's name once management approved.",
+    metadata: { stepKey: ownStep.stepKey, stepOrder: ownStep.stepOrder },
+    requestId: request.id,
+  });
+  return approved;
 }
 
 async function applyVacationDecisionLegacy(input: ApplyVacationDecisionInput) {
