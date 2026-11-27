@@ -83,6 +83,8 @@ function DecisionCell({ item }: { item: LateVisitItem }) {
           {item.decidedByName ? `By ${item.decidedByName}` : null}
           {item.decidedAtText ? `, ${item.decidedAtText}` : null}
         </p>
+        {/* Why Phoenix closed it by itself: the same visit logged again and counted (owner, 27 Nov 2026). */}
+        {item.decisionReason ? <p className="break-words font-bold text-slate-800">{item.decisionReason}</p> : null}
       </div>
     );
   }
@@ -122,12 +124,12 @@ const LIST_TEXT: Record<LateVisitsTab, { title: string; description: string; emp
   waiting: {
     title: "Waiting for your decision",
     description:
-      "Visits a phone sent after their day closed, and visits logged while the phone gave no location, marked No location. Approve enters the visit on the day it was pressed, under the same rules as a missed record; Reject keeps it on file. The person reads only that it was sent for approval.",
+      "Visits a phone sent after their day closed, and visits logged while the phone gave no location, marked No location. Approve enters the visit on the day it was pressed, under the same rules as a missed record; Reject keeps it on file. A visit the person already logged again, and had counted, is closed automatically and moves to Decided with the reason. The person reads only that it was sent for approval.",
     empty: "No late visit waits for you.",
   },
   decided: {
     title: "Decided in the last 30 days",
-    description: "Every late visit you approved or rejected in the last 30 days, newest first.",
+    description: "Every late visit you approved or rejected in the last 30 days, and every copy Phoenix closed because the same visit was logged again and counted, newest first. None of the rejected ones is counted.",
     empty: "Nothing was decided in the last 30 days.",
   },
 };

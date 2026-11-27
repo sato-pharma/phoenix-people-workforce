@@ -6470,6 +6470,7 @@ CREATE FUNCTION public.direct_order_receipts_guard() RETURNS trigger
     AS $$
 declare
   v_book_status text;
+  v_releasing boolean;
 begin
   if tg_op = 'DELETE' then
     raise exception 'A printed receipt is never deleted.' using errcode = 'P0001';
@@ -6480,10 +6481,21 @@ begin
   if old.state = 'voided' and new.state is distinct from 'voided' then
     raise exception 'A cancelled receipt stays cancelled.' using errcode = 'P0001';
   end if;
+  v_releasing := coalesce(current_setting('phoenix.receipt_release', true), '') = old.serial::text;
   if old.state = 'used' and (new.state is distinct from 'used' or new.request_id is distinct from old.request_id) then
-    if coalesce(current_setting('phoenix.receipt_release', true), '') is distinct from old.serial::text then
+    if not v_releasing then
       raise exception 'A used receipt is released from its order only through direct_order_release_receipt.' using errcode = 'P0001';
     end if;
+  end if;
+  if old.state = 'used' and new.state = 'used' and not v_releasing and (
+    new.photo_storage_path is distinct from old.photo_storage_path
+    or (old.delivery_photo_storage_path is not null and (
+      new.delivery_photo_storage_path is distinct from old.delivery_photo_storage_path
+      or new.delivery_entered_at is distinct from old.delivery_entered_at
+      or new.delivery_entered_by_hr_id is distinct from old.delivery_entered_by_hr_id
+    ))
+  ) then
+    raise exception 'An entered original is never replaced; Finance takes the receipt off the order to correct it.' using errcode = 'P0001';
   end if;
   if old.state = 'unused' and new.state = 'used' then
     -- FOR SHARE waits for a book being returned or recorded lost at this moment, then reads its new state.
@@ -6521,15 +6533,23 @@ begin
     return jsonb_build_object('released', false);
   end if;
   insert into public.direct_order_receipt_releases (
-    serial, book_no, request_id, photo_storage_path, photo_content_type, used_by_hr_id, used_at, released_by_hr_id, reason
+    serial, book_no, request_id, photo_storage_path, photo_content_type, used_by_hr_id, used_at,
+    delivery_photo_storage_path, delivery_photo_content_type, delivery_entered_by_hr_id, delivery_entered_at,
+    released_by_hr_id, reason
   ) values (
     v_receipt.serial, v_receipt.book_no, v_receipt.request_id, v_receipt.photo_storage_path, v_receipt.photo_content_type,
-    v_receipt.used_by_hr_id, v_receipt.used_at, btrim(p_actor_hr_id), btrim(p_reason)
+    v_receipt.used_by_hr_id, v_receipt.used_at,
+    v_receipt.delivery_photo_storage_path, v_receipt.delivery_photo_content_type, v_receipt.delivery_entered_by_hr_id,
+    v_receipt.delivery_entered_at,
+    btrim(p_actor_hr_id), btrim(p_reason)
   );
   perform set_config('phoenix.receipt_release', p_serial::text, true);
   update public.direct_order_receipts r
      set state = 'unused', request_id = null, photo_storage_path = null, photo_content_type = null,
-         used_by_hr_id = null, used_at = null, updated_at = now()
+         used_by_hr_id = null, used_at = null,
+         delivery_photo_storage_path = null, delivery_photo_content_type = null,
+         delivery_entered_by_hr_id = null, delivery_entered_at = null,
+         updated_at = now()
    where r.serial = p_serial;
   perform set_config('phoenix.receipt_release', '', true);
   return jsonb_build_object(
@@ -6537,6 +6557,7 @@ begin
     'serial', v_receipt.serial,
     'book_no', v_receipt.book_no,
     'photo_storage_path', v_receipt.photo_storage_path,
+    'delivery_photo_storage_path', v_receipt.delivery_photo_storage_path,
     'used_by_hr_id', v_receipt.used_by_hr_id,
     'used_at', v_receipt.used_at
   );
@@ -32051,8 +32072,6 @@ CREATE FUNCTION public.phx_finance_command_center(p_actor_hr_id text DEFAULT NUL
 declare
   v_actor      text := nullif(btrim(coalesce(p_actor_hr_id, '')), '');
   v_months     int  := greatest(1, least(24, coalesce(p_trend_months, 6)));
-  -- The current Cairo month as a HALF-OPEN interval [start, next). Resolved once so the two
-  -- leaver counters below cannot drift apart, and so neither can be written with only one end.
   v_month_start date := date_trunc('month', (now() at time zone 'Africa/Cairo'))::date;
   v_month_next  date := (date_trunc('month', (now() at time zone 'Africa/Cairo')) + interval '1 month')::date;
   v_headcount  jsonb;
@@ -32064,18 +32083,11 @@ declare
   v_marketing  jsonb;
   v_leave      jsonb;
 begin
-  -- Headcount, plus the two leaver figures finance needs before it can close a month: who resigned
-  -- inside the current Cairo month, and whose last working day falls in it. The month boundary is
-  -- taken in Africa/Cairo, never UTC — a resignation logged late on the 31st is this month's, and
-  -- at UTC it would land in the next one.
-  --
-  -- BOTH ENDS, always. A notice period means these columns are routinely dated into the FUTURE,
-  -- so a lower bound on its own quietly turns "this month" into "from this month onward".
   select jsonb_build_object(
            'activeEmployees',    count(*) filter (where lower(coalesce(employment_status, '')) in ('active', 'on_leave')),
-           'payrollEligible',    count(*) filter (where payroll_eligible),
-           'standingNet',        round(coalesce(sum(net_salary)   filter (where payroll_eligible), 0)::numeric, 2),
-           'standingGross',      round(coalesce(sum(gross_salary) filter (where payroll_eligible), 0)::numeric, 2),
+           'payrollEligible',    count(*) filter (where hr_id in (select v.hr_id from public.v_payroll_eligible_employees v)),
+           'standingNet',        round(coalesce(sum(net_salary)   filter (where hr_id in (select v.hr_id from public.v_payroll_eligible_employees v)), 0)::numeric, 2),
+           'standingGross',      round(coalesce(sum(gross_salary) filter (where hr_id in (select v.hr_id from public.v_payroll_eligible_employees v)), 0)::numeric, 2),
            'resignedThisMonth',  count(*) filter (where resignation_date  >= v_month_start and resignation_date  < v_month_next),
            'leavingThisMonth',   count(*) filter (where last_working_date >= v_month_start and last_working_date < v_month_next),
            'leaversTotal',       count(*) filter (where lower(coalesce(employment_status, '')) in ('resigned', 'terminated'))
@@ -32083,7 +32095,6 @@ begin
     into v_headcount
     from public.employees;
 
-  -- First payment vs second. NULL folds into two_parts to match normalizePayrollPaymentMode.
   select jsonb_build_object(
            'firstOnlyCount', count(*) filter (where lower(coalesce(payment_mode, '')) = 'one_part'),
            'firstOnlyNet',   round(coalesce(sum(net_salary) filter (where lower(coalesce(payment_mode, '')) = 'one_part'), 0)::numeric, 2),
@@ -32092,9 +32103,8 @@ begin
          )
     into v_parts
     from public.employees
-    where payroll_eligible;
+    where hr_id in (select v.hr_id from public.v_payroll_eligible_employees v);
 
-  -- FAB / CIB / Treasury. Exhaustive and non-overlapping: anyone not on a named bank is Treasury.
   select jsonb_build_object(
            'fabCount',      count(*) filter (where upper(coalesce(bank_name, '')) = 'FAB'),
            'fabNet',        round(coalesce(sum(net_salary) filter (where upper(coalesce(bank_name, '')) = 'FAB'), 0)::numeric, 2),
@@ -32105,24 +32115,13 @@ begin
          )
     into v_channels
     from public.employees
-    where payroll_eligible;
+    where hr_id in (select v.hr_id from public.v_payroll_eligible_employees v);
 
-  -- Net and gross only. No deduction columns are selected at all.
-  --
-  -- ONE ROW PER MONTH, and the grouping key says so. `status` is a batch ATTRIBUTE, not part of
-  -- the period this trend is keyed on, so it is aggregated rather than grouped: three consumers
-  -- break silently the moment a month yields two rows — the chart keys its bars on `period`, the
-  -- month-over-month delta chain compares each entry with the one before it, and the "Net payroll"
-  -- tile reads the LAST entry. salary_batches carries a UNIQUE index on (year, month), so this was
-  -- safe in practice — but it was safe because of a constraint declared in another file, which is
-  -- not something a money figure should depend on silently.
   select coalesce(jsonb_agg(row_to_json(t)::jsonb order by t.period), '[]'::jsonb)
     into v_committed
     from (
       select
         to_char(make_date(b.year, b.month, 1), 'YYYY-MM')            as period,
-        -- Exact today (one batch per month), and honest if that ever stops being true: two
-        -- statuses in one month read "approved + locked" rather than silently picking one.
         string_agg(distinct b.status, ' + ' order by b.status)       as status,
         count(r.*)                                                   as employees,
         round(coalesce(sum(r.net_salary), 0)::numeric, 2)            as net,
@@ -32145,9 +32144,6 @@ begin
         (r.published_at is not null)                                                   as published,
         r.part2_confirmed_at                                                           as part2_confirmed_at,
         count(d.*) filter (where not coalesce(d.excluded, false))                      as rows_in_run,
-        -- Held rows are IN the run but excluded from the payout, so they never reach a bank file.
-        -- Finance has to clear them before a month can close, and nothing else on his page would
-        -- tell him they exist.
         count(d.*) filter (where coalesce(d.on_hold, false) and not coalesce(d.excluded, false))  as on_hold_count,
         round(coalesce(sum(case when coalesce(d.excluded, false) then 0 else coalesce(d.expenses, 0) end), 0)::numeric, 2)  as expenses_paid,
         round(coalesce(sum(case when coalesce(d.excluded, false) then 0 else coalesce(d.incentive, 0) end), 0)::numeric, 2) as incentive
@@ -32161,7 +32157,7 @@ begin
   select jsonb_build_object(
            'awaitingCount',  count(*) filter (where lower(coalesce(status, '')) = 'approved' and sales_month is null),
            'awaitingValue',  round(coalesce(sum(sales_value) filter (where lower(coalesce(status, '')) = 'approved' and sales_month is null), 0)::numeric, 2),
-           'awaitingOldest', min(decided_at) filter (where lower(coalesce(status, '')) = 'approved' and sales_month is null),
+           'awaitingOldest', min(collection_date) filter (where lower(coalesce(status, '')) = 'approved' and sales_month is null),
            'approvedCount',  count(*) filter (where lower(coalesce(status, '')) = 'approved'),
            'approvedValue',  round(coalesce(sum(sales_value) filter (where lower(coalesce(status, '')) = 'approved'), 0)::numeric, 2),
            'bookedCount',    count(*) filter (where sales_month is not null),
@@ -32199,9 +32195,25 @@ begin
            'committedSpend',  round(coalesce(sum(estimated_cost) filter (where lower(coalesce(status, '')) in ('approved', 'active', 'roi_tracking', 'finance_hold')), 0)::numeric, 2),
            'requiredRoi',     round(coalesce(sum(required_roi_value) filter (where lower(coalesce(status, '')) in ('approved', 'active', 'roi_tracking', 'finance_hold')), 0)::numeric, 2),
            'executedCount',   count(*) filter (where executed_at is not null),
-           'dueUnexecutedCount', count(*) filter (where lower(coalesce(status, '')) in ('approved', 'active', 'finance_hold') and pay_date is not null and executed_at is null),
-           'dueUnexecutedValue', round(coalesce(sum(estimated_cost) filter (where lower(coalesce(status, '')) in ('approved', 'active', 'finance_hold') and pay_date is not null and executed_at is null), 0)::numeric, 2),
-           'dueOldest',       min(pay_date) filter (where lower(coalesce(status, '')) in ('approved', 'active', 'finance_hold') and pay_date is not null and executed_at is null),
+           'dueUnexecutedCount', count(*) filter (where lower(coalesce(status, '')) in ('approved', 'active') and pay_date is not null and executed_at is null),
+           'dueUnexecutedValue', round(coalesce(sum(estimated_cost) filter (where lower(coalesce(status, '')) in ('approved', 'active') and pay_date is not null and executed_at is null), 0)::numeric, 2),
+           'dueOldest',       min(pay_date) filter (where lower(coalesce(status, '')) in ('approved', 'active') and pay_date is not null and executed_at is null),
+           'toPayCount', count(*) filter (where executed_at is null and (
+               (lower(coalesce(status, '')) in ('approved', 'active') and pay_date is not null)
+               or (lower(coalesce(status, '')) = 'pending_approval' and exists (
+                 select 1 from public.marketing_request_approval_steps x
+                 where x.request_id = marketing_requests.id
+                   and x.step_code = 'finance_execution'
+                   and lower(coalesce(x.status, '')) = 'current'
+                   and coalesce(x.is_cc, false) = false)))),
+           'toPayValue', round(coalesce(sum(estimated_cost) filter (where executed_at is null and (
+               (lower(coalesce(status, '')) in ('approved', 'active') and pay_date is not null)
+               or (lower(coalesce(status, '')) = 'pending_approval' and exists (
+                 select 1 from public.marketing_request_approval_steps x
+                 where x.request_id = marketing_requests.id
+                   and x.step_code = 'finance_execution'
+                   and lower(coalesce(x.status, '')) = 'current'
+                   and coalesce(x.is_cc, false) = false)))), 0)::numeric, 2),
            'inApprovalCount', count(*) filter (where lower(coalesce(status, '')) = 'pending_approval'),
            'missingPaymentProof', (
              select count(*)
@@ -32211,8 +32223,6 @@ begin
              left join public.marketing_request_finance_requirements f on f.request_id = m.id
              where lower(coalesce(m.status, '')) in ('approved', 'active', 'roi_tracking', 'finance_hold')
                and f.money_transfer_proof_storage_path is null
-               -- A request settled against a direct order's debt moved no money, so there is no
-               -- transfer to prove. The offset row is its own record (direct_order_marketing_offsets).
                and not exists (select 1 from public.direct_order_marketing_offsets o where o.marketing_request_id = m.id)
            ),
            'missingInvoice', (
@@ -32224,8 +32234,6 @@ begin
              where lower(coalesce(m.status, '')) in ('approved', 'active', 'roi_tracking', 'finance_hold')
                and f.invoice_storage_path is null
            ),
-           -- The three below are the ONLY figures on this page that read invoice_deadline_date.
-           -- See the PREDICATE PARITY note in the header before changing either condition.
            'invoiceOverdueCount', (
              select count(*)
              from public.marketing_request_finance_requirements f
@@ -32241,8 +32249,6 @@ begin
                and f.invoice_deadline_date is not null
                and f.invoice_deadline_date < (now() at time zone 'Africa/Cairo')::date
            ),
-           -- The deadline that has been outstanding longest -- what makes the queue's AGE readable
-           -- without opening it, the same job dueOldest does for the unexecuted queue beside it.
            'invoiceOverdueOldest', (
              select min(f.invoice_deadline_date)
              from public.marketing_request_finance_requirements f
@@ -60947,6 +60953,10 @@ CREATE TABLE public.direct_order_receipt_releases (
     released_by_hr_id text NOT NULL,
     released_at timestamp with time zone DEFAULT now() NOT NULL,
     reason text NOT NULL,
+    delivery_photo_storage_path text,
+    delivery_photo_content_type text,
+    delivery_entered_by_hr_id text,
+    delivery_entered_at timestamp with time zone,
     CONSTRAINT direct_order_receipt_releases_reason_check CHECK ((length(btrim(reason)) >= 3))
 );
 
@@ -60990,7 +61000,12 @@ CREATE TABLE public.direct_order_receipts (
     voided_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    delivery_photo_storage_path text,
+    delivery_photo_content_type text,
+    delivery_entered_by_hr_id text,
+    delivery_entered_at timestamp with time zone,
     CONSTRAINT direct_order_receipts_check_code_check CHECK ((check_code ~ '^[2-9A-HJKMNP-Z]{6}$'::text)),
+    CONSTRAINT direct_order_receipts_delivery CHECK ((((delivery_photo_storage_path IS NULL) AND (delivery_entered_at IS NULL) AND (delivery_entered_by_hr_id IS NULL)) OR ((state = 'used'::text) AND (delivery_photo_storage_path IS NOT NULL) AND (delivery_entered_at IS NOT NULL) AND (delivery_entered_by_hr_id IS NOT NULL)))),
     CONSTRAINT direct_order_receipts_serial_check CHECK ((serial > 0)),
     CONSTRAINT direct_order_receipts_state_check CHECK ((state = ANY (ARRAY['unused'::text, 'used'::text, 'voided'::text]))),
     CONSTRAINT direct_order_receipts_used CHECK ((((state = 'used'::text) = (request_id IS NOT NULL)) AND ((state <> 'used'::text) OR ((photo_storage_path IS NOT NULL) AND (used_at IS NOT NULL) AND (used_by_hr_id IS NOT NULL))))),
@@ -61004,6 +61019,18 @@ ALTER TABLE public.direct_order_receipts OWNER TO postgres;
 --
 
 COMMENT ON TABLE public.direct_order_receipts IS 'One row per printed delivery receipt: serial, the printed check code, and the one direct order it proves once used. A receipt moves unused -> used once; request_id is unique. Codes are never sent to a browser. Service role only.';
+
+--
+-- Name: COLUMN direct_order_receipts.photo_storage_path; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.direct_order_receipts.photo_storage_path IS 'Original 1 — the manager''s signed custody page, entered first; it claims the receipt for its order.';
+
+--
+-- Name: COLUMN direct_order_receipts.delivery_photo_storage_path; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.direct_order_receipts.delivery_photo_storage_path IS 'Original 2 — the delivery page the customer signed and stamped (its carbon copy stays with the customer). Added once, after Original 1.';
 
 --
 -- Name: direct_order_report_share_links; Type: TABLE; Schema: public; Owner: postgres
@@ -61101,6 +61128,27 @@ CREATE TABLE public.direct_order_request_items (
 );
 
 ALTER TABLE public.direct_order_request_items OWNER TO postgres;
+
+--
+-- Name: direct_order_warehouse_exits; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.direct_order_warehouse_exits (
+    request_id uuid NOT NULL,
+    exit_date date NOT NULL,
+    recorded_by_hr_id text NOT NULL,
+    recorded_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT direct_order_warehouse_exits_recorded_by_hr_id_check CHECK ((length(btrim(recorded_by_hr_id)) > 0))
+);
+
+ALTER TABLE public.direct_order_warehouse_exits OWNER TO postgres;
+
+--
+-- Name: TABLE direct_order_warehouse_exits; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.direct_order_warehouse_exits IS 'The day each approved direct order left the warehouse, recorded by Finance (owner, 27 Nov 2026). The receipt deadlines count from the next day: Original 1 in 3 calendar days, Original 2 in 6 working days (Friday off). Service role only. See src/lib/direct-orders/receipt-rules.ts.';
 
 --
 -- Name: dispute_assist_entries; Type: TABLE; Schema: public; Owner: postgres
@@ -68876,7 +68924,8 @@ CREATE TABLE public.phoenix_crm_late_visits (
     is_test boolean DEFAULT false NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT phoenix_crm_late_visits_check CHECK (((status = 'pending'::text) OR ((decided_by_hr_id IS NOT NULL) AND (decided_at IS NOT NULL)))),
+    decision_reason text,
+    CONSTRAINT phoenix_crm_late_visits_decided_check CHECK (((status = 'pending'::text) OR ((decided_at IS NOT NULL) AND ((decided_by_hr_id IS NOT NULL) OR ((status = 'rejected'::text) AND (decision_reason IS NOT NULL)))))),
     CONSTRAINT phoenix_crm_late_visits_kind_check CHECK ((kind = ANY (ARRAY['territory'::text, 'manager_single'::text]))),
     CONSTRAINT phoenix_crm_late_visits_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text])))
 );
@@ -68888,6 +68937,12 @@ ALTER TABLE public.phoenix_crm_late_visits OWNER TO postgres;
 --
 
 COMMENT ON TABLE public.phoenix_crm_late_visits IS 'A held visit that missed its window, kept whole until the Super Admin approves it onto its pressed day or rejects it. Counts in nothing until approved. Service role only. See src/lib/phoenix-crm/server/late-visits.ts.';
+
+--
+-- Name: COLUMN phoenix_crm_late_visits.decision_reason; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.phoenix_crm_late_visits.decision_reason IS 'Why Phoenix closed this filed visit by itself, read on the Decided tab — the same visit logged again and counted. Null on a decision the Super Admin made. See src/lib/phoenix-crm/server/late-visit-duplicates.ts.';
 
 --
 -- Name: phoenix_crm_line_lookalike_answers; Type: TABLE; Schema: public; Owner: postgres
@@ -78086,6 +78141,13 @@ ALTER TABLE ONLY public.direct_order_request_items
 
 ALTER TABLE ONLY public.direct_order_requests
     ADD CONSTRAINT direct_order_requests_pkey PRIMARY KEY (id);
+
+--
+-- Name: direct_order_warehouse_exits direct_order_warehouse_exits_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.direct_order_warehouse_exits
+    ADD CONSTRAINT direct_order_warehouse_exits_pkey PRIMARY KEY (request_id);
 
 --
 -- Name: dispute_assist_entries dispute_assist_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
@@ -92892,6 +92954,13 @@ ALTER TABLE ONLY public.direct_order_requests
     ADD CONSTRAINT direct_order_requests_reversed_by_request_id_fkey FOREIGN KEY (reversed_by_request_id) REFERENCES public.direct_order_requests(id);
 
 --
+-- Name: direct_order_warehouse_exits direct_order_warehouse_exits_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.direct_order_warehouse_exits
+    ADD CONSTRAINT direct_order_warehouse_exits_request_id_fkey FOREIGN KEY (request_id) REFERENCES public.direct_order_requests(id);
+
+--
 -- Name: dispute_refunds dispute_refunds_phx_employee_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -97465,6 +97534,18 @@ CREATE POLICY direct_order_request_items_service_role ON public.direct_order_req
 --
 
 ALTER TABLE public.direct_order_requests ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: direct_order_warehouse_exits; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.direct_order_warehouse_exits ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: direct_order_warehouse_exits direct_order_warehouse_exits_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY direct_order_warehouse_exits_service_role ON public.direct_order_warehouse_exits TO service_role USING (true) WITH CHECK (true);
 
 --
 -- Name: dispute_assist_entries; Type: ROW SECURITY; Schema: public; Owner: postgres
@@ -109204,6 +109285,12 @@ GRANT ALL ON TABLE public.direct_order_report_share_links TO service_role;
 --
 
 GRANT ALL ON TABLE public.direct_order_request_items TO service_role;
+
+--
+-- Name: TABLE direct_order_warehouse_exits; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.direct_order_warehouse_exits TO service_role;
 
 --
 -- Name: TABLE dispute_assist_entries; Type: ACL; Schema: public; Owner: postgres

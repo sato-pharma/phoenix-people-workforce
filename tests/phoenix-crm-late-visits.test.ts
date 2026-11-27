@@ -5,6 +5,11 @@ import { stripComments } from "./support/comment-strip.ts";
 
 import {
   cairoPressTime,
+  CLOSED_AUTOMATICALLY_BY,
+  countedCopyOf,
+  duplicateClosingReason,
+  type CountedVisit,
+  type LateVisitCandidate,
   LATE_VISIT_BODY_MAX_CHARS,
   LATE_VISIT_DEFAULT_REASON,
   managerApprovalBody,
@@ -27,6 +32,8 @@ export function runPhoenixCrmLateVisitsTests(): void {
   checkTheManagerApproval();
   checkTheWords();
   checkTheDoors();
+  checkTheCountedCopy();
+  checkTheCopyDoor();
 }
 
 const VISIT = "0b6f1b5e-1a2b-4c3d-8e9f-001122334455";
@@ -195,4 +202,72 @@ function checkTheDoors(): void {
   assert.ok(gateAt > 0 && gateAt < page.indexOf("loadLateVisits("), "🔴 the page asks for the Super Admin before it loads the list");
   const board = readFileSync("src/components/phoenix-crm/late-visits-board.tsx", "utf8");
   assert.match(board, /crmPost(?:<[^>]*>)?\(\s*"\/api\/phoenix-crm\/late-visits\/decide"/, "the board decides through the decide door");
+}
+
+/**
+ * 🔴 A copy of a visit already counted is closed by Phoenix, shown with its reason, and never counted (owner, 27 Nov
+ * 2026, on three "No location" visits whose reps logged the same doctor again with location minutes later).
+ */
+function checkTheCountedCopy(): void {
+  const candidate: LateVisitCandidate = {
+    kind: "territory",
+    seatId: "SEAT-1",
+    senderHrId: "b-140",
+    customerId: CUSTOMER,
+    managerCustomerId: null,
+    pressedDay: "2026-11-25",
+  };
+  const counted = (overrides: Partial<CountedVisit> = {}): CountedVisit => ({
+    kind: "territory",
+    seatId: "SEAT-1",
+    managerHrId: null,
+    customerId: CUSTOMER,
+    managerCustomerId: null,
+    visitDate: "2026-11-25",
+    loggedAt: "2026-11-25T14:32:00.000Z",
+    withLocation: true,
+    ...overrides,
+  });
+  assert.ok(countedCopyOf(candidate, [counted()]), "🔴 the same seat, customer and day is the counted copy");
+  assert.equal(countedCopyOf(candidate, [counted({ visitDate: "2026-11-26" })]), null, "another day is not a copy");
+  assert.equal(countedCopyOf(candidate, [counted({ seatId: "SEAT-2" })]), null, "another territory is not a copy");
+  assert.equal(countedCopyOf(candidate, [counted({ customerId: VISIT })]), null, "another customer is not a copy");
+  assert.equal(countedCopyOf(candidate, [counted({ kind: "manager_single" })]), null, "a manager's own visit never closes a rep's filing");
+  assert.equal(countedCopyOf(candidate, []), null, "nothing counted, nothing closed");
+  const earliest = countedCopyOf(candidate, [counted({ loggedAt: "2026-11-25T15:00:00.000Z" }), counted({ loggedAt: "2026-11-25T14:32:00.000Z" })]);
+  assert.equal(earliest?.loggedAt, "2026-11-25T14:32:00.000Z", "the earliest counted visit is the one named");
+
+  const own: LateVisitCandidate = { ...candidate, kind: "manager_single", senderHrId: "B-118", customerId: VISIT, managerCustomerId: CUSTOMER };
+  const managerVisit = (overrides: Partial<CountedVisit> = {}) => counted({ kind: "manager_single", seatId: null, managerHrId: "b-118", customerId: null, managerCustomerId: CUSTOMER, ...overrides });
+  assert.ok(countedCopyOf(own, [managerVisit()]), "a manager's own list customer matches on his own customer id, his id in either case");
+  assert.equal(countedCopyOf(own, [managerVisit({ managerHrId: "B-119" })]), null, "🔴 another manager's visit never closes his filing");
+
+  const reason = duplicateClosingReason({ withLocation: true }, "25 Nov, 16:32");
+  assert.match(reason, /logged again at 25 Nov, 16:32 with its location/);
+  assert.match(reason, /is not counted/, "🔴 the reason says the copy is not counted");
+  assert.match(duplicateClosingReason({ withLocation: false }, null), /logged again the same day, and that one is counted/);
+  assert.equal(CLOSED_AUTOMATICALLY_BY, "Phoenix, automatically");
+}
+
+function checkTheCopyDoor(): void {
+  const service = stripComments(readFileSync("src/lib/phoenix-crm/server/late-visit-duplicates.ts", "utf8"));
+  // 🔴 It reads the visits and never writes one: the only write is the filed copy, and only while it still waits.
+  assert.doesNotMatch(service, /\.(insert|upsert|delete)\(/, "🔴 nothing is inserted or deleted");
+  assert.equal((service.match(/\.update\(/g) ?? []).length, 1, "one write, the filed copy");
+  assert.match(service, /\.from\(TABLE\)\s*\.update\(\{\s*status: "rejected"/, "🔴 the copy is closed as rejected, never approved");
+  assert.match(service, /\.eq\("id", candidate\.id\)\s*\.eq\("status", "pending"\)/, "🔴 only a row still waiting moves");
+  assert.match(service, /decision_reason: duplicateClosingReason\(/, "the reason is written on the row");
+  assert.match(service, /\.eq\("is_test", false\)/);
+  // 🔴 It fails open to his decision: a read that does not answer leaves every row waiting.
+  assert.match(service, /catch \(error\) \{[\s\S]*logError\([\s\S]*return 0;/);
+
+  const board = stripComments(readFileSync("src/lib/phoenix-crm/server/late-visits.ts", "utf8"));
+  for (const fn of ["countLateVisitsWaiting", "loadLateVisits"]) {
+    const start = board.indexOf(`export async function ${fn}`);
+    assert.ok(start > 0, fn);
+    assert.match(board.slice(start, start + 400), /await closeDuplicateLateVisits\(\)/, `🔴 ${fn} closes the copies before it reads the waiting rows`);
+  }
+  assert.match(board, /decisionReason: reason/);
+  const screen = readFileSync("src/components/phoenix-crm/late-visits-board.tsx", "utf8");
+  assert.match(screen, /item\.decisionReason \?/, "🔴 the Decided tab shows why");
 }
