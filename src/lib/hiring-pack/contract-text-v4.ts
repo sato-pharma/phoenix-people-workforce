@@ -296,4 +296,7 @@ export const CONTRACT_TEMPLATE_V4: ContractTemplate = {
   signatoryNoteLinesAr: SIGNATORY_NOTE_LINES_AR,
   receiptAcknowledgmentAr: RECEIPT_ACKNOWLEDGMENT_AR,
   footerAr: CONTRACT_FOOTER_AR,
+  // The company signs once, at the end; only the employee's rule repeats on every page (owner,
+  // 2026-11-27). The footer text above stays verbatim — the renderer leaves out its first half.
+  footerFirstPartyOnLastPageOnly: true,
 };

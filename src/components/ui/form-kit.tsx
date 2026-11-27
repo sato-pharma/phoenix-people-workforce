@@ -346,19 +346,22 @@ function VerticalStepper({
   step,
   onJump,
   canJump,
+  isStepDone,
 }: {
   steps: FormWizardStep[];
   step: number;
   onJump: (target: number) => void;
   /** Which steps the rail may open. Default: the ones already answered. */
   canJump?: (target: number) => boolean;
+  /** Which steps carry the tick. Default: the ones already passed. */
+  isStepDone?: (target: number) => boolean;
 }) {
   return (
     <ol className="relative">
       {steps.map((s, i) => {
         const num = i + 1;
         const active = num === step;
-        const done = num < step;
+        const done = isStepDone ? !active && isStepDone(num) : num < step;
         const clickable = canJump ? num !== step && canJump(num) : num < step;
         const last = i === steps.length - 1;
         return (
@@ -420,21 +423,29 @@ function MobileStepper({
   step,
   onJump,
   canJump,
+  isStepDone,
+  wrap,
 }: {
   steps: FormWizardStep[];
   step: number;
   onJump: (target: number) => void;
   canJump?: (target: number) => boolean;
+  isStepDone?: (target: number) => boolean;
+  /** A grid of squares with no connectors, so a long list wraps instead of running off a phone. */
+  wrap?: boolean;
 }) {
   return (
-    <div className="flex items-center lg:hidden">
+    <div className={wrap ? "grid grid-cols-8 gap-1.5 lg:hidden" : "flex items-center lg:hidden"}>
       {steps.map((s, i) => {
         const num = i + 1;
         const active = num === step;
-        const done = num < step;
+        const done = isStepDone ? !active && isStepDone(num) : num < step;
         const clickable = canJump ? num !== step && canJump(num) : num < step;
         return (
-          <div key={s.label} className={["flex items-center", i < steps.length - 1 ? "flex-1" : ""].join(" ")}>
+          <div
+            key={s.label}
+            className={wrap ? "flex" : ["flex items-center", i < steps.length - 1 ? "flex-1" : ""].join(" ")}
+          >
             <button
               type="button"
               aria-label={`Step ${num}: ${s.label}`}
@@ -453,7 +464,7 @@ function MobileStepper({
             >
               {done ? <Check className="h-3.5 w-3.5" /> : num}
             </button>
-            {i < steps.length - 1 && (
+            {!wrap && i < steps.length - 1 && (
               <span className={["mx-1.5 h-px flex-1", done ? "bg-orange-400" : "bg-slate-200"].join(" ")} />
             )}
           </div>
@@ -515,6 +526,8 @@ export function FormWizard({
   header = "panel",
   panel = true,
   canJump,
+  isStepDone,
+  wrapPhoneStepper = false,
   footer,
   bleed = false,
   footnoteIcon = true,
@@ -555,6 +568,13 @@ export function FormWizard({
    * already answered; a form where a tap IS the answer passes its own rule.
    */
   canJump?: (target: number) => boolean;
+  /**
+   * Which steps the rail and the phone's stepper tick. The default is the ones already passed; a
+   * checklist whose ticks mean "this was actually done" (HR Forms: printed or signed) passes its own.
+   */
+  isStepDone?: (target: number) => boolean;
+  /** The phone's stepper as a wrapping grid, for a list too long to fit one line at 375px. */
+  wrapPhoneStepper?: boolean;
   /** Replaces Back / Next / Submit, for a form whose steps finish in their own way. */
   footer?: ReactNode;
   /** Let the step's own blocks run to the card's edge, as Phoenix CRM's do. */
@@ -609,7 +629,13 @@ export function FormWizard({
       <div className="grid grid-cols-1 lg:grid-cols-[244px_minmax(0,1fr)]">
         <aside className="hidden border-r border-slate-200 bg-slate-50/60 lg:flex lg:flex-col">
           <nav className="p-3" aria-label="Form steps">
-            <VerticalStepper steps={steps} step={step} canJump={canJump} onJump={onStepChange} />
+            <VerticalStepper
+              steps={steps}
+              step={step}
+              canJump={canJump}
+              isStepDone={isStepDone}
+              onJump={onStepChange}
+            />
           </nav>
           {footnote !== undefined && (
             <div className="mt-auto border-t border-slate-200 p-4">
@@ -623,7 +649,14 @@ export function FormWizard({
 
         <div className="min-w-0 p-4 sm:p-6">
           <div className="mb-5 lg:hidden">
-            <MobileStepper steps={steps} step={step} canJump={canJump} onJump={onStepChange} />
+            <MobileStepper
+              steps={steps}
+              step={step}
+              canJump={canJump}
+              isStepDone={isStepDone}
+              wrap={wrapPhoneStepper}
+              onJump={onStepChange}
+            />
           </div>
 
           <FormStepHeading

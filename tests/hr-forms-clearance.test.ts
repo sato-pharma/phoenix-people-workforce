@@ -9,6 +9,7 @@ import {
   clearanceTemplateTokens,
 } from "../src/lib/hiring-pack/clearance-template.ts";
 import type { ClearanceTemplate } from "../src/lib/hiring-pack/clearance-template.ts";
+import { EXIT_FORM_STEP, hrFormsPaperSteps } from "../src/lib/hiring-pack/hr-forms-wizard.ts";
 import {
   CLEARANCE_COMPANY_V1,
   CLEARANCE_EMPLOYEE_V1,
@@ -292,25 +293,16 @@ function testTheClearancePairAreComplementsNotAlternatives(): void {
     "each half of the pair completes its own hiring-document checklist row",
   );
 
-  // The screen. The two labour cards sit inside an `exitRoute === ...` ternary on purpose; these
-  // two must not, or the paper that protects the other side disappears when nobody has yet chosen
-  // a route.
+  // The screen. HR Forms walks a leaver through one step per paper (`hrFormsPaperSteps`); the two
+  // exit forms share ONE step that asks which, and the clearances must be steps of their own, or the
+  // paper that protects the other side disappears while nobody has yet chosen a route.
+  const leaver = hrFormsPaperSteps("leaver");
+  for (const document of CLEARANCE_DOCUMENTS) {
+    assert.ok(leaver.includes(document), `the leaver's papers must include ${document}`);
+  }
+  assert.ok(leaver.includes(EXIT_FORM_STEP), "the exit form is its own step");
   const manager = readFileSync("src/components/hiring-pack/hiring-pack-manager.tsx", "utf8");
-  for (const document of CLEARANCE_DOCUMENTS) {
-    assert.ok(
-      manager.includes(`onPrint={() => requestPrint("${document}")}`),
-      `the manager screen must offer ${document}`,
-    );
-  }
-  const ternaryStart = manager.indexOf('exitRoute === "resignation" ?');
-  const ternaryEnd = manager.indexOf("</AdminCallout>", ternaryStart);
-  const insideTheChoice = manager.slice(ternaryStart, ternaryEnd);
-  for (const document of CLEARANCE_DOCUMENTS) {
-    assert.ok(
-      !insideTheChoice.includes(`requestPrint("${document}")`),
-      `${document} must render outside the exit-route choice — it is not an alternative to anything`,
-    );
-  }
+  assert.ok(manager.includes("hrFormsPaperSteps(path, paperScope, storedLayout.layout)"), "the screen walks the same list of papers");
 }
 
 // ---------------------------------------------------------------------------------------------

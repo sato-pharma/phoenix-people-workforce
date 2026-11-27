@@ -6,6 +6,7 @@ import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { BANK_LETTER_PAGE } from "@/lib/hiring-pack/bank-account-letter";
+import { loadFormsLayoutOrDefault } from "@/lib/hiring-pack/forms-layout-store";
 import { hrFormsAccessFor, packForViewer, type HrFormsAccess } from "@/lib/hiring-pack/paper-access";
 import {
   getHiringPack,
@@ -103,11 +104,17 @@ async function HiringPackContent({
     }
   }
 
+  // The order the Control tab arranged; the standard order when nothing is stored or the read fails.
+  const formsLayout = await loadFormsLayoutOrDefault();
+
   return (
     <HiringPackManager
+      // "Edit any form" — every step, every person, every paper (owner, 2026-11-27). Super Admin only.
+      canEditAnyForm={access.role === "Super Admin"}
       bankLetterHref={forms.paperScope === null ? BANK_LETTER_PAGE.href : null}
       canManage={forms.canManage}
       candidates={candidates}
+      formsLayout={formsLayout}
       initialError={initialError}
       initialPack={initialPack}
       lines={lines}

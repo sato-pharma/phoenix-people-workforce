@@ -142,3 +142,35 @@ export async function listRecentPaperIssues(limit = 25): Promise<PaperIssue[] | 
   }
   return ((data ?? []) as RegisterRow[]).map(mapRow);
 }
+
+/**
+ * Every paper printed for one person, newest first — what ticks a paper off in the HR Forms wizard.
+ *
+ * Null when the register is not set up yet or the read failed: the wizard then ticks only what this
+ * screen printed this session and the signed dates on the pack, and never claims a paper unprinted
+ * because a read failed. Never throws.
+ */
+export async function listPaperIssuesForEmployee(hrId: string, limit = 200): Promise<PaperIssue[] | null> {
+  const id = (hrId ?? "").trim();
+  if (!id) return [];
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from(TABLE)
+      .select(
+        "reference, document, document_label, hr_id, subject_name, mode, copies, issued_by_hr_id, issued_at",
+      )
+      .ilike("hr_id", id)
+      .order("issued_at", { ascending: false })
+      .limit(Math.min(Math.max(limit, 1), 500));
+    if (error) {
+      if (!isPaperRegisterMissing(error)) {
+        console.error("[hiring-pack] paper register read failed", error.message);
+      }
+      return null;
+    }
+    return ((data ?? []) as RegisterRow[]).map(mapRow);
+  } catch (cause) {
+    console.error("[hiring-pack] paper register read failed", cause);
+    return null;
+  }
+}

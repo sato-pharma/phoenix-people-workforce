@@ -36,23 +36,41 @@ import {
   PencilLine,
   Printer,
   Save,
-  ShieldCheck,
   UserRound,
 } from "lucide-react";
 import Link from "next/link";
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import {
   AdminCallout,
-  AdminPageHero,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
-import { FormsDrive } from "@/components/hiring-pack/forms-drive";
+import { adminPanelClassName } from "@/components/admin/admin-design-tokens";
 import { issuePaperReference } from "@/components/hiring-pack/issue-paper-reference";
 import { PrintOptionsDialog, type PrintAnswer } from "@/components/hiring-pack/print-options-dialog";
 import { HiringPackPaperEditor } from "@/components/hiring-pack/paper-editor";
-import { candidateOptionLabel, type FormsDriveEntry } from "@/lib/hiring-pack/forms-drive";
+import { HrFormsControl } from "@/components/hiring-pack/hr-forms-control";
+import { DEFAULT_FORMS_LAYOUT, stepOfDocument, stepsInPackages } from "@/lib/hiring-pack/forms-layout";
+import type { StoredFormsLayout } from "@/lib/hiring-pack/forms-layout-store";
+import {
+  buildFormsDrive,
+  candidateOptionLabel,
+  type FormsDriveEntry,
+} from "@/lib/hiring-pack/forms-drive";
+import {
+  EXIT_FORM_STEP,
+  HR_FORMS_PATHS,
+  hrFormsPaperSteps,
+  isPaperDone,
+  latestPrintByDocument,
+  paperStatus,
+  type HrFormsPath,
+  type LeaverStep,
+  type PaperStatus,
+  type PrintedPaper,
+  type PrintedPaperRow,
+} from "@/lib/hiring-pack/hr-forms-wizard";
 import { TemplateStudio } from "@/components/hiring-pack/template-studio";
 import {
   templateNamesOf,
@@ -79,7 +97,7 @@ import { todayInCairo } from "@/lib/date-only";
 import { renewalObjectiveReasonOptions } from "@/lib/hiring-pack/renewal-reasons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ChoiceGroup } from "@/components/ui/choice-group";
+import { FormWizard, type FormWizardStep } from "@/components/ui/form-kit";
 import { phxSelectClassName } from "@/components/ui/form-tokens";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -267,6 +285,18 @@ const TERM_FIELDS: readonly HiringFieldDef[] = [
   },
 ];
 
+/** Which joining field groups a paper's step shows (owner, 2026-11-27: each paper's fields in its own step). */
+const IDENTITY_GROUP = "identity";
+const FORM1_GROUP = "form1";
+const TERMS_GROUP = "terms";
+type JoinerGroup = typeof IDENTITY_GROUP | typeof FORM1_GROUP | typeof TERMS_GROUP;
+
+/** Which leaving field groups a paper's step shows. */
+const DEPARTURE_GROUP = "departure";
+const AGREEMENT_GROUP = "agreement";
+const PARTY_GROUP = "party";
+type ExitGroup = typeof DEPARTURE_GROUP | typeof AGREEMENT_GROUP | typeof PARTY_GROUP;
+
 const NUMBER_KEYS = new Set<keyof HiringPackProfileInput>([
   "contractDurationMonths",
   "underperformanceThresholdPct",
@@ -370,16 +400,6 @@ const EXIT_ROUTES: readonly { value: ExitRoute; labelEn: string; labelAr: string
     },
   ];
 
-/**
- * The two ends of one employment, shown one at a time. A person is only ever arriving or leaving on
- * the day HR prints, so the screen offers one package rather than one long scroll that mixes a
- * joining form with a departure form. Labels stay short so the two-segment switcher never has to
- * scroll sideways on a phone — the fits-the-screen rule (AGENTS.md §4).
- */
-const PACKAGE_TABS = [
-  { label: "New hires package", value: "newHire" },
-  { label: "Leaver package", value: "leaver" },
-] as const satisfies ReadonlyArray<{ label: string; value: "newHire" | "leaver" }>;
 
 /**
  * How many copies a document is about to be produced in, from whatever is in its box.
@@ -733,6 +753,231 @@ function signedDatesFromPack(pack: HiringPackData | null): Record<HiringPackDocu
  * separate props hands the compiler two separate questions it cannot relate. Spread as one object,
  * the union is checked as the single fact it is.
  */
+/** Where the page scrolls to: the top of the wizard, and the paper editor inside it. */
+const WIZARD_ANCHOR_ID = "hr-forms-wizard";
+const EDITOR_ANCHOR_ID = "hr-forms-paper-editor";
+
+/** One step of the HR Forms wizard. */
+type WizardStepKind =
+  | { kind: "path" }
+  | { kind: "employee" }
+  | { kind: "paper"; paper: LeaverStep }
+  | { kind: "company" }
+  | { kind: "other" }
+  | { kind: "finish" };
+
+/** The papers whose signature is recorded against the person on screen (`SIGNABLE_DOCUMENTS`). */
+const SIGNED_ON_SCREEN: ReadonlySet<HiringPackDocument> = new Set<HiringPackDocument>([
+  "contract",
+  "form1",
+  "nda",
+  "form6",
+  "resignation",
+  "mutualTermination",
+  "clearanceEmployee",
+  "clearanceCompany",
+]);
+
+/** Short names for the rail, where the full title would wrap to three lines. Unique by design. */
+const PAPER_RAIL_LABELS: Partial<Record<HiringPackDocument, string>> = {
+  contract: "Contract",
+  form1: "Form 1",
+  workerDataForm: "Worker data form",
+  nda: "Confidentiality",
+  appointmentDocsReceipt: "Documents received",
+  socialStatusSheet: "Social status sheet",
+  custodyLaptop: "Laptop custody",
+  custodyMobile: "Phone custody",
+  form6: "Form 6",
+  clearanceEmployee: "Employee clearance",
+  clearanceCompany: "Company clearance",
+  handoverRecord: "Handover record",
+  exitInterview: "Exit interview",
+  appointmentDocsReturn: "Documents returned",
+  experienceCertificate: "Experience · Arabic",
+  experienceCertificateEn: "Experience · English",
+};
+
+/** A print sent from this screen this session, keyed by person and paper. */
+function sessionPrintKey(hrId: string, document: string): string {
+  return `${hrId.toUpperCase()}|${document}`;
+}
+
+/** The "printed at" stamp the pack itself carries, on the papers that have one. */
+function packPrintedAt(pack: HiringPackData, document: HiringPackDocument): string | null {
+  switch (document) {
+    case "contract":
+      return pack.profile.contractPrintedAt;
+    case "form1":
+      return pack.profile.form1PrintedAt;
+    case "nda":
+      return pack.profile.ndaPrintedAt;
+    case "form6":
+      return pack.offboarding.form6PrintedAt;
+    case "resignation":
+      return pack.offboarding.resignationPrintedAt;
+    case "mutualTermination":
+      return pack.offboarding.mutualTerminationPrintedAt;
+    case "clearanceEmployee":
+      return pack.offboarding.clearanceEmployeePrintedAt;
+    case "clearanceCompany":
+      return pack.offboarding.clearanceCompanyPrintedAt;
+    default:
+      return null;
+  }
+}
+
+/** A print's day, in Cairo. */
+function formatPrintedDay(iso: string): string {
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return iso;
+  return formatStableEnGb(parsed, { day: "2-digit", month: "short", timeZone: "Africa/Cairo", year: "numeric" });
+}
+
+/** The rail's line under a paper: signed, printed, or not yet. */
+function statusLine(status: PaperStatus): string {
+  if (status.state === "signed") return `Signed ${formatDate(status.on)}`;
+  if (status.state === "printed") return `Printed ${formatPrintedDay(status.on)}`;
+  return "Not printed yet";
+}
+
+/** What a paper's card says about it — the same words the package tabs carried, one row per paper. */
+function paperCardText(
+  document: HiringPackDocument,
+  pack: HiringPackData,
+): { title: string; subtitle: string; printingNote: string; footnote?: string | null } {
+  switch (document) {
+    case "contract":
+      return {
+        footnote: contractVersionNote(pack.profile.contractTemplateVersion),
+        printingNote: "One page per sheet — single-sided. Five pages per copy, on A4.",
+        subtitle: "عقد عمل محدد المدة",
+        title: "Employment contract",
+      };
+    case "form1":
+      return {
+        printingNote: "MUST be printed double-sided. Set the printer to two-sided, flip on the long edge, US Legal paper.",
+        subtitle: "نموذج ١ — طلب اشتراك مؤمن عليه",
+        title: "Social insurance Form 1",
+      };
+    case "workerDataForm":
+      return {
+        footnote: "A service-file sheet, not a government form. Everything Phoenix already knows — name, national ID, job, insurance number — is filled; the fields it holds no record of (marital status, military-service position, bank and IBAN, next of kin) print blank for a pen.",
+        printingNote: "One copy, single-sided A4. Kept in the service file — not attached to the contract copies.",
+        subtitle: "استمارة بيانات العامل — تُحفظ بملف الخدمة",
+        title: "Worker data form",
+      };
+    case "custodyLaptop":
+      return {
+        footnote: "The device details, values and handover date print blank — Phoenix holds no asset register, and a serial number is read off the machine rather than recalled. The name, ID, job title and address are filled.",
+        printingNote: "Two copies — the form says so itself. Single-sided A4; the return protocol is the last sheet of each copy.",
+        subtitle: "إقرار استلام عهدة — نموذج رقم ١ (حاسب محمول)",
+        title: "Custody receipt — laptop",
+      };
+    case "custodyMobile":
+      return {
+        footnote: "Same paper as the laptop receipt, with the phone's own item list and an IMEI and SIM block in place of the Windows fields.",
+        printingNote: "Two copies. Single-sided A4. Print one form per device — البند (14) requires a separate numbered receipt for each.",
+        subtitle: "إقرار استلام عهدة — نموذج رقم ٢ (هاتف / جهاز لوحي)",
+        title: "Custody receipt — phone or tablet",
+      };
+    case "nda":
+      return {
+        footnote: "Supplements مادة (7) of the contract and now names it. Everything about the person is filled; the paper is signed by both sides.",
+        printingNote: "Two copies — one filed, one handed over. Sign it on the first day, alongside the contract.",
+        subtitle: "إقرار وتعهد بعدم إفشاء المعلومات والأسرار التجارية",
+        title: "Confidentiality undertaking",
+      };
+    case "appointmentDocsReceipt":
+      return {
+        footnote: "Every verdict box prints blank by design: Phoenix holds no register of which certificates were handed over, and a ticked box on a signed form asserts that a document was seen.",
+        printingNote: "Two copies. Complete it with the certificates on the desk, and set the deadline for anything missing.",
+        subtitle: "إيصال استلام مسوغات التعيين — 12 مستندًا",
+        title: "Appointment documents receipt",
+      };
+    case "socialStatusSheet":
+      return {
+        footnote: "The service-file sheet the law requires the employer to keep. Name, ID, job, dates and insurance number are filled; religion, military status and marital status print blank because this system holds none of them.",
+        printingNote: "One copy, one sheet. Filed — never handed over. The dependants table is completed by the employee, who signs that it is true.",
+        subtitle: "صحيفة الحالة الاجتماعية — المادة (92)",
+        title: "Social status sheet",
+      };
+    case "form6":
+      return {
+        printingNote: "MUST be printed double-sided, three copies. Set the printer to two-sided, flip on the long edge, US Legal paper.",
+        subtitle: "نموذج ٦ — إخطار بإنتهاء اشتراك مؤمن عليه",
+        title: "Social insurance Form 6",
+      };
+    case "resignation":
+      return {
+        printingNote: "One page, single-sided, US Letter. The right-hand endorsement column is filled at the labour office.",
+        subtitle: "طلب استقالة — مادة ١٦٧",
+        title: "Resignation request",
+      };
+    case "mutualTermination":
+      return {
+        printingNote: "Three pages per copy, single-sided, US Letter. Both parties sign every copy.",
+        subtitle: "إنهاء علاقة العمل بالتوافق بين الطرفين",
+        title: "Mutual termination agreement",
+      };
+    case "clearanceEmployee":
+      return {
+        printingNote: "Single-sided, A4, background graphics ON. Seven departments sign it by hand and the company stamps it — it is not valid until all of them are on it, and final dues are not released before that.",
+        subtitle: "إخلاء طرف موظف — تشهد به الشركة، ويحتفظ به الموظف",
+        title: "Employee clearance",
+      };
+    case "clearanceCompany":
+      return {
+        printingNote: "Single-sided, A4, background graphics ON. The settlement amount prints blank on purpose — this paper is a release of claims, so the figure has to be the one finance actually paid.",
+        subtitle: "إخلاء طرف شركة — يقر به الموظف، وتحتفظ به الشركة",
+        title: "Company clearance",
+      };
+    case "handoverRecord":
+      return {
+        printingNote: "The copy count is asked when you press Print.",
+        subtitle: "محضر إداري داخلي بتسليم وتسلم المهام الوظيفية",
+        title: "Handover record",
+      };
+    case "exitInterview":
+      return {
+        printingNote: "The copy count is asked when you press Print.",
+        subtitle: "مقابلة نهاية الخدمة",
+        title: "Exit interview",
+      };
+    case "appointmentDocsReturn":
+      return {
+        footnote: "The employee's receipt for their own original certificates coming back. It carries the last working day, and says in terms that it covers the papers only — it is not a release of any statutory or financial entitlement.",
+        printingNote: "Two copies. Print it when the certificates are physically handed back, not before — it is the proof they were.",
+        subtitle: "إقرار استلام مسوغات التعيين — عند انتهاء الخدمة",
+        title: "Appointment documents returned",
+      };
+    case "experienceCertificate":
+      return {
+        footnote: pack.employee.departed
+          ? "Issued on request, to be read by their next employer. It will state that their service ENDED — check the last working day. No salary, no reason for leaving and no statement of conduct: each is left out on purpose."
+          : "Issued on request — for a visa, a bank or an application. This employee has not left, so it will state that they are STILL EMPLOYED and close the period at today's date. No salary, no statement of conduct: each is left out on purpose.",
+        printingNote: "Two copies. Nobody signs it back — one is handed over, one is the company's record of what it certified about them.",
+        subtitle: "شهادة خبرة — تُصرف بناءً على طلب صاحب الشأن",
+        title: "Certificate of experience — Arabic",
+      };
+    case "experienceCertificateEn":
+      return {
+        footnote: pack.employee.departed
+          ? "For an embassy, a foreign employer or a bank. It will state that this employee's service ENDED. Same three omissions as the Arabic copy — no salary, no reason for leaving, no statement of conduct."
+          : "For an embassy, a foreign employer or a bank. This employee has not left, so it will state that they are STILL EMPLOYED and close the period at today's date.",
+        printingNote: "Two copies. Use Download PDF on the print view — that file keeps its text editable if it is later opened in a design tool. Do not flatten it to an image.",
+        subtitle: "Certificate of Experience — English, for use abroad",
+        title: "Certificate of experience — English",
+      };
+    default:
+      return {
+        printingNote: "The copy count is asked when you press Print.",
+        subtitle: "",
+        title: documentLabel(document),
+      };
+  }
+}
+
 type OpenPaper =
   | { documentKey: HiringPackDocument; versionId: string | null }
   | { documentKey: CustomHiringPackDocument; versionId: string };
@@ -761,6 +1006,24 @@ type Props = {
    * page, and only for a viewer the letter's own gate admits (not a paper-scoped seat).
    */
   bankLetterHref?: string | null;
+  /**
+   * The Super Admin's "Edit any form" (owner, 2026-11-27): every step opens at any time, every person
+   * is listed on every path, and "Another paper" offers every paper. Passed by both pages for the
+   * Super Admin only; the server's own gates are unchanged.
+   */
+  canEditAnyForm?: boolean;
+  /**
+   * The papers each package walks through, as the Control tab arranged them (owner, 2026-11-27).
+   * Absent → the standard order.
+   */
+  formsLayout?: StoredFormsLayout;
+};
+
+/** The standard order, for a page that passes no arrangement. Module scope, so it is stable. */
+const STANDARD_FORMS_LAYOUT: StoredFormsLayout = {
+  arranged: { leaver: false, newHire: false },
+  layout: DEFAULT_FORMS_LAYOUT,
+  ready: true,
 };
 
 /**
@@ -781,6 +1044,7 @@ const PaperScopeContext = createContext<readonly HiringPackDocument[] | null>(nu
 
 export function HiringPackManager({
   bankLetterHref = null,
+  canEditAnyForm = false,
   canManage,
   candidates,
   initialError,
@@ -789,8 +1053,12 @@ export function HiringPackManager({
   paperScope = null,
   salaryReadOnly = false,
   contractTermsReadOnly = false,
+  formsLayout = STANDARD_FORMS_LAYOUT,
 }: Props) {
   const scoped = paperScope !== null;
+  // The Control tab's arrangement, replaced in place after a save there so the wizard follows at once.
+  const [storedLayout, setStoredLayout] = useState<StoredFormsLayout>(formsLayout);
+  const [screenTab, setScreenTab] = useState<"forms" | "control">("forms");
   const [pack, setPack] = useState<HiringPackData | null>(initialPack);
   const [selectedHrId, setSelectedHrId] = useState(initialPack?.employee.hrId ?? "");
   const [form, setForm] = useState<FormState>(initialPack ? formFromPack(initialPack) : emptyForm());
@@ -839,6 +1107,8 @@ export function HiringPackManager({
    * resolves to".
    */
   const [preview, setPreview] = useState<OpenPaper | null>(null);
+  // Bumped by every save of a paper's fields, so the paper drawn under them is drawn again from the saved values.
+  const [paperRedraw, setPaperRedraw] = useState(0);
   /**
    * The uploaded company templates — read ONCE here and shared with everything that shows them.
    *
@@ -886,13 +1156,23 @@ export function HiringPackManager({
     [companyTemplates.templates],
   );
   /**
-   * Which package is on screen. The joining papers and the leaving papers are one workflow seen from
-   * two ends (see the file header), but a person is only ever at one end on the day HR prints, so the
-   * screen shows one package at a time rather than a single scroll that mixes an arrival form with a
-   * departure form. The facts editors, their Save buttons and every document card keep their own
-   * state regardless of which package is showing — switching is a view, it saves and discards nothing.
+   * WHERE THE WIZARD STANDS. The package (new hire, leaver or another paper), the step on screen, the
+   * furthest step reached (the rail opens up to it), and the Super Admin's "Edit any form", which
+   * opens every step, lists every person and offers every paper — "he is not forced into anything"
+   * (owner, 2026-11-27). A deep link with a person opens on their details.
    */
-  const [activePackage, setActivePackage] = useState<"newHire" | "leaver">("newHire");
+  const [path, setPath] = useState<HrFormsPath | null>(
+    initialPack ? (initialPack.employee.departed ? "leaver" : "newHire") : null,
+  );
+  const [step, setStep] = useState(initialPack ? 3 : 1);
+  const [furthest, setFurthest] = useState(initialPack ? 3 : 1);
+  const [editAny, setEditAny] = useState(false);
+  /** The newest print of each paper for the person on screen, from the paper register. */
+  const [register, setRegister] = useState<{ hrId: string; printed: Record<string, PrintedPaper> } | null>(null);
+  /** Prints sent from this screen this session, so a paper ticks the moment its tab opens. */
+  const [printedNow, setPrintedNow] = useState<Record<string, string>>({});
+  /** The paper chosen on the "Another paper" path. */
+  const [otherChoice, setOtherChoice] = useState<FormsDriveEntry | null>(null);
 
   const blockingGaps = useMemo(() => (pack?.gaps ?? []).filter((gap) => gap.blocking), [pack]);
   const advisoryGaps = useMemo(() => (pack?.gaps ?? []).filter((gap) => !gap.blocking), [pack]);
@@ -961,7 +1241,7 @@ export function HiringPackManager({
         setBusy("");
       }
     },
-    [applyPack, readError],
+    [applyPack, readError, setPreview],
   );
 
   const save = useCallback(async () => {
@@ -981,6 +1261,7 @@ export function HiringPackManager({
       }
       applyPack((await response.json()) as HiringPackData);
       setNotice("Saved. The documents will print with these values.");
+      setPaperRedraw((value) => value + 1);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save.");
     } finally {
@@ -1015,6 +1296,7 @@ export function HiringPackManager({
       }
       applyPack((await response.json()) as HiringPackData);
       setNotice("Saved. The exit documents will print with these values.");
+      setPaperRedraw((value) => value + 1);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save.");
     } finally {
@@ -1045,6 +1327,7 @@ export function HiringPackManager({
       }
       applyPack((await response.json()) as HiringPackData);
       setNotice("Saved to the employee record.");
+      setPaperRedraw((value) => value + 1);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save.");
     } finally {
@@ -1267,7 +1550,7 @@ export function HiringPackManager({
     }
 
     setPreview({ documentKey: document, versionId });
-  }, []);
+  }, [setPreview]);
 
   /**
    * Open or print one uploaded company template against the employee on screen.
@@ -1297,22 +1580,6 @@ export function HiringPackManager({
     [openPreview, requestPrint],
   );
 
-  /**
-   * A paper pressed in the drive, for one employee: load them (unless already loaded) and open the
-   * paper in the editor, which sits directly under the drive.
-   */
-  const editorRef = useRef<HTMLDivElement>(null);
-  const openForEmployee = useCallback(
-    async (entry: FormsDriveEntry, hrId: string) => {
-      const loaded = pack?.employee.hrId === hrId && selectedHrId === hrId ? true : await selectEmployee(hrId);
-      if (!loaded) return;
-      openPreview(entry.document, entry.versionId ?? undefined);
-      window.requestAnimationFrame(() =>
-        editorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
-      );
-    },
-    [openPreview, pack, selectEmployee, selectedHrId],
-  );
 
   const setCopiesFor = useCallback((document: PrintableDocument, value: string) => {
     setCopies((current) => ({ ...current, [document]: value }));
@@ -1331,9 +1598,17 @@ export function HiringPackManager({
       setCopiesFor(document, String(answer.copies));
       if (!openPrint(document, versionId, answer.copies, answer.address, answer.marks)) {
         setError("The print tab was blocked by your browser — allow pop-ups for this site and print again.");
+      } else if (pack) {
+        // Ticked on the rail at once. The register row the print route writes is what keeps the
+        // tick after a reload; this only saves waiting for it.
+        const hrId = pack.employee.hrId;
+        setPrintedNow((current) => ({
+          ...current,
+          [sessionPrintKey(hrId, document)]: new Date().toISOString(),
+        }));
       }
     },
-    [openPrint, printRequest, setCopiesFor, setPrintRequest],
+    [openPrint, pack, printRequest, setCopiesFor, setPrintRequest],
   );
 
   const setSignDateFor = useCallback((document: HiringPackDocument, value: string) => {
@@ -1341,214 +1616,278 @@ export function HiringPackManager({
   }, []);
 
   /**
-   * THE LEAVING TAB LISTS LEAVERS — the owner's bug report, 2026-09-13: "if i choose a document
-   * related to resignations the drop list of employees who resigned appear". Every paper on that tab
-   * is a leaving paper, so the list follows it. The person already loaded stays in the list, or the
-   * box would empty itself the moment the tab is switched while their pack is still on screen.
-   * (A certificate of experience for somebody still employed is issued from the drive's Leaving
-   * folder, which lists everyone for those two papers.)
+   * THE LEAVER PATH LISTS LEAVERS — the owner's bug report, 2026-09-13: "if i choose a document
+   * related to resignations the drop list of employees who resigned appear". Changing the package
+   * clears the person (`choosePath`), so a joiner never reaches the leaver papers; the person loaded
+   * on this path stays in the list, or the box would empty itself while their pack is on screen. A
+   * certificate of experience for somebody still employed is issued from "Another paper", which
+   * lists everyone. The Super Admin's "Edit any form" lists everyone on every path.
    */
   const pickerCandidates = useMemo(
     () =>
-      activePackage === "leaver"
+      path === "leaver" && !editAny
         ? candidates.filter((candidate) => candidate.departed || candidate.hrId === selectedHrId)
         : candidates,
-    [activePackage, candidates, selectedHrId],
+    [candidates, editAny, path, selectedHrId],
   );
 
   const departedCount = candidates.filter((candidate) => candidate.departed).length;
   const currentCount = candidates.length - departedCount;
 
   const employee = pack?.employee ?? null;
+  const packHrId = pack?.employee.hrId ?? "";
 
-  // THE OUTER WRAPPER IS `overflow-clip`, NOT `overflow-hidden`, AND THE STICKY PICKER IS THE
-  // WHOLE REASON. Both clip a child to the rounded corners and both paint identically. The
-  // difference is that `hidden` makes the div a SCROLL CONTAINER and `clip` does not — and
-  // `position: sticky` sticks to the nearest scroll container. With `hidden` the picker stuck to
-  // a box that never scrolls, which looks exactly like sticky being broken: measured, the bar's own
-  // top read -1183px at a scroll of 1500. With `clip` the nearest scroll container is the page, so
-  // it sticks to the viewport, and the corners are still clipped.
-  return (
-    <PaperScopeContext.Provider value={paperScope}>
-    <div className="relative overflow-clip">
-      <div className="flex flex-col gap-5">
-        <AdminPageHero
-          actions={
-            bankLetterHref ? (
-              <Button asChild className="h-10" variant="secondary">
-                <Link href={bankLetterHref}>
-                  <Landmark />
-                  Bank account letter
-                </Link>
-              </Button>
-            ) : null
-          }
-          description={`Open a folder and press the paper you need. Fill it from an employee's record or type it in; every print is numbered. ${currentCount} on staff, ${departedCount} left.`}
-          eyebrow="Employee documents"
-          icon={<FileSignature className="h-5 w-5" />}
-          title="HR Forms"
-        />
+  // ─────────────────────────────────────────────────────────────────────────────────────────────
+  // WHAT WAS PRINTED FOR THIS PERSON — every real print writes a numbered register row, so the
+  // ticks on the left survive a reload and another desk's print. Async only: no synchronous state
+  // write in the effect (react-hooks/set-state-in-effect). A failed read ticks nothing extra; it
+  // never un-ticks a paper the pack or this session already knows was printed.
+  // ─────────────────────────────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!packHrId) return;
+    let live = true;
+    void fetch(`/api/hiring-pack/paper-register?hrId=${encodeURIComponent(packHrId)}`, { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body: { issues?: PrintedPaperRow[] } | null) => {
+        if (!live || !body || !Array.isArray(body.issues)) return;
+        setRegister({ hrId: packHrId, printed: latestPrintByDocument(body.issues) });
+      })
+      .catch(() => {
+        // Tick only what is otherwise known. See the note above.
+      });
+    return () => {
+      live = false;
+    };
+  }, [packHrId]);
 
-        {error || notice ? (
-          <div aria-live="polite" className="sticky top-28 z-20 flex flex-col gap-2">
-            {error ? (
-              <AdminCallout tone="danger">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>{error}</span>
-              </AdminCallout>
-            ) : null}
-            {notice ? (
-              <AdminCallout tone="success">
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>{notice}</span>
-              </AdminCallout>
-            ) : null}
-          </div>
-        ) : null}
+  const savedSigned = useMemo(() => signedDatesFromPack(pack), [pack]);
 
-        {/*
-          THE OPEN DOCUMENT SITS AT THE TOP, above the fill boxes rather than beside the card it was
-          opened from. Whichever of the nine is open, it appears in the same place — and the values
-          in it are the same values the boxes below hold, so having both on screen at once is what
-          makes the connection between them obvious instead of something to be learned.
-        */}
-        <FormsDrive
-          candidates={candidates}
-          loadingEmployee={busy === "load"}
-          onOpenForEmployee={(entry, hrId) => void openForEmployee(entry, hrId)}
-          paperScope={paperScope}
-          selectedHrId={selectedHrId}
-          templates={scoped ? NO_TEMPLATES : companyTemplates.templates}
-        />
+  /** The newest print known for one paper: the register, the pack's own stamp, or this session. */
+  const lastPrintedOf = useCallback(
+    (document: HiringPackDocument): string | null => {
+      if (!pack) return null;
+      const known = [
+        register?.hrId === pack.employee.hrId ? register.printed[document]?.issuedAt : null,
+        packPrintedAt(pack, document),
+        printedNow[sessionPrintKey(pack.employee.hrId, document)],
+      ].filter((value): value is string => typeof value === "string" && value.length > 0);
+      known.sort((a, b) => Date.parse(b) - Date.parse(a));
+      return known[0] ?? null;
+    },
+    [pack, printedNow, register],
+  );
 
-        <div className="scroll-mt-4" ref={editorRef} />
-        {pack && preview ? (
-          <HiringPackPaperEditor
-            // THE SAME AUTHORITY THE COMPANY-TEMPLATE UPLOAD USES, and the same one the
-            // company-details route enforces: Super Admin, answered by the SERVER rather than
-            // guessed from a role in the browser. Changing what every future contract states about
-            // the employer is that class of act, not the class of correcting one person's ID.
-            canEditCompany={companyTemplates.canManage}
-            // A seat limited to its own papers: no layout editing and the hiring profile locked.
-            // The salary is locked on the salary-blind seat, which sees and prints it.
-            canEditLayout={!scoped}
-            readOnlyStores={scoped ? SCOPED_SEAT_READ_ONLY_STORES : undefined}
-            salaryReadOnly={salaryReadOnly}
-            contractTermsReadOnly={contractTermsReadOnly}
-            copies={resolveCopyCount(copies[preview.documentKey], preview.documentKey)}
-            documentLabel={documentLabel(preview.documentKey, customTemplateNames)}
-            hrId={pack.employee.hrId}
-            key={`${pack.employee.hrId}-${preview.documentKey}-${preview.versionId ?? "current"}`}
-            onClose={() => setPreview(null)}
-            onIssueReference={() =>
-              issuePaperReference({
-                copies: resolveCopyCount(copies[preview.documentKey], preview.documentKey),
-                document: preview.documentKey,
-                documentLabel: documentLabel(preview.documentKey, customTemplateNames),
-                hrId: pack.employee.hrId,
-                mode: "employee",
-                subjectName: pack.employee.nameAr ?? pack.employee.fullName,
-              })
-            }
-            onPackChange={applyPack}
-            pack={pack}
-            {...preview}
-          />
-        ) : null}
+  const statusOf = useCallback(
+    (document: HiringPackDocument): PaperStatus =>
+      paperStatus(savedSigned[document] || null, lastPrintedOf(document)),
+    [lastPrintedOf, savedSigned],
+  );
 
-        {/*
-          THE PICKER IS A BAR, NOT A SECTION.
+  /** The exit-form step: the chosen route's paper, or whichever of the two was printed. */
+  const exitStepStatus = useCallback((): PaperStatus => {
+    if (exitRoute) return statusOf(exitRoute);
+    const resignation = statusOf("resignation");
+    return isPaperDone(resignation) ? resignation : statusOf("mutualTermination");
+  }, [exitRoute, statusOf]);
 
-          It used to be a full card: a heading, a two-line description of how the list is sorted, a
-          label, and then the one control — 230px of chrome around a dropdown, measured at 1440px,
-          on a page that runs past 4,000px. Everything the description explained is visible in the
-          list itself the moment it opens, so it was being paid for twice. As a bar it is 66px, and
-          the name sitting in the box now does the job the heading used to: it says who you are
-          printing for.
+  // ─────────────────────────────────────────────────────────────────────────────────────────────
+  // THE STEPS. Package, person, details, then one step per paper in the order they cross the desk,
+  // the company's own uploaded papers for that package, and what was printed. "Another paper" is
+  // package, person, the paper, done.
+  // ─────────────────────────────────────────────────────────────────────────────────────────────
+  const paperSteps: LeaverStep[] =
+    path === "newHire" || path === "leaver" ? hrFormsPaperSteps(path, paperScope, storedLayout.layout) : [];
+  const companyPapers: readonly StoredTemplate[] = scoped
+    ? NO_TEMPLATES
+    : path === "newHire"
+      ? joiningTemplates
+      : path === "leaver"
+        ? leavingTemplates
+        : NO_TEMPLATES;
 
-          IT FOLLOWS THE PAGE, because the work here is one person's papers and then the next
-          person's, and from the foot of a 4,000px page changing person meant scrolling all the way
-          back up. What stopped it sticking was not this bar and not a shared component — it was
-          this page's OWN outer wrapper being `overflow-hidden`, which makes it a scroll container
-          for sticky purposes. That is now `overflow-clip`: same clipping, no scroll container, and
-          nothing outside this file was touched. See the note on the wrapper above.
+  const plan: WizardStepKind[] =
+    path === "other"
+      ? [{ kind: "path" }, { kind: "employee" }, { kind: "other" }, { kind: "finish" }]
+      : path === null
+        ? [{ kind: "path" }, { kind: "employee" }, { kind: "finish" }]
+        : [
+            { kind: "path" },
+            { kind: "employee" },
+            ...paperSteps.map((paper): WizardStepKind => ({ kind: "paper", paper })),
+            ...(companyPapers.length > 0 ? [{ kind: "company" } as WizardStepKind] : []),
+            { kind: "finish" },
+          ];
 
-          `z-30` sits above the page body and below the SearchableSelect's dropdown, which portals
-          to the document and carries its own stacking.
-        */}
-        <div className="sticky top-2 z-30 border border-phx-line bg-white px-4 py-3 shadow-none sm:px-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <label
-              className="flex shrink-0 items-center gap-2 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink-soft"
-              htmlFor="hiring-pack-employee"
-            >
-              <UserRound className="h-4 w-4 text-phx-accent-press" />
-              Employee
-            </label>
-            {/*
-              THE `flex-1` GOES ON THIS WRAPPER, NOT ON THE CONTROL, and that is not a tidy-up.
-              `SearchableSelect` puts `className` on its INPUT and renders its own
-              `<div className="relative">` around it — so a `flex-1` passed in landed on a
-              `w-full` child of a plain block, and the block sized itself to its content. Measured
-              at a 1440px viewport: the box came out 207px wide in a row with room for over 1100,
-              and the value read "AI-0018 · SamahAshraf · M" with the job title simply gone.
-            */}
-            <div className="min-w-0 flex-1">
-              <SearchableSelect
-                className={cn(inputClassName, "w-full")}
-                disabled={busy === "load"}
-                id="hiring-pack-employee"
-                onValueChange={(value) => void selectEmployee(value)}
-                placeholder="Search by HR ID, name, job title or the date they left"
-                value={selectedHrId}
-              >
-                <option value="">Select an employee</option>
-                {pickerCandidates.map((candidate) => (
-                  <option key={candidate.hrId} value={candidate.hrId}>
-                    {candidateLabel(candidate)}
-                  </option>
-                ))}
-              </SearchableSelect>
-            </div>
-            {busy === "load" ? (
-              <p className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-phx-ink-soft">
-                <Loader2 className="h-4 w-4 animate-spin" /> Loading…
-              </p>
-            ) : null}
-          </div>
-        </div>
+  const stepStatus = (kind: WizardStepKind): PaperStatus | null => {
+    if (kind.kind !== "paper") return null;
+    return kind.paper === EXIT_FORM_STEP ? exitStepStatus() : statusOf(kind.paper);
+  };
 
-        {pack && employee ? (
-          <>
-            {/*
-              ONE STATUS BAND WHERE THERE WERE FOUR CARDS AND A CALLOUT UNDER THEM.
+  const steps: FormWizardStep[] = plan.map((kind) => {
+    switch (kind.kind) {
+      case "path":
+        return {
+          description: path ? HR_FORMS_PATHS.find((option) => option.value === path)?.labelEn : "New hire, leaver or another paper",
+          label: "Package",
+          title: "What are you preparing?",
+        };
+      case "employee":
+        return { description: employee?.fullName ?? "Who the papers are for", label: "Employee", title: "Who is it for?" };
+      case "paper": {
+        const status = stepStatus(kind) ?? { state: "open" as const };
+        return {
+          description: statusLine(status),
+          label: kind.paper === EXIT_FORM_STEP ? "Exit form" : PAPER_RAIL_LABELS[kind.paper] ?? documentLabel(kind.paper),
+          title:
+            kind.paper === EXIT_FORM_STEP
+              ? "The exit form"
+              : pack
+                ? paperCardText(kind.paper, pack).title
+                : documentLabel(kind.paper),
+        };
+      }
+      case "company":
+        return {
+          description: `${companyPapers.length} uploaded ${companyPapers.length === 1 ? "paper" : "papers"}`,
+          label: "Company papers",
+          title: "The company's own papers",
+        };
+      case "other":
+        return { description: otherChoice?.label ?? "Choose the paper", label: "Paper", title: "Which paper?" };
+      default:
+        return { description: "What was printed", label: "Done", title: "What was printed" };
+    }
+  });
 
-              Two of those cards were counts — "Blocking gaps 7", "To fill later 3" — sitting
-              directly above a callout that said "7 values … are still missing" and then listed all
-              seven by name. A number beside the list it counts is the number read twice, and it
-              cost 322px to do it.
+  const total = plan.length;
+  const current = plan[Math.min(step, total) - 1] ?? plan[0];
 
-              So the counts are now the headings of the lists themselves: the chips ARE the count,
-              and they say which values rather than how many. Nothing was dropped — the advisory
-              gaps were never listed anywhere before, only counted, so this band shows strictly more
-              than the row it replaces, in under half the height.
-            */}
-            <div className="border border-phx-line bg-white p-4 shadow-none sm:p-5">
-              <div className="flex flex-wrap items-center gap-2">
-                <SignaturePill
-                  icon={<FileText className="h-4 w-4" />}
-                  label="Contract"
-                  signedDate={pack.profile.contractSignedDate}
-                />
-                <SignaturePill
-                  icon={<ShieldCheck className="h-4 w-4" />}
-                  label="Form 1"
-                  signedDate={pack.profile.form1SignedDate}
-                />
-              </div>
+  /** Move to a step, opening that step's paper in the editor (and closing any other). */
+  const goTo = (target: number) => {
+    const next = Math.min(Math.max(target, 1), total);
+    const kind = plan[next - 1];
+    setStep(next);
+    setFurthest((value) => Math.max(value, next));
+    setNotice(null);
+    if (kind?.kind === "paper") {
+      const document = kind.paper === EXIT_FORM_STEP ? exitRoute : kind.paper;
+      setPreview(document ? { documentKey: document, versionId: null } : null);
+    } else if (kind?.kind !== "other") {
+      setPreview(null);
+    }
+    window.requestAnimationFrame(() => {
+      const anchor = window.document.getElementById(WIZARD_ANCHOR_ID);
+      if (anchor && anchor.getBoundingClientRect().top < 0) {
+        anchor.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
+  };
 
-              {blockingGaps.length > 0 || advisoryGaps.length > 0 || autoFilled.length > 0 ? (
-                <div className="mt-4 flex flex-col gap-3 border-t border-phx-line pt-4">
+  /**
+   * A DIFFERENT PACKAGE STARTS OVER WITH NOBODY CHOSEN (owner, 2026-11-27, on a new hire left loaded
+   * after going back and choosing Leaver: "she is a new hire — Form 6 for her?"). A joiner's pack
+   * must never carry into the leaver papers, nor a leaver's into a contract. Choosing the same
+   * package again keeps the person.
+   */
+  const choosePath = (value: HrFormsPath) => {
+    if (value !== path) void selectEmployee("");
+    setPath(value);
+    setOtherChoice(null);
+    setPreview(null);
+    setError(null);
+    setStep(2);
+    setFurthest(2);
+  };
+
+  const chooseEmployee = (hrId: string) => {
+    setOtherChoice(null);
+    void selectEmployee(hrId).then((loaded) => {
+      if (!loaded) return;
+      // A new person starts their papers at the first paper, drawn under its fields; the furthest
+      // step is theirs, not the previous person's.
+      setFurthest(3);
+      goTo(3);
+    });
+  };
+
+  const startNextPerson = () => {
+    void selectEmployee("");
+    setOtherChoice(null);
+    setPreview(null);
+    setStep(2);
+    setFurthest(2);
+  };
+
+  const canJump = (target: number) =>
+    target === 1 || (path !== null && (target === 2 || (pack !== null && (editAny || target <= furthest))));
+
+  const isStepDone = (target: number) => {
+    const kind = plan[target - 1];
+    if (!kind) return false;
+    if (kind.kind === "paper") return isPaperDone(stepStatus(kind) ?? { state: "open" });
+    if (kind.kind === "path") return path !== null && target !== step;
+    if (kind.kind === "employee") return pack !== null && target !== step;
+    if (kind.kind === "finish" || kind.kind === "company") return false;
+    return target < furthest && target !== step;
+  };
+
+  const onNext = () => {
+    if (current.kind === "path" && !path) {
+      setError("Choose new hire, leaver or another paper first.");
+      return false;
+    }
+    if (current.kind === "employee" && !pack) {
+      setError("Choose the person first.");
+      return false;
+    }
+    setError(null);
+    return true;
+  };
+
+  // By id, not a ref: these run from buttons drawn inside a render helper, where the compiler
+  // refuses a ref.
+  const scrollToEditor = () =>
+    window.requestAnimationFrame(() =>
+      window.document.getElementById(EDITOR_ANCHOR_ID)?.scrollIntoView({ behavior: "smooth", block: "start" }),
+    );
+
+  /** One paper's card, from its row in the table — the same card every paper step shows. */
+  const renderPaperCard = (document: HiringPackDocument, activePack: HiringPackData) => {
+    const text = paperCardText(document, activePack);
+    const signable = SIGNED_ON_SCREEN.has(document);
+    return (
+      <DocumentCard
+        busy={busy === `sign-${document}`}
+        canManage={canManage}
+        copies={copies[document] ?? String(documentDefaultCopies(document))}
+        document={document}
+        footnote={text.footnote ?? null}
+        gaps={gapsFor(activePack.gaps, document)}
+        key={document}
+        onCopiesChange={(value) => setCopiesFor(document, value)}
+        onPreview={() => {
+          openPreview(document);
+          scrollToEditor();
+        }}
+        onPrint={() => requestPrint(document)}
+        onSign={() => void recordSignature(document)}
+        onSignDateChange={(value) => setSignDateFor(document, value)}
+        printedAt={lastPrintedOf(document)}
+        printingNote={text.printingNote}
+        signDate={signable ? (signDates[document] ?? "") : ""}
+        signedDate={signable ? savedSigned[document] || null : null}
+        signable={signable}
+        subtitle={text.subtitle}
+        title={text.title}
+      />
+    );
+  };
+
+  /** What was filled automatically and what the papers still ask for — on the first paper's step. */
+  const renderGapsBand = () =>
+    blockingGaps.length > 0 || advisoryGaps.length > 0 || autoFilled.length > 0 ? (
+                <div className="border border-phx-line bg-white p-4 shadow-none sm:p-5">
+                  <div className="flex flex-col gap-3">
                   {autoFilled.length > 0 ? (
                     <div className="flex flex-col gap-1.5">
                       <p className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.12em] text-emerald-700">
@@ -1604,10 +1943,14 @@ export function HiringPackManager({
                     are the company&apos;s own registration numbers, and are missing for every
                     employee until they are supplied once.
                   </p>
+                  </div>
                 </div>
-              ) : null}
-            </div>
+              ) : null;
 
+  /** "What Phoenix already knows" — the employee record the papers print from, on the first paper's step. */
+  const renderFacts = (person: NonNullable<typeof employee>) => {
+    const employee = person;
+    return (
             <AdminTableShell
               action={
                 canManage ? (
@@ -1761,496 +2104,437 @@ export function HiringPackManager({
                 </div>
               </div>
             </AdminTableShell>
+    );
+  };
 
-            <ChoiceGroup
-              aria-label="Which package to prepare"
-              className="grid-cols-2"
-              onChange={setActivePackage}
-              options={PACKAGE_TABS}
-              value={activePackage}
+  /** The joining fields a paper prints, with their own Save. Hidden from a seat limited to its papers. */
+  const renderJoinerFields = (
+    activePack: HiringPackData,
+    groups: readonly JoinerGroup[],
+    withNotes: boolean,
+  ) =>
+    scoped ? null : (
+      <AdminTableShell
+        action={
+          canManage ? (
+            <Button className="h-10 gap-2" disabled={busy === "save"} onClick={() => void save()}>
+              {busy === "save" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Save
+            </Button>
+          ) : undefined
+        }
+        description="What this paper asks for that the employee record cannot answer. Save, and the paper below is drawn again."
+        title="What you fill in"
+      >
+        <div className="flex flex-col gap-6 px-5 py-5 sm:px-6">
+          {groups.map((group) =>
+            group === IDENTITY_GROUP ? (
+              <FieldGroup
+                disabled={!canManage}
+                fields={IDENTITY_FIELDS}
+                form={form}
+                key={group}
+                onChange={setForm}
+                subtitle="Printed on the contract and on Form 1."
+                suggestions={
+                  activePack.suggestedJobTitleAr ? { jobTitleAr: activePack.suggestedJobTitleAr } : undefined
+                }
+                title="Identity and job"
+              />
+            ) : group === FORM1_GROUP ? (
+              <FieldGroup
+                action={
+                  canManage && factsForm.residenceAddress?.trim() ? (
+                    <Button
+                      onClick={() =>
+                        setForm((current) => ({ ...current, addressStreet: factsForm.residenceAddress ?? "" }))
+                      }
+                      size="xs"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <Copy className="h-3 w-3" />
+                      Copy the address on file
+                    </Button>
+                  ) : undefined
+                }
+                disabled={!canManage}
+                fields={FORM1_FIELDS}
+                form={form}
+                key={group}
+                onChange={setForm}
+                subtitle="Printed on Form 1 only. The code fields are boxes on the government form and hold numbers. Street can be copied from the address on file — building, sheyakha, qism and governorate codes still need typing."
+                title="Form 1 details"
+              />
+            ) : (
+              <FieldGroup
+                disabled={!canManage || contractTermsReadOnly}
+                fields={TERM_FIELDS}
+                form={form}
+                key={group}
+                onChange={setForm}
+                subtitle={contractTermsReadOnly ? "You print these terms. Only the HR Manager changes them." : `Blank uses the standard term — ${activePack.terms.durationMonths} months, ${activePack.terms.probationMonths}-month probation, ${activePack.terms.underperformanceThresholdPct}% over ${activePack.terms.underperformanceMonths} months, ${activePack.terms.trainingBondMonths}-month training bond.`}
+                title="Contract terms"
+              />
+            ),
+          )}
+          {withNotes ? (
+            <div>
+              <label className={labelClassName} htmlFor="hiring-pack-notes">
+                Notes <span className="text-phx-ink-faint">ملاحظات</span>
+              </label>
+              <textarea
+                className={cn(inputClassName, "h-24 w-full resize-y px-3 py-2 leading-relaxed")}
+                disabled={!canManage}
+                id="hiring-pack-notes"
+                onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
+                placeholder="Internal only. Never printed on either document."
+                value={form.notes}
+              />
+            </div>
+          ) : null}
+        </div>
+      </AdminTableShell>
+    );
+
+  /** The leaving fields a paper prints, with their own Save — which also saves the exit route. */
+  const renderExitFields = (
+    activePack: HiringPackData,
+    groups: readonly ExitGroup[],
+    withNotes: boolean,
+  ) => (
+    <AdminTableShell
+      action={
+        canManage ? (
+          <Button className="h-10 gap-2" disabled={busy === "save-exit"} onClick={() => void saveExit()}>
+            {busy === "save-exit" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            Save exit details
+          </Button>
+        ) : undefined
+      }
+      description="Filled in when somebody leaves. Name, national ID, address and job title are reused from what was typed at hiring. Save, and the paper below is drawn again."
+      title="End of service"
+    >
+      <div className="flex flex-col gap-6 px-5 py-5 sm:px-6">
+        {groups.includes(DEPARTURE_GROUP) && activePack.exit ? (
+          <div className="border-l-[3px] border-phx-accent pl-3">
+            <span className={factLabelClassName}>Recorded departure</span>
+            <p className="mt-1 text-sm font-bold text-phx-ink">
+              Last working day {formatDate(activePack.exit.lastWorkingDate)}
+              {activePack.exit.status ? ` · ${activePack.exit.status}` : ""}
+            </p>
+            <p className="mt-1 text-xs font-semibold text-phx-ink-soft">
+              From the resignation record. Type a date below only if the paper says something different —
+              that record copies one date into four columns, so it is a starting point rather than a
+              confirmation.
+            </p>
+          </div>
+        ) : null}
+        {groups.map((group) =>
+          group === PARTY_GROUP ? (
+            <FieldGroup
+              disabled={!canManage}
+              fields={EXIT_PARTY_FIELDS}
+              form={exitForm}
+              key={group}
+              onChange={setExitForm}
+              subtitle="Blank uses the manager who signs employment contracts as الطرف الأول."
+              title="Who signs"
             />
+          ) : group === AGREEMENT_GROUP ? (
+            <FieldGroup
+              disabled={!canManage}
+              fields={EXIT_FIELDS.filter((field) => field.key === "agreementDate")}
+              form={exitForm}
+              key={group}
+              onChange={setExitForm}
+              subtitle="The day the agreement is signed, not the last working day."
+              title="Agreement"
+            />
+          ) : (
+            <FieldGroup
+              disabled={!canManage}
+              fields={EXIT_FIELDS.filter((field) => field.key !== "agreementDate")}
+              form={exitForm}
+              key={group}
+              onChange={setExitForm}
+              subtitle="The last working day is what Form 6 files with the Authority — it is the value on these forms that costs money if it is wrong."
+              title="Departure"
+            />
+          ),
+        )}
+        {withNotes ? (
+          <div>
+            <label className={labelClassName} htmlFor="hiring-pack-exit-notes">
+              Exit notes <span className="text-phx-ink-faint">ملاحظات</span>
+            </label>
+            <textarea
+              className={cn(inputClassName, "h-24 w-full resize-y px-3 py-2 leading-relaxed")}
+              disabled={!canManage}
+              id="hiring-pack-exit-notes"
+              onChange={(event) => setExitForm((current) => ({ ...current, notes: event.target.value }))}
+              placeholder="Internal only. Never printed on any exit document."
+              value={exitForm.notes}
+            />
+          </div>
+        ) : null}
+      </div>
+    </AdminTableShell>
+  );
 
-            {activePackage === "newHire" ? (
-              <div className="flex flex-col gap-5">
-                {/*
-                  The contract's and Form 1's own values — not offered to a seat limited to its own
-                  papers: neither paper is hers, and the hiring profile they save to stays
-                  employee_documents:update on the server.
-                */}
-                {scoped ? null : (
-                <AdminTableShell
-                  action={
-                    canManage ? (
-                      <Button
-                        className="h-10 gap-2"
-                        disabled={busy === "save"}
-                        onClick={() => void save()}
-                      >
-                        {busy === "save" ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Save className="h-4 w-4" />
-                        )}
-                        Save
-                      </Button>
-                    ) : undefined
-                  }
-                  description="Everything the two documents ask for that the employee record cannot answer."
-                  title="What you fill in"
-                >
-                  <div className="flex flex-col gap-6 px-5 py-5 sm:px-6">
-                    <FieldGroup
-                      disabled={!canManage}
-                      fields={IDENTITY_FIELDS}
-                      form={form}
-                      onChange={setForm}
-                      subtitle="Printed on both documents."
-                      suggestions={
-                        pack.suggestedJobTitleAr ? { jobTitleAr: pack.suggestedJobTitleAr } : undefined
-                      }
-                      title="Identity and job"
-                    />
-                    <FieldGroup
-                      action={
-                        canManage && factsForm.residenceAddress?.trim() ? (
-                          <Button
-                            onClick={() =>
-                              setForm((current) => ({
-                                ...current,
-                                addressStreet: factsForm.residenceAddress ?? "",
-                              }))
-                            }
-                            size="xs"
-                            type="button"
-                            variant="ghost"
-                          >
-                            <Copy className="h-3 w-3" />
-                            Copy the address on file
-                          </Button>
-                        ) : undefined
-                      }
-                      disabled={!canManage}
-                      fields={FORM1_FIELDS}
-                      form={form}
-                      onChange={setForm}
-                      subtitle="Printed on Form 1 only. The code fields are boxes on the government form and hold numbers. Street can be copied from the address on file above — building, sheyakha, qism and governorate codes still need typing."
-                      title="Form 1 details"
-                    />
-                    <FieldGroup
-                      disabled={!canManage || contractTermsReadOnly}
-                      fields={TERM_FIELDS}
-                      form={form}
-                      onChange={setForm}
-                      subtitle={contractTermsReadOnly ? "You print these terms. Only the HR Manager changes them." : `Blank uses the standard term — ${pack.terms.durationMonths} months, ${pack.terms.probationMonths}-month probation, ${pack.terms.underperformanceThresholdPct}% over ${pack.terms.underperformanceMonths} months, ${pack.terms.trainingBondMonths}-month training bond.`}
-                      title="Contract terms"
-                    />
-                    <div>
-                      <label className={labelClassName} htmlFor="hiring-pack-notes">
-                        Notes <span className="text-phx-ink-faint">ملاحظات</span>
-                      </label>
-                      <textarea
-                        className={cn(inputClassName, "h-24 w-full resize-y px-3 py-2 leading-relaxed")}
-                        disabled={!canManage}
-                        id="hiring-pack-notes"
-                        onChange={(event) =>
-                          setForm((current) => ({ ...current, notes: event.target.value }))
-                        }
-                        placeholder="Internal only. Never printed on either document."
-                        value={form.notes}
-                      />
-                    </div>
-                  </div>
-                </AdminTableShell>
-                )}
+  /**
+   * "Another paper": every paper on NEITHER package's list as the Control tab arranged them, plus the
+   * certificates issued to anyone. A paper only a leaver may receive is offered for a departed person
+   * only — a Form 6 is never one click from being printed for somebody still at his desk.
+   */
+  const personLeft = Boolean(employee?.departed);
+  const otherFolders = useMemo(() => {
+    const folders = buildFormsDrive(scoped ? [] : companyTemplates.templates, paperScope);
+    if (editAny) return folders;
+    const placed = stepsInPackages(storedLayout.layout);
+    return folders
+      .map((folder) => {
+        const entries = folder.entries.filter((entry) => {
+          // An uploaded joining or leaving paper is walked in that package's company-papers step.
+          if (entry.versionId !== null) return folder.id !== "joining" && folder.id !== "leaving";
+          if (folder.id === "leaving" && entry.audience === "everyone") return true;
+          if (placed.has(stepOfDocument(entry.document))) return false;
+          return entry.audience !== "departed" || personLeft;
+        });
+        return folder.id === "leaving" && entries.every((entry) => entry.audience === "everyone")
+          ? { ...folder, description: "Issued to anybody who asks, still employed or not.", entries, labelEn: "Certificates" }
+          : { ...folder, entries };
+      })
+      .filter((folder) => folder.entries.length > 0);
+  }, [companyTemplates.templates, editAny, paperScope, personLeft, scoped, storedLayout.layout]);
 
-                <PaperGroup title="Contract and Form 1">
-                  <DocumentCard
-                    busy={busy === "sign-contract"}
-                    canManage={canManage}
-                    document="contract"
-                    copies={copies.contract}
-                    gaps={gapsFor(pack.gaps, "contract")}
-                    onCopiesChange={(value) => setCopiesFor("contract", value)}
-                    footnote={contractVersionNote(pack.profile.contractTemplateVersion)}
-                    onPreview={() => openPreview("contract")}
-                    onPrint={() => requestPrint("contract")}
-                    onSign={() => void recordSignature("contract")}
-                    onSignDateChange={(value) => setSignDateFor("contract", value)}
-                    printedAt={pack.profile.contractPrintedAt}
-                    printingNote="One page per sheet — single-sided. Five pages per copy, on A4."
-                    signDate={signDates.contract}
-                    signedDate={pack.profile.contractSignedDate}
-                    subtitle="عقد عمل محدد المدة"
-                    title="Employment contract"
-                  />
-                  <DocumentCard
-                    busy={busy === "sign-form1"}
-                    canManage={canManage}
-                    document="form1"
-                    copies={copies.form1}
-                    gaps={gapsFor(pack.gaps, "form1")}
-                    onCopiesChange={(value) => setCopiesFor("form1", value)}
-                    onPreview={() => openPreview("form1")}
-                    onPrint={() => requestPrint("form1")}
-                    onSign={() => void recordSignature("form1")}
-                    onSignDateChange={(value) => setSignDateFor("form1", value)}
-                    printedAt={pack.profile.form1PrintedAt}
-                    printingNote="MUST be printed double-sided. Set the printer to two-sided, flip on the long edge, US Legal paper."
-                    signDate={signDates.form1}
-                    signedDate={pack.profile.form1SignedDate}
-                    subtitle="نموذج ١ — طلب اشتراك مؤمن عليه"
-                    title="Social insurance Form 1"
-                  />
-                </PaperGroup>
+  const chooseOther = (entry: FormsDriveEntry) => {
+    setOtherChoice(entry);
+    openPreview(entry.document, entry.versionId ?? undefined);
+    scrollToEditor();
+  };
 
-                {/*
-                  The worker-data form — استمارة بيانات العامل — is Sato's own service-file intake sheet,
-                  filled on the first day and kept in the personnel file (its header says "تُحفظ بملف
-                  الخدمة"). It is not signature-tracked, for the same reason the custody receipts are not:
-                  a paper filed in a drawer, where the honest record is none. See `SIGNABLE_DOCUMENTS`.
-                */}
-                <PaperGroup title="Service file">
-                  <DocumentCard
-                    busy={false}
-                    canManage={canManage}
-                    document="workerDataForm"
-                    copies={copies.workerDataForm}
-                    gaps={gapsFor(pack.gaps, "workerDataForm")}
-                    onCopiesChange={(value) => setCopiesFor("workerDataForm", value)}
-                    footnote="A service-file sheet, not a government form. Everything Phoenix already knows — name, national ID, job, insurance number — is filled; the fields it holds no record of (marital status, military-service position, bank and IBAN, next of kin) print blank for a pen."
-                    onPreview={() => openPreview("workerDataForm")}
-                    onPrint={() => requestPrint("workerDataForm")}
-                    onSign={() => undefined}
-                    onSignDateChange={() => undefined}
-                    printedAt={null}
-                    printingNote="One copy, single-sided A4. Kept in the service file — not attached to the contract copies."
-                    signDate=""
-                    signedDate={null}
-                    signable={false}
-                    subtitle="استمارة بيانات العامل — تُحفظ بملف الخدمة"
-                    title="Worker data form"
-                  />
-                </PaperGroup>
+  const finishRows = plan
+    .map((kind, index) => ({ index: index + 1, kind }))
+    .filter((row) => row.kind.kind === "paper");
+  const printedCount = finishRows.filter((row) => isPaperDone(stepStatus(row.kind) ?? { state: "open" })).length;
 
-                {/*
-                  THE CUSTODY RECEIPTS SIT BETWEEN THE TWO HALVES, because that is where they belong in
-                  a career: they are printed whenever a device changes hands, which is neither arrival
-                  nor departure and is usually both at least once in between.
-
-                  Both are always offered, unlike the two exit forms. The exit forms are alternatives —
-                  one is signed and the other must not be — while these two are simply different
-                  devices, and somebody who is handed a laptop and a phone on his first morning needs
-                  both papers on his first morning.
-                */}
-                <PaperGroup title="Custody receipts">
-                  <DocumentCard
-                    busy={false}
-                    canManage={canManage}
-                    document="custodyLaptop"
-                    copies={copies.custodyLaptop}
-                    gaps={gapsFor(pack.gaps, "custodyLaptop")}
-                    onCopiesChange={(value) => setCopiesFor("custodyLaptop", value)}
-                    footnote="The device details, values and handover date print blank — Phoenix holds no asset register, and a serial number is read off the machine rather than recalled. The name, ID, job title and address are filled."
-                    onPreview={() => openPreview("custodyLaptop")}
-                    onPrint={() => requestPrint("custodyLaptop")}
-                    onSign={() => undefined}
-                    onSignDateChange={() => undefined}
-                    printedAt={null}
-                    printingNote="Two copies — the form says so itself. Single-sided A4; the return protocol is the last sheet of each copy."
-                    signDate=""
-                    signedDate={null}
-                    signable={false}
-                    subtitle="إقرار استلام عهدة — نموذج رقم ١ (حاسب محمول)"
-                    title="Custody receipt — laptop"
-                  />
-                  <DocumentCard
-                    busy={false}
-                    canManage={canManage}
-                    document="custodyMobile"
-                    copies={copies.custodyMobile}
-                    gaps={gapsFor(pack.gaps, "custodyMobile")}
-                    onCopiesChange={(value) => setCopiesFor("custodyMobile", value)}
-                    footnote="Same paper as the laptop receipt, with the phone's own item list and an IMEI and SIM block in place of the Windows fields."
-                    onPreview={() => openPreview("custodyMobile")}
-                    onPrint={() => requestPrint("custodyMobile")}
-                    onSign={() => undefined}
-                    onSignDateChange={() => undefined}
-                    printedAt={null}
-                    printingNote="Two copies. Single-sided A4. Print one form per device — البند (14) requires a separate numbered receipt for each."
-                    signDate=""
-                    signedDate={null}
-                    signable={false}
-                    subtitle="إقرار استلام عهدة — نموذج رقم ٢ (هاتف / جهاز لوحي)"
-                    title="Custody receipt — phone or tablet"
-                  />
-                </PaperGroup>
-
-                {/*
-                  THE RENEWAL PAIR SITS BESIDE THE CUSTODY RECEIPTS, for the same reason: a contract
-                  is renewed every year, which is neither arrival nor departure.
-
-                  UNLIKE the custody receipts, only ONE of these two is ever issued for a given term
-                  — the annex if the contract is extended, the notice if it is not. They are shown
-                  together because the choice is made once, by one person, at one moment, and putting
-                  the notice in the leaver tab would hide it until after the decision it announces.
-                */}
-                <PaperGroup title="Renewal">
-                  <DocumentCard
-                    busy={false}
-                    canManage={canManage}
-                    document="contractRenewal"
-                    copies={copies.contractRenewal}
-                    gaps={gapsFor(pack.gaps, "contractRenewal")}
-                    onCopiesChange={(value) => setCopiesFor("contractRenewal", value)}
-                    footnote="The new term is taken from the approved renewal request where one exists, and derived from the expiring contract where it does not. The annex number and the objective reason for keeping the term fixed print blank — the number comes from the company's own register, and the reason is a legal judgement about the post."
-                    onPreview={() => openPreview("contractRenewal")}
-                    onPrint={() => requestPrint("contractRenewal")}
-                    onSign={() => undefined}
-                    onSignDateChange={() => undefined}
-                    printedAt={null}
-                    printingNote="Four copies, matching the contract it amends — one for the employee, one for the file, one for the labour office, one for social insurance. SIGN IT BEFORE THE CURRENT TERM EXPIRES: under مادة (88) of Law 14/2025, carrying on after expiry with no written agreement makes the contract indefinite from the day it was made."
-                    signDate=""
-                    signedDate={null}
-                    signable={false}
-                    subtitle="ملحق تجديد سنوي لعقد عمل محدد المدة"
-                    title="Contract renewal annex"
-                  />
-                  <DocumentCard
-                    busy={false}
-                    canManage={canManage}
-                    document="contractNonRenewal"
-                    copies={copies.contractNonRenewal}
-                    gaps={gapsFor(pack.gaps, "contractNonRenewal")}
-                    onCopiesChange={(value) => setCopiesFor("contractNonRenewal", value)}
-                    footnote="The alternative to the annex, never a companion to it. The last working day is the contract's own end date and nothing else — this notice exists to say the contract expired rather than that anybody resigned or was dismissed."
-                    onPreview={() => openPreview("contractNonRenewal")}
-                    onPrint={() => requestPrint("contractNonRenewal")}
-                    onSign={() => undefined}
-                    onSignDateChange={() => undefined}
-                    printedAt={null}
-                    printingNote="Two copies — one handed over, one filed with the employee's acknowledgment on it. Serve it before the term ends. If they will not sign, the witness block at the foot is the record."
-                    signDate=""
-                    signedDate={null}
-                    signable={false}
-                    subtitle="إخطار بعدم تجديد عقد عمل محدد المدة"
-                    title="Non-renewal notice"
-                  />
-                </PaperGroup>
-
-                {/*
-                  SATO'S OWN JOINING PAPERS — signed or completed on the day somebody arrives, beside
-                  the contract and Form 1 rather than after them, because that is when they are used.
-                */}
-                <PaperGroup title="First-day papers">
-                  <DocumentCard
-                    busy={busy === "sign-nda"}
-                    canManage={canManage}
-                    document="nda"
-                    copies={copies.nda}
-                    gaps={gapsFor(pack.gaps, "nda")}
-                    onCopiesChange={(value) => setCopiesFor("nda", value)}
-                    footnote="Supplements مادة (7) of the contract and now names it. Everything about the person is filled; the paper is signed by both sides."
-                    onPreview={() => openPreview("nda")}
-                    onPrint={() => requestPrint("nda")}
-                    onSign={() => void recordSignature("nda")}
-                    onSignDateChange={(value) => setSignDateFor("nda", value)}
-                    printedAt={pack.profile.ndaPrintedAt}
-                    printingNote="Two copies — one filed, one handed over. Sign it on the first day, alongside the contract."
-                    signDate={signDates.nda}
-                    signedDate={pack.profile.ndaSignedDate}
-                    signable
-                    subtitle="إقرار وتعهد بعدم إفشاء المعلومات والأسرار التجارية"
-                    title="Confidentiality undertaking"
-                  />
-                  <DocumentCard
-                    busy={false}
-                    canManage={canManage}
-                    document="appointmentDocsReceipt"
-                    copies={copies.appointmentDocsReceipt}
-                    gaps={gapsFor(pack.gaps, "appointmentDocsReceipt")}
-                    onCopiesChange={(value) => setCopiesFor("appointmentDocsReceipt", value)}
-                    footnote="Every verdict box prints blank by design: Phoenix holds no register of which certificates were handed over, and a ticked box on a signed form asserts that a document was seen."
-                    onPreview={() => openPreview("appointmentDocsReceipt")}
-                    onPrint={() => requestPrint("appointmentDocsReceipt")}
-                    onSign={() => undefined}
-                    onSignDateChange={() => undefined}
-                    printedAt={null}
-                    printingNote="Two copies. Complete it with the certificates on the desk, and set the deadline for anything missing."
-                    signDate=""
-                    signedDate={null}
-                    signable={false}
-                    subtitle="إيصال استلام مسوغات التعيين — 12 مستندًا"
-                    title="Appointment documents receipt"
-                  />
-                  <DocumentCard
-                    busy={false}
-                    canManage={canManage}
-                    document="socialStatusSheet"
-                    copies={copies.socialStatusSheet}
-                    gaps={gapsFor(pack.gaps, "socialStatusSheet")}
-                    onCopiesChange={(value) => setCopiesFor("socialStatusSheet", value)}
-                    footnote="The service-file sheet the law requires the employer to keep. Name, ID, job, dates and insurance number are filled; religion, military status and marital status print blank because this system holds none of them."
-                    onPreview={() => openPreview("socialStatusSheet")}
-                    onPrint={() => requestPrint("socialStatusSheet")}
-                    onSign={() => undefined}
-                    onSignDateChange={() => undefined}
-                    printedAt={null}
-                    printingNote="One copy, one sheet. Filed — never handed over. The dependants table is completed by the employee, who signs that it is true."
-                    signDate=""
-                    signedDate={null}
-                    signable={false}
-                    subtitle="صحيفة الحالة الاجتماعية — المادة (92)"
-                    title="Social status sheet"
-                  />
-                </PaperGroup>
-
-                {/*
-                  THE TWO ABSENCE NOTICES. They are NOT alternatives the way the exit forms are —
-                  Article 166 requires a warning BEFORE a worker can be deemed resigned, so the first
-                  is a precondition of the second. Both are shown so that is visible, and neither
-                  carries a date Phoenix guessed.
-                */}
-                <PaperGroup title="Attendance">
-                  <DocumentCard
-                    busy={false}
-                    canManage={canManage}
-                    document="absenceWarning"
-                    copies={copies.absenceWarning}
-                    gaps={gapsFor(pack.gaps, "absenceWarning")}
-                    onCopiesChange={(value) => setCopiesFor("absenceWarning", value)}
-                    footnote="Issued after five consecutive days, as مادة (8) of the contract provides. The absence dates print blank: attendance is not resolved here, and a wrong date on this page cannot be walked back."
-                    onPreview={() => openPreview("absenceWarning")}
-                    onPrint={() => requestPrint("absenceWarning")}
-                    onSign={() => undefined}
-                    onSignDateChange={() => undefined}
-                    printedAt={null}
-                    printingNote="Two copies. Serve it and take their signature; if they refuse, the witness block at the foot is the record."
-                    signDate=""
-                    signedDate={null}
-                    signable={false}
-                    subtitle="إنذار أول بالتغيب عن العمل — المادة (166)"
-                    title="Absence warning — first"
-                  />
-                  <DocumentCard
-                    busy={false}
-                    canManage={canManage}
-                    document="deemedResignation"
-                    copies={copies.deemedResignation}
-                    gaps={gapsFor(pack.gaps, "deemedResignation")}
-                    onCopiesChange={(value) => setCopiesFor("deemedResignation", value)}
-                    footnote="Only after MORE THAN ten consecutive days, and only once the first warning has been served — Article 166 requires both. It declares a deemed resignation; it does not accept one, because the employee wrote none."
-                    onPreview={() => openPreview("deemedResignation")}
-                    onPrint={() => requestPrint("deemedResignation")}
-                    onSign={() => undefined}
-                    onSignDateChange={() => undefined}
-                    printedAt={null}
-                    printingNote="Two copies. This one ends service — check the dates against attendance before it leaves the desk."
-                    signDate=""
-                    signedDate={null}
-                    signable={false}
-                    subtitle="إخطار باعتبار العامل مستقيلًا حكمًا — المادة (166)"
-                    title="Deemed resignation notice"
-                  />
-                </PaperGroup>
-
-                {/*
-                  THE HR LETTER, in both languages. Asked for by somebody still employed — a bank, an
-                  embassy — so it sits with the papers of a working life. Both state the BASE salary
-                  on record (the Arabic one since 2026-09-20, the English one since 2026-10-28: "PUT
-                  THE BASE NOT THE BASIC SALARY"), so a pair printed together states one figure.
-                */}
-                <PaperGroup title="HR letters">
-                  <DocumentCard
-                    busy={false}
-                    canManage={canManage}
-                    document="salaryLetterEn"
-                    copies={copies.salaryLetterEn}
-                    gaps={gapsFor(pack.gaps, "salaryLetterEn")}
-                    onCopiesChange={(value) => setCopiesFor("salaryLetterEn", value)}
-                    footnote="For a bank, an embassy or a landlord. It states the BASE monthly salary on record, in figures and in words — never the basic, the net or the gross."
-                    onPreview={() => openPreview("salaryLetterEn")}
-                    onPrint={() => requestPrint("salaryLetterEn")}
-                    onSign={() => undefined}
-                    onSignDateChange={() => undefined}
-                    printedAt={null}
-                    printingNote="Two copies. One is handed over; the other is filed as the record of the salary the company certified."
-                    signDate=""
-                    signedDate={null}
-                    signable={false}
-                    subtitle="شهادة راتب — باللغة الإنجليزية"
-                    title="HR letter — base salary (English)"
-                  />
-                  <DocumentCard
-                    busy={false}
-                    canManage={canManage}
-                    document="salaryLetterAr"
-                    copies={copies.salaryLetterAr}
-                    gaps={gapsFor(pack.gaps, "salaryLetterAr")}
-                    onCopiesChange={(value) => setCopiesFor("salaryLetterAr", value)}
-                    footnote="لبنك أو سفارة أو مالك عقار. تُبيّن الأجر الشهري المسجَّل، رقمًا وكتابةً — دون الأجر الأساسي أو الصافي أو الإجمالي."
-                    onPreview={() => openPreview("salaryLetterAr")}
-                    onPrint={() => requestPrint("salaryLetterAr")}
-                    onSign={() => undefined}
-                    onSignDateChange={() => undefined}
-                    printedAt={null}
-                    printingNote="عدد النسخ يُسأل عنه قبل الطباعة، وتكتبه الشهادة على نفسها. بدون خاتم."
-                    signDate=""
-                    signedDate={null}
-                    signable={false}
-                    subtitle="شهادة راتب — باللغة العربية"
-                    title="HR letter — base salary (Arabic)"
-                  />
-                </PaperGroup>
-
-                <PackageCompanyTemplates
-                  employeeSelected={Boolean(pack)}
-                  onOpen={(template) => openTemplate(template, "preview")}
-                  onPrint={(template) => openTemplate(template, "print")}
-                  // A company template may print anything at all, so a seat limited to its own
-                  // papers is offered none (the server refuses `custom:<uuid>` to her too).
-                  templates={scoped ? NO_TEMPLATES : joiningTemplates}
-                />
-              </div>
+  // THE OUTER WRAPPER IS `overflow-clip`, NOT `overflow-hidden` — a scroll container there would
+  // trap the sticky notice. See the note that used to sit on the sticky picker.
+  return (
+    <PaperScopeContext.Provider value={paperScope}>
+    <div className="relative overflow-clip">
+      <div className="flex flex-col gap-5">
+        {error || notice ? (
+          <div aria-live="polite" className="sticky top-28 z-20 flex flex-col gap-2">
+            {error ? (
+              <AdminCallout tone="danger">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{error}</span>
+              </AdminCallout>
             ) : null}
+            {notice ? (
+              <AdminCallout tone="success">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{notice}</span>
+              </AdminCallout>
+            ) : null}
+          </div>
+        ) : null}
 
-            {activePackage === "leaver" ? (
-              <div className="flex flex-col gap-5">
-                <AdminTableShell
-                  action={
-                    canManage ? (
-                      <Button
-                        className="h-10 gap-2"
-                        disabled={busy === "save-exit"}
-                        onClick={() => void saveExit()}
-                      >
-                        {busy === "save-exit" ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Save className="h-4 w-4" />
-                        )}
-                        Save exit details
-                      </Button>
-                    ) : undefined
-                  }
-                  description="Filled in when somebody leaves. Everything else on these forms — name, national ID, address, job title — is reused from what was typed at hiring."
-                  title="End of service"
+        <div className="scroll-mt-4" id={WIZARD_ANCHOR_ID} />
+        {/*
+          THE CONTROL TAB (owner, 2026-11-27): "a tab in HR Forms where I can rearrange the forms that
+          appear, remove a form, add a form I want to appear". Super Admin only, as "Edit any form" is;
+          the route refuses a save from anyone else.
+        */}
+        {canEditAnyForm ? (
+          <div aria-label="HR Forms sections" className="grid grid-cols-2 border-b border-phx-line sm:flex sm:flex-wrap" role="tablist">
+            {(
+              [
+                { id: "forms", label: "Forms" },
+                { id: "control", label: "Arrange forms" },
+              ] as const
+            ).map((tab) => (
+              <button
+                aria-selected={screenTab === tab.id}
+                className={cn(
+                  "-mb-px min-h-11 border-b-2 px-4 py-2 text-left text-sm transition-colors",
+                  screenTab === tab.id
+                    ? "border-phx-accent font-black text-phx-ink"
+                    : "border-transparent font-bold text-phx-ink-soft hover:text-phx-ink",
+                )}
+                key={tab.id}
+                onClick={() => setScreenTab(tab.id)}
+                role="tab"
+                type="button"
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {canEditAnyForm && screenTab === "control" ? (
+          <section className={cn(adminPanelClassName, "flex flex-col gap-4 p-4 sm:p-6")}>
+            <div className="flex flex-col gap-1">
+              <p className="text-phx-xs font-black uppercase tracking-wide text-phx-accent">Employee documents</p>
+              <h2 className="text-lg font-black text-phx-ink">Arrange HR Forms</h2>
+            </div>
+            <HrFormsControl
+              initial={storedLayout}
+              onSaved={(stored) => {
+                setStoredLayout(stored);
+                // A step number may now point at a different paper: start the person's papers again.
+                setStep((value) => Math.min(value, 2));
+                setPreview(null);
+              }}
+            />
+          </section>
+        ) : (
+        <>
+        {/*
+          HR FORMS IS THE ADVERSE DRUG REACTION REPORT'S WIZARD (owner, 2026-11-27): "make it the same
+          form as the report. I choose: is this a new hire or a leaver? Then I choose the name. Then the
+          form begins." The rail on the left lists every paper to fill; a paper is ticked once it is
+          printed or signed (`isPaperDone`), never merely for having been walked past.
+        */}
+        <FormWizard
+          badge={
+            bankLetterHref || canEditAnyForm ? (
+              <div className="flex flex-wrap items-center gap-2">
+                {bankLetterHref ? (
+                  <Button asChild className="h-9" variant="secondary">
+                    <Link href={bankLetterHref}>
+                      <Landmark />
+                      Bank account letter
+                    </Link>
+                  </Button>
+                ) : null}
+                {canEditAnyForm ? (
+                  <Button
+                    aria-pressed={editAny}
+                    className="h-9 gap-2"
+                    onClick={() => setEditAny((value) => !value)}
+                    type="button"
+                    variant={editAny ? "default" : "outline"}
+                  >
+                    <PencilLine className="h-4 w-4" />
+                    {editAny ? "Editing any form" : "Edit any form"}
+                  </Button>
+                ) : null}
+              </div>
+            ) : undefined
+          }
+          canJump={canJump}
+          className={adminPanelClassName}
+          description={
+            editAny
+              ? "Edit any form is on: every step opens, every person is listed and every paper is offered."
+              : `Choose the package, then the person; the papers follow one after another. ${currentCount} on staff, ${departedCount} left.`
+          }
+          eyebrow="Employee documents"
+          footnote="A paper is ticked once it is printed or signed. Every print is numbered."
+          footnoteIcon={false}
+          header="panel"
+          isStepDone={isStepDone}
+          nextLabel="Next"
+          onNext={onNext}
+          onStepChange={goTo}
+          onSubmit={startNextPerson}
+          step={Math.min(step, total)}
+          steps={steps}
+          submitLabel="Start the next person"
+          title="HR Forms"
+          wrapPhoneStepper
+        >
+          {current.kind === "path" ? (
+            <div className="grid gap-3 sm:grid-cols-3">
+              {HR_FORMS_PATHS.map((option) => {
+                const selected = path === option.value;
+                return (
+                  <button
+                    aria-pressed={selected}
+                    className={cn(
+                      "border px-4 py-4 text-left transition",
+                      selected
+                        ? "border-phx-accent-line bg-phx-accent/10"
+                        : "border-phx-line bg-white hover:border-phx-accent-line",
+                    )}
+                    key={option.value}
+                    onClick={() => choosePath(option.value)}
+                    type="button"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-sm font-black text-phx-ink">{option.labelEn}</span>
+                      <span className="text-sm font-bold text-phx-ink-soft" dir="rtl">
+                        {option.labelAr}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs font-semibold text-phx-ink-soft">{option.note}</p>
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+
+          {current.kind === "employee" ? (
+            <div className="flex flex-col gap-3">
+              <label className={labelClassName} htmlFor="hiring-pack-employee">
+                {path === "leaver" && !editAny ? "The person leaving" : "Employee"}
+              </label>
+              {/*
+                THE `w-full` GOES ON THE CONTROL INSIDE A `min-w-0` WRAPPER — `SearchableSelect` puts
+                `className` on its input and renders its own relative block around it.
+              */}
+              <div className="min-w-0">
+                <SearchableSelect
+                  className={cn(inputClassName, "w-full")}
+                  disabled={busy === "load"}
+                  id="hiring-pack-employee"
+                  onValueChange={chooseEmployee}
+                  placeholder="Search by HR ID, name, job title or the date they left"
+                  value={selectedHrId}
                 >
-                  <div className="flex flex-col gap-6 px-5 py-5 sm:px-6">
-                    {pack.exit ? (
-                      <div className="border-l-[3px] border-phx-accent pl-3">
-                        <span className={factLabelClassName}>Recorded departure</span>
-                        <p className="mt-1 text-sm font-bold text-phx-ink">
-                          Last working day {formatDate(pack.exit.lastWorkingDate)}
-                          {pack.exit.status ? ` · ${pack.exit.status}` : ""}
-                        </p>
-                        <p className="mt-1 text-xs font-semibold text-phx-ink-soft">
-                          From the resignation record. Type a date below only if the paper says something
-                          different — that record copies one date into four columns, so it is a starting
-                          point rather than a confirmation.
-                        </p>
-                      </div>
-                    ) : null}
+                  <option value="">Select an employee</option>
+                  {pickerCandidates.map((candidate) => (
+                    <option key={candidate.hrId} value={candidate.hrId}>
+                      {candidateLabel(candidate)}
+                    </option>
+                  ))}
+                </SearchableSelect>
+              </div>
+              {busy === "load" ? (
+                <p className="inline-flex items-center gap-2 text-sm font-semibold text-phx-ink-soft">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+                </p>
+              ) : employee ? (
+                <p className="text-sm font-semibold text-phx-ink-soft">
+                  {employee.fullName} is loaded. Press Next to begin.
+                </p>
+              ) : (
+                <p className="flex items-center gap-2 text-xs font-semibold text-phx-ink-faint">
+                  <UserRound className="h-4 w-4" />
+                  The papers begin once the person is chosen.
+                </p>
+              )}
+            </div>
+          ) : null}
 
+          {current.kind === "paper" && pack && employee ? (
+            <div className="flex flex-col gap-5">
+              {/*
+                ONE STEP HOLDS EVERYTHING ABOUT ITS PAPER (owner, 2026-11-27: "I fill the details of the
+                contract and it is rendered under them; I edit it and print it from its place, and when
+                I move to the next page I am done with the contract"). The paper's own fields first,
+                then its card, then the paper itself, drawn again after every save.
+              */}
+              {current.paper === paperSteps[0] ? renderGapsBand() : null}
+              {current.paper === paperSteps[0] ? renderFacts(employee) : null}
+              {current.paper === "contract" ? renderJoinerFields(pack, [IDENTITY_GROUP, TERMS_GROUP], true) : null}
+              {current.paper === "form1" ? renderJoinerFields(pack, [IDENTITY_GROUP, FORM1_GROUP], false) : null}
+              {current.paper === "form6" ? renderExitFields(pack, [DEPARTURE_GROUP], true) : null}
+              {current.paper === EXIT_FORM_STEP ? (
+              <>
                     <div>
                       <div className="mb-3">
                         <h3 className="text-sm font-black uppercase tracking-[0.1em] text-phx-ink">
@@ -2273,14 +2557,16 @@ export function HiringPackManager({
                               )}
                               disabled={!canManage}
                               key={route.value}
-                              onClick={() =>
+                              onClick={() => {
                                 setExitForm((current) => ({
                                   ...current,
                                   // Pressing the chosen route again clears it, which is the only way
                                   // back to "not decided yet" once somebody has clicked the wrong one.
                                   exitRoute: selected ? "" : route.value,
-                                }))
-                              }
+                                }));
+                                // The chosen exit form is drawn under the step at once, like every paper.
+                                setPreview(selected ? null : { documentKey: route.value, versionId: null });
+                              }}
                               type="button"
                             >
                               <div className="flex items-center justify-between gap-2">
@@ -2300,280 +2586,217 @@ export function HiringPackManager({
                         })}
                       </div>
                     </div>
-
-                    <FieldGroup
-                      disabled={!canManage}
-                      fields={EXIT_FIELDS}
-                      form={exitForm}
-                      onChange={setExitForm}
-                      subtitle="The last working day is what Form 6 files with the Authority — it is the value on these forms that costs money if it is wrong."
-                      title="Departure"
-                    />
-                    <FieldGroup
-                      disabled={!canManage}
-                      fields={EXIT_PARTY_FIELDS}
-                      form={exitForm}
-                      onChange={setExitForm}
-                      subtitle="Blank uses the manager who signs employment contracts as الطرف الأول."
-                      title="Who signs"
-                    />
-                    <div>
-                      <label className={labelClassName} htmlFor="hiring-pack-exit-notes">
-                        Exit notes <span className="text-phx-ink-faint">ملاحظات</span>
-                      </label>
-                      <textarea
-                        className={cn(inputClassName, "h-24 w-full resize-y px-3 py-2 leading-relaxed")}
-                        disabled={!canManage}
-                        id="hiring-pack-exit-notes"
-                        onChange={(event) =>
-                          setExitForm((current) => ({ ...current, notes: event.target.value }))
-                        }
-                        placeholder="Internal only. Never printed on any exit document."
-                        value={exitForm.notes}
-                      />
-                    </div>
-                  </div>
-                </AdminTableShell>
-
-                <PaperGroup title="Filing the departure">
-                  <DocumentCard
-                    busy={busy === "sign-form6"}
-                    canManage={canManage}
-                    document="form6"
-                    copies={copies.form6}
-                    gaps={gapsFor(pack.gaps, "form6")}
-                    onCopiesChange={(value) => setCopiesFor("form6", value)}
-                    onPreview={() => openPreview("form6")}
-                    onPrint={() => requestPrint("form6")}
-                    onSign={() => void recordSignature("form6")}
-                    onSignDateChange={(value) => setSignDateFor("form6", value)}
-                    printedAt={pack.offboarding.form6PrintedAt}
-                    printingNote="MUST be printed double-sided, three copies. Set the printer to two-sided, flip on the long edge, US Legal paper."
-                    signDate={signDates.form6}
-                    signedDate={pack.offboarding.form6SignedDate}
-                    subtitle="نموذج ٦ — إخطار بإنتهاء اشتراك مؤمن عليه"
-                    title="Social insurance Form 6"
-                  />
-                  {/*
-                    Only the chosen route's card is offered. Showing both would invite printing both,
-                    and the two forms assert incompatible facts about the same departure — the owner's
-                    rule is that one is signed, never both.
-                  */}
-                  {exitRoute === "resignation" ? (
-                    <DocumentCard
-                      busy={busy === "sign-resignation"}
-                      canManage={canManage}
-                      document="resignation"
-                      copies={copies.resignation}
-                      gaps={gapsFor(pack.gaps, "resignation")}
-                      onCopiesChange={(value) => setCopiesFor("resignation", value)}
-                      onPreview={() => openPreview("resignation")}
-                      onPrint={() => requestPrint("resignation")}
-                      onSign={() => void recordSignature("resignation")}
-                      onSignDateChange={(value) => setSignDateFor("resignation", value)}
-                      printedAt={pack.offboarding.resignationPrintedAt}
-                      printingNote="One page, single-sided, US Letter. The right-hand endorsement column is filled at the labour office."
-                      signDate={signDates.resignation}
-                      signedDate={pack.offboarding.resignationSignedDate}
-                      subtitle="طلب استقالة — مادة ١٦٧"
-                      title="Resignation request"
-                    />
-                  ) : exitRoute === "mutualTermination" ? (
-                    <DocumentCard
-                      busy={busy === "sign-mutualTermination"}
-                      canManage={canManage}
-                      document="mutualTermination"
-                      copies={copies.mutualTermination}
-                      gaps={gapsFor(pack.gaps, "mutualTermination")}
-                      onCopiesChange={(value) => setCopiesFor("mutualTermination", value)}
-                      onPreview={() => openPreview("mutualTermination")}
-                      onPrint={() => requestPrint("mutualTermination")}
-                      onSign={() => void recordSignature("mutualTermination")}
-                      onSignDateChange={(value) => setSignDateFor("mutualTermination", value)}
-                      printedAt={pack.offboarding.mutualTerminationPrintedAt}
-                      printingNote="Three pages per copy, single-sided, US Letter. Both parties sign every copy."
-                      signDate={signDates.mutualTermination}
-                      signedDate={pack.offboarding.mutualTerminationSignedDate}
-                      subtitle="إنهاء علاقة العمل بالتوافق بين الطرفين"
-                      title="Mutual termination agreement"
-                    />
-                  ) : (
-                    <AdminCallout>
-                      <DoorOpen className="mt-0.5 h-4 w-4 shrink-0" />
-                      <span>
-                        Choose an exit form above — a resignation or a mutual termination — and it
-                        appears here ready to print. Only one is ever signed.
-                      </span>
-                    </AdminCallout>
-                  )}
-                  {/*
-                    The clearance pair, and note the contrast with the two cards above: BOTH are shown,
-                    always, because they are complements rather than alternatives. One certifies the
-                    employee is clear of the company and he keeps it; the other certifies the company is
-                    clear of him and the company files it. Hiding either would leave the party who does
-                    not keep it unprotected.
-                  */}
-                  <DocumentCard
-                    busy={busy === "sign-clearanceEmployee"}
-                    canManage={canManage}
-                    document="clearanceEmployee"
-                    copies={copies.clearanceEmployee}
-                    gaps={gapsFor(pack.gaps, "clearanceEmployee")}
-                    onCopiesChange={(value) => setCopiesFor("clearanceEmployee", value)}
-                    onPreview={() => openPreview("clearanceEmployee")}
-                    onPrint={() => requestPrint("clearanceEmployee")}
-                    onSign={() => void recordSignature("clearanceEmployee")}
-                    onSignDateChange={(value) => setSignDateFor("clearanceEmployee", value)}
-                    printedAt={pack.offboarding.clearanceEmployeePrintedAt}
-                    printingNote="Single-sided, A4, background graphics ON. Seven departments sign it by hand and the company stamps it — it is not valid until all of them are on it, and final dues are not released before that."
-                    signDate={signDates.clearanceEmployee}
-                    signedDate={pack.offboarding.clearanceEmployeeSignedDate}
-                    subtitle="إخلاء طرف موظف — تشهد به الشركة، ويحتفظ به الموظف"
-                    title="Employee clearance"
-                  />
-                  <DocumentCard
-                    busy={busy === "sign-clearanceCompany"}
-                    canManage={canManage}
-                    document="clearanceCompany"
-                    copies={copies.clearanceCompany}
-                    gaps={gapsFor(pack.gaps, "clearanceCompany")}
-                    onCopiesChange={(value) => setCopiesFor("clearanceCompany", value)}
-                    onPreview={() => openPreview("clearanceCompany")}
-                    onPrint={() => requestPrint("clearanceCompany")}
-                    onSign={() => void recordSignature("clearanceCompany")}
-                    onSignDateChange={(value) => setSignDateFor("clearanceCompany", value)}
-                    printedAt={pack.offboarding.clearanceCompanyPrintedAt}
-                    printingNote="Single-sided, A4, background graphics ON. The settlement amount prints blank on purpose — this paper is a release of claims, so the figure has to be the one finance actually paid."
-                    signDate={signDates.clearanceCompany}
-                    signedDate={pack.offboarding.clearanceCompanySignedDate}
-                    subtitle="إخلاء طرف شركة — يقر به الموظف، وتحتفظ به الشركة"
-                    title="Company clearance"
-                  />
-                </PaperGroup>
-
+                {renderExitFields(
+                  pack,
+                  exitRoute === "mutualTermination" ? [AGREEMENT_GROUP, PARTY_GROUP] : [PARTY_GROUP],
+                  false,
+                )}
                 {/*
-                  THE OTHER END OF THE APPOINTMENT-DOCUMENTS LOOP. Its sibling — the receipt taken
-                  when the certificates came IN — is in the joining tab. They were supplied as two
-                  files with almost the same name, and the one mistake worth designing against is
-                  filing the wrong one at the wrong end of a career.
+                  Only the chosen route's paper is offered. The two exit forms assert incompatible facts
+                  about the same departure — one is signed, never both.
                 */}
-                <PaperGroup title="Handing back and certifying">
-                  <DocumentCard
-                    busy={false}
-                    canManage={canManage}
-                    document="appointmentDocsReturn"
-                    copies={copies.appointmentDocsReturn}
-                    gaps={gapsFor(pack.gaps, "appointmentDocsReturn")}
-                    onCopiesChange={(value) => setCopiesFor("appointmentDocsReturn", value)}
-                    footnote="The employee's receipt for their own original certificates coming back. It carries the last working day, and says in terms that it covers the papers only — it is not a release of any statutory or financial entitlement."
-                    onPreview={() => openPreview("appointmentDocsReturn")}
-                    onPrint={() => requestPrint("appointmentDocsReturn")}
-                    onSign={() => undefined}
-                    onSignDateChange={() => undefined}
-                    printedAt={null}
-                    printingNote="Two copies. Print it when the certificates are physically handed back, not before — it is the proof they were."
-                    signDate=""
-                    signedDate={null}
-                    signable={false}
-                    subtitle="إقرار استلام مسوغات التعيين — عند انتهاء الخدمة"
-                    title="Appointment documents returned"
-                  />
-                  {/*
-                    THE CERTIFICATE OF EXPERIENCE. It sits in the leaver package because that is
-                    when HR reaches for it, NOT because it is only issued then — somebody still at
-                    his desk can ask for one for a visa or a bank, and the paper prints correctly
-                    for him, saying in terms that he is still employed. The footnote below says
-                    which of the two this employee will get, because the two readings are what a
-                    certificate can be wrong about in a way that costs him the job.
-                  */}
-                  <DocumentCard
-                    busy={false}
-                    canManage={canManage}
-                    document="experienceCertificate"
-                    copies={copies.experienceCertificate}
-                    gaps={gapsFor(pack.gaps, "experienceCertificate")}
-                    onCopiesChange={(value) => setCopiesFor("experienceCertificate", value)}
-                    footnote={
-                      pack.employee.departed
-                        ? "Issued on request, to be read by their next employer. It will state that their service ENDED — check the last working day above. No salary, no reason for leaving and no statement of conduct: each is left out on purpose."
-                        : "Issued on request — for a visa, a bank or an application. This employee has not left, so it will state that they are STILL EMPLOYED and close the period at today's date. No salary, no statement of conduct: each is left out on purpose."
-                    }
-                    onPreview={() => openPreview("experienceCertificate")}
-                    onPrint={() => requestPrint("experienceCertificate")}
-                    onSign={() => undefined}
-                    onSignDateChange={() => undefined}
-                    printedAt={null}
-                    printingNote="Two copies. Nobody signs it back — one is handed over, one is the company's record of what it certified about them."
-                    signDate=""
-                    signedDate={null}
-                    signable={false}
-                    subtitle="شهادة خبرة — تُصرف بناءً على طلب صاحب الشأن"
-                    title="Certificate of experience — Arabic"
-                  />
-                  {/*
-                    THE ENGLISH COUNTERPART. Both are current at once and HR prints whichever is
-                    being asked for — the Arabic one for an Egyptian reader, this one for an embassy,
-                    a Gulf employer or a bank. They state the same period from the same resolver, so
-                    somebody handed both cannot be given two different lengths of service.
-                  */}
-                  <DocumentCard
-                    busy={false}
-                    canManage={canManage}
-                    document="experienceCertificateEn"
-                    copies={copies.experienceCertificateEn}
-                    gaps={gapsFor(pack.gaps, "experienceCertificateEn")}
-                    onCopiesChange={(value) => setCopiesFor("experienceCertificateEn", value)}
-                    footnote={
-                      pack.employee.departed
-                        ? "For an embassy, a foreign employer or a bank. It will state that this employee's service ENDED. Same three omissions as the Arabic copy — no salary, no reason for leaving, no statement of conduct."
-                        : "For an embassy, a foreign employer or a bank. This employee has not left, so it will state that they are STILL EMPLOYED and close the period at today's date."
-                    }
-                    onPreview={() => openPreview("experienceCertificateEn")}
-                    onPrint={() => requestPrint("experienceCertificateEn")}
-                    onSign={() => undefined}
-                    onSignDateChange={() => undefined}
-                    printedAt={null}
-                    printingNote="Two copies. Use Download PDF on the print view — that file keeps its text editable if it is later opened in a design tool. Do not flatten it to an image."
-                    signDate=""
-                    signedDate={null}
-                    signable={false}
-                    subtitle="Certificate of Experience — English, for use abroad"
-                    title="Certificate of experience — English"
-                  />
-                </PaperGroup>
+                {exitRoute ? (
+                  renderPaperCard(exitRoute, pack)
+                ) : (
+                  <AdminCallout>
+                    <DoorOpen className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>
+                      Choose an exit form above — a resignation or a mutual termination — and it
+                      appears here ready to print. Only one is ever signed.
+                    </span>
+                  </AdminCallout>
+                )}
+              </>
+              ) : (
+                renderPaperCard(current.paper, pack)
+              )}
+            </div>
+          ) : null}
 
-                <PackageCompanyTemplates
-                  employeeSelected={Boolean(pack)}
-                  onOpen={(template) => openTemplate(template, "preview")}
-                  onPrint={(template) => openTemplate(template, "print")}
-                  templates={scoped ? NO_TEMPLATES : leavingTemplates}
-                />
+          {current.kind === "company" && pack ? (
+            <PackageCompanyTemplates
+              employeeSelected={Boolean(pack)}
+              onOpen={(template) => {
+                openTemplate(template, "preview");
+                scrollToEditor();
+              }}
+              onPrint={(template) => openTemplate(template, "print")}
+              templates={companyPapers}
+            />
+          ) : null}
+
+          {current.kind === "other" && pack ? (
+            otherChoice ? (
+              <div className="flex flex-col gap-3 border border-phx-line bg-white px-4 py-3 sm:flex-row sm:items-center">
+                <div className="min-w-0 flex-1">
+                  <h3 className="break-words text-sm font-black text-phx-ink">{otherChoice.label}</h3>
+                  <p className="text-phx-xs font-semibold text-phx-ink-soft">
+                    {isBuiltInDocument(otherChoice.document)
+                      ? statusLine(statusOf(otherChoice.document))
+                      : "A company template"}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    className="h-10 gap-2"
+                    onClick={() => requestPrint(otherChoice.document, otherChoice.versionId ?? undefined)}
+                    type="button"
+                  >
+                    <Printer className="h-4 w-4" />
+                    Print
+                  </Button>
+                  <Button
+                    className="h-10"
+                    onClick={() => {
+                      setOtherChoice(null);
+                      setPreview(null);
+                    }}
+                    type="button"
+                    variant="ghost"
+                  >
+                    Choose another paper
+                  </Button>
+                </div>
               </div>
-            ) : null}
-          </>
-        ) : (
-          <AdminCallout>
-            <UserRound className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>Choose an employee above to fill and print the hiring pack.</span>
-          </AdminCallout>
+            ) : (
+              <div className="flex flex-col gap-5">
+                {otherFolders.map((folder) => (
+                  <section className="flex flex-col gap-2" key={folder.id}>
+                    <div>
+                      <h3 className={factLabelClassName}>
+                        {folder.labelEn} <span dir="rtl">{folder.labelAr}</span>
+                      </h3>
+                      <p className="text-phx-xs font-semibold text-phx-ink-faint">{folder.description}</p>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                      {folder.entries.map((entry) => {
+                        const done =
+                          isBuiltInDocument(entry.document) && isPaperDone(statusOf(entry.document));
+                        return (
+                          <button
+                            className="flex items-start gap-2 border border-phx-line bg-white px-3 py-2.5 text-left text-sm font-bold text-phx-ink transition hover:border-phx-accent-line"
+                            key={`${entry.document}@${entry.versionId ?? ""}`}
+                            onClick={() => chooseOther(entry)}
+                            type="button"
+                          >
+                            {done ? (
+                              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-phx-ok" />
+                            ) : (
+                              <FileText className="mt-0.5 h-4 w-4 shrink-0 text-phx-ink-faint" />
+                            )}
+                            <span className="min-w-0 break-words">{entry.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            )
+          ) : null}
+
+          {current.kind === "finish" ? (
+            pack && employee ? (
+              <div className="flex flex-col gap-3">
+                <p className="text-sm font-semibold text-phx-ink-soft">
+                  {path === "other"
+                    ? otherChoice
+                      ? `${otherChoice.label} for ${employee.fullName}.`
+                      : `No paper was chosen for ${employee.fullName}.`
+                    : `${printedCount} of ${finishRows.length} papers printed or signed for ${employee.fullName}.`}
+                </p>
+                {finishRows.length > 0 ? (
+                  <ul className="flex flex-col border border-phx-line bg-white">
+                    {finishRows.map((row) => {
+                      const status = stepStatus(row.kind) ?? { state: "open" as const };
+                      return (
+                        <li
+                          className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-phx-line px-4 py-2.5 last:border-b-0"
+                          key={row.index}
+                        >
+                          {isPaperDone(status) ? (
+                            <CheckCircle2 className="h-4 w-4 shrink-0 text-phx-ok" />
+                          ) : (
+                            <AlertTriangle className="h-4 w-4 shrink-0 text-phx-warn" />
+                          )}
+                          <span className="min-w-0 flex-1 break-words text-sm font-bold text-phx-ink">
+                            {steps[row.index - 1]?.title ?? steps[row.index - 1]?.label}
+                          </span>
+                          <span className="text-phx-xs font-semibold text-phx-ink-soft">{statusLine(status)}</span>
+                          <Button className="h-8" onClick={() => goTo(row.index)} size="xs" type="button" variant="ghost">
+                            Open
+                          </Button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : null}
+              </div>
+            ) : (
+              <p className="text-sm font-semibold text-phx-ink-soft">Choose the package and the person first.</p>
+            )
+          ) : null}
+
+          <div className="scroll-mt-4" id={EDITOR_ANCHOR_ID} />
+          {pack && preview && current.kind !== "path" && current.kind !== "employee" ? (
+            <div className="mt-5">
+              <HiringPackPaperEditor
+                // THE SAME AUTHORITY THE COMPANY-TEMPLATE UPLOAD USES: Super Admin, answered by the
+                // SERVER rather than guessed from a role in the browser.
+                canEditCompany={companyTemplates.canManage}
+                // A seat limited to its own papers: no layout editing and the hiring profile locked.
+                canEditLayout={!scoped}
+                readOnlyStores={scoped ? SCOPED_SEAT_READ_ONLY_STORES : undefined}
+                salaryReadOnly={salaryReadOnly}
+                contractTermsReadOnly={contractTermsReadOnly}
+                copies={resolveCopyCount(copies[preview.documentKey], preview.documentKey)}
+                documentLabel={documentLabel(preview.documentKey, customTemplateNames)}
+                hrId={pack.employee.hrId}
+                key={`${pack.employee.hrId}-${preview.documentKey}-${preview.versionId ?? "current"}-${paperRedraw}`}
+                onClose={() => setPreview(null)}
+                onIssueReference={() =>
+                  issuePaperReference({
+                    copies: resolveCopyCount(copies[preview.documentKey], preview.documentKey),
+                    document: preview.documentKey,
+                    documentLabel: documentLabel(preview.documentKey, customTemplateNames),
+                    hrId: pack.employee.hrId,
+                    mode: "employee",
+                    subjectName: pack.employee.nameAr ?? pack.employee.fullName,
+                  })
+                }
+                onPackChange={applyPack}
+                pack={pack}
+                {...preview}
+              />
+            </div>
+          ) : null}
+        </FormWizard>
+        </>
         )}
 
         {/*
           The Archive reprints superseded versions of every paper and the Studio uploads and prints
-          company templates — neither is offered to a seat limited to its own papers.
+          company templates — neither is offered to a seat limited to its own papers. Both open their
+          paper in the editor inside the wizard, so the page scrolls up to it.
         */}
-        {scoped ? null : (
+        {scoped || (canEditAnyForm && screenTab === "control") ? null : (
           <>
             <TemplateArchive
               employeeSelected={Boolean(pack)}
-              onPreview={(document, versionId) => openPreview(document, versionId)}
+              onPreview={(document, versionId) => {
+                openPreview(document, versionId);
+                scrollToEditor();
+              }}
               onPrint={(document, versionId) => requestPrint(document, versionId)}
             />
 
             <TemplateStudio
               companyTemplates={companyTemplates}
               employeeSelected={Boolean(pack)}
-              onPreview={(document, versionId) => openPreview(document, versionId)}
+              onPreview={(document, versionId) => {
+                openPreview(document, versionId);
+                scrollToEditor();
+              }}
               onPrint={(document, versionId) => requestPrint(document, versionId)}
             />
           </>
@@ -2872,35 +3095,6 @@ function TemplateArchive({
  * "Signed" with no date would be a claim nobody can check, and this is the value Form 6 files with
  * the Authority later, so it is shown in full rather than abbreviated.
  */
-function SignaturePill({
-  icon,
-  label,
-  signedDate,
-}: {
-  icon: ReactNode;
-  label: string;
-  signedDate: string | null;
-}) {
-  const signed = Boolean(signedDate);
-
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-2 border px-3 py-2 text-sm font-bold",
-        signed
-          ? "border-phx-ok-line bg-phx-ok-bg text-phx-ok"
-          : "border-phx-warn-line bg-phx-warn-bg text-phx-warn",
-      )}
-    >
-      {icon}
-      <span>{label}</span>
-      <span className="font-black">{signed ? "signed" : "not signed yet"}</span>
-      {signedDate ? (
-        <span className="font-semibold opacity-80">{formatDate(signedDate)}</span>
-      ) : null}
-    </span>
-  );
-}
 
 /**
  * The uploaded templates filed in ONE package, shown beside the built-in papers of that package.
@@ -2998,15 +3192,6 @@ function PackageCompanyTemplates({
   );
 }
 
-/** A heading over related papers. Gone when a paper scope leaves it none, so no heading sits over nothing. */
-function PaperGroup({ children, title }: { children: ReactNode; title: string }) {
-  return (
-    <section className="space-y-2 [&:not(:has(h3))]:hidden">
-      <h2 className={factLabelClassName}>{title}</h2>
-      <div className="grid gap-2">{children}</div>
-    </section>
-  );
-}
 
 type DocumentCardProps = Parameters<typeof DocumentCardBody>[0] & {
   /** The paper this card prints — compared with the viewer's papers (`PaperScopeContext`). */

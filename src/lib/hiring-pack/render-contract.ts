@@ -686,14 +686,22 @@ function renderDocumentCopy(
   // The footer's halves are separated in the source by a long run of spaces — one signing rule at
   // each margin. Splitting on that run and spreading the parts reproduces it without this layout
   // needing to know what the parts say.
+  //
+  // THE FIRST PARTY SIGNS ON THE LAST PAGE ONLY on a version that says so (owner, 2026-11-27): its
+  // half of the running footer is left out and an empty cell keeps the second party's rule at its
+  // own margin. The first party still signs once, in the signature table that closes the contract.
+  const footParts = template.footerAr
+    ? fillContractTokens(template.footerAr, values).split(/ {2,}/u)
+    : [];
+  const footCells = footParts.map((part, index) =>
+    template.footerFirstPartyOnLastPageOnly && index === 0 && footParts.length > 1
+      ? "<span></span>"
+      : `<span>${escapeHtml(part)}</span>`,
+  );
   const foot = template.footerAr
-    ? `<tfoot><tr><td class="doc-foot"><div class="doc-foot__row">${fillContractTokens(
-        template.footerAr,
-        values,
-      )
-        .split(/ {2,}/u)
-        .map((part) => `<span>${escapeHtml(part)}</span>`)
-        .join("")}</div></td></tr></tfoot>`
+    ? `<tfoot><tr><td class="doc-foot"><div class="doc-foot__row">${footCells.join(
+        "",
+      )}</div></td></tr></tfoot>`
     : "";
 
   return `<article class="copy copy--document">

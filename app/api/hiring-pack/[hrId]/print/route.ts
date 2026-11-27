@@ -138,9 +138,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ hrId
       version: url.searchParams.get("version"),
     };
 
+    // ONE COPY ON THE PAGE (owner, 2026-11-27): the desk sets the count on the printer. `copies`
+    // still decides what the paper states and what the register records — see `singleCopy`.
     const paper = await renderHiringPaper({
       ...paperInput,
       copies: url.searchParams.get("copies"),
+      singleCopy: true,
     });
 
     // Every refusal already carries the status this route has always answered, so the shaping here
@@ -265,8 +268,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ hrId
         if (!one.ok) {
           return NextResponse.json({ error: one.code, message: one.message }, { status: one.status });
         }
+        // ONE COPY IN THE FILE TOO — the printer makes the rest (owner, 2026-11-27).
         const pdf = await renderHiringPaperPdf(stampPaperReference(one.html, reference, requested), {
-          copies: paper.copies,
+          copies: 1,
           pageNumbers: documentCarriesHousePageNumbers(requested),
         });
         return new Response(Buffer.from(pdf), {

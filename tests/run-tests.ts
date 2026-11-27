@@ -1471,6 +1471,7 @@ import { runHiringPackSalaryLetterArTests } from "./hiring-pack-salary-letter-ar
 import { runHiringPackPrintOptionsTests } from "./hiring-pack-print-options.test.ts";
 import { runHrFormsClearanceTests } from "./hr-forms-clearance.test.ts";
 import { runHrFormsContractArchiveTests } from "./hr-forms-contract-archive.test.ts";
+import { runHrFormsWizardTests } from "./hr-forms-wizard.test.ts";
 import { runHrFormsCustodyTests } from "./hr-forms-custody.test.ts";
 import { runHrFormsBulkPrintTests } from "./hr-forms-bulk-print.test.ts";
 import { runHrFormsExitDocumentTests } from "./hr-forms-exit-documents.test.ts";
@@ -6354,6 +6355,12 @@ await runTest(
     + "never printed, no sign-off is pre-ticked, every exit paper agrees on one departure date, and "
     + "a gap names only the paper that prints the value)",
   runHrFormsClearanceTests,
+);
+await runTest(
+  "HR Forms wizard (new hire, leaver or another paper, then the person, then one step per paper; "
+    + "the two exit forms are one step and both clearances are always steps; a tick is a print or a "
+    + "signature; a print draws ONE copy and the desk sets the count on the printer)",
+  runHrFormsWizardTests,
 );
 await runTest(
   "HR Forms worker data (استمارة بيانات العامل — what Phoenix knows fills and the eight unknown "

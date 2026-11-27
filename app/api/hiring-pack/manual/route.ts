@@ -72,6 +72,8 @@ export async function POST(request: Request) {
       data,
       document,
       hrId: data.employee.hrId,
+      // One copy on the page; the desk sets the count on the printer (owner, 2026-11-27).
+      singleCopy: true,
       version: typeof payload.versionId === "string" ? payload.versionId : null,
     });
     if (!paper.ok) {
