@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 
 import { pharmacySearchText, pickPharmacyDirections, type PickDirectionsInput } from "../src/lib/sales/territory/pharmacy-directions.ts";
-import { directionsFromLocationRows } from "../src/lib/sales/territory/pharmacy-directions-sources.ts";
+import { directionsFromLocationRows, matchedPlacesFromRows } from "../src/lib/sales/territory/pharmacy-directions-sources.ts";
+import { listingNamesPharmacy, pickPlaceMatch, placeKind } from "../src/lib/sales/territory/pharmacy-place-match.ts";
 import { directionsNote } from "../src/lib/sales/territory/drilldown-words.ts";
 
 // The Territory Drilldown pharmacy name opens Google Maps (owner, 27 Nov 2026: "make sure the
@@ -130,4 +131,87 @@ export function runTerritoryPharmacyDirectionsTests() {
   assert.equal(directionsNote(null), "No location yet");
   assert.match(directionsNote({ kind: "google_search" }), /check the listing name/);
   assert.match(directionsNote({ kind: "confirmed_on_site" }), /confirmed on site/);
+
+  assert.match(directionsNote({ kind: "google_place" }), /own Google Maps listing/);
+
+  // ── Free top-pharmacy match (owner, 27 Nov 2026: "Free top-2,616 match") ─────────────────────────
+  // 11. A matched Google place opens THAT listing; the search text stays as the fallback words.
+  const place = { distributorCode: "IS", clientCode: "1001", placeId: "ChIJ-abc_123" };
+  const matched = pickPharmacyDirections(input({ matchedPlaces: [place] }));
+  assert.equal(matched?.kind, "google_place");
+  assert.equal(param(matched!.url, "query_place_id"), "ChIJ-abc_123");
+  assert.equal(param(matched!.url, "query"), "صيدلية اسامة العياط");
+  // A point a rep confirmed on site still wins over Google's listing.
+  assert.equal(pickPharmacyDirections(input({ matchedPlaces: [place], confirmedPoints: [onSite] }))?.kind, "confirmed_on_site");
+  // Another distributor's match, two distributors under one code, or two different places: the search.
+  assert.equal(pickPharmacyDirections(input({ matchedPlaces: [{ ...place, distributorCode: "UCP" }] }))?.kind, "google_search");
+  const twoShops = input({ sources: [input().sources[0], { ...input().sources[0], distributorCode: "UCP" }], matchedPlaces: [place] });
+  assert.equal(pickPharmacyDirections(twoShops)?.kind, "google_search");
+  const twoPlaces = input({
+    sources: [input().sources[0], { ...input().sources[0], distributorCode: "IS-S" }],
+    matchedPlaces: [place, { ...place, distributorCode: "IS-S", placeId: "ChIJ-other" }],
+  });
+  assert.equal(pickPharmacyDirections(twoPlaces)?.kind, "google_search");
+  const viaRows = directionsFromLocationRows(
+    [{ client_code: "1001", distributor_code: "IS", client_name: "صيدلية النور", client_address: null, brick_id: BRICK, brick_name: "العياط", brick_latitude: 30, brick_longitude: 31.2, confirmed_points: [] }],
+    matchedPlacesFromRows([
+      { distributor_code: "is", client_code: " 1001 ", google_place_id: "ChIJ-abc_123" },
+      { distributor_code: "IS", client_code: "9999", google_place_id: null },
+    ]),
+  );
+  assert.equal(viaRows.get("1001")?.kind, "google_place");
+
+  // 12. The listing names the pharmacy: it may DROP the sheet's street or town, never ADD a name.
+  assert.equal(listingNamesPharmacy("اسامة - العياط    ن", "صيدلية اسامة", "العياط"), true, "the brick's town set aside, one name word");
+  assert.equal(listingNamesPharmacy("محمد عادل – الحوامدية ن", "صيدلية محمد عادل", "الحوامديه"), true);
+  //     A name of two words or more needs two of them in the listing: a first name alone is not the shop.
+  assert.equal(listingNamesPharmacy("عمر بن الخطاب - طهطا", "صيدلية د/ عمر", "طهطا"), false);
+  assert.equal(listingNamesPharmacy("سامى الحوفى", "صيدلية د. سامى", "الهجانه"), false);
+  assert.equal(listingNamesPharmacy("صيدلية جامعة الازهر", "صيدلية الجامعة", "مدينه نصر"), false);
+  assert.equal(listingNamesPharmacy("ميرلاند", "صيدلية ميريلاند"), true, "one letter off on a long word");
+  assert.equal(listingNamesPharmacy("علياء نادى-البدرشين", "صيدليه دكتوره علياء نادي"), true);
+  assert.equal(listingNamesPharmacy("سلمى -البدرشين", "salma pharmacy(صيدليه سلمى)", "البدرشين"), true);
+  assert.equal(listingNamesPharmacy("اسلام على", "صيدلية د اسلام محمد"), false, "the listing adds a name: another pharmacist");
+  assert.equal(listingNamesPharmacy("بيتر مدحت العبور", "صيدليات شكشك - فرع العبور"), false);
+  assert.equal(listingNamesPharmacy("رامى مصر الجديدة", "صيدلية مصر الجديدة"), false, "the pharmacy's own first name must be in the listing");
+  //     One letter off is a different person on a short name: أحمد / محمد, البدرى / البكرى.
+  assert.equal(listingNamesPharmacy("محمد السيد", "صيدلية د. أحمد محمد السيد"), false);
+  assert.equal(listingNamesPharmacy("محمد الباجورى منشية البكرى", "صيدلية د. محمد البدرى"), false);
+  //     A listing named only with the commonest given names tells no shop apart.
+  assert.equal(listingNamesPharmacy("محمد ميجا", "صيدلية دكتور محمد"), false);
+  assert.equal(listingNamesPharmacy("احمد السيد شنو الجديدة", "صيدليه الدكتور أحمد السيد"), false);
+  //     A name in Latin letters only cannot be compared with the Arabic sheet name.
+  assert.equal(listingNamesPharmacy("فتحى عامر", "Fathy Amer pharmacy"), false);
+
+  // 13. Same kind of place only: a distributor is never a corner pharmacy, a hospital never a shop.
+  assert.equal(placeKind("يونس لتجارةوتوزيع الادوية"), "trade");
+  assert.equal(placeKind("مستشفى الرحمة اكتوبر"), "hospital");
+  assert.equal(placeKind("صيدلية بهجت"), "pharmacy");
+  assert.equal(listingNamesPharmacy("يونس لتجارةوتوزيع الادوية", "صيدلية يونس"), false);
+  assert.equal(listingNamesPharmacy("الرواد لتجارة وتوزيع الادوية", "شركة الرواد لتجارة وتوزيع الادوية"), true);
+  assert.equal(listingNamesPharmacy("مستشفى الرحمة اكتوبر", "مستشفى الرحمة", "6 اكتوبر"), true);
+  //     A pharmacy only to a listing that says it is one: never the university, the society or a clinic.
+  assert.equal(listingNamesPharmacy("صيدلية جامعة الازهر - اسيوط", "جامعة الأزهر فرع اسيوط", "مدينة أسيوط"), false);
+  assert.equal(listingNamesPharmacy("صيدلية الجمعية التعاونية للبترول - بمسطرد", "الجمعية التعاونية للبترول", "مسطرد"), false);
+  assert.equal(listingNamesPharmacy("مراد صادق مرزوق", "دكتور مراد صادق", "روض الفرج"), false);
+  assert.equal(listingNamesPharmacy("مراد صادق مرزوق", "صيدلية دكتور مراد صادق", "روض الفرج"), true);
+
+  // 15. "عبد …" and "ابو …" are one name: a first name alone is still not the shop.
+  assert.equal(listingNamesPharmacy("عبد الرحمن غلوش م.نصر", "صيدلية د. عبد الرحمن", "مدينة نصر"), false);
+  assert.equal(listingNamesPharmacy("احمد عبدالبديع تهامى", "صيدليه د احمد عبد البديع", "شبين القناطر"), true, "joined or apart, one word");
+  assert.equal(listingNamesPharmacy("انجي محمد ابوزيد", "صيدلية انجي أبو زيد", "بور سعيد"), true);
+
+  // 14. The verdict: within 5 km of the brick, exactly one passing place, a failed lookup never guessed.
+  const centre = { latitude: 30.0, longitude: 31.2 };
+  const shop = { placeId: "P1", name: "صيدلية اسامة", lat: 30.004, lng: 31.203 };
+  assert.deepEqual(pickPlaceMatch({ pharmacyName: "اسامة - العياط", brickName: "العياط", brickCentre: centre, listings: [shop] }).status, "matched");
+  assert.equal(pickPlaceMatch({ pharmacyName: "اسامة - العياط", brickName: "العياط", brickCentre: centre, listings: [{ ...shop, lat: 30.06 }] }).status, "no_match", "6.7 km away");
+  assert.equal(
+    pickPlaceMatch({ pharmacyName: "اسامة - العياط", brickName: "العياط", brickCentre: centre, listings: [shop, { ...shop, placeId: "P2", lng: 31.21 }] }).status,
+    "ambiguous",
+    "two branches of one name",
+  );
+  assert.equal(pickPlaceMatch({ pharmacyName: "اسامة - العياط", brickName: "العياط", brickCentre: centre, listings: [shop, shop] }).status, "matched", "the same place twice is one place");
+  assert.equal(pickPlaceMatch({ pharmacyName: "اسامة - العياط", brickName: "العياط", brickCentre: centre, listings: null }).status, "lookup_failed");
+  assert.equal(pickPlaceMatch({ pharmacyName: "اسامة - العياط", brickName: "العياط", brickCentre: centre, listings: [] }).status, "no_match");
 }

@@ -4,7 +4,7 @@ description: "27 Nov 2026: the main repo went private at 08:18 Cairo, then the o
 metadata:
   type: project
   originSessionId: 059d84db-9c96-426c-807e-834f091f9cb3
-  modified: 2026-11-27T08:49:39.450Z
+  modified: 2026-11-27T09:06:16.399Z
 ---
 
 🔴 **OWNER DECISION, 27 Nov 2026 10:49 Cairo: "I WILL KEEP ON PUBLIC TO AVOID THE COST OF ACTIONS."**
@@ -14,7 +14,11 @@ self-hosted runner. This supersedes the earlier same-day choice ("Private + Orac
 
 What happened that morning, measured:
 - The repo was made private at **08:18:58 Cairo** (org audit log, `repo.access`). The trigger was the public
-  tree holding a filled April payroll — that file still has to leave the public tree some other way.
+  tree holding a filled April payroll. PR 819 (merged 07:47) replaced `Phoneix system template.xlsx` with an empty
+  layout (read on main 27 Nov: 0 HR IDs, 0 figures over 1,000). The filled copy (121 HR IDs) stays in the first commit
+  `23e3b9db1`. The owner first said "leave the history", then (27 Nov, ~11:10 Cairo) chose the Engineering Hub
+  session's plan: a git history purge of old data files runs the night of 27 Nov, after deploys work (it rewrites
+  every commit id and freezes merges for about an hour).
 - 🔴 **Going private disconnected Railway's git source from EVERY service.** The project Phoenix-HR-Workforce
   then reported no git-sourced service instance at all (`secret-drift-check` run 45968378591; the day before,
   six instances read `sato-pharma/phoenix-people-workforce@main`). Railway raised no error and no SKIPPED row:
