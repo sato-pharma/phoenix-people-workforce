@@ -6470,6 +6470,7 @@ CREATE FUNCTION public.direct_order_receipts_guard() RETURNS trigger
     AS $$
 declare
   v_book_status text;
+  v_releasing boolean;
 begin
   if tg_op = 'DELETE' then
     raise exception 'A printed receipt is never deleted.' using errcode = 'P0001';
@@ -6480,10 +6481,21 @@ begin
   if old.state = 'voided' and new.state is distinct from 'voided' then
     raise exception 'A cancelled receipt stays cancelled.' using errcode = 'P0001';
   end if;
+  v_releasing := coalesce(current_setting('phoenix.receipt_release', true), '') = old.serial::text;
   if old.state = 'used' and (new.state is distinct from 'used' or new.request_id is distinct from old.request_id) then
-    if coalesce(current_setting('phoenix.receipt_release', true), '') is distinct from old.serial::text then
+    if not v_releasing then
       raise exception 'A used receipt is released from its order only through direct_order_release_receipt.' using errcode = 'P0001';
     end if;
+  end if;
+  if old.state = 'used' and new.state = 'used' and not v_releasing and (
+    new.photo_storage_path is distinct from old.photo_storage_path
+    or (old.delivery_photo_storage_path is not null and (
+      new.delivery_photo_storage_path is distinct from old.delivery_photo_storage_path
+      or new.delivery_entered_at is distinct from old.delivery_entered_at
+      or new.delivery_entered_by_hr_id is distinct from old.delivery_entered_by_hr_id
+    ))
+  ) then
+    raise exception 'An entered original is never replaced; Finance takes the receipt off the order to correct it.' using errcode = 'P0001';
   end if;
   if old.state = 'unused' and new.state = 'used' then
     -- FOR SHARE waits for a book being returned or recorded lost at this moment, then reads its new state.
@@ -6521,15 +6533,23 @@ begin
     return jsonb_build_object('released', false);
   end if;
   insert into public.direct_order_receipt_releases (
-    serial, book_no, request_id, photo_storage_path, photo_content_type, used_by_hr_id, used_at, released_by_hr_id, reason
+    serial, book_no, request_id, photo_storage_path, photo_content_type, used_by_hr_id, used_at,
+    delivery_photo_storage_path, delivery_photo_content_type, delivery_entered_by_hr_id, delivery_entered_at,
+    released_by_hr_id, reason
   ) values (
     v_receipt.serial, v_receipt.book_no, v_receipt.request_id, v_receipt.photo_storage_path, v_receipt.photo_content_type,
-    v_receipt.used_by_hr_id, v_receipt.used_at, btrim(p_actor_hr_id), btrim(p_reason)
+    v_receipt.used_by_hr_id, v_receipt.used_at,
+    v_receipt.delivery_photo_storage_path, v_receipt.delivery_photo_content_type, v_receipt.delivery_entered_by_hr_id,
+    v_receipt.delivery_entered_at,
+    btrim(p_actor_hr_id), btrim(p_reason)
   );
   perform set_config('phoenix.receipt_release', p_serial::text, true);
   update public.direct_order_receipts r
      set state = 'unused', request_id = null, photo_storage_path = null, photo_content_type = null,
-         used_by_hr_id = null, used_at = null, updated_at = now()
+         used_by_hr_id = null, used_at = null,
+         delivery_photo_storage_path = null, delivery_photo_content_type = null,
+         delivery_entered_by_hr_id = null, delivery_entered_at = null,
+         updated_at = now()
    where r.serial = p_serial;
   perform set_config('phoenix.receipt_release', '', true);
   return jsonb_build_object(
@@ -6537,6 +6557,7 @@ begin
     'serial', v_receipt.serial,
     'book_no', v_receipt.book_no,
     'photo_storage_path', v_receipt.photo_storage_path,
+    'delivery_photo_storage_path', v_receipt.delivery_photo_storage_path,
     'used_by_hr_id', v_receipt.used_by_hr_id,
     'used_at', v_receipt.used_at
   );
@@ -60947,6 +60968,10 @@ CREATE TABLE public.direct_order_receipt_releases (
     released_by_hr_id text NOT NULL,
     released_at timestamp with time zone DEFAULT now() NOT NULL,
     reason text NOT NULL,
+    delivery_photo_storage_path text,
+    delivery_photo_content_type text,
+    delivery_entered_by_hr_id text,
+    delivery_entered_at timestamp with time zone,
     CONSTRAINT direct_order_receipt_releases_reason_check CHECK ((length(btrim(reason)) >= 3))
 );
 
@@ -60990,7 +61015,12 @@ CREATE TABLE public.direct_order_receipts (
     voided_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    delivery_photo_storage_path text,
+    delivery_photo_content_type text,
+    delivery_entered_by_hr_id text,
+    delivery_entered_at timestamp with time zone,
     CONSTRAINT direct_order_receipts_check_code_check CHECK ((check_code ~ '^[2-9A-HJKMNP-Z]{6}$'::text)),
+    CONSTRAINT direct_order_receipts_delivery CHECK ((((delivery_photo_storage_path IS NULL) AND (delivery_entered_at IS NULL) AND (delivery_entered_by_hr_id IS NULL)) OR ((state = 'used'::text) AND (delivery_photo_storage_path IS NOT NULL) AND (delivery_entered_at IS NOT NULL) AND (delivery_entered_by_hr_id IS NOT NULL)))),
     CONSTRAINT direct_order_receipts_serial_check CHECK ((serial > 0)),
     CONSTRAINT direct_order_receipts_state_check CHECK ((state = ANY (ARRAY['unused'::text, 'used'::text, 'voided'::text]))),
     CONSTRAINT direct_order_receipts_used CHECK ((((state = 'used'::text) = (request_id IS NOT NULL)) AND ((state <> 'used'::text) OR ((photo_storage_path IS NOT NULL) AND (used_at IS NOT NULL) AND (used_by_hr_id IS NOT NULL))))),
@@ -61004,6 +61034,18 @@ ALTER TABLE public.direct_order_receipts OWNER TO postgres;
 --
 
 COMMENT ON TABLE public.direct_order_receipts IS 'One row per printed delivery receipt: serial, the printed check code, and the one direct order it proves once used. A receipt moves unused -> used once; request_id is unique. Codes are never sent to a browser. Service role only.';
+
+--
+-- Name: COLUMN direct_order_receipts.photo_storage_path; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.direct_order_receipts.photo_storage_path IS 'Original 1 — the manager''s signed custody page, entered first; it claims the receipt for its order.';
+
+--
+-- Name: COLUMN direct_order_receipts.delivery_photo_storage_path; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.direct_order_receipts.delivery_photo_storage_path IS 'Original 2 — the delivery page the customer signed and stamped (its carbon copy stays with the customer). Added once, after Original 1.';
 
 --
 -- Name: direct_order_report_share_links; Type: TABLE; Schema: public; Owner: postgres
@@ -61101,6 +61143,27 @@ CREATE TABLE public.direct_order_request_items (
 );
 
 ALTER TABLE public.direct_order_request_items OWNER TO postgres;
+
+--
+-- Name: direct_order_warehouse_exits; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.direct_order_warehouse_exits (
+    request_id uuid NOT NULL,
+    exit_date date NOT NULL,
+    recorded_by_hr_id text NOT NULL,
+    recorded_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT direct_order_warehouse_exits_recorded_by_hr_id_check CHECK ((length(btrim(recorded_by_hr_id)) > 0))
+);
+
+ALTER TABLE public.direct_order_warehouse_exits OWNER TO postgres;
+
+--
+-- Name: TABLE direct_order_warehouse_exits; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.direct_order_warehouse_exits IS 'The day each approved direct order left the warehouse, recorded by Finance (owner, 27 Nov 2026). The receipt deadlines count from the next day: Original 1 in 3 calendar days, Original 2 in 6 working days (Friday off). Service role only. See src/lib/direct-orders/receipt-rules.ts.';
 
 --
 -- Name: dispute_assist_entries; Type: TABLE; Schema: public; Owner: postgres
@@ -78062,6 +78125,13 @@ ALTER TABLE ONLY public.direct_order_requests
     ADD CONSTRAINT direct_order_requests_pkey PRIMARY KEY (id);
 
 --
+-- Name: direct_order_warehouse_exits direct_order_warehouse_exits_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.direct_order_warehouse_exits
+    ADD CONSTRAINT direct_order_warehouse_exits_pkey PRIMARY KEY (request_id);
+
+--
 -- Name: dispute_assist_entries dispute_assist_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -92859,6 +92929,13 @@ ALTER TABLE ONLY public.direct_order_requests
     ADD CONSTRAINT direct_order_requests_reversed_by_request_id_fkey FOREIGN KEY (reversed_by_request_id) REFERENCES public.direct_order_requests(id);
 
 --
+-- Name: direct_order_warehouse_exits direct_order_warehouse_exits_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.direct_order_warehouse_exits
+    ADD CONSTRAINT direct_order_warehouse_exits_request_id_fkey FOREIGN KEY (request_id) REFERENCES public.direct_order_requests(id);
+
+--
 -- Name: dispute_refunds dispute_refunds_phx_employee_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -97432,6 +97509,18 @@ CREATE POLICY direct_order_request_items_service_role ON public.direct_order_req
 --
 
 ALTER TABLE public.direct_order_requests ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: direct_order_warehouse_exits; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.direct_order_warehouse_exits ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: direct_order_warehouse_exits direct_order_warehouse_exits_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY direct_order_warehouse_exits_service_role ON public.direct_order_warehouse_exits TO service_role USING (true) WITH CHECK (true);
 
 --
 -- Name: dispute_assist_entries; Type: ROW SECURITY; Schema: public; Owner: postgres
@@ -109165,6 +109254,12 @@ GRANT ALL ON TABLE public.direct_order_report_share_links TO service_role;
 --
 
 GRANT ALL ON TABLE public.direct_order_request_items TO service_role;
+
+--
+-- Name: TABLE direct_order_warehouse_exits; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.direct_order_warehouse_exits TO service_role;
 
 --
 -- Name: TABLE dispute_assist_entries; Type: ACL; Schema: public; Owner: postgres

@@ -2732,6 +2732,18 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // no grant to anon, authenticated or PUBLIC; 0 rows on both. Re-applying is a no-op (`if not exists`,
   // `create or replace`, `drop ... if exists`).
   "20261127142537_direct_order_no_receipt_approvals.sql",
+  // Two receipt originals, due from Finance's warehouse exit (owner, 27 Nov 2026 ~17:20 Cairo: "Go, build it").
+  // One new empty table (direct_order_warehouse_exits), four nullable columns on direct_order_receipts and on
+  // direct_order_receipt_releases, one check constraint, and the receipt guard and release function replaced; no
+  // row changed (800 receipts, 0 used). The Supabase tool declined it twice on staging; on the owner's choice,
+  // 27 Nov ~18:10 Cairo ("Apply staging, then prod"), applied through scripts/apply-sql-file.mjs, staging then
+  // production, which writes NO ledger row. Read back on cifwmndunmlxjhyjugxa and on ozucdzovmcqvepbozvqf (project
+  // name Phoenix HR) straight after: md5(prosrc) direct_order_receipts_guard b7c94f3b318b7e92b8329a9dfd889cba and
+  // direct_order_release_receipt b9f387df639d550430de0de4e97136a5 on both, security invoker, release executable by
+  // service_role only; the exits table has row-level security on and no grant to anon or authenticated; 4 delivery_*
+  // columns on each table and the direct_order_receipts_delivery check in place. Re-applying is a no-op
+  // (`if not exists`, `create or replace`, `drop ... if exists`).
+  "20261127173244_direct_order_receipt_two_originals.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
