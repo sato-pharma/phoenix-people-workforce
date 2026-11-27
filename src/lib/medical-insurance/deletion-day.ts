@@ -4,6 +4,12 @@
 // Pure, and free of Supabase and the file system, so the Add / Remove screen and the server read the same rule.
 //
 // WHAT THE PAPERS SAY:
+//   * THE SIGNED POLICY 50048950, clause 5/5/4 ("الحذف"), is the highest of them: a deletion takes effect from the day
+//     Libano-Suisse RECEIVES the deletion form and the membership cards, and the cards are returned before the deletion
+//     date. No card back, no refund at all; a late card cuts the refund by the delay, and Sato alone pays what the
+//     deleted person runs up until the card is back. Its annex (page 34) refunds the rest of the term one month after the
+//     deletion date, claims or none. So the contract gives NO right to backdate: an earlier date is a request the
+//     insurer may honour, never a claim on it.
 //   * Libano-Suisse's own Additions and Deletions workbook checks every deletion date with
 //     `IF((TODAY()-date)<Assumptions!E7,"Checked","Exceed Grace period")`, E7 being "Gras Period for addition or
 //     deletion". Our file writes E7 = LIBANO_GRACE_PERIOD_DAYS (the rules page's 15 days), so a date passes when it
