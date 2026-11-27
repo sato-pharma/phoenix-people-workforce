@@ -5,14 +5,14 @@
 // service key, the database password, the session-signing secret and the Railway key — and the owner, the Claude
 // GitHub app and the Railway GitHub app can all push a branch. The secrets now live in two GitHub environments that
 // only named branches may use: `main-secrets` (only `main`) and `urgent-deploy` (only the two urgent-deploy/*
-// branches, the Railway tokens alone). move-secrets-to-environments.yml copies them in; the repository-wide copies are
-// then removed on the owner's word.
+// branches, the Railway tokens alone). The one-time copy into them ran on 19 Nov 2026 and its workflow,
+// move-secrets-to-environments.yml, was retired on the owner's word on 27 Nov 2026 ("Retire it").
 //
 // What breaks it quietly, and what this file pins:
 //   1. A new job reads a production secret with no `environment:`. Before the repository copies are deleted it works
 //      and re-opens the hole; after, the secret reads as EMPTY and the job fails in a way that looks like a bad value.
-//   2. The list of what stays repository-wide drifts between this test and the mover's `keep` pattern, so the mover
-//      leaves behind a secret a job outside the environment still needs, or copies one this test thinks is public.
+//   2. A workflow that reads every secret at once (`toJSON(secrets)`) comes back: it hands a single job the whole set,
+//      which is what the retired copy workflow did and why it was removed once the copy was done.
 //   3. A pull request's run is handed a production secret again: ci.yml's `validate` signs with production's
 //      session secret, or fallback-image's pull-request build reads the Railway token.
 //   4. `secrets: inherit` spreads to a new caller, carrying every repository secret into a workflow nobody reviewed.
@@ -22,7 +22,6 @@ import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
 const WORKFLOW_DIR = ".github/workflows";
-const MOVER = "move-secrets-to-environments.yml";
 
 // Stays repository-wide: browser-visible values and Expo's token, nothing else. The STAGING service key and the
 // Telegram alarm pair joined main-secrets on 19 Nov 2026 (the owner's "fix those"): ci.yml's `validate` stands in it
@@ -101,33 +100,23 @@ export function runWorkflowSecretsNeedEnvironmentTests() {
       `${job.file} job \`${job.id}\` reads ${production.join(", ")} but declares environment ${JSON.stringify(job.environment)}. ` +
         "A production secret lives only in the main-only `main-secrets` environment (urgent-deploy.yml: `urgent-deploy`). " +
         "Add `environment: main-secrets` beside its runs-on, or — if the value is genuinely public — add it to REPOSITORY_WIDE " +
-        `here AND to the keep pattern in ${MOVER} (credentials audit, finding 1).`,
+        "here (credentials audit, finding 1).",
     );
   }
-  // An anti-vacuous floor: the 22 jobs that read production secrets on 18 Nov 2026, the mover among them.
+  // An anti-vacuous floor: 22 jobs read production secrets on 18 Nov 2026, 21 once the copy workflow was retired.
   assert.ok(guarded.length >= 20, `expected at least 20 jobs reading a production secret, found ${guarded.length}: ${guarded.join(", ")}`);
 
-  // ── 2. the mover keeps exactly what this file calls repository-wide ──
-  const mover = readFileSync(path.join(WORKFLOW_DIR, MOVER), "utf8");
-  const keep = /keep='\^\(([^)]+)\)\$'/.exec(mover);
-  assert.ok(keep, `${MOVER} no longer has its keep='^(…)$' pattern`);
-  const keepNames = keep[1].split("|");
-  for (const name of REPOSITORY_WIDE) {
-    assert.ok(keepNames.includes(name), `${MOVER}'s keep pattern must name ${name}, which stays repository-wide`);
-  }
-  for (const prefix of REPOSITORY_WIDE_PREFIXES) {
-    assert.ok(keepNames.includes(`${prefix}.*`), `${MOVER}'s keep pattern must keep ${prefix}* repository-wide`);
-  }
-  for (const name of keepNames) {
-    if (["github_token", "SECRETS_MOVER_TOKEN"].includes(name)) continue;
-    const plain = name.replace(/\.\*$/, "");
-    assert.ok(
-      REPOSITORY_WIDE.includes(plain) || REPOSITORY_WIDE_PREFIXES.includes(plain),
-      `${MOVER} keeps ${name} repository-wide, but this test does not — add it to REPOSITORY_WIDE or take it out of the pattern`,
+  // ── 2. no workflow reads every secret at once ──
+  for (const file of files) {
+    const source = readFileSync(path.join(WORKFLOW_DIR, file), "utf8");
+    assert.doesNotMatch(
+      source,
+      /toJSON\(\s*secrets\s*\)/,
+      `${file} reads every secret at once with toJSON(secrets) — name each secret the job needs instead. ` +
+        "The one workflow that did (move-secrets-to-environments.yml) was retired on 27 Nov 2026 once its copy was done.",
     );
   }
-  assert.match(mover, /github\.ref == 'refs\/heads\/main'/, `${MOVER} must run only from main`);
-  assert.doesNotMatch(mover, /gh secret delete(?! SECRETS_MOVER_TOKEN)/, `${MOVER} must COPY only — the repository copies are deleted on the owner's word`);
+  assert.ok(!files.includes("move-secrets-to-environments.yml"), "move-secrets-to-environments.yml was retired on 27 Nov 2026 — bring it back only on the owner's word");
 
   // ── 3. no pull-request run is handed a production secret ──
   const ci = readFileSync(path.join(WORKFLOW_DIR, "ci.yml"), "utf8");
