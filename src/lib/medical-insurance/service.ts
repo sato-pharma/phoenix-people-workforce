@@ -80,7 +80,7 @@ class MedicalInsuranceInputError extends Error {}
 
 const POLICY_COLUMNS = "id, insurer, policy_number, proposal_code, starts_on, ends_on, rate_card";
 const MEMBER_COLUMNS =
-  "id, hr_id, certificate_number, staff_number, member_type, principal_member_id, full_name, category, coverage_starts_on, coverage_ends_on, end_reason, birth_date, national_id, gender, phone, notes";
+  "id, hr_id, certificate_number, staff_number, member_type, principal_member_id, full_name, category, coverage_starts_on, coverage_ends_on, end_reason, birth_date, national_id, gender, phone, notes, outside_staff";
 const DOCUMENT_COLUMNS =
   "id, kind, title, file_name, size_bytes, email_from, email_to, email_sent_on, body, note, uploaded_by_hr_id, uploaded_at";
 const INVOICE_COLUMNS =
@@ -113,6 +113,7 @@ type MemberDbRow = {
   gender: string | null;
   phone: string | null;
   notes: string | null;
+  outside_staff?: boolean | null;
 };
 
 type DocumentDbRow = {
@@ -265,6 +266,7 @@ function toMemberFacts(row: MemberDbRow, employees: ReadonlyMap<string, Employee
     id: row.id,
     memberType: row.member_type,
     name: row.full_name,
+    outsideStaff: row.outside_staff === true,
     principalMemberId: row.principal_member_id,
   };
 }
@@ -944,6 +946,22 @@ export async function updateMedicalInsuranceMember(access: AccessContext, member
       newValues: { hr_id: plan.hrId, member_type: plan.memberType, moved_with: movedWith, principal_member_id: plan.principalMemberId },
       oldValues: { hr_id: member.hr_id, member_type: member.member_type, principal_member_id: member.principal_member_id },
       summary: `Put ${member.full_name} under ${principal?.name ?? "an employee"} as their ${plan.memberType}${movedWith.length > 0 ? `, with ${movedWith.join(", ")}` : ""}`,
+    });
+    return;
+  }
+
+  if (input.action === "keep_outside") {
+    // Covered on Sato's policy but not a Phoenix employee, kept on by the owner's decision (owner, 27 Nov 2026: Medhat
+    // Makram Wahba, "keep him, outside staff"). Only for a row with no HR id: anyone with a record is matched to it.
+    if (member.hr_id) throw new MedicalInsuranceInputError(`${member.full_name} has a Phoenix employee record, so there is nothing to keep outside it.`);
+    fail((await supabase.from("medical_insurance_members").update({ ...stamp, outside_staff: true }).eq("id", memberId)).error);
+    await writeRequiredAuditLog({
+      actorLoginId: access.loginId ?? null,
+      entityId: memberId,
+      entityType: "medical_insurance_member",
+      newValues: { outside_staff: true },
+      oldValues: { outside_staff: member.outside_staff === true },
+      summary: `Kept ${member.full_name} on the policy as outside staff, not a Phoenix employee`,
     });
     return;
   }

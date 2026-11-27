@@ -65,6 +65,8 @@ export type MemberFacts = {
   coverageEnd: string | null;
   /** The member's own, else their employee record's. Prices the premium. */
   birthDate: string | null;
+  /** Covered on Sato's policy but not a Phoenix employee, kept on by the owner (owner, 27 Nov 2026: Medhat Makram Wahba). */
+  outsideStaff?: boolean;
 };
 
 export type ExceptionFacts = {
@@ -140,6 +142,8 @@ export type MedicalInsuranceAction = {
   voidFromStart?: boolean;
   /** Covered from before their first day: `effectiveOn` is the day they joined, where cover should start. */
   lateStart?: boolean;
+  /** On the policy with no HR id at all: they can be kept on as outside staff (`keep_outside`). */
+  noRecord?: boolean;
   /** An employee's own record, shown beside them: blank for family and for someone with no record. */
   hireDate?: string | null;
   areaName?: string | null;
@@ -262,6 +266,8 @@ export function buildMedicalInsuranceActions(input: {
 
     const employee = member.hrId ? employeesByHrId.get(member.hrId) : undefined;
     if (!employee) {
+      // Kept on as someone covered who is not a Phoenix employee: nothing left to ask about them.
+      if (member.outsideStaff && !member.hrId) continue;
       actions.push({
         ...base,
         effectiveOn: member.coverageStart,
@@ -270,6 +276,7 @@ export function buildMedicalInsuranceActions(input: {
         key: `review:${member.id}`,
         kind: "review",
         lineName: null,
+        noRecord: !member.hrId,
         reason: "On the policy with no Phoenix employee record",
         timing: "now",
       });

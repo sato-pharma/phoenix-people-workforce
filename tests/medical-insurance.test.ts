@@ -1064,6 +1064,16 @@ function testAnAdditionWithMissingDataIsFlaggedAndThePhotosGoNamedByStaffId() {
   assert.ok(screen.includes('kind && missingOf(action).length === 0).map((action) => action.key)'), "Tick all skips a flagged person");
   assert.match(screen, /if \(missing\.length > 0\) \{\s*return \(\s*<input[\s\S]*?disabled/, "a flagged person's box cannot be ticked");
 
+  // Someone on the policy with no Phoenix record is asked about until kept on as outside staff (owner, 27 Nov 2026:
+  // Medhat Makram Wahba, "keep him, outside staff"); then the row stays on the register and leaves the list.
+  const stranger = member({ hrId: null, id: "m-9", name: "Medhat Makram Wahba" });
+  const asked = actionsFor([], [stranger]);
+  assert.equal(asked[0]?.reason, "On the policy with no Phoenix employee record");
+  assert.equal(asked[0]?.noRecord, true, "the row offers Keep: outside staff");
+  assert.deepEqual(actionsFor([], [{ ...stranger, outsideStaff: true }]), [], "kept on as outside staff: nothing to ask");
+  const keep = service.slice(service.indexOf('if (input.action === "keep_outside") {'), service.indexOf('if (input.action === "reinstate") {'));
+  assert.ok(keep.includes("if (member.hr_id) throw new MedicalInsuranceInputError(") && keep.includes("outside_staff: true"), "only a row with no HR id is kept outside");
+
   // The card is read when the offer is accepted, once the reply has gone.
   const joining = stripComments(readFileSync("src/lib/offers/joining-form-service.ts", "utf8"));
   assert.ok(joining.includes('if (idPhotosFiled) await afterResponse("joining_form_id_card_name", () => readAndSaveIdCardName(hrId, "joining-form"));'));

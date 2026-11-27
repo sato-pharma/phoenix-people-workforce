@@ -66642,6 +66642,7 @@ CREATE TABLE public.medical_insurance_members (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     contact_email text,
+    outside_staff boolean DEFAULT false NOT NULL,
     CONSTRAINT medical_insurance_members_category_check CHECK ((category = ANY (ARRAY['A'::text, 'B'::text, 'C'::text]))),
     CONSTRAINT medical_insurance_members_check CHECK (((coverage_ends_on IS NULL) OR (coverage_ends_on >= coverage_starts_on))),
     CONSTRAINT medical_insurance_members_check1 CHECK (((member_type = 'employee'::text) = (principal_member_id IS NULL))),
@@ -66663,6 +66664,12 @@ COMMENT ON TABLE public.medical_insurance_members IS 'Who is on the policy, with
 --
 
 COMMENT ON COLUMN public.medical_insurance_members.contact_email IS 'An address typed for a register row with no HR id. Nothing sends to it: the owner ruled on 2026-11-21 that no Medical Cover Statement is emailed to a person on the policy with no employee record.';
+
+--
+-- Name: COLUMN medical_insurance_members.outside_staff; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.medical_insurance_members.outside_staff IS 'Covered on Sato''s policy but not a Phoenix employee, kept on by the owner''s decision: the add list no longer asks who they are.';
 
 --
 -- Name: medical_insurance_policies; Type: TABLE; Schema: public; Owner: postgres

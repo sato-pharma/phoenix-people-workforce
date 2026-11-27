@@ -253,6 +253,7 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
   function renderOpenButton(action: MedicalInsuranceAction) {
     // A late joiner's cover is moved to their first day in one press; nothing else on the row changes.
     if (action.lateStart) return canEdit && action.memberId ? <StartOnFirstDayButton action={action} /> : null;
+    if (action.noRecord) return canEdit && action.memberId ? <KeepOutsideButton action={action} /> : null;
     const allowed = action.kind === "add" ? canCreate : canEdit;
     const excludable = canEdit && action.kind === "add" && Boolean(action.hrId);
     if (!allowed && !excludable) return null;
@@ -630,6 +631,25 @@ function StartOnFirstDayButton({ action }: { action: MedicalInsuranceAction }) {
         type="button"
       >
         {busy ? "Saving" : `Start cover on ${day}`}
+      </button>
+      <SaveError error={error} />
+    </span>
+  );
+}
+
+/** Someone on the policy with no Phoenix record, kept on as outside staff: the row stays on the register and leaves this list. */
+function KeepOutsideButton({ action }: { action: MedicalInsuranceAction }) {
+  const { busy, error, save } = useSave();
+  return (
+    <span className="inline-flex flex-col">
+      <button
+        aria-label={`Keep ${action.name} on the policy as outside staff, not a Phoenix employee`}
+        className={textLinkClassName}
+        disabled={busy}
+        onClick={() => void save(() => sendJson(`/api/medical-insurance/members/${action.memberId}`, "PATCH", { action: "keep_outside" }))}
+        type="button"
+      >
+        {busy ? "Saving" : "Keep: outside staff"}
       </button>
       <SaveError error={error} />
     </span>
