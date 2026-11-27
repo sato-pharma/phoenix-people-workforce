@@ -26,14 +26,25 @@ export const LETTER_GOLD_LIGHT = "#C9A45C";
 export const LETTER_GOLD_INK = "#8A6A2C";
 /** The house navy. */
 export const LETTER_NAVY = "#0A527D";
-const INK = "#1A1A1A";
+const INK = "#1F2933";
 const SOFT = "#5B6B7A";
 const HAIR = "#D7E0E8";
 
 const FONT = "Aptos,'Segoe UI',Arial,Helvetica,sans-serif";
 export const LETTER_DOCUMENT_CODE = 'Sato Pharma &middot; Human Resources &middot; <span style="white-space:nowrap">SATO-DIS-2026-01 v1.0</span>';
 
-export type LibanoLetterSigner = { name: string; title: string; line: string; replyTo: string };
+export type LibanoLetterSigner = {
+  /** Set in two weights, as the owner's own signature sets it: "Omar Anwar" light, "Gawish" bold. */
+  nameLight: string;
+  nameBold: string;
+  /** "HR Manager". */
+  title: string;
+  /** "Human Resources · Sato Pharma · Head Office, Cairo". */
+  line: string;
+  /** Shown as written ("+20 12 8095 5558"); dialled as its digits. */
+  phone: string;
+  replyTo: string;
+};
 
 export type LibanoLetterContent = {
   /** The absolute base the two marks are read from (the production site). */
@@ -60,57 +71,97 @@ const row = (inner: string) => `<tr>${inner}</tr>`;
 const table = (inner: string, style = "", attrs = "") =>
   `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"${attrs ? ` ${attrs}` : ""} style="border-collapse:collapse;mso-table-lspace:0;mso-table-rspace:0;${style}">${inner}</table>`;
 
-const paragraph = (inner: string, extra = "") => `<p style="margin:0 0 14px;color:${INK};font-family:${FONT};font-size:14px;line-height:22px;${extra}">${inner}</p>`;
+const paragraph = (inner: string, extra = "") => `<p style="margin:0 0 15px;color:${INK};font-family:${FONT};font-size:14.5px;line-height:23px;${extra}">${inner}</p>`;
+
+const HEAD_CELL = `padding:9px 8px 8px;border-top:1.5px solid ${LETTER_GOLD};border-bottom:1px solid ${LETTER_GOLD_LIGHT};color:${LETTER_GOLD_INK};font-family:${FONT};font-size:9.5px;line-height:13px;letter-spacing:1.4px;font-weight:700;text-transform:uppercase;text-align:left`;
 
 function peopleTable(content: LibanoLetterContent): string {
-  const head = row(
-    content.table.head
-      .map((label) =>
-        cell(
-          `padding:8px 8px 7px;border-top:1.5px solid ${LETTER_GOLD};border-bottom:1px solid ${LETTER_GOLD_LIGHT};color:${LETTER_GOLD_INK};font-family:${FONT};font-size:10px;line-height:13px;letter-spacing:1.2px;font-weight:700;text-transform:uppercase;text-align:left`,
-          label,
-        ),
-      )
-      .join(""),
-  );
+  // The first column is the signed letter's light gold numeral: 01, 02, 03.
+  const head = row(cell(`${HEAD_CELL};width:30px;padding-left:0`, "&nbsp;", 'width="30"') + content.table.head.map((label) => cell(HEAD_CELL, label)).join(""));
   const body = content.table.rows
-    .map((cells) =>
+    .map((cells, index) =>
       row(
-        cells
-          .map((value, column) =>
-            cell(
-              `padding:8px;border-bottom:1px solid ${HAIR};color:${column === 0 ? LETTER_NAVY : INK};font-family:${FONT};font-size:13px;line-height:18px;${column === 0 ? "font-weight:700;" : ""}vertical-align:top`,
-              value,
-            ),
-          )
-          .join(""),
+        cell(
+          `width:30px;padding:10px 8px 10px 0;border-bottom:1px solid ${HAIR};color:${LETTER_GOLD_LIGHT};font-family:${FONT};font-size:15px;line-height:18px;font-weight:300;vertical-align:top`,
+          String(index + 1).padStart(2, "0"),
+          'width="30"',
+        ) +
+          cells
+            .map((value, column) =>
+              cell(
+                `padding:10px 8px;border-bottom:1px solid ${HAIR};color:${column === 0 ? LETTER_NAVY : INK};font-family:${FONT};font-size:13px;line-height:18px;${column === 0 ? "font-weight:700;" : ""}vertical-align:top`,
+                value,
+              ),
+            )
+            .join(""),
       ),
     )
     .join("");
-  return table(head + body, "margin:0 0 18px");
+  return table(head + body, "margin:4px 0 20px");
 }
 
-/** The signature: the Sato mark behind a gold keyline, then the name, title, gold line and reply address. */
+/** The gold tick: a short gold stroke run into a light hairline (the signed letter's tick, drawn as table cells). */
+function goldTick(margin: string): string {
+  return table(
+    row(
+      cell(`width:28px;height:2px;background:${LETTER_GOLD};font-size:1px;line-height:1px;mso-line-height-rule:exactly`, "&nbsp;", `width="28" height="2" bgcolor="${LETTER_GOLD}"`) +
+        cell(
+          "height:2px;font-size:1px;line-height:1px;vertical-align:bottom",
+          table(row(cell(`height:1px;background:${HAIR};font-size:1px;line-height:1px;mso-line-height-rule:exactly`, "&nbsp;", `height="1" bgcolor="${HAIR}"`))),
+        ),
+    ),
+    `margin:${margin}`,
+  );
+}
+
+function contactRow(label: string, valueHtml: string): string {
+  return row(
+    cell(
+      `width:58px;padding:0 0 5px;vertical-align:baseline;color:${LETTER_GOLD_INK};font-family:${FONT};font-size:9px;line-height:17px;letter-spacing:1.6px;font-weight:700;text-transform:uppercase;white-space:nowrap`,
+      label,
+      'width="58"',
+    ) + cell(`padding:0 0 5px;vertical-align:baseline;color:${INK};font-family:${FONT};font-size:12.5px;line-height:17px`, valueHtml),
+  );
+}
+
+/**
+ * The signature, set as the owner's own (two-weight name, the mark at the right, a small-capital title, a tick
+ * rule, the contact lines), with the signed Beyond letter's gold where his own uses orange.
+ */
 function signature(content: LibanoLetterContent): string {
   const { signer } = content;
   const base = content.assetBaseUrl.replace(/\/+$/, "");
+  const dial = signer.phone.replace(/[^\d+]/g, "");
+  const link = `color:${INK};text-decoration:none`;
   return table(
     row(
       cell(
-        "width:112px;padding:2px 14px 2px 0;vertical-align:middle",
-        `<img src="${escapeHtml(`${base}/brand/sato-pharma-logo-on-light.png`)}" width="98" height="39" alt="Sato Pharma" style="display:block;border:0;outline:none;text-decoration:none;width:98px;height:39px">`,
-        'width="112"',
-      ) +
-        cell(
-          `padding:2px 0 2px 14px;border-left:2px solid ${LETTER_GOLD};vertical-align:middle;font-family:${FONT}`,
-          `<div style="color:${LETTER_NAVY};font-size:16px;line-height:21px;font-weight:700">${escapeHtml(signer.name)}</div>` +
-            `<div style="padding:1px 0 0;color:${INK};font-size:13px;line-height:18px">${escapeHtml(signer.title)}</div>` +
-            `<div style="padding:4px 0 0;color:${LETTER_GOLD_INK};font-size:9px;line-height:12px;letter-spacing:1.6px;font-weight:700;text-transform:uppercase">${escapeHtml(signer.line)}</div>` +
-            // A narrow phone wraps the address after its @, never inside a word.
-            `<div style="padding:4px 0 0;color:${SOFT};font-size:12px;line-height:17px">${escapeHtml(signer.replyTo).replace("@", "@<wbr>")}</div>`,
-        ),
+        "",
+        table(
+          row(
+            cell(
+              `vertical-align:bottom;padding:0 0 1px;font-family:${FONT};font-size:22px;line-height:26px;mso-line-height-rule:exactly;color:${LETTER_NAVY};letter-spacing:-0.2px`,
+              `<span style="font-weight:300">${escapeHtml(signer.nameLight)}</span> <span style="font-weight:700">${escapeHtml(signer.nameBold)}</span>`,
+            ) +
+              cell(
+                "width:96px;vertical-align:bottom;padding:0 0 0 12px;text-align:right",
+                `<img src="${escapeHtml(`${base}/assets/branding/sato-pharma-signature-logo-clear.png`)}" width="96" height="38" alt="Sato Pharma" style="display:block;border:0;outline:none;text-decoration:none;width:96px;height:38px">`,
+                'width="96" align="right"',
+              ),
+          ),
+        ) +
+          `<div style="padding:5px 0 0;color:${LETTER_GOLD_INK};font-family:${FONT};font-size:9px;line-height:14px;letter-spacing:1.8px;font-weight:700;text-transform:uppercase">${escapeHtml(signer.title)}</div>` +
+          `<div style="padding:1px 0 0;color:${SOFT};font-family:${FONT};font-size:12px;line-height:18px">${escapeHtml(signer.line).replace(/ &middot; | · /g, `<span style="color:${LETTER_GOLD}">&nbsp;&nbsp;&middot;&nbsp;&nbsp;</span>`)}</div>` +
+          goldTick("11px 0 10px") +
+          table(
+            contactRow("Mobile", `<a href="tel:${escapeHtml(dial)}" style="${link};white-space:nowrap">${escapeHtml(signer.phone).replace(/ /g, "&nbsp;")}</a>`) +
+              // A narrow phone wraps the address after its @, never inside a word.
+              contactRow("Email", `<a href="mailto:${escapeHtml(signer.replyTo)}" style="${link}">${escapeHtml(signer.replyTo).replace("@", "@<wbr>")}</a>`),
+            "width:auto",
+          ),
+      ),
     ),
-    "width:auto",
+    "max-width:440px",
   );
 }
 
@@ -159,7 +210,7 @@ export function renderLibanoMovementLetter(content: LibanoLetterContent): { html
     content.paragraphsHtml.map((html) => paragraph(html)).join("") +
     peopleTable(content) +
     paragraph(escapeHtml(content.closing)) +
-    paragraph(escapeHtml(content.valediction), "margin:0 0 12px") +
+    paragraph(escapeHtml(content.valediction), "margin:0 0 16px") +
     signature(content) +
     `<p style="margin:20px 0 0;color:${SOFT};font-family:${FONT};font-size:11px;line-height:17px">${escapeHtml(content.automatedNote)}</p>` +
     runningFoot(content);

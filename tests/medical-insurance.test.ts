@@ -940,9 +940,13 @@ function testTheLibanoEmailGoesToTheInsurerAndTheTestToTheOwnerAlone() {
   assert.ok(beforeGreeting.length > 0, "the visible greeting is found (the hidden preview line also opens with it)");
   assert.ok(!/<img|Human Resources|Medical insurance|Issued by|Policy number|HEAD OFFICE/.test(beforeGreeting.replace(/<div style="display:none[\s\S]*?<\/div>/, "")), "nothing stands above the greeting: no masthead, title, facts or figures");
   assert.match(real.input.text, /^Dear Libano-Suisse team,/, "the plain text opens at the greeting too");
-  assert.ok(real.input.html.includes("Kind regards,") && real.input.html.includes("Omar Anwar Gawish") && real.input.html.includes("HR Manager, Human Resources"), "the signature block");
+  assert.ok(real.input.html.includes("Kind regards,") && real.input.html.includes(">HR Manager<"), "the signature block");
+  assert.match(real.input.html, /font-weight:300">Omar Anwar<\/span> <span style="font-weight:700">Gawish</, "the name in two weights, as his own signature sets it");
+  assert.ok(real.input.html.includes('href="tel:+201280955558"') && real.input.html.includes("+20&nbsp;12&nbsp;8095&nbsp;5558"), "his mobile is in the signature, dialable and never broken across lines");
+  assert.match(real.input.text, /Mobile \+20 12 8095 5558/);
+  assert.match(real.input.html, /mailto:omar\.anwar@satopharma\.com/);
   assert.ok(real.input.html.includes("SATO-DIS-2026-01 v1.0"), "the document code in the running foot");
-  assert.match(real.input.html, /\/brand\/sato-pharma-logo-on-light\.png/);
+  assert.match(real.input.html, /\/assets\/branding\/sato-pharma-signature-logo-clear\.png/, "the signature carries the mark made for signatures");
   assert.ok(!/border-radius|linear-gradient|box-shadow|<svg|@font-face/i.test(real.input.html), "square, flat, and nothing Outlook drops");
   assert.match(real.input.html, /Last covered day/, "a deletion names the last covered day");
   assert.match(real.input.html, /30 Nov 2026/, "the day is the plain calendar day, never shifted by a time zone");
