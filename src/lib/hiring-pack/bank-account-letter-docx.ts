@@ -110,24 +110,28 @@ function picture(relId: string, id: number, name: string, extent: { cx: number; 
 
 const NO_BORDER = 'w:val="none" w:color="FFFFFF" w:sz="0"';
 
-function cell(text: string, column: number, options: { heading: boolean; zebra: boolean }): string {
+function cell(text: string, column: number, options: { heading: boolean; zebra: boolean; keepNext?: boolean }): string {
   const width = BANK_LETTER_COLUMN_WIDTHS[column];
   const bottom = options.heading ? `w:val="single" w:color="${BLUE}" w:sz="8"` : NO_BORDER;
   const shade = options.zebra ? `<w:shd w:val="clear" w:color="auto" w:fill="${TINT}"/>` : "";
   const content = options.heading
     ? run(text, { bold: true, color: DEEP, size: 16 })
     : run(text, { color: INK, size: 15 });
-  return `<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="${width}"/><w:tcBorders><w:top ${NO_BORDER}/><w:left ${NO_BORDER}/><w:bottom ${bottom}/><w:right ${NO_BORDER}/></w:tcBorders>${shade}<w:tcMar><w:top w:type="dxa" w:w="50"/><w:left w:type="dxa" w:w="70"/><w:bottom w:type="dxa" w:w="50"/><w:right w:type="dxa" w:w="70"/></w:tcMar><w:vAlign w:val="center"/></w:tcPr>${paragraph(content, { line: 250, jc: COLUMN_ALIGN[column] })}</w:tc>`;
+  return `<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="${width}"/><w:tcBorders><w:top ${NO_BORDER}/><w:left ${NO_BORDER}/><w:bottom ${bottom}/><w:right ${NO_BORDER}/></w:tcBorders>${shade}<w:tcMar><w:top w:type="dxa" w:w="50"/><w:left w:type="dxa" w:w="70"/><w:bottom w:type="dxa" w:w="50"/><w:right w:type="dxa" w:w="70"/></w:tcMar><w:vAlign w:val="center"/></w:tcPr>${paragraph(content, { line: 250, jc: COLUMN_ALIGN[column], keepNext: options.keepNext })}</w:tc>`;
 }
 
-function tableRow(cells: readonly string[], options: { heading: boolean; zebra: boolean }): string {
+function tableRow(cells: readonly string[], options: { heading: boolean; zebra: boolean; keepNext?: boolean }): string {
   const header = options.heading ? "<w:tblHeader/>" : "";
   return `<w:tr><w:trPr><w:cantSplit/>${header}</w:trPr>${cells.map((text, column) => cell(text, column, options)).join("")}</w:tr>`;
 }
 
 function table(rows: readonly BankLetterRow[]): string {
   const grid = BANK_LETTER_COLUMN_WIDTHS.map((width) => `<w:gridCol w:w="${width}"/>`).join("");
-  const body = rows.map((row, index) => tableRow(row, { heading: false, zebra: index % 2 === 1 })).join("");
+  // The LAST row keeps with the signature: when the signature cannot fit under the table, the last
+  // person moves over with it, so the signature never stands alone on a page of its own.
+  const body = rows
+    .map((row, index) => tableRow(row, { heading: false, keepNext: index === rows.length - 1, zebra: index % 2 === 1 }))
+    .join("");
   return `<w:tbl><w:tblPr><w:bidiVisual/><w:tblW w:type="dxa" w:w="${TABLE_WIDTH}"/><w:tblBorders><w:top ${NO_BORDER}/><w:left ${NO_BORDER}/><w:bottom w:val="single" w:color="${HAIR}" w:sz="4"/><w:right ${NO_BORDER}/><w:insideH ${NO_BORDER}/><w:insideV ${NO_BORDER}/></w:tblBorders><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid>${grid}</w:tblGrid>${tableRow(BANK_LETTER_HEADINGS, { heading: true, zebra: false })}${body}</w:tbl>`;
 }
 
@@ -193,7 +197,7 @@ function documentXml(rows: readonly BankLetterRow[], date: string, idPages: read
       { after: 240, jc: "both" },
     ),
     table(rows),
-    paragraph(run("التوقيع", { bold: true, color: DEEP, size: 22 }), { after: 360, before: 600, keepNext: true }),
+    paragraph(run("التوقيع", { bold: true, color: DEEP, size: 22 }), { after: 240, before: 360, keepNext: true }),
     paragraph(run("……………………………………….", { color: "000000", size: 22 })),
   ].join("");
   const letterSection =

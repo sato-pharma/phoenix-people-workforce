@@ -10,6 +10,8 @@ import {
   bankLetterFileName,
   bankLetterGaps,
   bankLetterJobTitle,
+  bankLetterMobile,
+  bankLetterName,
   bankLetterRows,
   formatBankLetterSalary,
   hasFabAccount,
@@ -108,6 +110,17 @@ export async function runHiringPackBankAccountLetterTests() {
   const rows = bankLetterRows([person({ address: "ش  الجيش   - طنطا" }), person({ hrId: "T-2", nameAr: "شخص & ثاني" })]);
   assert.deepEqual(rows[0], ["1", "شخص تجريبي أول", "30001010100011", "01000000000", "ش الجيش - طنطا", "مندوب دعاية طبية", "18000"]);
   assert.equal(rows[1][0], "2", "the serial counts from 1");
+  // A person with no Arabic name still has a name in the table (owner, 2026-11-27: two rows printed
+  // a blank name), and a mobile typed without its leading 0 or with the country code gets the 0 back.
+  const gaps = bankLetterRows([person({ displayName: "Test Person", mobile: "1012345678", nameAr: null })]);
+  assert.equal(gaps[0][1], "Test Person", "no Arabic name → the screen's name, never a blank cell");
+  assert.equal(gaps[0][3], "01012345678", "a mobile missing its leading 0 prints with it");
+  assert.equal(bankLetterName({ displayName: "Test Person", nameAr: " " }), "Test Person");
+  assert.equal(bankLetterMobile("+201012345678"), "01012345678", "the country code becomes the 0");
+  assert.equal(bankLetterMobile("0020 101 234 5678"), "01012345678");
+  assert.equal(bankLetterMobile("01012345678"), "01012345678", "a correct mobile is untouched");
+  assert.equal(bankLetterMobile("0223456789"), "0223456789", "a landline prints as stored, never guessed at");
+  assert.equal(bankLetterMobile(null), "");
   assert.equal(bankLetterFileName("2026-10-31"), "sato-pharma-bank-accounts-2026-10-31.docx");
 
   // ── 1, 4, 5. the Word file itself ─────────────────────────────────────────────────────────────
@@ -135,6 +148,10 @@ export async function runHiringPackBankAccountLetterTests() {
   assert.match(document, /<w:tblPr><w:bidiVisual\/>/, "the table reads right to left, the serial on the right");
   assert.match(headingRow, /<w:tblHeader\/>/, "the heading row repeats on every page");
   for (const tr of trs) assert.match(tr, /<w:cantSplit\/>/, "no row splits across a page");
+  // The signature never lands on a page of its own: the last person's row keeps with it.
+  const lastRow = trs[trs.length - 1] ?? "";
+  assert.match(lastRow, /<w:keepNext\/>/, "the last row keeps with the signature");
+  assert.doesNotMatch(firstRow, /<w:keepNext\/>/, "only the last row is held, so the table still breaks freely");
   assert.ok(document.includes("شخص &amp; ثاني"), "text is XML-escaped");
   assert.ok(document.includes("18000"), "the base salary is in the file");
   assert.equal(bankLetterDateLine("2026-11-04"), "التاريخ: 04/11/2026");
