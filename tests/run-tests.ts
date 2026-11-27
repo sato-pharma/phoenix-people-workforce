@@ -1430,6 +1430,7 @@ import { runAttendanceExceptionRowCapTests } from "./attendance-exception-row-ca
 import { runApprovalsHubRowCapTests } from "./approvals-hub-row-cap.test.ts";
 import { runApprovalsBadgeEmptySeatTests } from "./approvals-badge-empty-seat.test.ts";
 import { runCeoTopMoversShareTests } from "./ceo-top-movers-share.test.ts";
+import { runCeoHealthBreakdownReadingTests } from "./ceo-health-breakdown-reading.test.ts";
 import { runActionCenterRowCapTests } from "./action-center-row-caps.test.ts";
 import { runResignationInboxActionsTests } from "./resignation-inbox-actions.test.ts";
 import { runApprovalHistoryFinalStateTests } from "./approval-history-final-state.test.ts";
@@ -6277,6 +6278,7 @@ await runTest("attendance exceptions are never row-capped (a dropped approval be
 await runTest("approvals hub feeds are paged, never capped (a hidden request is a decision nobody makes)", runApprovalsHubRowCapTests);
 await runTest("Approvals Hub badge: an empty seat is nobody to count for, never an error; a timeout still is (APP-FEAFFD50)", runApprovalsBadgeEmptySeatTests);
 await runTest("CEO top-movers Share is of the population, never of the filtered rows", runCeoTopMoversShareTests);
+await runTest("Company Health Breakdown prints the rate itself, and the Share column fits a phone", runCeoHealthBreakdownReadingTests);
 await runTest("action center decision history is paged and totally ordered (170 of B-10's own approvals were hidden)", runActionCenterRowCapTests);
 await runTest("Other Approvals offers Approve, Reject and Mark Under Review from the stored resignation status, never the printed label", runResignationInboxActionsTests);
 await runTest("approval history shows the request's FINAL outcome, every product, names only and readable formats", runApprovalHistoryFinalStateTests);
