@@ -16,7 +16,7 @@ Full plan: Appendix D of `~/.claude/plans/pasted-content-id-4b53-phoenix-enginee
 **Why:** the repo stays public ([[the-repo-is-public-since-2026-11-07]]), so history is the only exposure left.
 **How to apply:** every commit id changes after the purge. Re-seat every worktree from the new `origin/main`, and never push a branch made before the purge; it would bring the files back.
 
-**DONE 27 Nov 11:36 Cairo:** main is `bff23828c` (tree identical to old `2369952b0`), production serves it, and 452 old branches are deleted. Commit map: `C:/Users/satoh/Phoenix History Purge 2026-11-27/rewrite.git/filter-repo/commit-map`. Guard: `~/.claude/hooks/purged-history-push-guard.mjs` refuses old-history pushes. Owner SENT the GitHub Support request on 27 Nov (about 12:00 Cairo); its reply is what clears the old pull-request copies.
+**DONE 27 Nov 11:36 Cairo:** main is `bff23828c` (tree identical to old `2369952b0`), production serves it, and 452 old branches are deleted. Commit map: `C:/Users/satoh/Phoenix History Purge 2026-11-27 - kept map/commit-map`. Guard: `~/.claude/hooks/purged-history-push-guard.mjs` refuses old-history pushes. Owner SENT the GitHub Support request on 27 Nov (about 12:00 Cairo); its reply is what clears the old pull-request copies.
 
 **After the purge (27 Nov, 11:56 Cairo, PR 830):** the three reference workbooks still on main (`Phoenix Pharmacy Database.xlsx`,
 `phoenix products.xlsx`, `Source of sales area database.xlsx`) left the repository on his "Off GitHub, keep local". They sit in
@@ -30,3 +30,5 @@ comparison → PEH-010 Railway environment branch policies → THEN this delete,
 MOVE ASIDE to `C:/Users/satoh/Phoenix History Purge 2026-11-27 - kept map/`: `rewrite.git/filter-repo/commit-map` and `ref-map`
 (the purged-history push guard's rebase recipe needs the map; no personal data), `github-support-request.txt`, and
 `empty-template.xlsx` (a protected type, so it is moved and never deleted). Delete everything else.
+
+**DONE 27 Nov 13:19 Cairo:** the 1.3 GB backup folder is DELETED (after PEH-010 deployed: production `cc40ee799`, success, 13:11). The bundles and mirrors are gone, so the old history is no longer recoverable from this machine. Kept in `C:/Users/satoh/Phoenix History Purge 2026-11-27 - kept map/`, each byte-checked: `commit-map`, `ref-map`, `github-support-request.txt`, `paths-to-remove.txt`, `empty-template.xlsx` (twice).

@@ -249,9 +249,10 @@ function testHrFormsReadsAsALedger() {
   // Measured at 375: 413px wide in a 309px column, with no border at all.
   assert.ok(/<select\s+className=\{phxSelectClassName\}/.test(forms), "the fixed-term reason wears the form skin and fits its column");
   assert.ok(forms.includes("canSign && signOpen"), "the signature line stays folded until it is wanted");
-  assert.ok(forms.includes("[&:not(:has(h3))]:hidden"), "a heading with no paper under it for this seat does not show");
-  assert.equal(forms.split("<PaperGroup ").length - 1, 9, "every paper sits under a heading");
-  assert.ok(!forms.includes("grid gap-2 empty:hidden"), "no group of papers was left without one");
+  // HR Forms is the report's wizard (owner, 2026-11-27): one step per paper, ticked once printed.
+  assert.ok(forms.includes("<FormWizard"), "the papers are walked through one step at a time");
+  assert.ok(forms.includes("isStepDone={isStepDone}"), "the rail ticks a paper once it is printed or signed");
+  assert.ok(forms.includes("hrFormsPaperSteps(path, paperScope)"), "a paper outside the seat's scope is not a step at all");
 }
 
 function testTheMessageToAJoiner() {

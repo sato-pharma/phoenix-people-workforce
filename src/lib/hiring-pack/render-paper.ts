@@ -18,6 +18,7 @@
 // is the template's own role list, because that is a property of the template rather than of the
 // request, and a caller that forgot it would silently print a paper its owner restricted.
 
+import { singleCopyBanner } from "@/lib/hiring-pack/single-copy";
 import { systemContractDefaults } from "@/config/system-settings";
 import type { AccessContext } from "@/lib/auth/permissions";
 import {
@@ -394,6 +395,18 @@ export async function renderHiringPaper(input: {
    * and why "placed" and "printed" had to stop being the same thing.
    */
   marks?: string | null;
+  /**
+   * ONE COPY ON THE PAGE, AND THE PRINTER MAKES THE REST (owner, 2026-11-27: "I don't want the forms
+   * all after each other. I want one copy, and I will tell the printer to print this one copy 3
+   * times").
+   *
+   * When true the paper is drawn once, whatever `copies` says; `copies` still decides what the
+   * paper STATES about itself (the copies clause) and what the register records, and the on-screen
+   * banner tells the desk to set the print dialog's copies to that number. Absent keeps the old
+   * shape — every copy laid out one after another — for the callers that still need it (bulk print,
+   * the filed signed copy).
+   */
+  singleCopy?: boolean;
   /** The count the paper states about itself, when it differs from `copies` — see `RENDERERS`. */
   statedCopies?: string | null;
   version?: string | null;
@@ -529,16 +542,23 @@ export async function renderHiringPaper(input: {
         : null,
   });
 
-  const statedCopies = input.statedCopies ? resolveCopies(input.statedCopies, copies) : undefined;
-  const html = template
-    ? renderCustomTemplateHtml(template, data, copies, fields)
+  const singleCopy = input.singleCopy === true;
+  const drawnCopies = singleCopy ? 1 : copies;
+  const statedCopies = input.statedCopies
+    ? resolveCopies(input.statedCopies, copies)
+    : singleCopy
+      ? copies
+      : undefined;
+  const drawn = template
+    ? renderCustomTemplateHtml(template, data, drawnCopies, fields)
     : RENDERERS[requested as HiringPackDocument].render(
         data,
-        copies,
+        drawnCopies,
         requestedVersion,
         fields,
         statedCopies,
       );
+  const html = singleCopy ? singleCopyBanner(drawn, copies) : drawn;
 
   return { copies, data, fields, html, ok: true, template, versionId };
 }

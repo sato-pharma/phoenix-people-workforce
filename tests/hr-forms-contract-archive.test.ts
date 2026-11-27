@@ -1012,6 +1012,26 @@ function testADelegateCanSignForTheCompanyAndReplacesHimEverywhere() {
   );
 }
 
+/**
+ * THE FIRST PARTY SIGNS ON THE LAST PAGE ONLY (owner, 2026-11-27): on the current contract the
+ * running footer repeats only the second party's signing rule on every page, and the first party
+ * signs once, in the signature table at the end. The archived v3 keeps both rules on every page —
+ * a reprint of a signed v3 must stay the paper that was signed.
+ */
+function testTheFirstPartySignsOnTheLastPageOnly() {
+  const footOf = (html: string) => {
+    const match = /<td class="doc-foot">([\s\S]*?)<\/td>/u.exec(html);
+    assert.ok(match, "the document layout draws a running footer");
+    return match[1];
+  };
+  const current = renderContractHtml(packFixture(), 1);
+  assert.ok(!footOf(current).includes("توقيع الطرف الأول"), "the current contract's running footer carries no first-party rule");
+  assert.ok(footOf(current).includes("توقيع الطرف الثاني"), "while the second party still signs every page");
+  assert.ok(current.includes("<span></span><span>توقيع الطرف الثاني"), "an empty cell keeps the second party's rule at its own margin");
+  const v3 = footOf(renderContractHtml(packFixture(), 1, "contract-v3"));
+  assert.ok(v3.includes("توقيع الطرف الأول") && v3.includes("توقيع الطرف الثاني"), "v3 keeps both rules on every page");
+}
+
 export function runHrFormsContractArchiveTests(): void {
   testEveryDocumentHasExactlyOneCurrentVersion();
   testEveryVersionIdIsUniqueAcrossEveryDocument();
@@ -1034,4 +1054,5 @@ export function runHrFormsContractArchiveTests(): void {
   testEveryVersionBindsAnIdentityFieldToItsValue();
   testTheDocumentLayoutLeavesAnUnknownValueAsAnEmptyBox();
   testADelegateCanSignForTheCompanyAndReplacesHimEverywhere();
+  testTheFirstPartySignsOnTheLastPageOnly();
 }

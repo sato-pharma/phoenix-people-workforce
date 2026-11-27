@@ -9,6 +9,7 @@ import {
 import { asPrintableDocument, documentLabel } from "@/lib/hiring-pack/document-registry";
 import {
   issuePaperNumber,
+  listPaperIssuesForEmployee,
   listRecentPaperIssues,
   type PaperIssueMode,
 } from "@/lib/hiring-pack/paper-register-store";
@@ -56,7 +57,11 @@ export async function GET(request: Request) {
     // the register rows of its own papers.
     await assertMayUseHrForms(access, "read");
 
-    const listed = await listRecentPaperIssues(25);
+    // `?hrId=` — every paper printed for that one person, which is what ticks a paper off in the
+    // HR Forms wizard. Without it, the 25 most recent prints across everyone, as before. Either way
+    // the rows pass through `paperIssuesForViewer`, so a seat still reads only its own papers.
+    const hrId = new URL(request.url).searchParams.get("hrId")?.trim() ?? "";
+    const listed = hrId ? await listPaperIssuesForEmployee(hrId) : await listRecentPaperIssues(25);
     const issues = listed ? paperIssuesForViewer(access, listed) : null;
     if (!issues) {
       return NextResponse.json(

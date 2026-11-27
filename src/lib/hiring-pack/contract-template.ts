@@ -164,6 +164,19 @@ export type ContractTemplate = {
   receiptAcknowledgmentAr?: string;
   /** The running footer, on versions that carry one. */
   footerAr: string | null;
+  /**
+   * THE COMPANY SIGNS ON THE LAST PAGE ONLY; THE EMPLOYEE SIGNS EVERY PAGE (owner, 2026-11-27: "remove
+   * the place the first party signs on every page except the last page — the second party signs
+   * everywhere as he does").
+   *
+   * When true, the running footer that repeats on every printed page drops its first-party half and
+   * keeps only the second party's rule; the first party still signs once, in the signature table at
+   * the end. `footerAr` itself is untouched, so the version's text and fingerprint stay as they are.
+   *
+   * Optional for the same reason as `signatoryNoteLinesAr`: versions 1 to 3 reprint as they were
+   * signed, with both rules on every page. Set on the current version.
+   */
+  footerFirstPartyOnLastPageOnly?: boolean;
 };
 
 /** The dotted rule an absent value prints as. Long enough to be seen, short enough to sit in a line. */

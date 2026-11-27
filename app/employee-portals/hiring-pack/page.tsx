@@ -132,6 +132,8 @@ async function HiringPackContent({
 
   return (
     <HiringPackManager
+      // "Edit any form" — every step, every person, every paper (owner, 2026-11-27). Super Admin only.
+      canEditAnyForm={access.role === "Super Admin"}
       canManage={forms.canManage}
       candidates={candidates}
       initialError={initialError}
