@@ -19,6 +19,21 @@ import {
   type IdPicture,
   type StoredIdFile,
 } from "./bank-letter-id-pages.ts";
+import { findIdCardCorners, findIdCardOrientation } from "./id-card-corners.ts";
+import {
+  barcodeBand,
+  cardCropSize,
+  expandQuad,
+  ID_CARD_BORDER_SHARE,
+  ID_CARD_READ_MARGIN_SHARE,
+  isPlausibleCardQuad,
+  landscapeQuad,
+  orderQuadClockwise,
+  outlineCardQuad,
+  quadFromThousandths,
+  refineCardQuad,
+  warpCard,
+} from "./id-card-crop.ts";
 
 // The people the bank account-opening letter can list: the active staff, read from the employee
 // record and the Arabic job title on the hiring profile — the same two places HR Forms prints from.
@@ -123,18 +138,19 @@ type IdFileRow = {
   file_name: string;
   content_type: string;
   uploaded_at: string;
+  size_bytes: number | null;
 };
 
 type IdFile = StoredIdFile & { storagePath: string };
 
-const ID_FILE_COLUMNS = "employee_hr_id,storage_path,file_name,content_type,uploaded_at";
+const ID_FILE_COLUMNS = "employee_hr_id,storage_path,file_name,content_type,uploaded_at,size_bytes";
 
-/** The id of the "National ID copy" slot, or null when no active slot carries the flag. */
-async function nationalIdSlotId(): Promise<string | null> {
+/** The id of the active slot the joining form files this upload in, or null when none carries the flag. */
+async function joiningSlotId(upload: "national_id" | "photo"): Promise<string | null> {
   const { data, error } = await getSupabaseAdmin()
     .from("hiring_document_definitions")
     .select("id")
-    .eq("joining_form_upload", "national_id")
+    .eq("joining_form_upload", upload)
     .eq("is_active", true)
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -150,6 +166,7 @@ function groupIdFiles(rows: readonly IdFileRow[]): Map<string, IdFile[]> {
     const file: IdFile = {
       contentType: row.content_type,
       fileName: row.file_name,
+      sizeBytes: row.size_bytes,
       storagePath: row.storage_path,
       uploadedAt: row.uploaded_at,
     };
@@ -158,15 +175,38 @@ function groupIdFiles(rows: readonly IdFileRow[]): Map<string, IdFile[]> {
   return byPerson;
 }
 
-/** Every slot file, read once — the slot holds a few files per person, never a company's worth of pages. */
-async function loadAllIdFiles(): Promise<Map<string, IdFile[]>> {
-  const slotId = await nationalIdSlotId();
-  if (!slotId) return new Map();
+type IdFiles = { files: Map<string, IdFile[]>; personalPhotoSizes: Map<string, number[]> };
+
+/**
+ * Every ID slot file, read once — the slot holds a few files per person, never a company's worth of
+ * pages — and the sizes of each person's personal photos, so a portrait filed as the card is never
+ * printed as one (owner, 2026-11-27).
+ */
+async function loadAllIdFiles(): Promise<IdFiles> {
+  const [slotId, photoSlotId] = await Promise.all([joiningSlotId("national_id"), joiningSlotId("photo")]);
+  if (!slotId) return { files: new Map(), personalPhotoSizes: new Map() };
   const rows = await fetchAllRows<IdFileRow>(
     () => getSupabaseAdmin().from("hiring_document_files").select(ID_FILE_COLUMNS).eq("document_id", slotId),
     "storage_path",
   );
-  return groupIdFiles(rows);
+  const personalPhotoSizes = new Map<string, number[]>();
+  if (photoSlotId) {
+    const photos = await fetchAllRows<IdFileRow>(
+      () => getSupabaseAdmin().from("hiring_document_files").select(ID_FILE_COLUMNS).eq("document_id", photoSlotId),
+      "storage_path",
+    );
+    for (const photo of photos) {
+      if (!photo.size_bytes) continue;
+      const key = photo.employee_hr_id.toLowerCase();
+      personalPhotoSizes.set(key, [...(personalPhotoSizes.get(key) ?? []), photo.size_bytes]);
+    }
+  }
+  return { files: groupIdFiles(rows), personalPhotoSizes };
+}
+
+function sidesFor(loaded: IdFiles, hrId: string) {
+  const key = hrId.toLowerCase();
+  return pickIdSides(loaded.files.get(key) ?? [], { personalPhotoSizes: loaded.personalPhotoSizes.get(key) });
 }
 
 /**
@@ -175,8 +215,8 @@ async function loadAllIdFiles(): Promise<Map<string, IdFile[]>> {
  */
 async function loadIdCardStatuses(): Promise<Map<string, IdCardStatus> | null> {
   try {
-    const files = await loadAllIdFiles();
-    return new Map([...files].map(([hrId, list]) => [hrId, pickIdSides(list).status]));
+    const loaded = await loadAllIdFiles();
+    return new Map([...loaded.files.keys()].map((hrId) => [hrId, sidesFor(loaded, hrId).status]));
   } catch (error) {
     logError("The bank account letter could not read the national ID files", {
       error: error instanceof Error ? error : new Error(String(error)),
@@ -198,19 +238,95 @@ async function loadSharp(): Promise<SharpFactory> {
 /** The long edge a side is printed from: ~240 dpi across the 170 mm box, a few hundred KB a side. */
 const ID_PICTURE_MAX_EDGE_PX = 1600;
 
+/** The long edge the photo is read at for the crop: enough for a sharp 1,600 px card, light enough to warp. */
+const CARD_SOURCE_MAX_EDGE_PX = 2400;
+/** The long edge of the copy shown to the corner reader. */
+const CARD_ASK_MAX_EDGE_PX = 1280;
+
 /**
- * One stored picture, made ready for the page: turned upright (phones record the turn in EXIF rather
- * than in the pixels), capped at 1,600 px and written as JPEG. If the image library cannot load, a
- * JPEG or PNG goes in as it is, at its own proportion; anything else is left out.
+ * The photo cut to the card and laid flat, landscape, in the card's own proportion (owner,
+ * 2026-11-27: "crop exactly to the card … make it landscape"). Null when the corners cannot be found
+ * or do not make a card — the caller then prints the photo as it was.
+ */
+async function cropToCard(bytes: Buffer): Promise<IdPicture | null> {
+  const sharp = await loadSharp();
+  const { data, info } = await sharp(bytes)
+    .rotate()
+    .resize({ fit: "inside", height: CARD_SOURCE_MAX_EDGE_PX, width: CARD_SOURCE_MAX_EDGE_PX, withoutEnlargement: true })
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  // sharp types a raw image's channel count as 1 | 2 | 3 | 4, and removeAlpha() leaves 1 or 3.
+  const raw = { channels: info.channels as 1 | 2 | 3 | 4, height: info.height, width: info.width };
+  const ask = await sharp(data, { raw })
+    .resize({ fit: "inside", height: CARD_ASK_MAX_EDGE_PX, width: CARD_ASK_MAX_EDGE_PX, withoutEnlargement: true })
+    .jpeg({ quality: 82 })
+    .toBuffer();
+  const corners = await findIdCardCorners(ask);
+  const read = corners ? quadFromThousandths(corners, info.width, info.height) : null;
+  // Clockwise by geometry, a long side first: the warp can never mirror the card and always lays it
+  // landscape, whatever order the corners were read in.
+  const ordered = read ? orderQuadClockwise(read) : null;
+  if (!ordered) return null;
+  const quad = expandQuad(landscapeQuad(ordered), ID_CARD_READ_MARGIN_SHARE, info.width, info.height);
+  if (!isPlausibleCardQuad(quad, info.width, info.height)) return null;
+  const grey = await sharp(data, { raw }).greyscale().blur(1.2).toColourspace("b-w").raw().toBuffer();
+  const greyImage = { data: new Uint8Array(grey), height: info.height, width: info.width };
+  // The card's own light outline, when the photo shows one, outranks the reading's edges: a reading far
+  // outside or inside the card would otherwise leave desk in the picture or cut the card.
+  const refined = refineCardQuad(greyImage, outlineCardQuad(greyImage, quad) ?? quad);
+  const size = cardCropSize();
+  // A thin border of the photo all round: the cut lands on the desk, never on the card.
+  const border = ID_CARD_BORDER_SHARE * size.width;
+  const card = warpCard({ ...raw, data: new Uint8Array(data) }, refined, size.width, size.height, border);
+  if (!card) return null;
+  const cardRaw = { channels: card.channels as 1 | 2 | 3 | 4, height: card.height, width: card.width };
+  // The flat card is upright or upside down. Asked once; when the answer is unsure, the back's
+  // barcode (along the bottom when upright) decides; with neither, it is printed as it came out.
+  const preview = await sharp(Buffer.from(card.data), { raw: cardRaw }).resize({ width: 800 }).jpeg({ quality: 80 }).toBuffer();
+  const answer = await findIdCardOrientation(preview);
+  let upsideDown = answer === "upside_down";
+  if (answer === null) {
+    const cardGrey = await sharp(Buffer.from(card.data), { raw: cardRaw }).greyscale().toColourspace("b-w").raw().toBuffer();
+    upsideDown = barcodeBand({ data: new Uint8Array(cardGrey), height: card.height, width: card.width }, border) === "top";
+  }
+  const jpeg = await sharp(Buffer.from(card.data), { raw: cardRaw })
+    .rotate(upsideDown ? 180 : 0)
+    .jpeg({ mozjpeg: true, quality: 85 })
+    .toBuffer();
+  return { bytes: new Uint8Array(jpeg), contentType: "image/jpeg", heightPx: card.height, widthPx: card.width };
+}
+
+/**
+ * One stored picture, made ready for the page: cut to the card and laid flat, landscape, whenever
+ * the card's corners can be found (`cropToCard`); otherwise turned upright (phones record the turn
+ * in EXIF rather than in the pixels), capped at 1,600 px and written as JPEG. If the image library
+ * cannot load, a JPEG or PNG goes in as it is, at its own proportion; anything else is left out.
  */
 async function preparePicture(bytes: Buffer): Promise<IdPicture | null> {
   try {
+    // The corner reading varies from one call to the next: a reading that does not make a card is asked once more.
+    const card = (await cropToCard(bytes).catch(() => null)) ?? (await cropToCard(bytes).catch(() => null));
+    if (card) return card;
     const sharp = await loadSharp();
-    const { data, info } = await sharp(bytes)
+    const upright = await sharp(bytes)
       .rotate()
       .resize({ fit: "inside", height: ID_PICTURE_MAX_EDGE_PX, width: ID_PICTURE_MAX_EDGE_PX, withoutEnlargement: true })
-      .jpeg({ mozjpeg: true, quality: 85 })
       .toBuffer({ resolveWithObject: true });
+    // Uncut, the photo is still printed landscape (owner, 2026-11-27): a portrait photo is turned a
+    // quarter, then a half more when the card then reads upside down.
+    let turn = 0;
+    if (upright.info.height > upright.info.width) {
+      const quarter = await sharp(upright.data).rotate(90).resize({ width: 800 }).jpeg({ quality: 80 }).toBuffer();
+      const answer = await findIdCardOrientation(quarter);
+      if (answer === "upside_down") turn = 270;
+      else if (answer === "upright") turn = 90;
+      else {
+        const { data: g, info: gi } = await sharp(quarter).greyscale().raw().toBuffer({ resolveWithObject: true });
+        turn = barcodeBand({ data: new Uint8Array(g), height: gi.height, width: gi.width }) === "top" ? 270 : 90;
+      }
+    }
+    const { data, info } = await sharp(upright.data).rotate(turn).jpeg({ mozjpeg: true, quality: 85 }).toBuffer({ resolveWithObject: true });
     return { bytes: new Uint8Array(data), contentType: "image/jpeg", heightPx: info.height, widthPx: info.width };
   } catch {
     const size = pictureSize(bytes);
@@ -218,10 +334,10 @@ async function preparePicture(bytes: Buffer): Promise<IdPicture | null> {
   }
 }
 
-async function loadSide(file: IdFile | null): Promise<IdPicture | null> {
+async function downloadSide(file: IdFile | null): Promise<Buffer | null> {
   if (!file) return null;
   try {
-    return await preparePicture(await downloadHiringDocumentFile(file.storagePath));
+    return await downloadHiringDocumentFile(file.storagePath);
   } catch (error) {
     logError("A national ID picture for the bank account letter could not be read", {
       context: { storagePath: file.storagePath },
@@ -240,21 +356,26 @@ const ID_DOWNLOAD_CONCURRENCY = 4;
  * read, is null — the page prints an empty box for it, never skips the person.
  */
 export async function loadBankLetterIdPages(chosen: readonly BankLetterEmployee[]): Promise<BankLetterIdPage[]> {
-  const files = await loadAllIdFiles();
+  const loaded = await loadAllIdFiles();
   const pages: BankLetterIdPage[] = new Array(chosen.length);
   let next = 0;
   async function worker() {
     while (next < chosen.length) {
       const index = next++;
       const employee = chosen[index];
-      const sides = pickIdSides(files.get(employee.hrId.toLowerCase()) ?? []);
-      const [front, back] = await Promise.all([loadSide(sides.front), loadSide(sides.back)]);
+      const sides = sidesFor(loaded, employee.hrId);
+      const [frontRaw, backRaw] = await Promise.all([downloadSide(sides.front), downloadSide(sides.back)]);
+      // The same bytes as both sides is one picture filed twice — never a card, whatever its size said.
+      const samePicture = frontRaw !== null && backRaw !== null && Buffer.compare(frontRaw, backRaw) === 0;
+      const [front, back] = samePicture
+        ? [null, null]
+        : await Promise.all([frontRaw ? preparePicture(frontRaw) : null, backRaw ? preparePicture(backRaw) : null]);
       pages[index] = {
         back,
         front,
         name: (employee.nameAr ?? "").trim() || employee.displayName,
         nationalId: employee.nationalId,
-        status: sides.status,
+        status: samePicture ? "not-a-card" : sides.status,
       };
     }
   }

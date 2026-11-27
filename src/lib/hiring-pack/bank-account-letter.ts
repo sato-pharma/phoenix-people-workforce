@@ -27,7 +27,7 @@ export const BANK_LETTER_HEADINGS = ["", "الاسم", "الرقم القومي"
 
 export type BankLetterEmployee = {
   hrId: string;
-  /** The name the screen shows (nickname or full name), never printed. */
+  /** The name the screen shows (nickname or full name); printed only when there is no Arabic name. */
   displayName: string;
   nameAr: string | null;
   nationalId: string | null;
@@ -87,6 +87,23 @@ export function bankLetterJobTitle(employee: Pick<BankLetterEmployee, "jobTitleA
   return clean(employee.jobTitleAr) || clean(employee.jobTitleEn);
 }
 
+/** The name the letter prints: the Arabic one, or the screen's name when Arabic is missing — never a blank row. */
+export function bankLetterName(employee: Pick<BankLetterEmployee, "nameAr" | "displayName">): string {
+  return clean(employee.nameAr) || clean(employee.displayName);
+}
+
+/**
+ * The mobile number the letter prints, in the 11-digit form an Egyptian mobile is written in. A record
+ * typed without its leading 0 (1066149890) or with the country code (+201066149890) gets the 0 back;
+ * anything else prints as stored, never guessed at.
+ */
+export function bankLetterMobile(value: string | null | undefined): string {
+  const stored = clean(value);
+  const digits = stored.replace(/[\s\-()]/g, "");
+  const local = /^(?:\+?20|0020)?0?(1\d{9})$/.exec(digits);
+  return local ? `0${local[1]}` : stored;
+}
+
 /** Every field the letter would print blank (or not in the bank's form) for this person. */
 export function bankLetterGaps(employee: BankLetterEmployee): BankLetterField[] {
   const gaps: BankLetterField[] = [];
@@ -105,9 +122,9 @@ export type BankLetterRow = readonly [string, string, string, string, string, st
 export function bankLetterRows(employees: readonly BankLetterEmployee[]): BankLetterRow[] {
   return employees.map((employee, index) => [
     String(index + 1),
-    clean(employee.nameAr),
+    bankLetterName(employee),
     clean(employee.nationalId),
-    clean(employee.mobile),
+    bankLetterMobile(employee.mobile),
     clean(employee.address),
     bankLetterJobTitle(employee),
     formatBankLetterSalary(employee.baseSalary),
