@@ -81,7 +81,10 @@ export function buildForm6Values(data: HiringPackData): Record<string, string> {
     addressMarkaz: profile.addressMarkaz ?? "",
     addressGovernorate: profile.addressGovernorate ?? "",
 
-    phone: employee.mobileNumber ?? "",
+    // THE HR MANAGER'S NUMBER, NEVER THE EMPLOYEE'S — owner's golden rule, 27 Nov 2026. The box
+    // asks for the insured person's phone; the Authority's calls must reach HR. A different key
+    // from the labour exit form's `phone`, which still prints the employee's own number.
+    formsContactPhone: data.company.formsContactPhone,
     email: employee.workEmail ?? "",
   };
 }

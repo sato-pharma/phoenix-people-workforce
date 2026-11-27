@@ -33,10 +33,8 @@
 
 ## Inbox — new notes land here
 
-- [27 Nov private spell, then KEEP PUBLIC](the-repo-is-private-since-2026-11-27.md) — owner 10:49: repo stays PUBLIC (Actions cost); going private silently cut Railway's git source from every service; spare runner removed.
-- [Receipt books: everything is in the `direct-order-receipt-books` skill](direct-order-receipt-books-everything.md) — books, security marks, guides, sample, proposal email, never-email rules, open items (PR 829).
-- [Medhat Makram Wahba is non-employee payroll](medhat-makram-wahba-is-non-employee-payroll.md) — on the insurance register with no Phoenix HR ID by design; never flag or link him.
-- [History PURGED 27 Nov — every commit id changed](history-purge-planned-2026-11-27.md) — old main 2369952b0 = new bff23828c; rebase any older branch, never push it (a guard refuses); Support request sent 27 Nov.
+- [CodeQL dismissals of 27 Nov STAND](codeql-dismissals-2026-11-27-stand.md) — owner: "keep the 85 CodeQL dismissals"; 112 → 18 open; the password-hash alerts and the 2 mobile alerts stay open; never reopen or re-triage.
+- [Spare's screen blanked + quiet; never a desktop on it](spare-screen-is-blanked-and-quiet.md) — 27 Nov: printk 3, blank after 1 min, power TAP ignored (5 s hold powers off); an OOM line on its screen may be the hubqa job, not the dev server.
 
 
 

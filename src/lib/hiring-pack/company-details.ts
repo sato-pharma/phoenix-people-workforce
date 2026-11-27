@@ -60,6 +60,12 @@ export type CompanyDetails = {
   contractCityAr: string;
   responsibleManagerAr: string;
   responsibleManagerTitleAr: string;
+  /**
+   * The ONE phone number Form 1 and Form 6 print in the insured person's phone box — the HR
+   * Manager's, never the employee's own (owner's golden rule, 27 Nov 2026). See `formsContactPhone`
+   * in COMPANY_DETAIL_FIELDS for why it ships blank.
+   */
+  formsContactPhone: string;
   registration: {
     insuranceEstablishmentNumber: string;
     insuranceSectorCode: string;
@@ -134,6 +140,22 @@ export const COMPANY_DETAIL_FIELDS = {
     labelEn: "Responsible manager's title",
     fallback: systemLegalEntity.responsibleManagerTitleAr,
     alsoOn: "the contract, the exit forms and the offer letter, for every employee",
+  },
+
+  // ── THE PHONE ON THE INSURANCE FORMS — owner's golden rule, 27 Nov 2026 ─────────────────────
+  // "In Form 1 and Form 6, when it asks for the phone number of the employee, never put the phone
+  // number of the employee and always put my phone number." The Authority calls the number on the
+  // form, and every call is to reach HR, not the rep. So Form 1 and Form 6 print THIS value in the
+  // phone box, for every employee, and never `employees.mobile_number`. The labour exit forms are
+  // not covered by the rule and still print the employee's own number.
+  //
+  // IT SHIPS BLANK ON PURPOSE. The repository is public, so the owner's personal number is never a
+  // compiled constant: it lives as a stored row in `hiring_pack_company_details`. With no row the
+  // box prints empty for the pen — never the employee's number as a stand-in.
+  formsContactPhone: {
+    labelEn: "Phone on Form 1 and Form 6 (the HR Manager's, never the employee's)",
+    fallback: "",
+    alsoOn: "Form 1 and Form 6, for every employee",
   },
 
   // ── The government identifiers, printed into boxed grids ────────────────────────────────────
@@ -244,6 +266,7 @@ export function resolveCompanyDetails(
     contractCityAr: read("contractCityAr"),
     responsibleManagerAr: read("responsibleManagerAr"),
     responsibleManagerTitleAr: read("responsibleManagerTitleAr"),
+    formsContactPhone: read("formsContactPhone"),
     registration: {
       insuranceEstablishmentNumber: read("insuranceEstablishmentNumber"),
       insuranceSectorCode: read("insuranceSectorCode"),
@@ -280,6 +303,7 @@ export function flattenCompanyDetails(details: CompanyDetails): Record<CompanyDe
     contractCityAr: details.contractCityAr,
     responsibleManagerAr: details.responsibleManagerAr,
     responsibleManagerTitleAr: details.responsibleManagerTitleAr,
+    formsContactPhone: details.formsContactPhone,
     insuranceEstablishmentNumber: details.registration.insuranceEstablishmentNumber,
     insuranceSectorCode: details.registration.insuranceSectorCode,
     taxRegistrationNumber: details.registration.taxRegistrationNumber,
