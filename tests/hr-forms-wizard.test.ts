@@ -19,8 +19,11 @@ import {
 import {
   ARRANGEABLE_STEPS,
   DEFAULT_FORMS_LAYOUT,
+  FIXED_STEPS,
   cleanPackageSteps,
+  isFixedStep,
   mayArrange,
+  movableSteps,
   normalizeFormsLayout,
   sameFormsLayout,
   stepsOutsidePackages,
@@ -186,28 +189,48 @@ function testTheControlTabArrangesThePackages() {
   assert.deepEqual(hrFormsPaperSteps("newHire", null, DEFAULT_FORMS_LAYOUT), hrFormsPaperSteps("newHire"));
   assert.deepEqual(hrFormsPaperSteps("leaver", null, DEFAULT_FORMS_LAYOUT), hrFormsPaperSteps("leaver"));
 
-  // Rearranged, removed and added: the wizard follows the stored order, step for step.
-  const arranged = normalizeFormsLayout({ leaver: ["form6", "nda"], newHire: ["form1", "contract", "custodyLaptop"] });
-  assert.deepEqual(hrFormsPaperSteps("newHire", null, arranged), ["form1", "contract", "custodyLaptop"]);
-  assert.deepEqual(hrFormsPaperSteps("leaver", null, arranged), ["form6", "nda"]);
+  // THE FIXED PAPERS (owner, 2026-11-27: "Form 1 and the contract are for new hires. Be smart. Remove
+  // them from rearrange"): each package always opens with its own, in the standard order, and the
+  // standard order itself starts with them, so nothing he saw before moved.
+  const fixedNewHire = ["contract", "form1", "workerDataForm", "appointmentDocsReceipt"];
+  const fixedLeaver = ["form6", EXIT_FORM_STEP, "clearanceEmployee", "clearanceCompany", "appointmentDocsReturn"];
+  assert.deepEqual(FIXED_STEPS.newHire, fixedNewHire);
+  assert.deepEqual(FIXED_STEPS.leaver, fixedLeaver);
+  assert.deepEqual(DEFAULT_FORMS_LAYOUT.newHire.slice(0, fixedNewHire.length), fixedNewHire, "the standard new-hire order opens with its fixed papers");
+  assert.deepEqual(DEFAULT_FORMS_LAYOUT.leaver.slice(0, fixedLeaver.length), fixedLeaver, "the standard leaver order opens with its fixed papers");
+  for (const step of [...fixedNewHire, ...fixedLeaver]) {
+    assert.ok(isFixedStep(step) && !mayArrange(step), `${step} is fixed, never arranged`);
+    assert.ok(!ARRANGEABLE_STEPS.includes(step as never), `${step} is never offered to move`);
+  }
+
+  // Rearranged, removed and added: the wizard follows the stored order — fixed papers first, wherever
+  // the stored list put them, and never moved across or dropped.
+  const arranged = normalizeFormsLayout({
+    leaver: ["nda", "form6", "contract"],
+    newHire: ["custodyLaptop", "form1", "contract", "form6", "nda"],
+  });
+  assert.deepEqual(hrFormsPaperSteps("newHire", null, arranged), [...fixedNewHire, "custodyLaptop", "nda"]);
+  assert.deepEqual(hrFormsPaperSteps("leaver", null, arranged), [...fixedLeaver, "nda"]);
+  assert.deepEqual(movableSteps(arranged, "newHire"), ["custodyLaptop", "nda"]);
+  assert.deepEqual(cleanPackageSteps([], "newHire"), fixedNewHire, "nothing movable keeps the fixed papers");
   // A seat limited to its papers still sees only those, in the arranged order.
-  assert.deepEqual(hrFormsPaperSteps("newHire", ["contract", "form1"], arranged), ["form1", "contract"]);
+  assert.deepEqual(hrFormsPaperSteps("newHire", ["nda", "contract"], arranged), ["contract", "nda"]);
 
-  // A removed paper lands in "Another paper"; a placed one leaves it.
+  // A removed paper lands in "Another paper"; a placed or fixed one is never there.
   const outside = stepsOutsidePackages(arranged);
-  assert.ok(outside.includes("workerDataForm"), "the worker data form, taken off new hire, is another paper");
-  assert.ok(outside.includes(EXIT_FORM_STEP), "so is the exit form once it is off the leaver list");
-  assert.ok(!outside.includes("nda") && !outside.includes("contract"), "a paper on a package is not offered again");
-  assert.equal(outside.length + new Set([...arranged.newHire, ...arranged.leaver]).size, ARRANGEABLE_STEPS.length, "every paper is somewhere, once");
+  assert.ok(outside.includes("socialStatusSheet"), "the social status sheet, taken off new hire, is another paper");
+  assert.ok(!outside.includes("nda") && !outside.includes("custodyLaptop"), "a paper on a package is not offered again");
+  assert.ok(!outside.some((step) => isFixedStep(step)), "a fixed paper is never another paper");
+  const placed = new Set([...movableSteps(arranged, "newHire"), ...movableSteps(arranged, "leaver")]);
+  assert.equal(outside.length + placed.size, ARRANGEABLE_STEPS.length, "every movable paper is somewhere, once");
 
-  // Cleaned, never trusted: an unknown key, a repeat, the exit forms one by one, the exit form on new hire.
-  assert.deepEqual(cleanPackageSteps(["contract", "contract", "noSuchPaper", 7, "exitForm"], "newHire"), ["contract"]);
-  assert.deepEqual(cleanPackageSteps(["resignation", "mutualTermination", "form6"], "leaver"), [EXIT_FORM_STEP, "form6"], "the two exit forms are the one exit-form step");
-  assert.deepEqual(cleanPackageSteps([], "leaver"), [], "an empty package is a real answer");
+  // Cleaned, never trusted: an unknown key, a repeat, the exit forms one by one, a fixed paper elsewhere.
+  assert.deepEqual(cleanPackageSteps(["nda", "nda", "noSuchPaper", 7, "exitForm"], "newHire"), [...fixedNewHire, "nda"]);
+  assert.deepEqual(cleanPackageSteps(["resignation", "mutualTermination", "nda"], "leaver"), [...fixedLeaver, "nda"], "the two exit forms are the fixed exit-form step");
   assert.equal(cleanPackageSteps("contract", "newHire"), null, "anything but a list keeps the standard order");
-  assert.equal(mayArrange(EXIT_FORM_STEP, "newHire"), false);
   assert.ok(!ARRANGEABLE_STEPS.includes("resignation") && !ARRANGEABLE_STEPS.includes("mutualTermination"));
   assert.ok(sameFormsLayout(normalizeFormsLayout({ newHire: [...DEFAULT_FORMS_LAYOUT.newHire] }), DEFAULT_FORMS_LAYOUT));
+  assert.ok(sameFormsLayout(normalizeFormsLayout(DEFAULT_FORMS_LAYOUT), DEFAULT_FORMS_LAYOUT), "the standard order survives its own cleaning");
 
   // The screen: the tab, the wizard reading the arrangement, Another paper following it.
   const manager = code("src/components/hiring-pack/hiring-pack-manager.tsx");

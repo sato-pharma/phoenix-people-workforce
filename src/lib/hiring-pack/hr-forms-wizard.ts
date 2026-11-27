@@ -54,16 +54,16 @@ export const HR_FORMS_PATHS: readonly {
 
 /**
  * THE JOINER'S PAPERS, in the order they cross the desk on the first day: the contract and Form 1
- * first (the two the law and the insurance office need), then the service-file sheet, the
- * confidentiality undertaking, the receipt for the certificates handed in, the social status sheet,
- * and the custody receipts for whatever device is issued.
+ * first (the two the law and the insurance office need), then the service-file sheet and the receipt
+ * for the certificates handed in — the four no joiner goes without — then the confidentiality
+ * undertaking, the social status sheet, and the custody receipts for whatever device is issued.
  */
 export const NEW_HIRE_PAPERS: readonly HiringPackDocument[] = [
   "contract",
   "form1",
   "workerDataForm",
-  "nda",
   "appointmentDocsReceipt",
+  "nda",
   "socialStatusSheet",
   "custodyLaptop",
   "custodyMobile",
@@ -81,17 +81,17 @@ export type LeaverStep = HiringPackDocument | typeof EXIT_FORM_STEP;
 /**
  * THE LEAVER'S PAPERS. Form 6 first (it is what the insurance office files), then the exit form, then
  * BOTH clearances — complements, never alternatives: each protects the party that does not keep it,
- * so neither may hang on the exit-route choice — then the handover, the exit interview, the
- * certificates handed back, and the two certificates of experience.
+ * so neither may hang on the exit-route choice — then the certificates handed back (the five no
+ * leaver goes without), the handover, the exit interview, and the two certificates of experience.
  */
 export const LEAVER_PAPERS: readonly LeaverStep[] = [
   "form6",
   EXIT_FORM_STEP,
   "clearanceEmployee",
   "clearanceCompany",
+  "appointmentDocsReturn",
   "handoverRecord",
   "exitInterview",
-  "appointmentDocsReturn",
   "experienceCertificate",
   "experienceCertificateEn",
 ];

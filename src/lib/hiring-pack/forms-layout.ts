@@ -9,10 +9,15 @@
 // "Another paper" is simply every paper in neither list. Nothing stored → the standard order in
 // `hr-forms-wizard.ts`, which is what the screen showed before the Control tab existed.
 //
+// SOME PAPERS ARE NOT ARRANGED AT ALL (owner, 2026-11-27: "some things are obviously for new hires —
+// Form 1 and the contract. Be smart. Remove them from rearrange; the ones you are unsure of, make them
+// movable"). `FIXED_STEPS` always open their package, in the standard order, and are never offered
+// to the other package or to "Another paper"; only the rest are moved, added and removed.
+//
 // A STORED LIST IS CLEANED, NEVER TRUSTED: an unknown key (a paper retired from the code), a paper
-// twice in one list, the two exit forms on their own (they are ONE step, `exitForm`), and the exit
-// form on the new-hire list (it needs the departure the leaver step asks for) are dropped. An empty
-// list is a real answer — a package with no papers — and is kept.
+// twice in one list, the two exit forms on their own (they are ONE step, `exitForm`) and a fixed
+// paper anywhere but its own place are dropped, and the fixed papers are put back at the front. A list
+// with nothing movable is a real answer and is kept.
 //
 // Pure and browser-safe: the screen, the store and the route all read it, and
 // `tests/hr-forms-wizard.test.ts` pins it.
@@ -33,6 +38,24 @@ export const ARRANGED_PACKAGES: readonly ArrangedPackage[] = ["newHire", "leaver
 
 export type FormsLayout = Record<ArrangedPackage, LeaverStep[]>;
 
+/**
+ * THE PAPERS EACH PACKAGE ALWAYS OPENS WITH — never moved, removed or offered elsewhere. A joiner is
+ * never without a contract, Form 1, the service-file sheet and the receipt for the certificates he
+ * hands in; a leaver never without Form 6, the exit form, both clearances and the certificates
+ * handed back. Each is a prefix of the standard order, so the standard order is unchanged by it.
+ */
+export const FIXED_STEPS: Readonly<Record<ArrangedPackage, readonly LeaverStep[]>> = {
+  leaver: ["form6", EXIT_FORM_STEP, "clearanceEmployee", "clearanceCompany", "appointmentDocsReturn"],
+  newHire: ["contract", "form1", "workerDataForm", "appointmentDocsReceipt"],
+};
+
+const FIXED = new Set<string>([...FIXED_STEPS.newHire, ...FIXED_STEPS.leaver]);
+
+/** Whether a step is one of the fixed papers, which the Control tab shows but never moves. */
+export function isFixedStep(step: string): boolean {
+  return FIXED.has(step);
+}
+
 /** The standard order — the screen before the Control tab, and the answer when nothing is stored. */
 export const DEFAULT_FORMS_LAYOUT: FormsLayout = {
   leaver: [...LEAVER_PAPERS],
@@ -42,18 +65,16 @@ export const DEFAULT_FORMS_LAYOUT: FormsLayout = {
 /** The two exit forms are one step on any list; they are never arranged one by one. */
 const EXIT_FORM_PAPERS: readonly HiringPackDocument[] = ["resignation", "mutualTermination"];
 
-/** Every step the Control tab can place: each built-in paper, with the two exit forms as one. */
-export const ARRANGEABLE_STEPS: readonly LeaverStep[] = [
-  ...HIRING_PACK_DOCUMENTS.filter((document) => !EXIT_FORM_PAPERS.includes(document)),
-  EXIT_FORM_STEP,
-];
+/** Every paper the Control tab can move: each built-in paper but the fixed ones and the two exit forms. */
+export const ARRANGEABLE_STEPS: readonly LeaverStep[] = HIRING_PACK_DOCUMENTS.filter(
+  (document) => !EXIT_FORM_PAPERS.includes(document) && !FIXED.has(document),
+);
 
 const ARRANGEABLE = new Set<string>(ARRANGEABLE_STEPS);
 
-/** Whether a step may sit on a package's list. The exit form belongs to the leaver only. */
-export function mayArrange(step: LeaverStep, pack: ArrangedPackage): boolean {
-  if (!ARRANGEABLE.has(step)) return false;
-  return step !== EXIT_FORM_STEP || pack === "leaver";
+/** Whether a paper may be moved onto a package's list. A fixed paper never is — it is already there. */
+export function mayArrange(step: string): boolean {
+  return ARRANGEABLE.has(step);
 }
 
 /** The step a paper is arranged as: the two exit forms are the one exit-form step. */
@@ -61,15 +82,18 @@ export function stepOfDocument(document: string): string {
   return EXIT_FORM_PAPERS.includes(document as HiringPackDocument) ? EXIT_FORM_STEP : document;
 }
 
-/** One package's list, cleaned. Anything but an array of strings answers null (use the standard). */
+/**
+ * One package's list, cleaned: its fixed papers first, in the standard order, then the movable papers
+ * as given. Anything but an array of strings answers null (use the standard).
+ */
 export function cleanPackageSteps(raw: unknown, pack: ArrangedPackage): LeaverStep[] | null {
   if (!Array.isArray(raw)) return null;
-  const seen = new Set<string>();
-  const steps: LeaverStep[] = [];
+  const seen = new Set<string>(FIXED_STEPS[pack]);
+  const steps: LeaverStep[] = [...FIXED_STEPS[pack]];
   for (const value of raw) {
     if (typeof value !== "string") continue;
     const step = stepOfDocument(value.trim()) as LeaverStep;
-    if (!mayArrange(step, pack) || seen.has(step)) continue;
+    if (!mayArrange(step) || seen.has(step)) continue;
     seen.add(step);
     steps.push(step);
   }
@@ -92,7 +116,12 @@ export function stepsInPackages(layout: FormsLayout): ReadonlySet<string> {
   return new Set<string>([...layout.newHire, ...layout.leaver]);
 }
 
-/** The steps on neither list, in the catalogue's order: what "Another paper" offers. */
+/** The movable papers on one package's list, in its order. */
+export function movableSteps(layout: FormsLayout, pack: ArrangedPackage): LeaverStep[] {
+  return layout[pack].filter((step) => !FIXED.has(step));
+}
+
+/** The movable papers on neither list, in the catalogue's order: what "Another paper" offers. */
 export function stepsOutsidePackages(layout: FormsLayout): LeaverStep[] {
   const placed = stepsInPackages(layout);
   return ARRANGEABLE_STEPS.filter((step) => !placed.has(step));
