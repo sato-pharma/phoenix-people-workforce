@@ -19,7 +19,7 @@ acknowledgements, the register, `Guides\` and `_generator\`.
 **Why:** the books, the guides and the email took a whole night. Several facts in them are easy to break:
 - the register holds the only copy of the codes;
 - the full book PDFs carry real codes;
-- the hidden watermark depends on 600 dpi printing.
+- the yellow «أصل» ground must print pure Yellow 100% on the two originals only (the hidden word was dropped, 27 Nov).
 
 **How to apply:** read the skill before touching any receipt book, guide, sample, printer step or the proposal
 email. Never put a real receipt code anywhere. Never email the full books or the register. Related:

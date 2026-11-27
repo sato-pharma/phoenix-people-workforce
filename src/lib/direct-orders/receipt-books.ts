@@ -1476,9 +1476,9 @@ export type DirectOrderReceiptPrint = {
 
 /**
  * The page Finance prints for an order's receipt: both originals as entered on Phoenix, with who
- * entered each and when (owner, 27 Nov 2026: a photographed page prints «مُصوَّر — غير صالح» by
- * design, so the proof on paper is this page, which says where it came from). Finance or the
- * Administrator only; null when the order has no receipt.
+ * entered each and when (owner, 27 Nov 2026: a photo of an original is not an original, so the proof
+ * on paper is this page, which says where it came from). Finance or the Administrator only; null when
+ * the order has no receipt.
  */
 export async function loadDirectOrderReceiptPrint(access: AccessContext, requestId: string): Promise<DirectOrderReceiptPrint | null> {
   if (!canManageDirectOrderReceiptBooks(access)) throw forbiddenError("The verified receipt print is Finance's.");

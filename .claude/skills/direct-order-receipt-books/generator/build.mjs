@@ -41,7 +41,7 @@ const PARTS = [
   { key: "O2", kind: "customer", ar: "الأصل الثاني — استلام العميل", note: "يُنزع ويُرفع على فينكس خلال 6 أيام عمل، ثم للمالية", en: "ORIGINAL 2" },
   { key: "C", kind: "customer", ar: "صورة العميل", note: "تُنزع وتُسلَّم للعميل", en: "CUSTOMER COPY" },
 ];
-const C = { deep: "#0A527D", blue: "#0A6BA6", light: "#1482C2", tint: "#F2F6FA", hair: "#B9C7D4", muted: "#5A6B7C", body: "#1A1A1A", ghost: "#DCE6EF" };
+const C = { yellow: "#FFE200", red: "#C8102E", deep: "#0A527D", blue: "#0A6BA6", light: "#1482C2", tint: "#F2F6FA", hair: "#B9C7D4", muted: "#5A6B7C", body: "#1A1A1A", ghost: "#DCE6EF" };
 const FONT = '"Tahoma", "Segoe UI", "Traditional Arabic", "Noto Sans Arabic", Arial, sans-serif';
 const LOGO = fs.readFileSync(REPO + "/public/brand/sato-pharma-logo-on-light.svg", "utf8")
   .replace(/<\?xml[^>]*>/, "").replace(/<title>.*?<\/title>/, "")
@@ -126,36 +126,21 @@ function groundSvg(code, serial, partEn) {
     ${p.map((d, i) => `<path d="${d}" fill="none" stroke="${C.ghost}" stroke-width="${[0.16, 0.13, 0.11][i]}"/>`).join("")}
   </svg>`;
 }
-// The void pantograph, drawn as the printer will draw it: one 600 dpi image, reused on every page.
-// Outside the hidden words: single 1-pixel dots on a 2-pixel grid (0.085 mm), too fine for a copier's scanner.
-// Inside the words: 4x4-pixel dots (0.17 mm) on an 8-pixel grid (0.34 mm), coarse enough that a copier keeps them.
-// Both cover exactly 1/4 of the area, so on the original the two read as the same pale tint.
-const sharpLib = require("sharp");
-const VP_W_MM = 188, VP_H_MM = 186, DPI = 600;
-async function buildVoidPantograph() {
-  const W = Math.round(VP_W_MM / 25.4 * DPI), H = Math.round(VP_H_MM / 25.4 * DPI);
-  const pxmm = DPI / 25.4;
-  const cx = (VP_W_MM / 2) * pxmm;
-  const words = [28, 92, 156].map((y) => {
-    const yy = y * pxmm;
-    return '<text x="' + cx + '" y="' + yy + '" text-anchor="middle" font-family="Tahoma" font-weight="bold" font-size="' + 21 * pxmm + '" fill="#000" transform="rotate(-14 ' + cx + " " + yy + ')">مُصوَّر — غير صالح</text>';
-  }).join("");
-  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + W + '" height="' + H + '"><rect width="100%" height="100%" fill="#fff"/>' + words + "</svg>";
-  const mask = await sharpLib(Buffer.from(svg)).greyscale().raw().toBuffer();
-  const ch = mask.length / (W * H);
-  const out = Buffer.alloc(W * H * 4);
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const inWord = mask[(y * W + x) * ch] < 128;
-    const on = inWord ? (x % 8 < 4 && y % 8 < 4) : (x % 2 === 0 && y % 2 === 0);
-    if (on) { const o = (y * W + x) * 4; out[o] = 0x8f; out[o + 1] = 0xa9; out[o + 2] = 0xc2; out[o + 3] = 255; }
-  }
-  const png = await sharpLib(out, { raw: { width: W, height: H, channels: 4 } }).png({ palette: true, colours: 2, compressionLevel: 9 }).toBuffer();
-  fs.writeFileSync(path.join(OUT, "void-pantograph-600dpi.png"), png);
-  return "data:image/png;base64," + png.toString("base64");
+// NO hidden "photocopied — not valid" word (owner's office print-and-copy tests, 27 Nov 2026): a void pantograph
+// needs dots an office laser cannot print and a copier cannot see; on his machines the word showed on the print,
+// or on neither. A stuck-on hologram can be peeled and reused, and a raised seal re-made by any seal maker, so
+// neither is used either. What proves a receipt is Phoenix: each serial and its secret code are accepted for ONE
+// order only. The serial prints in red (a black-and-white copy shows it black); every signature is in blue ink.
+// The ORIGINAL is told apart by colour, which a black-and-white copier cannot see: «أصل · ORIGINAL» runs across the
+// page in yellow. The eye sees yellow plainly, but a copier reads it by brightness, where yellow is almost white, so
+// the copy comes out with no «أصل» at all (the way a yellow highlighter vanishes on a photocopy). The red serial
+// comes out black. Only the two originals carry it; the customer's carbon copy does not.
+function originalGround(part) {
+  if (part.key === "C") return "";
+  const row = "أصل · ORIGINAL · ".repeat(22);
+  const lines = Array.from({ length: 42 }, (_, i) => `<text x="${-90 + (i % 2) * 10}" y="${-40 + i * 9}" font-family="Tahoma" font-weight="bold" font-size="3" fill="${C.yellow}">${row}</text>`).join("");
+  return `<svg class="yo" viewBox="0 0 210 297"><g transform="rotate(-14 105 148)">${lines}</g></svg>`;
 }
-const VP_URI = await buildVoidPantograph();
-console.error("void pantograph KB", Math.round((VP_URI.length * 0.75) / 1024));
-function voidPantograph() { return '<img class="vp" src="' + VP_URI + '" alt="">'; }
 function microLine(code, serial, partEn) {
   return `<div class="micro" dir="ltr">${esc(`SATOPHARMA${pad(serial)}${code}${partEn.replace(/\s/g, "")}`.repeat(24))}</div>`;
 }
@@ -171,9 +156,9 @@ html, body { margin: 0; padding: 0; background: #fff; -webkit-print-color-adjust
 body { font-family: ${FONT}; color: ${C.body}; font-size: 9.4pt; line-height: 1.5; }
 .sheet { position: relative; background: #fff; width: 210mm; height: 297mm; padding: 9mm 11mm 8mm; overflow: hidden; page-break-after: always; break-after: page; }
 .sheet:last-child { page-break-after: auto; break-after: auto; }
-.vp { position: absolute; left: 11mm; top: 92mm; width: 188mm; height: 186mm; z-index: 0; image-rendering: pixelated; }
+.yo { position: absolute; inset: 0; width: 210mm; height: 297mm; z-index: 0; direction: ltr; }
 .wm { position: absolute; width: 150mm; height: 150mm; left: 30mm; top: 95mm; z-index: 0; }
-.sheet > *:not(.wm):not(.foot):not(.vp):not(.zoneA):not(.zoneB) { position: relative; z-index: 1; }
+.sheet > *:not(.wm):not(.yo):not(.foot):not(.zoneA):not(.zoneB) { position: relative; z-index: 1; }
 .sheet > .foot { z-index: 1; }
 .mast { display: flex; direction: ltr; align-items: center; gap: 5mm; }
 .mast__logo { width: 36mm; height: 14.2mm; flex: none; }
@@ -195,7 +180,7 @@ body { font-family: ${FONT}; color: ${C.body}; font-size: 9.4pt; line-height: 1.
 .f__row--half { flex: 1 1 calc(50% - 4mm); }
 .f__l { flex: none; font-weight: 700; color: ${C.deep}; }
 .f__v { flex: 1; border-bottom: 0.25mm dotted ${C.muted}; min-height: 5.4mm; padding: 0 1.5mm; font-weight: 700; }
-.f__v--serial { font-family: Consolas, monospace; font-size: 13pt; letter-spacing: 0.08em; color: ${C.deep}; border-bottom: 0.3mm solid ${C.deep}; }
+.f__v--serial { font-family: Consolas, monospace; font-size: 13pt; letter-spacing: 0.08em; color: ${C.red}; border-bottom: 0.3mm solid ${C.red}; }
 .f__v small { font-weight: 400; color: ${C.muted}; font-size: 8pt; }
 .date { flex: 1; letter-spacing: 0.12em; color: ${C.muted}; border-bottom: 0.25mm dotted ${C.muted}; padding: 0 1.5mm; }
 .sec { margin: 3.4mm 0 1.4mm; padding-bottom: 0.8mm; border-bottom: 0.8pt solid ${C.blue}; color: ${C.deep}; font-size: 10pt; font-weight: 700; }
@@ -288,7 +273,7 @@ function receiptPage(book, r, idx, part) {
     <p><b>صاحب العهدة:</b> ${h ? `${esc(h.name)} — ${esc(TITLE_AR[h.title] ?? "مدير منطقة")} · ${esc(h.area)} · ${esc(h.line)}` : `<span class="blank" style="min-width:90mm"></span>`}</p>
     ${CUSTODY_TEXT.map((t) => `<p>${t}</p>`).join("")}
     <p class="law">${CUSTODY_LAW}</p>
-    <div class="sig"><div><b>الاسم</b><span></span></div><div><b>الرقم القومي</b><span></span></div><div><b>التوقيع</b><span></span></div></div>
+    <div class="sig"><div><b>الاسم</b><span></span></div><div><b>الرقم القومي</b><span></span></div><div><b>التوقيع <small>(بالقلم الأزرق)</small></b><span></span></div></div>
   </div>`
     : `<div class="zoneA zoneA--quiet">
     <h3>إقرار العميل</h3>
@@ -301,12 +286,12 @@ function receiptPage(book, r, idx, part) {
     <div class="client__text">
       <h3>توقيع العميل وختمه (عند التسليم)</h3>
       <div class="sig"><div><b>اسم المستلم</b><span></span></div><div><b>الصفة</b><span></span></div></div>
-      <div class="sig"><div><b>التوقيع</b><span></span></div><div><b>تاريخ الاستلام</b><span></span></div></div>
+      <div class="sig"><div><b>التوقيع <small>(بالقلم الأزرق)</small></b><span></span></div><div><b>تاريخ الاستلام</b><span></span></div></div>
     </div>
     <div class="stamp">ختم المنشأة</div>
   </div>`;
   return `<section class="sheet">
-  ${voidPantograph()}
+  ${originalGround(part)}
   ${groundSvg(code, s, part.en)}
   <header class="mast">
     <div class="mast__logo">${LOGO}</div>

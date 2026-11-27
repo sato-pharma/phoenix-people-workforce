@@ -1,6 +1,6 @@
 ---
 name: direct-order-receipt-books
-description: Everything about the direct-order delivery-receipt books (إذن تسليم وتسلم بضاعة) built on 26–27 Nov 2026 — the 16 printed books and their security marks (hidden "photocopied — not valid" watermark, per-receipt seal, microtext, QR), the register of 800 codes, the Phoenix check that ships with PR 812 (Finance's Receipt Books desk, the receipt panel on an order), the two Arabic guides (management summary, area managers' guide), the sample book, the proposal email to Dr Anwar and Ahmed El Maraghy, and what is still open. Use whenever the owner mentions receipt books, دفاتر الإيصالات, إيصال, the custody acknowledgement, the printer, the copier test, the guides, the sample book, the proposal email, or handing a book to a manager.
+description: Everything about the direct-order delivery-receipt books (إذن تسليم وتسلم بضاعة) built on 26–27 Nov 2026 — the 16 printed books and their security marks (the yellow «أصل · ORIGINAL» ground a black-and-white copier drops, the red serial, blue-ink signatures, per-receipt seal, microtext, QR), the register of 800 codes, the Phoenix check that ships with PR 812 (Finance's Receipt Books desk, the receipt panel on an order), the two Arabic guides (management summary, area managers' guide), the sample book, the proposal email to Dr Anwar and Ahmed El Maraghy, and what is still open. Use whenever the owner mentions receipt books, دفاتر الإيصالات, إيصال, the custody acknowledgement, the printer, the copier test, the guides, the sample book, the proposal email, or handing a book to a manager.
 ---
 
 # Direct-order receipt books
@@ -43,7 +43,7 @@ has to rediscover it. The code side is module memory: the first bullet of `.clau
   address.** It may go only to the people who run the books, Dr Anwar and Ahmed El Maraghy.
 - **Never re-run `build.mjs` into the books folder after deleting `register.json`.** It would mint 800 NEW
   codes that are not in Phoenix. The register is made once and reused, so that a re-run never re-issues codes.
-- **Leave the hidden marks out of the area managers' guide.** The managers are the people the receipts check.
+- **Leave the security marks out of the area managers' guide.** The managers are the people the receipts check.
   The marks are described only in the management summary and the email.
 - **Every guide and drawing uses the house document identity.** That means the Sato logo, deep blue `#0A527D`,
   the engine-turned band, the 6% zebra and square edges.
@@ -57,7 +57,7 @@ has to rediscover it. The code side is module memory: the first bullet of `.clau
 | `Receipt Book NN - <area> - <line> - <first>-<last>.pdf` × 16 | the print files: books 01–14 named, 15–16 spare |
 | `Book Custody Acknowledgements - all books.pdf` | 16 pages, one acknowledgement per book (signature + right-thumb print) |
 | `Receipt Book Register.xlsx`, `register.json` | 🔴 every serial ⇄ code ⇄ book ⇄ holder |
-| `void-pantograph-600dpi.png`, `preview-*.png` | the hidden-watermark layer, and previews (real codes: never share) |
+| `preview-*.png` | previews of the real pages (real codes: never share) |
 | `_superseded v1 - no copy mark\` | the first build, before the hidden watermark: never print it |
 | `_generator\build.mjs`, `guides.mjs`, `managers.json` | the generators; `managers.json` holds the national IDs and is never committed |
 | `Guides\دفاتر إيصالات الطلبات المباشرة - ملخص للإدارة.pdf` | management summary, 4 pages |
@@ -65,7 +65,7 @@ has to rediscover it. The code side is module memory: the first bullet of `.clau
 | `Guides\عينة دفتر - دفتر 01 القاهرة - إيصالان للعرض.pdf` | sample book, 7 pages, 1.1 MB, codes NOT in Phoenix |
 | `Guides\مسودة الإيميل - مقترح دفاتر الإيصالات.txt` | the Arabic proposal email draft (5 attachments) |
 | `Guides\تعليمات الطباعة - للمطبعة.pdf` | printer's instructions, 2 pages: spec, 3-part sets, proof copier test, secrecy |
-| `Guides\اختبار العلامة المخفية - ماكينة التصوير.pdf` | office copier test: instructions + one sample receipt (codes NOT in Phoenix) |
+| `Guides\اختبار أصل الصفراء - ماكينة التصوير.pdf` | office copier test: instructions + one sample receipt (codes NOT in Phoenix) |
 | `Guides\_img\desk-top.png`, `desk-bottom.png` | real screenshots of Finance's desk |
 
 A copy of both generators is in this skill's `generator/` folder, so they survive the laptop. To use the copy,
@@ -90,27 +90,39 @@ the browser on another machine.
   - the venue's acknowledgement text;
   - five rules.
 - **Security marks on every page:**
-  1. **Hidden watermark (void pantograph).** «مُصوَّر — غير صالح» is printed three times, rotated −14°, at 600 dpi.
-     - Outside the words: 1-pixel dots on a 2-pixel grid. These are too fine for a copier to keep.
-     - Inside the words: 4×4 dots on an 8-pixel grid, which a copier keeps.
-     - Both cover ¼ of the area, so the original reads as one even tint, and a photocopy or scan shows the words.
-     - A PDF zoomed out ON SCREEN shows them too. That is normal, and the email warns about it.
-  2. **Guilloche seal per receipt.** Its rosette is seeded from the serial and code, so no two of the 800 match.
+  1. 🔴 **The yellow «أصل · ORIGINAL» ground, on Original 1 and Original 2 only** (owner, 27 Nov 2026 ~23:58
+     Cairo: "Rebuild the books"). `originalGround()` in `build.mjs`: Tahoma bold 3 mm, rows 9 mm apart, rotated
+     −14°, in pure yellow `#FFE200`, behind everything on the sheet. The eye sees it plainly; a black-and-white
+     copier reads by brightness (yellow ≈ 85% white) and drops it, the way a yellow highlighter vanishes. So a
+     copy has no «أصل». The customer copy carries none. A colour copier keeps it: Phoenix's one-order-per-code
+     rule is what stops a colour copy, never the paper.
+     - 🔴 **The hidden "photocopied — not valid" word (void pantograph) is DROPPED — never bring it back.** On the
+       owner's office laser and copier (27 Nov 2026, three test sheets) the word showed on the print itself, or on
+       neither: an office laser cannot print the fine dots, and his copier keeps what the eye sees and drops what
+       it cannot. It needs an offset press, and even then a good copier can beat it. A stuck-on hologram (peeled and
+       reused) and a raised seal (re-made by any seal maker) were rejected by the owner too.
+     - The SVG's text must stay `direction: ltr` (`.yo` in the CSS): in the page's RTL, `text-anchor` start put
+       every row off the left edge and the yellow printed nowhere.
+  2. **The serial in red** (`#C8102E`): a black-and-white copy shows it black.
+  3. **Every signature line says «بالقلم الأزرق»**: a copy shows the signature black.
+  4. **Guilloche seal per receipt.** Its rosette is seeded from the serial and code, so no two of the 800 match.
      The serial and code run round its ring.
-  3. **Visible watermark**: the same rosette, large and pale, behind the items table.
-  4. **Microtext line** at 2.6 pt: `SATOPHARMA` + serial + code + part, repeated. It reads as a hairline and does
-     not survive a copy.
-  5. **QR code** carrying `SATO-DO|<serial>|<code>`. Phoenix does not scan it yet, so never claim it does.
+  5. **Visible watermark**: the same rosette, large and pale, behind the items table.
+  6. **Microtext line** at 2.6 pt: `SATOPHARMA` + serial + code + part, repeated. It reads as a hairline. Never
+     claim a copy loses it: his copier keeps what the eye can see.
+  7. **QR code** carrying `SATO-DO|<serial>|<code>`. Phoenix does not scan it yet, so never claim it does.
 - **Print spec, written by Claude on 27 Nov and NOT yet confirmed by the owner or the printer:**
-  - each receipt is a 3-part self-copying (NCR) set with all plies WHITE, so the hidden watermark stays tuned;
+  - each receipt is a 3-part self-copying (NCR) set with all plies WHITE, so the yellow and the red read true;
   - the order is Original on top, then Copy 1, then Copy 2;
   - only the Copy 1 ply is perforated to tear out;
   - the cover and 50 sets are bound in file order and cannot be taken apart;
   - spoiled pages go back to Finance, and the files are deleted from the printer's machines.
 - **Printing conditions (in the email):**
-  - Print the files as they are, at 600 dpi, with no scaling and no image "enhancement".
-  - **Photocopy one page of the printer's proof BEFORE the full run** and confirm the hidden words appear.
-  - 🔴 This physical copier test has NOT been done yet.
+  - Print the files as they are, in colour, with no scaling and no image "enhancement"; «أصل» in pure Yellow 100%
+    (no black or cyan in it), the serial red, the customer copy with no yellow.
+  - **Photocopy one receipt of the printer's proof in black and white BEFORE the full run**: «أصل» must vanish and
+    the red serial come out black. Only a simulation has been run (Rec.709 brightness, background cut at ~80%
+    white); no paper test yet.
 
 ## 🔴 Two originals and a copy (owner, 27 Nov 2026 ~17:10) — the design every sheet moves to
 
@@ -124,8 +136,8 @@ After Dr Anwar asked what the original and Copy 2 were for, the owner settled it
 - **Original 2 — the customer's delivery page.** No manager details. The customer signs and stamps it; its carbon
   copy is torn off for the customer. The manager keeps Original 2 and enters its photo.
 - **Due dates** count from the day after Ahmed El Maraghy records the warehouse exit: Original 1 in 3 calendar
-  days, Original 2 in 6 working days, Friday off. Phoenix verifies both, and a photo printed from Phoenix shows
-  «مُصوَّر — غير صالح», so Finance prints the "verified on Phoenix" page instead.
+  days, Original 2 in 6 working days, Friday off. Phoenix verifies both, and a photo on Phoenix is not an original, so
+  Finance prints the "verified on Phoenix" page for its file instead.
 - Phoenix side: PR 844 (`docs/direct-order-receipt-books.md`, "Two originals and a copy").
 - **Optional book — the owner's sentence, 27 Nov ~18:45, "add this sentence every where":** «استلام الدفاتر اختياري،
   وفي حالة عدم الاستلام لا يحق للمدير عمل أي أوردر بيع مباشر نهائيًا.» It is `OPTIONAL_AR` in both generator
@@ -267,9 +279,20 @@ After Dr Anwar asked what the original and Copy 2 were for, the owner settled it
   - The old files are in `Guides\_superseded - before late entry\`. The generator copy in `_generator\` is the
     same as this skill's `generator/guides.mjs`; run it with `PHOENIX_REPO` set to the primary checkout.
 
+- ✅ **Rebuilt on 28 Nov 2026, ~00:20 Cairo, with the yellow «أصل» in place of the hidden word** (owner, 27 Nov
+  ~23:58: "Rebuild the books").
+  - What was rebuilt: the 16 books, the summary, the managers' guide, the printer's instructions, the sample book,
+    the copier test (now `اختبار أصل الصفراء - ماكينة التصوير.pdf`) and the management video's scenes 4, 5, 6, 10
+    and 15.
+  - `register.json` is unchanged (sha256 `34abe243…`); `vp/verify-yellow.py` read all 800 codes back on all three
+    sheets of every receipt, and the yellow on Original 1 and Original 2 only.
+  - The old books are in `_superseded v3 - hidden word (pale blue)\`; the old guides, the five hidden-word test
+    sheets and the old management video are in `Guides\_superseded - hidden word\`. Never print them.
+  - The custody PDF and the register workbook were not swapped: neither carries the yellow.
+
 - The physical copier test. Two ways to do it:
-  - on an office printer, now: `اختبار العلامة المخفية - ماكينة التصوير.pdf`, page 2, printed at 100% then
-    photocopied;
+  - on an office printer, now: `اختبار أصل الصفراء - ماكينة التصوير.pdf`, page 2, printed in COLOUR at 100%,
+    then photocopied in black and white («أصل» gone, serial black);
   - on the printer's proof, before the full run.
   A session cannot do this test.
 - Swapping the guide's drawing for the real entry screen after the first hand-over.
