@@ -20,6 +20,7 @@ import {
 } from "../src/lib/hiring-pack/paper-fields.ts";
 import { renderContractHtml } from "../src/lib/hiring-pack/render-contract.ts";
 import { renderForm1Html } from "../src/lib/hiring-pack/render-form1.ts";
+import { renderForm6Html } from "../src/lib/hiring-pack/render-form6.ts";
 import {
   renderMutualTerminationHtml,
   renderResignationHtml,
@@ -400,5 +401,45 @@ export function runHiringPackCompanyDetailsTests() {
       "مكتب مدينة نصر",
       "with no office of their own the edit box must show the company default the form prints",
     );
+  }
+
+  // ── 8. FORM 1 AND FORM 6 PRINT THE HR MANAGER'S PHONE, NEVER THE EMPLOYEE'S ─────────────────
+  //
+  // Owner's golden rule, 27 Nov 2026: "never put the phone number of the employee and always put my
+  // phone number." Read out of the rendered HTML of both forms, with the employee's own mobile on
+  // the record, because the defect is the renderer reaching for `employee.mobileNumber`.
+  {
+    const employeeMobile = employeeFixture().mobileNumber ?? "";
+    assert.ok(employeeMobile, "the fixture must carry an employee mobile, or this proves nothing");
+    const managerPhone = "01099999999";
+    const pack = packWith(resolveCompanyDetails({ formsContactPhone: managerPhone }));
+    for (const [name, html] of [
+      ["Form 1", renderForm1Html(pack, 1)],
+      ["Form 6", renderForm6Html(pack, 1)],
+    ] as const) {
+      assert.ok(html.includes(managerPhone), `${name} must print the HR Manager's phone`);
+      assert.ok(
+        !html.includes(employeeMobile),
+        `${name} must NEVER print the employee's own mobile — the owner's golden rule`,
+      );
+    }
+
+    // Nothing stored: the box is left blank for the pen, never filled with the employee's number.
+    const bare = packWith(COMPANY_DETAILS_DEFAULT);
+    for (const [name, html] of [
+      ["Form 1", renderForm1Html(bare, 1)],
+      ["Form 6", renderForm6Html(bare, 1)],
+    ] as const) {
+      assert.ok(
+        !html.includes(employeeMobile),
+        `${name} with no stored phone must leave the box blank, not fall back to the employee's mobile`,
+      );
+    }
+
+    // Editing the box on the paper edits the ONE company value, never this employee's record.
+    const binding = paperFieldBinding("formsContactPhone");
+    assert.ok(binding, "the forms' phone box must be editable on the paper");
+    assert.equal(binding.store, "company", "the forms' phone is a company value, not the employee's");
+    assert.equal(paperFieldCurrentValue(pack, binding), managerPhone);
   }
 }

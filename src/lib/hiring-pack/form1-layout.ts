@@ -156,7 +156,7 @@ export const FORM1_PAGE_1_PLACEMENTS: readonly Form1Placement[] = [
   { kind: "digits", key: "addressGovernorate", x: 353, y: 668.6, pitch: 19, cells: 2, h: 19.8 },
 
   // ── Contact and the date of writing ───────────────────────────────────────────────────────
-  { kind: "text", key: "phone", x: 374, y: 722, w: 123, h: 13, align: "center", size: 9 },
+  { kind: "text", key: "formsContactPhone", x: 374, y: 722, w: 123, h: 13, align: "center", size: 9 },
   { kind: "text", key: "email", x: 374, y: 746, w: 123, h: 13, align: "center", size: 8 },
   // "تحريرًا في: .. / .. / ...." — the label ends at x=538.8 and the colon is printed at
   // x=535.5..538.5, with the two slashes at x=501.8..504.8 and x=480.3..483.4. Day sits nearest the

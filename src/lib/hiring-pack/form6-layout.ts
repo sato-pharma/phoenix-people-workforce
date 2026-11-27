@@ -89,7 +89,7 @@ export const FORM6_PAGE_1_PLACEMENTS: readonly Placement[] = [
   { kind: "digits", key: "addressGovernorate", x: 32.4, y: 443.04, pitch: 19.92, cells: 2, h: 19.92 },
 
   // ── Contact ───────────────────────────────────────────────────────────────────────────────
-  { kind: "text", key: "phone", x: 138.5, y: 470.6, w: 285.8, h: 13, align: "center", size: 9 },
+  { kind: "text", key: "formsContactPhone", x: 138.5, y: 470.6, w: 285.8, h: 13, align: "center", size: 9 },
   { kind: "text", key: "email", x: 210.7, y: 488.6, w: 286.1, h: 13, align: "center", size: 9 },
 
   // ── NOTHING BELOW THE ADDRESS BLOCK IS WRITTEN BY PHOENIX ──────────────────────────────────
