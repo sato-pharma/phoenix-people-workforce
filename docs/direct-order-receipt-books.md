@@ -159,3 +159,35 @@ were replaced by the two due dates above.
 - The manager's orders, and the exits, are read in batches of 100 ids: about 400 in one request overflow the
   address and read back empty with no error.
 - Pinned by `tests/direct-order-payment-standing.test.ts` and `tests/direct-order-receipt-books.test.ts`.
+
+## The live camera, the QR read and the hand-entered original (28 Nov 2026)
+
+The owner's words: "لايف مش ابلود … منوره بالاحمر طول ما هو مش قادر يتعرف عليهم. اول ما … يقدر يتعرف عليهم تنور
+بالاخضر ويعمل ابلود"; for a damaged QR, "المدير يدخله مانوال بس يروح للريفيو، ما يدخلش اوتوماتيك … ممكن الاثنين
+المدير يدخله بايده والماليه تدخله، بس هو بيروح للريفيو الاول"; and who reviews: "المالية، وإنت لو المالية دخلته".
+
+- **The order page opens the live camera** (`src/components/direct-orders/receipt-qr-camera.tsx`), never the gallery.
+  The frame is red until jsQR reads the same receipt on two frames in a row, then green, and the photo saves itself
+  with the number and code taken from the QR. Original 2 must carry Original 1's number; another number stays red.
+  A manager has no "Choose file"; Finance keeps it for a page it already holds (`mayChooseFile`).
+- **The camera is only a help — the server reads the QR again** (`src/lib/direct-orders/receipt-photo-qr.ts`, sharp
+  plus jsqr, at 1,200, 1,800 and 2,600 px wide; it never throws). `classifyReceiptPhotoQr` decides:
+  - the QR names the typed receipt → the original counts at once;
+  - the QR names another receipt (or the right number with a wrong code) → refused, written on the order as
+    `qr_other_receipt`, and the other receipt's code is never written down;
+  - no receipt QR read, a PDF, or a reader failure → the original is saved with the order (so the paper can never
+    be used twice and the manager is not held late), and a pending row goes in
+    `direct_order_receipt_hand_entries`. Unread is the safe side: never let an unread photo count.
+- **"QR won't read? Type the number"** opens the typed number and code with a shutter; that original always waits.
+- **The table** (migration `20261128134224_direct_order_receipt_hand_entries`) is append-only by trigger, server
+  only, one pending entry per receipt original. The hand entry is opened BEFORE the receipt is claimed, so the
+  one-pending index stops a race; if the claim then fails, the entry is closed, never left waiting.
+- **Who reviews** (`canReviewDirectOrderHandEntry`, `finance-authority.ts`): Finance reviews a manager's (or the
+  Super Admin's); the Super Admin alone reviews Finance's own; nobody reviews one they typed.
+- **A decision is one database call**, `direct_order_decide_hand_entry`. Approving keeps the original. Rejecting
+  needs a written reason: Original 1 goes through `direct_order_release_receipt` (the release record keeps the
+  photo) and any waiting Original 2 entry closes with it; Original 2 clears only itself, through the receipt
+  guard's `phoenix.receipt_delivery_clear` door. The order then says which original was rejected and why.
+- **Where it shows:** each original on the order says whether its QR was read or it waits; Finance's Receipt Books
+  desk lists every entry waiting, with its photo and the Approve and Reject buttons; the verified print says for
+  each original whether its QR was read, or it was typed by hand and approved, or it still waits.
