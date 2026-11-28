@@ -113,3 +113,42 @@ export const FAR_VISIT_WEEK_PATHS = {
   admin: "/admin/phoenix-crm/far-visit-week",
   portal: "/employee-portals/far-visit-week",
 } as const;
+
+/**
+ * The three filters above the week (owner, 28 Nov 2026: "filter by district manager … or by line or by rep"). Each
+ * is a value from the address and nothing else: `dm` a district manager's SEAT id (or `none` for the reps with no
+ * district manager above them), `line` the line's name, `rep` the rep's territory seat id. They narrow the rows, the
+ * totals, the day detail and the Excel file together, and never widen what the reader's scope already holds.
+ */
+export type FarVisitWeekFilter = { dm: string | null; line: string | null; rep: string | null };
+
+/** The `dm` value for the reps no district manager sits above. */
+export const FAR_VISIT_WEEK_NO_DISTRICT = "none";
+
+export const FAR_VISIT_WEEK_FILTER_NAMES = ["dm", "line", "rep"] as const;
+
+export function parseFarVisitWeekFilter(read: (name: string) => string | null | undefined): FarVisitWeekFilter {
+  const clean = (name: string): string | null => {
+    const value = (read(name) ?? "").trim();
+    return value ? value.slice(0, 200) : null;
+  };
+  return { dm: clean("dm"), line: clean("line"), rep: clean("rep") };
+}
+
+export function farVisitWeekFilterNarrows(filter: FarVisitWeekFilter): boolean {
+  return Boolean(filter.dm || filter.line || filter.rep);
+}
+
+/**
+ * The address of a week with the filters kept: every link on the page (the week arrows, a day, the Excel file)
+ * goes through here, so moving a week or opening a day never drops what the reader filtered by.
+ */
+export function farVisitWeekQuery(week: string, filter: FarVisitWeekFilter, extra: Record<string, string> = {}): string {
+  const params = new URLSearchParams({ week });
+  for (const name of FAR_VISIT_WEEK_FILTER_NAMES) {
+    const value = filter[name];
+    if (value) params.set(name, value);
+  }
+  for (const [name, value] of Object.entries(extra)) params.set(name, value);
+  return `?${params.toString()}`;
+}

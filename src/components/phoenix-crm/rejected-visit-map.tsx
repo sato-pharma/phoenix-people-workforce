@@ -45,7 +45,7 @@ export function RejectedVisitMap({ rejection }: { rejection: Rejection }) {
               </span>
             ))}
           </div>
-          <div className="min-w-0 flex-1 space-y-1.5">
+          <div className="min-w-0 flex-1 basis-48 space-y-1.5">
             {points.map((point) => (
               <p className="break-words text-xs leading-5 text-slate-700" key={point.index}>
                 <span className="font-bold text-slate-900">
@@ -62,7 +62,7 @@ export function RejectedVisitMap({ rejection }: { rejection: Rejection }) {
                 {pair.text}
               </p>
             ))}
-            <p className="text-xs uppercase tracking-wide text-slate-400">{map.attribution}</p>
+            <p className="break-words text-xs uppercase tracking-wide text-slate-400">{map.attribution}</p>
           </div>
         </div>
       ) : null}

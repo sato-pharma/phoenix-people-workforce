@@ -6,14 +6,26 @@
  * One component for both shells: the Super Admin's page under /admin and a manager's copy in the portal pass their
  * own `basePath`, and the server has already narrowed the report to the reader's scope.
  *
+ * Three filters sit above the week — district manager, line, rep (owner, 28 Nov 2026) — as a plain GET form, and
+ * every link on the page carries them (`farVisitWeekQuery`), so moving a week, opening a day or downloading the
+ * Excel file keeps what the reader filtered by.
+ *
  * Fits the screen at every width (the golden rule): a fixed table with named column widths from `lg` up, and below
  * it one card per rep with his days as wrapping lines — never a sideways scroll.
  */
 import Link from "next/link";
 
 import { RejectedVisitMap } from "@/components/phoenix-crm/rejected-visit-map";
-import { FAR_VISIT_WEEK_KIND_LABELS, farVisitWeekCellText, farVisitWeekDayLabel } from "@/lib/phoenix-crm/far-visit-week-rules";
-import type { FarVisitWeekCell, FarVisitWeekDayItem, FarVisitWeekReport } from "@/lib/phoenix-crm/server/far-visit-week-report";
+import { phxButtonGhostClassName, phxButtonPrimaryClassName, phxLabelClassName, phxSelectClassName } from "@/components/ui/form-tokens";
+import {
+  FAR_VISIT_WEEK_KIND_LABELS,
+  farVisitWeekCellText,
+  farVisitWeekDayLabel,
+  farVisitWeekFilterNarrows,
+  farVisitWeekQuery,
+  type FarVisitWeekFilter,
+} from "@/lib/phoenix-crm/far-visit-week-rules";
+import type { FarVisitWeekCell, FarVisitWeekDayItem, FarVisitWeekOption, FarVisitWeekReport } from "@/lib/phoenix-crm/server/far-visit-week-report";
 
 export const FAR_VISIT_WEEK_EXPORT_PATH = "/api/phoenix-crm/far-visit-week-report/export";
 
@@ -27,11 +39,64 @@ const STANDING_CLASSES: Record<FarVisitWeekCell["standing"], string> = {
 const thClassName = "border-b border-slate-200 bg-slate-950 px-2 py-2.5 align-bottom text-xs font-black uppercase tracking-wide text-white break-words";
 const tdClassName = "border-b border-slate-100 px-2 py-2 align-top break-words text-sm text-slate-700";
 
-function cellHref(basePath: string, week: string, seatId: string, date: string): string {
-  return `${basePath}?week=${week}&seat=${encodeURIComponent(seatId)}&date=${date}#far-visit-day`;
+function cellHref(basePath: string, week: string, filter: FarVisitWeekFilter, seatId: string, date: string): string {
+  return `${basePath}${farVisitWeekQuery(week, filter, { seat: seatId, date })}#far-visit-day`;
 }
 
-function DayCell({ basePath, cell, seatId, week, selected }: { basePath: string; cell: FarVisitWeekCell; seatId: string; week: string; selected: boolean }) {
+function Choice({ name, label, any, value, options }: { name: string; label: string; any: string; value: string | null; options: FarVisitWeekOption[] }) {
+  return (
+    <label className="min-w-0">
+      <span className={phxLabelClassName}>{label}</span>
+      <select className={phxSelectClassName} defaultValue={value ?? ""} name={name}>
+        <option value="">{any}</option>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+/** District manager, line, rep: a plain GET form, so the filtered week is an address that can be shared. */
+function WeekFilters({ basePath, report }: { basePath: string; report: FarVisitWeekReport }) {
+  const { filter, options, week } = report;
+  return (
+    <form action={basePath} className="grid grid-cols-1 gap-3 border border-slate-200 bg-white p-3 sm:grid-cols-2 lg:grid-cols-4" method="get">
+      <input name="week" type="hidden" value={week.start} />
+      <Choice any="Every district manager" label="District manager" name="dm" options={options.districts} value={filter.dm} />
+      <Choice any="Every line" label="Line" name="line" options={options.lines.map((line) => ({ value: line, label: line }))} value={filter.line} />
+      <Choice any="Every rep" label="Rep" name="rep" options={options.reps} value={filter.rep} />
+      <div className="flex min-w-0 flex-wrap items-end gap-2">
+        <button className={phxButtonPrimaryClassName} type="submit">
+          Show
+        </button>
+        {farVisitWeekFilterNarrows(filter) ? (
+          <Link className={phxButtonGhostClassName} href={`${basePath}?week=${week.start}`}>
+            Clear
+          </Link>
+        ) : null}
+      </div>
+    </form>
+  );
+}
+
+function DayCell({
+  basePath,
+  cell,
+  filter,
+  seatId,
+  week,
+  selected,
+}: {
+  basePath: string;
+  cell: FarVisitWeekCell;
+  filter: FarVisitWeekFilter;
+  seatId: string;
+  week: string;
+  selected: boolean;
+}) {
   const text = farVisitWeekCellText(cell);
   const body = (
     <span className={`block border px-2 py-1.5 ${STANDING_CLASSES[cell.standing]} ${selected ? "outline outline-2 outline-slate-900" : ""}`}>
@@ -42,7 +107,7 @@ function DayCell({ basePath, cell, seatId, week, selected }: { basePath: string;
   // Only a day with something to read opens; a clean day and an empty day have nothing behind them.
   if (cell.standing === "rejected" || cell.standing === "waiting") {
     return (
-      <Link aria-label={`Open ${farVisitWeekDayLabel(cell.date)}`} className="block hover:opacity-90" href={cellHref(basePath, week, seatId, cell.date)} scroll={false}>
+      <Link aria-label={`Open ${farVisitWeekDayLabel(cell.date)}`} className="block hover:opacity-90" href={cellHref(basePath, week, filter, seatId, cell.date)} scroll={false}>
         {body}
       </Link>
     );
@@ -101,26 +166,28 @@ export function FarVisitWeekReportView({
   report: FarVisitWeekReport;
   selected: { seatId: string; date: string; repName: string; items: FarVisitWeekDayItem[] } | null;
 }) {
-  const { week, rows, totals } = report;
+  const { week, rows, totals, filter } = report;
   const rejected = totals.doorRejected + totals.sfeRejected;
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2 border border-slate-200 bg-white p-3">
-        <Link className="border border-slate-300 px-3 py-1.5 text-sm font-bold text-slate-800 hover:bg-slate-50" href={`${basePath}?week=${week.previous}`}>
+        <Link className="border border-slate-300 px-3 py-1.5 text-sm font-bold text-slate-800 hover:bg-slate-50" href={`${basePath}${farVisitWeekQuery(week.previous, filter)}`}>
           ← Previous week
         </Link>
         <p className="min-w-0 flex-1 break-words text-center text-sm font-black text-slate-900">
           {farVisitWeekDayLabel(week.start)} to {farVisitWeekDayLabel(week.end)} {week.end.slice(0, 4)}
         </p>
         {week.next ? (
-          <Link className="border border-slate-300 px-3 py-1.5 text-sm font-bold text-slate-800 hover:bg-slate-50" href={`${basePath}?week=${week.next}`}>
+          <Link className="border border-slate-300 px-3 py-1.5 text-sm font-bold text-slate-800 hover:bg-slate-50" href={`${basePath}${farVisitWeekQuery(week.next, filter)}`}>
             Next week →
           </Link>
         ) : null}
-        <a className="border border-slate-900 bg-slate-900 px-3 py-1.5 text-sm font-bold text-white hover:bg-slate-800" href={`${FAR_VISIT_WEEK_EXPORT_PATH}?week=${week.start}`}>
+        <a className="border border-slate-900 bg-slate-900 px-3 py-1.5 text-sm font-bold text-white hover:bg-slate-800" href={`${FAR_VISIT_WEEK_EXPORT_PATH}${farVisitWeekQuery(week.start, filter)}`}>
           Download Excel
         </a>
       </div>
+
+      <WeekFilters basePath={basePath} report={report} />
 
       <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {[
@@ -139,7 +206,11 @@ export function FarVisitWeekReportView({
       {selected ? <DayDetail date={selected.date} items={selected.items} repName={selected.repName} /> : null}
 
       {rows.length === 0 ? (
-        <p className="border border-slate-200 bg-white p-4 text-sm text-slate-600">No territory in your scope has an open line yet, so there is no week to show.</p>
+        <p className="border border-slate-200 bg-white p-4 text-sm text-slate-600">
+          {farVisitWeekFilterNarrows(filter)
+            ? "No rep in your report matches these filters. Clear one to see more."
+            : "No territory in your scope has an open line yet, so there is no week to show."}
+        </p>
       ) : (
         <>
           <div className="hidden min-w-0 border border-slate-200 bg-white lg:block">
@@ -178,6 +249,7 @@ export function FarVisitWeekReportView({
                         <DayCell
                           basePath={basePath}
                           cell={cell}
+                          filter={filter}
                           seatId={row.seatId}
                           selected={selected?.seatId === row.seatId && selected.date === cell.date}
                           week={week.start}
@@ -209,6 +281,7 @@ export function FarVisitWeekReportView({
                       <DayCell
                         basePath={basePath}
                         cell={cell}
+                        filter={filter}
                         seatId={row.seatId}
                         selected={selected?.seatId === row.seatId && selected.date === cell.date}
                         week={week.start}

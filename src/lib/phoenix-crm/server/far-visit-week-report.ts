@@ -22,16 +22,20 @@
 import { buildCaseMap, type CaseMap } from "@/lib/crm-integrity/integrity-case-map";
 import { forbiddenError, notFoundError } from "@/lib/http/api-errors";
 import {
+  FAR_VISIT_WEEK_NO_DISTRICT,
   FAR_VISIT_WEEK_POINT_LABELS,
   farVisitWeek,
+  farVisitWeekFilterNarrows,
   farVisitWeekStanding,
   type FarVisitWeek,
   type FarVisitWeekCellCounts,
+  type FarVisitWeekFilter,
   type FarVisitWeekKind,
   type FarVisitWeekStanding,
 } from "@/lib/phoenix-crm/far-visit-week-rules";
 import { distanceMeters, isUsableFix } from "@/lib/phoenix-crm/geo";
 import { personKey, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import { districtSeatAbove } from "@/lib/phoenix-crm/region-manager-groups";
 import { isLocationBlind, readsPlaceVsActual, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { numberOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -63,6 +67,12 @@ export type FarVisitWeekRow = {
   repName: string;
   territory: string;
   regionName: string | null;
+  /** The territory's line, for the line filter. */
+  lineName: string | null;
+  /** The district manager's seat above this territory (the `dm` filter's value), or the no-district value. */
+  districtSeatId: string;
+  /** "Sahar El Gallad (Delta (2) · CNS)", "Vacant district (…)" or "No district manager". */
+  districtLabel: string;
   cells: FarVisitWeekCell[];
   totals: FarVisitWeekCellCounts;
   cleanDays: number;
@@ -91,12 +101,77 @@ export type FarVisitWeekItem = {
   placeId: string | null;
 };
 
+export type FarVisitWeekOption = { value: string; label: string };
+
 export type FarVisitWeekReport = {
   week: FarVisitWeek;
   rows: FarVisitWeekRow[];
   items: FarVisitWeekItem[];
   totals: FarVisitWeekCellCounts & { reps: number; repsWithRejections: number };
+  /** What the reader filtered by, as read from the address. */
+  filter: FarVisitWeekFilter;
+  /** "District manager: … · Line: …", or null when nothing narrows the week (printed on the Excel file). */
+  filterLabel: string | null;
+  /**
+   * The choices in each filter. District managers and lines come from the whole scope; the reps from the rows the
+   * district-manager and line filters leave, so picking a district first shortens the rep list.
+   */
+  options: { districts: FarVisitWeekOption[]; lines: string[]; reps: FarVisitWeekOption[] };
 };
+
+const NO_FILTER: FarVisitWeekFilter = { dm: null, line: null, rep: null };
+
+function totalsOf(rows: readonly FarVisitWeekRow[]): FarVisitWeekReport["totals"] {
+  return rows.reduce(
+    (sum, row) => ({
+      visits: sum.visits + row.totals.visits,
+      doorRejected: sum.doorRejected + row.totals.doorRejected,
+      sfeRejected: sum.sfeRejected + row.totals.sfeRejected,
+      waiting: sum.waiting + row.totals.waiting,
+      reps: sum.reps + 1,
+      repsWithRejections: sum.repsWithRejections + (row.totals.doorRejected + row.totals.sfeRejected > 0 ? 1 : 0),
+    }),
+    { visits: 0, doorRejected: 0, sfeRejected: 0, waiting: 0, reps: 0, repsWithRejections: 0 },
+  );
+}
+
+const byLabel = (a: FarVisitWeekOption, b: FarVisitWeekOption): number => a.label.localeCompare(b.label);
+
+/**
+ * Narrows a whole week to the reader's filters (pure, so the rule is pinned without a database): the rows, the
+ * detail lines of those rows only, and the totals counted again from what is left. A filter can only take rows
+ * away — every row it can keep was already in the reader's scope.
+ */
+export function filterFarVisitWeekReport(report: Pick<FarVisitWeekReport, "week" | "rows" | "items">, filter: FarVisitWeekFilter): FarVisitWeekReport {
+  const all = report.rows;
+  const districts = new Map<string, string>();
+  const lines = new Set<string>();
+  for (const row of all) {
+    districts.set(row.districtSeatId, row.districtLabel);
+    if (row.lineName) lines.add(row.lineName);
+  }
+  const byGroup = all.filter((row) => (!filter.dm || row.districtSeatId === filter.dm) && (!filter.line || row.lineName === filter.line));
+  const rows = byGroup.filter((row) => !filter.rep || row.seatId === filter.rep);
+  const kept = new Set(rows.map((row) => row.seatId));
+  const parts = [
+    filter.dm ? `District manager: ${districts.get(filter.dm) ?? "not in your report"}` : null,
+    filter.line ? `Line: ${filter.line}` : null,
+    filter.rep ? `Rep: ${all.find((row) => row.seatId === filter.rep)?.repName ?? "not in your report"}` : null,
+  ].filter((part): part is string => part !== null);
+  return {
+    week: report.week,
+    rows,
+    items: report.items.filter((item) => kept.has(item.seatId)),
+    totals: totalsOf(rows),
+    filter,
+    filterLabel: farVisitWeekFilterNarrows(filter) ? parts.join(" · ") : null,
+    options: {
+      districts: [...districts].map(([value, label]) => ({ value, label })).sort(byLabel),
+      lines: [...lines].sort((a, b) => a.localeCompare(b)),
+      reps: byGroup.map((row) => ({ value: row.seatId, label: `${row.repName} · ${row.territory}` })).sort(byLabel),
+    },
+  };
+}
 
 const EMPTY_COUNTS = (): FarVisitWeekCellCounts => ({ visits: 0, doorRejected: 0, sfeRejected: 0, waiting: 0 });
 
@@ -127,14 +202,18 @@ async function loadCustomerNames(ids: readonly string[]): Promise<Map<string, st
  * The week for every territory in the reader's scope. A company reader is read without a seat filter and narrowed
  * here (a list of every seat id would ride in the URL of each request); a manager's seats are asked by id.
  */
-export async function loadFarVisitWeekReport(viewer: PhoenixCrmViewer, rawWeek: string | null | undefined): Promise<FarVisitWeekReport> {
+export async function loadFarVisitWeekReport(
+  viewer: PhoenixCrmViewer,
+  rawWeek: string | null | undefined,
+  filter: FarVisitWeekFilter = NO_FILTER,
+): Promise<FarVisitWeekReport> {
   const seats = farVisitWeekSeats(viewer);
   const week = farVisitWeek(rawWeek, viewer.cairoToday);
   const seatIds = seats.map((seat) => seat.seatId);
   const inScope = new Set(seatIds);
   const companyWide = viewer.isSuperAdmin || viewer.isSfeManager;
   if (seats.length === 0) {
-    return { week, rows: [], items: [], totals: { ...EMPTY_COUNTS(), reps: 0, repsWithRejections: 0 } };
+    return filterFarVisitWeekReport({ week, rows: [], items: [] }, filter);
   }
   const supabase = getSupabaseAdmin();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- a PostgREST builder, narrowed by seat for a manager only.
@@ -262,7 +341,17 @@ export async function loadFarVisitWeekReport(viewer: PhoenixCrmViewer, rawWeek: 
     });
   }
 
-  const people = await loadPeopleNames([...seats.map((seat) => seat.occupantHrId), ...rawItems.map((item) => item.repHrId)]);
+  const districtOf = new Map(seats.map((seat) => [seat.seatId, districtSeatAbove(viewer.org.seats, seat)]));
+  const people = await loadPeopleNames([
+    ...seats.map((seat) => seat.occupantHrId),
+    ...rawItems.map((item) => item.repHrId),
+    ...[...districtOf.values()].map((district) => district?.occupantHrId ?? null),
+  ]);
+  const districtLabelOf = (district: OrgSeat | null): string => {
+    if (!district) return "No district manager";
+    const who = district.occupantHrId ? nameOf(people, personKey(district.occupantHrId)) : "Vacant district";
+    return `${who} (${territoryName(district)})`;
+  };
   const customers = await loadCustomerNames(rawItems.map((item) => item.customerId));
   const repNameOfSeat = (seat: OrgSeat): string => (seat.occupantHrId ? nameOf(people, personKey(seat.occupantHrId)) : "Vacant territory");
 
@@ -279,7 +368,19 @@ export async function loadFarVisitWeekReport(viewer: PhoenixCrmViewer, rawWeek: 
       if (standing === "clean") cleanDays += 1;
       return { ...cell, date, standing };
     });
-    return { seatId: seat.seatId, repName: repNameOfSeat(seat), territory: territoryName(seat), regionName: seat.regionName, cells, totals, cleanDays };
+    const district = districtOf.get(seat.seatId) ?? null;
+    return {
+      seatId: seat.seatId,
+      repName: repNameOfSeat(seat),
+      territory: territoryName(seat),
+      regionName: seat.regionName,
+      lineName: seat.lineName,
+      districtSeatId: district?.seatId ?? FAR_VISIT_WEEK_NO_DISTRICT,
+      districtLabel: districtLabelOf(district),
+      cells,
+      totals,
+      cleanDays,
+    };
   });
   // The reps with something to look at first, most rejected at the top; then everyone else by name.
   rows.sort((a, b) => {
@@ -301,18 +402,7 @@ export async function loadFarVisitWeekReport(viewer: PhoenixCrmViewer, rawWeek: 
     })
     .sort((a, b) => a.repName.localeCompare(b.repName) || a.date.localeCompare(b.date) || String(a.at).localeCompare(String(b.at)));
 
-  const totals = rows.reduce(
-    (sum, row) => ({
-      visits: sum.visits + row.totals.visits,
-      doorRejected: sum.doorRejected + row.totals.doorRejected,
-      sfeRejected: sum.sfeRejected + row.totals.sfeRejected,
-      waiting: sum.waiting + row.totals.waiting,
-      reps: sum.reps + 1,
-      repsWithRejections: sum.repsWithRejections + (row.totals.doorRejected + row.totals.sfeRejected > 0 ? 1 : 0),
-    }),
-    { ...EMPTY_COUNTS(), reps: 0, repsWithRejections: 0 },
-  );
-  return { week, rows, items, totals };
+  return filterFarVisitWeekReport({ week, rows, items }, filter);
 }
 
 export type FarVisitWeekDayItem = FarVisitWeekItem & { map: CaseMap | null; points: Array<{ index: number; label: string; lat: number; lon: number }> };

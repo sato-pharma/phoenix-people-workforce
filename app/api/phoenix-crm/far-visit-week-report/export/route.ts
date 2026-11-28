@@ -4,6 +4,7 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
+import { parseFarVisitWeekFilter } from "@/lib/phoenix-crm/far-visit-week-rules";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadFarVisitWeekReport } from "@/lib/phoenix-crm/server/far-visit-week-report";
 import { buildFarVisitWeekWorkbook } from "@/lib/phoenix-crm/server/far-visit-week-workbook";
@@ -29,7 +30,9 @@ export async function GET(request: Request) {
     await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:phoenix-crm:far-visit-week" });
 
     const viewer = await resolvePhoenixCrmViewer(access);
-    const report = await loadFarVisitWeekReport(viewer, searchOf(request).get("week"));
+    const search = searchOf(request);
+    // The same filters the screen was read with: the file holds exactly the rows the reader was looking at.
+    const report = await loadFarVisitWeekReport(viewer, search.get("week"), parseFarVisitWeekFilter((name) => search.get(name)));
     const names = await loadPeopleNames([viewer.hrId]);
     const buffer = await buildFarVisitWeekWorkbook(report, nameOf(names, viewer.hrId), new Date().toISOString());
 
@@ -37,7 +40,7 @@ export async function GET(request: Request) {
       actorLoginId: access.loginId ?? null,
       entityId: null,
       entityType: "phoenix_crm_far_visit_week_export",
-      summary: `Exported the Far-visit week ${report.week.start} to ${report.week.end} (${report.totals.reps} reps, ${report.items.length} lines)`,
+      summary: `Exported the Far-visit week ${report.week.start} to ${report.week.end} (${report.totals.reps} reps, ${report.items.length} lines${report.filterLabel ? `; ${report.filterLabel}` : ""})`,
     });
 
     return new NextResponse(buffer as unknown as ArrayBuffer, {

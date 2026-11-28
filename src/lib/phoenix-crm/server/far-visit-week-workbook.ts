@@ -32,7 +32,8 @@ export async function buildFarVisitWeekWorkbook(report: FarVisitWeekReport, view
   workbook.created = new Date(generatedAtIso);
   workbook.title = "Far-visit week";
   workbook.subject = `${week.start} to ${week.end}`;
-  const period = `${farVisitWeekDayLabel(week.start)} to ${farVisitWeekDayLabel(week.end)} ${week.end.slice(0, 4)}`;
+  // The filters the reader picked ride on the period, so a filtered file never reads as the whole team.
+  const period = `${farVisitWeekDayLabel(week.start)} to ${farVisitWeekDayLabel(week.end)} ${week.end.slice(0, 4)}${report.filterLabel ? ` · ${report.filterLabel}` : ""}`;
 
   // ── Week ──
   const grid = workbook.addWorksheet(FAR_VISIT_WEEK_SHEETS.week, { properties: { defaultRowHeight: 18, tabColor: { argb: HOUSE_XLSX_COLORS.blue } } });
