@@ -26,6 +26,7 @@ import {
   type DirectOrderReceiptPanel,
 } from "../src/lib/direct-orders/receipt-books.ts";
 import { buildDirectOrderNeedsAction, receiptWorkCount } from "../src/lib/direct-orders/needs-action.ts";
+import { forgetReferenceLines } from "../src/lib/reference/reference-lists.ts";
 import type { CreateSystemNotificationInput } from "../src/lib/notifications/system.ts";
 import { canReviewDirectOrderHandEntry } from "../src/lib/direct-orders/finance-authority.ts";
 import { __setReceiptQrReaderForTests, readReceiptQrTexts } from "../src/lib/direct-orders/receipt-photo-qr.ts";
@@ -918,6 +919,7 @@ async function behaviourTests() {
       { hr_id: "PD-0012", full_name: "Mohamed Eleiwa", job_title: "District Sales Manager", employment_status: "active", line_id: 2 },
     );
     await withPostgrestStandIn(standIn, async () => {
+      forgetReferenceLines("receipt books test: this stand-in carries its own lines");
       await rejectsWith(
         issueDirectOrderReceiptBook(ADMIN, { bookNo: 3, holderHrId: "AI-0030" }),
         /used by the Pedia line only for now, so book 3 stays in the store\. AI-0030 works in the Anti Infective line/,

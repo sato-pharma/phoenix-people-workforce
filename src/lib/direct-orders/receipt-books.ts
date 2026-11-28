@@ -65,6 +65,7 @@ import { isUuid } from "@/lib/http/uuid";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import type { CreateSystemNotificationInput } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
+import { loadReferenceLines } from "@/lib/reference/reference-lists";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1484,15 +1485,14 @@ export async function loadDirectOrderReceiptRegister(access: AccessContext): Pro
 
   // The line of every printed name and every manager a spare may go to: this wave is the Pedia line only.
   const printedIds = [...new Set(books.map((book) => book.printedHolderHrId).filter((id): id is string => Boolean(id)))];
-  const [printedResult, linesResult] = await Promise.all([
+  const [printedResult, referenceLines] = await Promise.all([
     printedIds.length > 0
       ? supabase.from("employees").select("hr_id,line_id").in("hr_id", printedIds.flatMap((id) => hrIdLookupKeys(id)))
       : Promise.resolve({ data: [], error: null }),
-    supabase.from("lines").select("id,name"),
+    loadReferenceLines(),
   ]);
   if (printedResult.error) throw printedResult.error;
-  if (linesResult.error) throw linesResult.error;
-  const lineNames = new Map(((linesResult.data ?? []) as { id: number; name: string | null }[]).map((row) => [row.id, String(row.name ?? "")]));
+  const lineNames = new Map(referenceLines.filter((row) => row.id !== null).map((row) => [row.id as number, String(row.name ?? "")]));
   const lineOf = (lineId: number | null | undefined) => (lineId === null || lineId === undefined ? null : lineNames.get(lineId) ?? null);
   const printedLine = new Map(
     ((printedResult.data ?? []) as { hr_id: string; line_id: number | null }[]).map((row) => [canonicalHrIdKey(row.hr_id), lineOf(row.line_id)]),
@@ -1928,12 +1928,10 @@ export async function issueDirectOrderReceiptBook(access: AccessContext, input: 
   );
   if (!holderRow) throw validationError(`${holder} is not an employee still at work, so book ${bookNo} cannot be handed to them.`);
   // This wave is the Pedia line only (owner, 28 Nov 2026): Anti Infective's books stay in the store.
-  let holderLine: string | null = null;
-  if (holderRow.line_id !== null && holderRow.line_id !== undefined) {
-    const { data: lineRow, error: lineError } = await getSupabaseAdmin().from("lines").select("name").eq("id", holderRow.line_id).maybeSingle();
-    if (lineError) throw lineError;
-    holderLine = (lineRow as { name?: string | null } | null)?.name ?? null;
-  }
+  const holderLine =
+    holderRow.line_id === null || holderRow.line_id === undefined
+      ? null
+      : (await loadReferenceLines()).find((line) => line.id === holderRow.line_id)?.name ?? null;
   if (!lineUsesReceiptBooks(holderLine)) {
     throw validationError(
       `Receipt books are used by the ${receiptBookLinesLabel()} line only for now, so book ${bookNo} stays in the store. ${holder} works ${holderLine ? `in the ${holderLine} line` : "in no line"}, whose direct orders keep the current rule.`,

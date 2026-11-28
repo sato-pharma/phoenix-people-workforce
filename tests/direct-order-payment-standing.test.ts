@@ -162,11 +162,11 @@ function tables(): Record<string, Row[]> {
     direct_order_no_receipt_requests: [],
     direct_order_requests: [
       // Momen's: A approved 10 Dec, B 15 Dec, the used one 9 Dec with its receipt.
-      { id: ORDER_A, product_code: LACTO, requester_hr_id: "AI-0001", status: "approved", decided_at: "2026-12-10T09:00:00.000Z", reversal_of_request_id: null, pharmacy_id: "ph-1", product_name: "Lacto Advanced 1", sales_value: 1200, remaining_amount: null, collection_date: "2026-12-30" },
-      { id: ORDER_B, product_code: IVY, requester_hr_id: "AI-0001", status: "approved", decided_at: "2026-12-15T09:00:00.000Z", reversal_of_request_id: null, pharmacy_id: "ph-2", product_name: "Ivyronc", sales_value: 800, remaining_amount: 300, collection_date: "2026-12-18" },
-      { id: ORDER_USED, product_code: "GUA-1", requester_hr_id: "AI-0001", status: "approved", decided_at: "2026-12-09T09:00:00.000Z", reversal_of_request_id: null, pharmacy_id: "ph-1", product_name: "Guamusin", sales_value: 500, remaining_amount: 0, collection_date: "2026-12-15" },
+      { id: ORDER_A, line: "Pedia", product_code: LACTO, requester_hr_id: "AI-0001", status: "approved", decided_at: "2026-12-10T09:00:00.000Z", reversal_of_request_id: null, pharmacy_id: "ph-1", product_name: "Lacto Advanced 1", sales_value: 1200, remaining_amount: null, collection_date: "2026-12-30" },
+      { id: ORDER_B, line: "Pedia", product_code: IVY, requester_hr_id: "AI-0001", status: "approved", decided_at: "2026-12-15T09:00:00.000Z", reversal_of_request_id: null, pharmacy_id: "ph-2", product_name: "Ivyronc", sales_value: 800, remaining_amount: 300, collection_date: "2026-12-18" },
+      { id: ORDER_USED, line: "Pedia", product_code: "GUA-1", requester_hr_id: "AI-0001", status: "approved", decided_at: "2026-12-09T09:00:00.000Z", reversal_of_request_id: null, pharmacy_id: "ph-1", product_name: "Guamusin", sales_value: 500, remaining_amount: 0, collection_date: "2026-12-15" },
       // The order being decided: never counted against itself.
-      { id: PENDING, product_code: LACTO, requester_hr_id: "AI-0001", status: "pending_approval", decided_at: null, reversal_of_request_id: null, pharmacy_id: "ph-1", product_name: "Lacto Advanced 1", sales_value: 900, remaining_amount: null, collection_date: "2026-12-31" },
+      { id: PENDING, line: "Pedia", product_code: LACTO, requester_hr_id: "AI-0001", status: "pending_approval", decided_at: null, reversal_of_request_id: null, pharmacy_id: "ph-1", product_name: "Lacto Advanced 1", sales_value: 900, remaining_amount: null, collection_date: "2026-12-31" },
     ],
     direct_order_request_items: [
       { request_id: ORDER_A, product_code: LACTO, product_name: "Lacto Advanced 1" },
@@ -248,7 +248,7 @@ async function behaviourTests() {
     const standIn: StandIn = { tables: tables() };
     const many = Array.from({ length: 230 }, (_, index) => `aaaaaaaa-aaaa-4aaa-8aaa-${String(index).padStart(12, "0")}`);
     for (const [index, id] of many.entries()) {
-      standIn.tables.direct_order_requests.push({ id, product_code: IVY, requester_hr_id: "AI-0001", status: "approved", decided_at: "2026-12-05T09:00:00.000Z", reversal_of_request_id: null, pharmacy_id: "ph-2", product_name: "Ivyronc", sales_value: 100, remaining_amount: 0, collection_date: "2026-12-30" });
+      standIn.tables.direct_order_requests.push({ id, line: "Pedia", product_code: IVY, requester_hr_id: "AI-0001", status: "approved", decided_at: "2026-12-05T09:00:00.000Z", reversal_of_request_id: null, pharmacy_id: "ph-2", product_name: "Ivyronc", sales_value: 100, remaining_amount: 0, collection_date: "2026-12-30" });
       standIn.tables.direct_order_receipts.push({ serial: 100 + index, book_no: 1, check_code: "HJ4MN5", state: "used", request_id: id, delivery_entered_at: "2026-12-06T09:00:00.000Z" });
       standIn.tables.direct_order_warehouse_exits.push({ request_id: id, exit_date: "2026-12-05" });
     }
