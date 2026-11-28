@@ -296,7 +296,7 @@ function approvalWaits() {
   assert.ok(DESK_REFUSAL.notSaved);
 
   // The priced claim's idle days already pay nothing: no "Idle days" reduce reason; "No field activity" stays.
-  const idle = { checks: [{ answer: "fail" as const, key: "field_work", label: "Field work", sentence: "1 idle day." }], idleDates: ["2026-12-02"], lane: "check" as const, reason: null };
+  const idle = { checks: [{ answer: "fail" as const, key: "field_work", label: "Field work", sentence: "1 idle day." }], idleDates: ["2026-12-02"], lane: "your_call" as const, reason: "1 idle day." };
   assert.ok(reasonChips(claim({ verdict: idle })).some((chip) => chip.key === "idle-days"), "an unpriced claim is offered the idle-day reason");
   assert.ok(!reasonChips(claim({ dmWorkPriced: true, verdict: idle })).some((chip) => chip.key === "idle-days"), "a priced one is not");
 

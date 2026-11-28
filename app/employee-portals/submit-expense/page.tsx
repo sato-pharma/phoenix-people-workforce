@@ -123,7 +123,7 @@ export default async function EmployeePortalSubmitExpensePage() {
   const pendingActions =
     pendingActionsResult.status === "fulfilled"
       ? pendingActionsResult.value
-      : { departurePhotoDue: [], missingTicket: [] };
+      : { departurePhotoDue: [], doubleVisitsToConfirm: [], missingTicket: [] };
   const employeeHrId = access.hrId ?? portalData.employee.hrId;
   // My claims sits under the form: Submit Expense and Expense Submissions are one page (owner,
   // 2026-10-22). A failed read is passed as null and said in words, never as an empty list.

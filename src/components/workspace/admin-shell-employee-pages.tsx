@@ -869,7 +869,7 @@ export async function WorkspaceSubmitExpensePage() {
   const pendingActions =
     pendingActionsResult.status === "fulfilled"
       ? pendingActionsResult.value
-      : { departurePhotoDue: [], missingTicket: [] };
+      : { departurePhotoDue: [], doubleVisitsToConfirm: [], missingTicket: [] };
   const employeeHrId = access.hrId ?? portalData.employee.hrId;
   const submissions = submissionsResult.status === "fulfilled" ? submissionsResult.value : null;
   return (
