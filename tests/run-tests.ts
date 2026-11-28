@@ -525,6 +525,7 @@ import { runDailyDeductionsNoRecordsTests } from "./daily-deductions-no-records.
 import { runDailyDeductionsNoWeeklyPlanTests } from "./daily-deductions-no-weekly-plan.test.ts";
 import { runDailyDeductionsViewFiltersTests } from "./daily-deductions-view-filters.test.ts";
 import { runDailyDeductionsHideReleasedTests } from "./daily-deductions-hide-released.test.ts";
+import { runDailyDeductionsReleasedCollapseTests } from "./daily-deductions-released-collapse.test.ts";
 import { runDailyDeductionsDayReviewTests } from "./daily-deductions-day-review.test.ts";
 import { runWeeklyPlansOneStoreTests } from "./weekly-plans-one-store.test.ts";
 import { runDeductionsExemptEmployeesTests } from "./deductions-exempt-employees.test.ts";
@@ -4627,6 +4628,10 @@ await runTest(
 await runTest(
   "daily deductions Hide released (owner, 28 Nov 2026): the toggle hides only lines already released at the figures shown and every released snapshot row, starts off, lives in the address, leaves the input unchanged, and a release from the filtered list never carries a hidden line",
   runDailyDeductionsHideReleasedTests,
+);
+await runTest(
+  "daily deductions Released to employees folds (owner, 28 Nov 2026): starts open, one header button says Collapse or Expand with aria-expanded, folding hides only the list, and Withdraw all is not offered while folded",
+  runDailyDeductionsReleasedCollapseTests,
 );
 await runTest(
   "daily deductions day review (owner, 23 Nov 2026): choose a person and a day, push one day or half a day with a comment the employee reads — Pending until approved, one per person per day, refused on a day already charged",

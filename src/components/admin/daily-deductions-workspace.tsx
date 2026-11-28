@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Clock3, PlayCircle, RotateCcw, Search, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Clock3, PlayCircle, RotateCcw, Search, XCircle } from "lucide-react";
 
 import { dailyDeductionConnectorLabels, dailyDeductionConnectors, type DailyDeductionConnector } from "@/lib/daily-deductions/types.ts";
 import {
@@ -273,6 +273,9 @@ export function DailyDeductionsWorkspace({
   // "Show me the 9th" — narrows the list to one day; it never ties that day's deductions together.
   const [dayFilter, setDayFilter] = useState<string>("all");
   const [releasedSearch, setReleasedSearch] = useState("");
+  // "Released to employees" folds away and opens again (owner, 2026-11-28). It starts open, so the
+  // screen reads as before until it is folded; folding only hides the list, it changes nothing.
+  const [releasedListOpen, setReleasedListOpen] = useState(true);
   // The two VIEW filters (owner, 2026-11-17) — exclude fingerprint, exclude Head Office employees. They
   // narrow the SCOPE everything below is derived from (counts, totals, ticks, Release ticked), so a
   // hidden deduction can never ride along in a release. They change, release and re-price nothing.
@@ -657,18 +660,30 @@ export function DailyDeductionsWorkspace({
       <section className={PANEL}>
         <div className={cn("flex flex-wrap items-center justify-between gap-3 px-4 py-3", adminPanelHeaderClassName)}>
           <h2 className={PANEL_TITLE}>Released to employees</h2>
-          {canPublish && active && !filtersOn ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {canPublish && active && !filtersOn && releasedListOpen ? (
+              <button
+                className={cn(SMALL_BUTTON, "border-white/25 bg-white/10 text-white hover:border-rose-300 hover:text-rose-100")}
+                disabled={publishing}
+                onClick={() => setPending({ kind: "withdraw_all" })}
+                type="button"
+              >
+                Withdraw all
+              </button>
+            ) : null}
             <button
-              className={cn(SMALL_BUTTON, "border-white/25 bg-white/10 text-white hover:border-rose-300 hover:text-rose-100")}
-              disabled={publishing}
-              onClick={() => setPending({ kind: "withdraw_all" })}
+              aria-controls="daily-deductions-released-list"
+              aria-expanded={releasedListOpen}
+              className={cn(SMALL_BUTTON, "border-white/25 bg-white/10 text-white hover:border-white/60")}
+              onClick={() => setReleasedListOpen((open) => !open)}
               type="button"
             >
-              Withdraw all
+              {releasedListOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+              {releasedListOpen ? "Collapse" : "Expand"}
             </button>
-          ) : null}
+          </div>
         </div>
-        <div className="space-y-3 p-4">
+        <div className="space-y-3 p-4" hidden={!releasedListOpen} id="daily-deductions-released-list">
           {activeLoading ? (
             <p className="text-sm text-slate-500">Loading…</p>
           ) : activeError ? (
