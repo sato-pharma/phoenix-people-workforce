@@ -694,7 +694,7 @@ KEEP 31 · OPTIMIZE 11 · REMOVE 6 · INVESTIGATE FURTHER 4 · REPLACE 2 · CONS
 - **Purpose:** Excel exports and imports, PDF assembly, CV text extraction and OCR, image normalising, PowerPoint packs.
 - **Sidebar modules:** Sales › Sales Upload; Hiring › CV Database; Hiring › Screening Queue; Overview › Business Review; Payroll › Payroll Report; Orders & CRM › Direct Orders
 - **Code / routes:** package.json; src/lib/recruitment/cv-extraction.ts, cv-ocr.ts:202-207; 128 files import exceljs
-- **Authentication:** n/a · **Security:** 3 open medium Dependabot alerts on a transitive package; `google-auth-library` and `zod` are installed but not imported by the app
+- **Authentication:** n/a · **Security:** 3 open medium Dependabot alerts on a transitive package; `google-auth-library` was installed but not imported (removed 2026-11-20, #653); `zod` is used (corrected 2026-11-20)
 - **Free tier:** Open source · **Limits:** OCR is used for CVs only
 - **Evidence:** T-ST-09; T-GH-09
 - **Verdict:** **KEEP** — In-process, free and central to the product.

@@ -230,16 +230,22 @@ function readEnv(name: string) {
 }
 
 /**
- * Brevo's sender override. A full `Name <address>` is used as written; a bare address
- * keeps the display name of the message's own From, so a job offer still reads as HR and a
- * notification still reads as Phoenix — only the verified address underneath changes.
+ * Brevo's sender override: ONLY THE ADDRESS IS BORROWED — the message keeps its own display name.
+ *
+ * Owner, 20 Nov 2026: "fix the naming of the pumped emails". `BREVO_EMAIL_FROM` is
+ * `Phoenix Workforce <phoenix@send.satopharma.com>`, and until then a full `Name <address>` override
+ * was used as written — so on any day Resend's free allowance ran out, every email that reached Brevo
+ * arrived named *Phoenix Workforce*: a CEO letter, a Sato composer letter, an interview invitation.
+ * Now the verified address underneath changes and the name the reader sees does not. The override's
+ * own name is used only when the message carries none.
  */
 export function applySenderOverride(from: string, override: string | undefined): string {
   const value = override?.trim();
   if (!value) return from;
-  if (value.includes("<")) return value;
+  const overrideSender = parseSender(value);
   const { name } = parseSender(from);
-  return name ? `${name} <${value}>` : value;
+  if (!name) return value;
+  return `${name} <${overrideSender.email}>`;
 }
 
 /**
@@ -361,14 +367,14 @@ function createBrevoProvider(): EmailProvider {
       return Boolean(readEnv(keyEnv));
     },
     send(email) {
-      // Brevo's sender must be a verified sender/domain on the Brevo account: BREVO_EMAIL_FROM, else
-      // the message's own From.
+      // Brevo's sender must be a verified sender/domain on the Brevo account: BREVO_EMAIL_FROM's
+      // ADDRESS, else the message's own From — and the message's own display name either way.
       const override = readEnv("BREVO_EMAIL_FROM");
       // A job offer is never re-branded onto a Brevo sender — this override is the one that would
       // have put *Phoenix Workforce* on an offer of employment.
       const refusal = senderOverrideRefusal(email, override, label);
       if (refusal) return Promise.resolve(refusal);
-      return sendViaBrevo(email, { apiKey: readEnv(keyEnv), keyEnv, label, sender: parseSender(override || email.from) });
+      return sendViaBrevo(email, { apiKey: readEnv(keyEnv), keyEnv, label, sender: parseSender(applySenderOverride(email.from, override)) });
     },
   };
 }

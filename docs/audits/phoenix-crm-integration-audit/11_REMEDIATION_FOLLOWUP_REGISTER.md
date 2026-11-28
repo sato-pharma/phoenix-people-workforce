@@ -75,7 +75,7 @@ Each row names the fix and the recommendation (INT-xxx) that carries it. The "Ho
 | ISS-042 | **LOW** | The messaging API version is a hard-coded default with no review date | EX-31 | Hiring › WhatsApp Inbox | FROM CODE | Put the version's retirement date in HR Reminders. | LOW | — |
 | ISS-043 | **LOW** | One public page loads a font from a third party | EX-45 | Hiring › Job Offers | FROM CODE | Bundle the font with the others in public/fonts. | LOW | — |
 | ISS-044 | **LOW** | Residue of two former hosts remains in code and assets | EX-49 | INTERNAL COMPONENT — NO SIDEBAR ENTRY | FROM CODE | One tidy-up change. | LOW | — |
-| ISS-045 | **LOW** | Two installed packages are not imported by the app | EX-52 | INTERNAL COMPONENT — NO SIDEBAR ENTRY | FROM CODE | Confirm with a dead-code scan (INT-078) and remove. | LOW | INT-078 |
+| ISS-045 | **LOW** | One installed package was not imported by the app (corrected 2026-11-20: zod is used) | EX-52 | INTERNAL COMPONENT — NO SIDEBAR ENTRY | FROM CODE | RESOLVED 2026-11-20 by the one-off dead-code scan (#653): google-auth-library removed. | LOW | INT-078 |
 | ISS-047 | **LOW** | Three workflows have no concurrency group and one shares a single group across all pull requests | EX-12 | BACKGROUND SERVICE — NO SIDEBAR ENTRY | FROM CODE | Add per-ref groups. | LOW | — |
 | ISS-048 | **LOW** | The browser cache key in CI has lost its operating-system part and the package store is cached twice | EX-12 | BACKGROUND SERVICE — NO SIDEBAR ENTRY | VERIFIED LIVE | Use the runner context for the key; pick one store cache. | LOW | — |
 | ISS-049 | **LOW** | A workflow that is not on the main branch is still registered as active | EX-12 | BACKGROUND SERVICE — NO SIDEBAR ENTRY | VERIFIED LIVE | Disable it and delete the branch. | LOW | — |
@@ -385,7 +385,8 @@ Each row names the fix and the recommendation (INT-xxx) that carries it. The "Ho
 ### ISS-045 — Two installed packages are not imported by the app
 
 - **Severity:** LOW · **Basis:** FROM CODE
-- **Evidence:** google-auth-library and zod appear in package.json with no import under src/ or app/.
+- **Evidence:** google-auth-library appeared in package.json with no import anywhere. **Corrected 2026-11-20:** zod IS used — about 100 route files under app/api import it; the original reading was wrong.
+- **Resolution:** google-auth-library removed by the one-off dead-code scan (#653, 2026-11-20); zod stays.
 - **Impact:** Extra install weight and alert surface.
 - **Fix:** Confirm with a dead-code scan (INT-078) and remove.
 
