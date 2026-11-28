@@ -12280,7 +12280,7 @@ ALTER FUNCTION public.phoenix_crm_expire_plan_edit_requests(p jsonb) OWNER TO po
 --
 
 CREATE FUNCTION public.phoenix_crm_focus_visits(p_customer_ids uuid[], p_is_test boolean, p_from date, p_to date) RETURNS jsonb
-    LANGUAGE sql STABLE
+    LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'public'
     AS $$
   with period as (
@@ -100101,6 +100101,12 @@ CREATE POLICY phoenix_crm_field_camera_releases_service_role ON public.phoenix_c
 --
 
 ALTER TABLE public.phoenix_crm_focus_customers ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: phoenix_crm_focus_customers phoenix_crm_focus_customers_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY phoenix_crm_focus_customers_service_role ON public.phoenix_crm_focus_customers TO service_role USING (true) WITH CHECK (true);
 
 --
 -- Name: phoenix_crm_imported_visit_sources; Type: ROW SECURITY; Schema: public; Owner: postgres

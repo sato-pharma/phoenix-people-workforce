@@ -175,10 +175,10 @@ function ManagerFilters({ filters, onChange, view }: { filters: Filters; onChang
         </CrmSelect>
       </CrmField>
       <CrmField htmlFor="focus-from" label="From">
-        <input className={crmInputClassName} id="focus-from" max={view.today} onChange={(event) => setFrom(event.target.value)} type="date" value={from} />
+        <input className={`${crmInputClassName} appearance-none`} id="focus-from" max={view.today} onChange={(event) => setFrom(event.target.value)} type="date" value={from} />
       </CrmField>
       <CrmField htmlFor="focus-to" label="To">
-        <input className={crmInputClassName} id="focus-to" max={view.today} onChange={(event) => setTo(event.target.value)} type="date" value={to} />
+        <input className={`${crmInputClassName} appearance-none`} id="focus-to" max={view.today} onChange={(event) => setTo(event.target.value)} type="date" value={to} />
       </CrmField>
       <div className="flex min-w-0 items-end">
         <CrmButton className="w-full" onClick={() => onChange({ ...filters, from, to })} variant="primary">
@@ -344,6 +344,23 @@ function ManagerRows({
 }) {
   return (
     <div className="min-w-0 px-0 pb-2 pt-1">
+      <CrmCardsOnPhone>
+        {entries.map((entry) => (
+          <CrmCard
+            actions={<Actions busyId={busyId} entry={entry} onAct={onAct} />}
+            key={entry.id}
+            meta={[entry.speciality, (entry.repNames ?? []).join(" and ") || "Vacant territory", entry.territoryName].filter(Boolean).join(" · ")}
+            status={entry.reviewStatus === "waiting" ? <CrmPill tone="warn">Waiting your decision</CrmPill> : null}
+            title={entry.customerName}
+          >
+            <div className="grid min-w-0 gap-3">
+              <WhoAndWhy entry={entry} />
+              <Frequency entry={entry} />
+              <LastVisit entry={entry} today={view.today} />
+            </div>
+          </CrmCard>
+        ))}
+      </CrmCardsOnPhone>
       <CrmTable columns={["22%", "26%", "17%", "21%", "14%"]}>
         <thead>
           <tr>
@@ -379,23 +396,6 @@ function ManagerRows({
           ))}
         </tbody>
       </CrmTable>
-      <CrmCardsOnPhone>
-        {entries.map((entry) => (
-          <CrmCard
-            actions={<Actions busyId={busyId} entry={entry} onAct={onAct} />}
-            key={entry.id}
-            meta={[entry.speciality, (entry.repNames ?? []).join(" and ") || "Vacant territory", entry.territoryName].filter(Boolean).join(" · ")}
-            status={entry.reviewStatus === "waiting" ? <CrmPill tone="warn">Waiting your decision</CrmPill> : null}
-            title={entry.customerName}
-          >
-            <div className="grid min-w-0 gap-3">
-              <WhoAndWhy entry={entry} />
-              <Frequency entry={entry} />
-              <LastVisit entry={entry} today={view.today} />
-            </div>
-          </CrmCard>
-        ))}
-      </CrmCardsOnPhone>
     </div>
   );
 }

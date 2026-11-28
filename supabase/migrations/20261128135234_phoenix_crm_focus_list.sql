@@ -24,6 +24,8 @@
 
 begin;
 
+set local lock_timeout = '5s';
+
 create table if not exists public.phoenix_crm_focus_customers (
   id uuid primary key default gen_random_uuid(),
   seat_id text not null,
@@ -78,11 +80,13 @@ create index if not exists phoenix_crm_focus_customers_open_seat_idx
   where returned_at is null;
 
 alter table public.phoenix_crm_focus_customers enable row level security;
+create policy phoenix_crm_focus_customers_service_role
+  on public.phoenix_crm_focus_customers for all to service_role using (true) with check (true);
 
 -- The browser roles write no public table (database-migrations): every read and write goes through the
 -- service role, behind the app's own territory gates.
 revoke all on table public.phoenix_crm_focus_customers from public, anon, authenticated;
-grant select, insert, update on table public.phoenix_crm_focus_customers to service_role;
+grant all on table public.phoenix_crm_focus_customers to service_role;
 
 create or replace function public.phoenix_crm_focus_visits(
   p_customer_ids uuid[],
@@ -93,6 +97,7 @@ create or replace function public.phoenix_crm_focus_visits(
 returns jsonb
 language sql
 stable
+security definer
 set search_path to 'public'
 as $$
   with period as (
@@ -136,5 +141,7 @@ comment on function public.phoenix_crm_focus_visits(uuid[], boolean, date, date)
 
 revoke execute on function public.phoenix_crm_focus_visits(uuid[], boolean, date, date) from public, anon, authenticated;
 grant execute on function public.phoenix_crm_focus_visits(uuid[], boolean, date, date) to service_role;
+
+notify pgrst, 'reload schema';
 
 commit;

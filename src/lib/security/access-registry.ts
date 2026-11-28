@@ -1083,7 +1083,7 @@ export const accessRegistry = [
   // its managers pushes (`territoryForFocusPush`), a manager of it keeps or returns (`canDecideFocus`), the rep
   // returns his own (`canReturnOwnFocus`). Holding a permission is never enough on its own.
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/focus", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/focus", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/focus", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/call-prep", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   // Deciding an off-plan visit: the same split as a grade or drop request, `approve` rather than
   // `update`, and narrowed AGAIN in the service to the one person whose step it is — the territory's
