@@ -19,7 +19,7 @@
  * AM and PM are counted apart on every figure and never added together (the call-rate rule).
  */
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 
 import { AddPharmacyScreen } from "@/components/phoenix-crm/add-pharmacy";
@@ -34,6 +34,8 @@ import { listText, territoryLine } from "@/components/phoenix-crm/labels";
 import type { CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
 import { OutOfListEntry } from "@/components/phoenix-crm/out-of-list-entry";
 import { PharmacyDetailsScreen } from "@/components/phoenix-crm/pharmacy-details";
+import { RejectedVisitMap } from "@/components/phoenix-crm/rejected-visit-map";
+import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-detail";
 import {
   CrmBackBar,
   CrmBlock,
@@ -220,6 +222,8 @@ function StandingPills({ visit }: { visit: VisitRow }) {
       <CrmPill tone={visit.unplannedKind ? "orange" : "neutral"}>{visit.unplannedKind ? unplannedKindLabel(visit.unplannedKind) : "Planned"}</CrmPill>
       {standing ? <CrmPill tone={standing.tone}>{standing.label}</CrmPill> : null}
       {recording ? <CrmPill tone={recording.tone}>{recording.label}</CrmPill> : null}
+      {/* A held far visit the SFE refused (owner, 28 Nov 2026): rejected, with its map below the visit. */}
+      {visit.farVisitRejection ? <CrmPill tone="bad">{visit.farVisitRejection.label}</CrmPill> : null}
     </>
   );
 }
@@ -396,6 +400,7 @@ function VisitCard({ detail, visit }: { detail: DetailDoor; visit: VisitRow }) {
       title={visit.customerName}
     >
       <VisitDetails visit={visit} />
+      {visit.farVisitRejection ? <RejectedVisitMap rejection={visit.farVisitRejection} /> : null}
       {detail && visit.detailEditable ? (
         <div className="mt-2">
           <VisitDetailEdit hasDetail={visit.detailComment !== null} isTest={detail.isTest} onWrittenUp={detail.reload} seatId={detail.seatId} visitId={visit.visitId} />
@@ -433,7 +438,8 @@ function VisitTable({ detail, visits }: { detail: DetailDoor; visits: ReadonlyAr
           const people = visitPeople(visit);
           const { has, missing } = availabilitySplit(visit.productAvailability);
           return (
-            <tr key={visit.visitId}>
+            <Fragment key={visit.visitId}>
+            <tr {...(visit.farVisitRejection ? rowDetailToggleProps(`rejected-${visit.visitId}`, true) : {})}>
               <td className={crmTdClassName}>
                 <span className="block font-black text-slate-900">{cairoClock(visit.capturedAt)}</span>
                 <span className="mt-0.5 block text-xs text-slate-500">{visit.kindLabel}</span>
@@ -525,6 +531,13 @@ function VisitTable({ detail, visits }: { detail: DetailDoor; visits: ReadonlyAr
                 {visit.outOfList ? <span className="mt-1 block text-xs text-slate-500">{visit.outOfList.note}</span> : null}
               </td>
             </tr>
+            {/* The rejected visit's map takes the row's whole width, so no column is squeezed to fit it. */}
+            {visit.farVisitRejection ? (
+              <TableRowDetail colSpan={5} id={`rejected-${visit.visitId}`}>
+                <RejectedVisitMap rejection={visit.farVisitRejection} />
+              </TableRowDetail>
+            ) : null}
+            </Fragment>
           );
         })}
       </tbody>

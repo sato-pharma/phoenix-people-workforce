@@ -136,7 +136,7 @@ import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/ser
 import { loadPlanDayFacts, PLAN_DAY_COLUMNS } from "@/lib/phoenix-crm/server/plan-day-status";
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
 import { recordRefusedReading } from "@/lib/phoenix-crm/server/refused-readings";
-import { farVisitOutcome, loadUncountedFarVisitHolds, stampFarVisitHoldDay } from "@/lib/phoenix-crm/server/far-visit-safeguards";
+import { farVisitOutcome, loadFarVisitRejections, loadUncountedFarVisitHolds, stampFarVisitHoldDay, type FarVisitRejection } from "@/lib/phoenix-crm/server/far-visit-safeguards";
 import { readTimeAnchor } from "@/lib/phoenix-crm/server/time-anchor";
 import {
   claimRequiredRecording,
@@ -267,6 +267,11 @@ export type VisitRow = {
    * Administrator decides. It carries no length and no audio. Absent on a visit with no recording.
    */
   recordingReview?: RecordingReviewStatus;
+  /**
+   * A far visit held for the SFE and REFUSED by him (owner, 28 Nov 2026): "Rejected", why, and the read-only map —
+   * 1 where it was submitted, 2 the customer's saved place, 3 the place's photo reading. Absent on every other visit.
+   */
+  farVisitRejection?: FarVisitRejection;
   locationFlag: VisitLocationFlag;
   locationLabel: string;
   clockOff: boolean;
@@ -684,13 +689,25 @@ export async function loadVisitDay(viewer: PhoenixCrmViewer, raw: { seatId: unkn
   ]);
   const sight = locationSight(viewer, seat);
   const hears = hearsVisitRecording(viewer, seat);
+  // A held visit the SFE REFUSED is shown as rejected, with its read-only map (owner, 28 Nov 2026). Asked only
+  // when the day holds one; a failed read leaves the map out and the visit as it was, never a failed day.
+  const refusedIds = [...farHolds].filter(([, status]) => status === "refused").map(([visitId]) => visitId);
+  const rejections =
+    refusedIds.length > 0
+      ? await loadFarVisitRejections(refusedIds).catch((error: unknown) => {
+          console.error("[phoenix-crm] rejected far visits not read", { error });
+          return new Map<string, FarVisitRejection>();
+        })
+      : new Map<string, FarVisitRejection>();
   return {
     territory: describeTerritory(viewer.org, seat, names),
     isTest,
     date,
     visits: rows.map((row) => {
       const mapped = mapVisitRow(row, names, { sight, org: viewer.org, productManagerRoles, actorHrId: viewer.hrId });
-      const visit = farHolds.has(mapped.visitId) ? { ...mapped, countsInKpi: false } : mapped;
+      const held = farHolds.has(mapped.visitId) ? { ...mapped, countsInKpi: false } : mapped;
+      const rejection = rejections.get(mapped.visitId);
+      const visit = rejection ? { ...held, farVisitRejection: rejection } : held;
       const recording = recordings.get(visit.visitId);
       if (!recording) return visit;
       const countsInKpi = visit.countsInKpi && recording.reviewStatus === "approved";

@@ -318,6 +318,26 @@ export const RECHECK_MIN_FAR_VISITS = 2;
 /** What the rep reads on a held visit: it is saved, and when it counts. Never why, never a distance. */
 export const FAR_VISIT_HELD_NOTE = "Saved. This visit counts once SFE approves it.";
 
+/**
+ * 🔴 A HELD VISIT THE SFE REFUSED IS SHOWN TO THE REP AS REJECTED, WITH THE MAP (owner, 28 Nov 2026: "reject the
+ * visit and show the rep that the visit is rejected … show him what I am seeing in here, the map. He submitted the
+ * visit here, and the doctor is here, so it is rejected … But of course, read only"). A FIFTH exception to Golden
+ * Rule #1, on his word, for this one case only: his own refused visit, on his own day, read-only — 1 where he
+ * submitted it, 2 the customer's saved place, 3 the reading captured with the place's photo. Nothing else he sees
+ * moves: no accuracy, no check named, and a visit still waiting or approved shows nothing new.
+ */
+export const FAR_VISIT_REJECTED_LABEL = "Rejected";
+
+export const FAR_VISIT_REJECTED_NOTE =
+  "This visit was submitted away from the customer's place, so it was rejected and does not count. The map shows where you submitted it and where the customer's place is.";
+
+/** The three points the rep reads on his rejected visit, in the admin map's own order. */
+export const FAR_VISIT_REJECTED_POINT_LABELS = {
+  submitted: "Where you submitted the visit",
+  place: "The customer's saved place",
+  photo: "Where the place's photo was captured",
+} as const;
+
 /** The SFE's decision on a held visit, and the hold's own state. */
 export type FarVisitHoldStatus = "sfe_pending" | "approved" | "refused";
 

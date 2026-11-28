@@ -4,6 +4,9 @@ import { readFileSync } from "node:fs";
 import {
   ACCOUNT_FAR_LINE_METERS,
   FAR_VISIT_HELD_NOTE,
+  FAR_VISIT_REJECTED_LABEL,
+  FAR_VISIT_REJECTED_NOTE,
+  FAR_VISIT_REJECTED_POINT_LABELS,
   IMPOSSIBLE_LOCATION_REFUSED,
   READINGS_APART_FLOOR_METERS,
   READINGS_APART_REFUSED,
@@ -500,6 +503,41 @@ export function runPhoenixCrmFarVisitSafeguardsTests() {
     }
     assert.doesNotMatch(sql, /\bdelete from public\.|\btruncate\b|\bdrop table\b|\balter table\b/, "two functions, no table and no row");
     assert.match(read("src/lib/phoenix-crm/server/db.ts"), /validated_without_place: \{ status: 409, message: "This customer has no saved place, so it cannot be validated\. Capture the place first\." \}/, "the guard has its own sentence");
+  }
+
+  // ── The rep's own rejected visit, with the map (owner, 28 Nov 2026) ─────────────────────────────
+  // "reject the visit and show the rep that the visit is rejected … show him what I am seeing in here, the map …
+  // read only". A refused hold reaches the rep's own day as "Rejected", the sentence, and the three points.
+  {
+    assert.equal(FAR_VISIT_REJECTED_LABEL, "Rejected", "the rep reads the plain word");
+    assert.match(FAR_VISIT_REJECTED_NOTE, /rejected and does not count/, "and that it does not count");
+    assert.deepEqual(
+      Object.values(FAR_VISIT_REJECTED_POINT_LABELS),
+      ["Where you submitted the visit", "The customer's saved place", "Where the place's photo was captured"],
+      "🔴 1 where he submitted it, 2 the customer's place, 3 the photo's reading — the SFE's own picture",
+    );
+
+    const server = stripComments(read("src/lib/phoenix-crm/server/far-visit-safeguards.ts"));
+    const rejections = functionBody(server, /export async function loadFarVisitRejections\(/);
+    assert.match(rejections, /\.eq\("status", "refused"\)/, "🔴 only a hold the SFE REFUSED is shown — a waiting or approved one shows nothing new");
+    assert.match(rejections, /\.eq\("status", "active"\)\.is\("retired_at", null\)/, "the place drawn is the customer's active place, the one the rule measures today");
+
+    const visits = stripComments(read("src/lib/phoenix-crm/server/visits.ts"));
+    const day = functionBody(visits, /export async function loadVisitDay\(/);
+    assert.match(day, /filter\(\(\[, status\]\) => status === "refused"\)/, "the day asks for the map only for its refused holds");
+    assert.match(day, /loadFarVisitRejections\(refusedIds\)\.catch\(/, "🔴 a failed read leaves the map out, never fails the rep's day");
+    assert.match(day, /rejection \? \{ \.\.\.held, farVisitRejection: rejection \} : held/, "and the rejection rides on that visit alone");
+
+    const tab = stripComments(read("src/components/phoenix-crm/visits-tab.tsx"));
+    assert.match(tab, /<CrmPill tone="bad">\{visit\.farVisitRejection\.label\}<\/CrmPill>/, "the rep's visit wears a Rejected pill");
+    assert.equal((tab.match(/<RejectedVisitMap rejection=\{visit\.farVisitRejection\} \/>/g) ?? []).length, 2, "and the map, on the phone card and the desktop table");
+    const map = stripComments(read("src/components/phoenix-crm/rejected-visit-map.tsx"));
+    assert.doesNotMatch(map, /<button|onClick|<form|fetch\(/, "🔴 read only: the map offers nothing to press but Google Maps");
+
+    const route = stripComments(read("app/api/admin/phoenix-crm/case-map-basemap/route.ts"));
+    assert.match(route, /!canDecideFarVisitHolds\(viewer\) && !\(await hasOwnFarVisitRejection\(viewer\)\)/, "the streets are drawn for a rep with a rejected visit of his own");
+    const own = functionBody(server, /export async function hasOwnFarVisitRejection\(/);
+    assert.match(own, /\.eq\("status", "refused"\)\s*\.eq\("rep_hr_id", viewer\.hrId\.toUpperCase\(\)\)/, "and only for his own refused visit");
   }
 
   console.log("phoenix-crm-far-visit-safeguards: PASS");
