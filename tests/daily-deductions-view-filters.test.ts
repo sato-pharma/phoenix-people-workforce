@@ -65,7 +65,7 @@ export async function runDailyDeductionsViewFiltersTests(): Promise<void> {
 
   // ── exclude fingerprint: only the fingerprint device's lines go ──────────
   {
-    const result = applyDailyDeductionViewFilters(LINES, { excludeFingerprint: true, excludeHeadOffice: false }, HEAD_OFFICE);
+    const result = applyDailyDeductionViewFilters(LINES, { excludeFingerprint: true, excludeHeadOffice: false, hideReleased: false }, HEAD_OFFICE);
     assert.deepEqual(
       keys(result.lines),
       ["crm|m22", "no_weekly_plan|of0002", "unpaid_vacation|m30", "no_records_activity|b10"],
@@ -76,30 +76,30 @@ export async function runDailyDeductionsViewFiltersTests(): Promise<void> {
 
   // ── exclude Head Office: only Head Office employees' lines go ────────────
   {
-    const result = applyDailyDeductionViewFilters(LINES, { excludeFingerprint: false, excludeHeadOffice: true }, HEAD_OFFICE);
+    const result = applyDailyDeductionViewFilters(LINES, { excludeFingerprint: false, excludeHeadOffice: true, hideReleased: false }, HEAD_OFFICE);
     assert.deepEqual(
       keys(result.lines),
       ["fingerprint|m22", "crm|m22", "unpaid_vacation|m30"],
       "every line of a Head Office employee is hidden, whatever its type; field lines stay",
     );
     // The set is keyed the deductions' own way: a hyphenated, upper-case id still matches.
-    const odd = applyDailyDeductionViewFilters([line("crm", "OF-0002")], { excludeFingerprint: false, excludeHeadOffice: true }, HEAD_OFFICE);
+    const odd = applyDailyDeductionViewFilters([line("crm", "OF-0002")], { excludeFingerprint: false, excludeHeadOffice: true, hideReleased: false }, HEAD_OFFICE);
     assert.equal(odd.lines.length, 0, "OF-0002 and of0002 are the same Head Office employee");
   }
 
   // ── both together ────────────────────────────────────────────────────────
   {
-    const result = applyDailyDeductionViewFilters(LINES, { excludeFingerprint: true, excludeHeadOffice: true }, HEAD_OFFICE);
+    const result = applyDailyDeductionViewFilters(LINES, { excludeFingerprint: true, excludeHeadOffice: true, hideReleased: false }, HEAD_OFFICE);
     assert.deepEqual(keys(result.lines), ["crm|m22", "unpaid_vacation|m30"], "the two filters combine");
     assert.equal(result.lines.length + result.hidden.length, LINES.length, "nothing is lost — every line is shown or hidden");
   }
 
   // ── an unreadable Head Office list hides nothing and says so ─────────────
   {
-    const result = applyDailyDeductionViewFilters(LINES, { excludeFingerprint: false, excludeHeadOffice: true }, null);
+    const result = applyDailyDeductionViewFilters(LINES, { excludeFingerprint: false, excludeHeadOffice: true, hideReleased: false }, null);
     assert.equal(result.headOfficeUnavailable, true, "the screen must be told the filter is not applied");
     assert.equal(result.lines.length, LINES.length, "a failed read never guesses who is Head Office");
-    const both = applyDailyDeductionViewFilters(LINES, { excludeFingerprint: true, excludeHeadOffice: true }, null);
+    const both = applyDailyDeductionViewFilters(LINES, { excludeFingerprint: true, excludeHeadOffice: true, hideReleased: false }, null);
     assert.deepEqual(keys(both.hidden), ["fingerprint|b10", "fingerprint|m22"], "the fingerprint filter still works on its own");
   }
 
@@ -114,20 +114,21 @@ export async function runDailyDeductionsViewFiltersTests(): Promise<void> {
     assert.deepEqual(parseDailyDeductionViewFilters({ excludeFingerprint: "1", excludeHeadOffice: undefined }), {
       excludeFingerprint: true,
       excludeHeadOffice: false,
+      hideReleased: false,
     });
-    const written = writeDailyDeductionViewFilters("?tab=x&excludeHeadOffice=1", { excludeFingerprint: true, excludeHeadOffice: false });
+    const written = writeDailyDeductionViewFilters("?tab=x&excludeHeadOffice=1", { excludeFingerprint: true, excludeHeadOffice: false, hideReleased: false });
     const params = new URLSearchParams(written);
     assert.equal(params.get("tab"), "x", "other parameters are kept");
     assert.equal(params.get("excludeFingerprint"), "1");
     assert.equal(params.has("excludeHeadOffice"), false, "an OFF filter is removed, not written as 0");
     assert.equal(writeDailyDeductionViewFilters("?excludeFingerprint=1", DAILY_DEDUCTION_VIEW_FILTERS_OFF), "", "all off is the plain address");
-    const round = parseDailyDeductionViewFilters(new URLSearchParams(writeDailyDeductionViewFilters("", { excludeFingerprint: true, excludeHeadOffice: true })));
-    assert.deepEqual(round, { excludeFingerprint: true, excludeHeadOffice: true }, "the address round-trips");
+    const round = parseDailyDeductionViewFilters(new URLSearchParams(writeDailyDeductionViewFilters("", { excludeFingerprint: true, excludeHeadOffice: true, hideReleased: false })));
+    assert.deepEqual(round, { excludeFingerprint: true, excludeHeadOffice: true, hideReleased: false }, "the address round-trips");
   }
 
   // ── a release sent from the filtered list never carries a hidden line ────
   {
-    const filters = { excludeFingerprint: true, excludeHeadOffice: true };
+    const filters = { excludeFingerprint: true, excludeHeadOffice: true, hideReleased: false };
     const shown = applyDailyDeductionViewFilters(LINES, filters, HEAD_OFFICE).lines;
     const releasable = linesToRelease(shown, indexReleasedLines([]), { from: "2026-11-01", to: "2026-11-16" });
     assert.ok(releasable.length > 0);
@@ -145,7 +146,7 @@ export async function runDailyDeductionsViewFiltersTests(): Promise<void> {
       line("crm", "m22", "2026-11-05", 250.01),
       line("unpaid_vacation", "m30", "2026-11-06", 725.81),
     ];
-    const shown = applyDailyDeductionViewFilters(released, { excludeFingerprint: true, excludeHeadOffice: false }, HEAD_OFFICE).lines;
+    const shown = applyDailyDeductionViewFilters(released, { excludeFingerprint: true, excludeHeadOffice: false, hideReleased: false }, HEAD_OFFICE).lines;
     assert.deepEqual(
       categoryTotalsOfLines(shown),
       { crm: 750.01, unpaid_vacation: 725.81 },
@@ -171,8 +172,8 @@ export async function runDailyDeductionsViewFiltersTests(): Promise<void> {
       /const allLines = tallyScope\.lines;/,
       "allLines — what totals, ticks and Release ticked are computed from — must be the view-filtered list",
     );
-    assert.match(workspace, /applyDailyDeductionViewFilters\(tallyLines, viewFilters, headOfficeSet\)/);
-    assert.match(workspace, /applyDailyDeductionViewFilters\(releasedLines, viewFilters, headOfficeSet\)/);
+    assert.match(workspace, /applyDailyDeductionViewFilters\(tallyLines, viewFilters, headOfficeSet, isTallyLineReleased\)/);
+    assert.match(workspace, /applyDailyDeductionViewFilters\(releasedLines, viewFilters, headOfficeSet, \(\) => true\)/);
     assert.match(workspace, /canPublish && active && !filtersOn \?/, "Withdraw all (the whole snapshot) is off while a filter hides lines");
     assert.match(workspace, /writeDailyDeductionViewFilters\(window\.location\.search, next\)/, "the filter state is written to the address");
     const page = readFileSync(new URL("../app/(admin)/admin/daily-deductions/page.tsx", import.meta.url), "utf8");
