@@ -60,10 +60,11 @@ has to rediscover it. The code side is module memory: the first bullet of `.clau
 | `preview-*.png` | previews of the real pages (real codes: never share) |
 | `_superseded v1 - no copy mark\` | the first build, before the hidden watermark: never print it |
 | `_generator\build.mjs`, `guides.mjs`, `managers.json` | the generators; `managers.json` holds the national IDs and is never committed |
-| `Guides\دفاتر إيصالات الطلبات المباشرة - ملخص للإدارة.pdf` | management summary, 4 pages |
-| `Guides\دليل العمل - إيصالات الطلبات المباشرة - لمديري المناطق.pdf` | area managers' guide, 3 pages |
+| `Guides\دفاتر إيصالات الطلبات المباشرة - ملخص للإدارة.pdf` | management summary, 6 pages |
+| `Guides\دليل العمل - إيصالات الطلبات المباشرة - لمديري المناطق.pdf` | area managers' guide, 4 pages |
+| `Guidesدليل المالية - إيصالات الطلبات المباشرة.pdf` | Finance's guide (Ahmed El Maraghy), 3 pages, since 28 Nov |
 | `Guides\عينة دفتر - دفتر 01 القاهرة - إيصالان للعرض.pdf` | sample book, 7 pages, 1.1 MB, codes NOT in Phoenix |
-| `Guides\مسودة الإيميل - مقترح دفاتر الإيصالات.txt` | the Arabic proposal email draft (5 attachments) |
+| `Guides\مسودة الإيميل - مقترح دفاتر الإيصالات.txt` | the Arabic proposal email draft (6 attachments; Phoenix checks 1–18) |
 | `Guides\تعليمات الطباعة - للمطبعة.pdf` | printer's instructions, 2 pages: spec, 3-part sets, proof copier test, secrecy |
 | `Guides\اختبار ورق الأمان - ماكينة التصوير.pdf` | security-paper copier test: instructions + one sample receipt (codes NOT in Phoenix) |
 | `Guides\_img\desk-top.png`, `desk-bottom.png` | real screenshots of Finance's desk |
@@ -214,7 +215,7 @@ After Dr Anwar asked what the original and Copy 2 were for, the owner settled it
 - Run with `node guides.mjs "<Guides folder>"`. It uses puppeteer-core with headless Chrome, which prints LOCAL
   HTML, so it is allowed. Check every page with `pdftoppm -r 80`.
 - It refuses to start unless the Guides folder holds `_img\desk-top.png`, `_img\desk-bottom.png` and the
-  sample book. It writes the four PDFs, then builds the copier test with pdf-lib. That file is
+  sample book. It writes five PDFs (the summary, the managers' guide, the printer's instructions, the copier page and, since 28 Nov, Finance's guide), then builds the copier test with pdf-lib. That file is
   `_copier-test-page1.pdf` plus page 2 of the sample book (receipt 1's Original).
 - **The management summary**, "ملخص للإدارة — الإدارة العليا والمالية". Dr Anwar is the CEO, so the header does
   not say "Chairman". Its sections:
@@ -233,6 +234,16 @@ After Dr Anwar asked what the original and Copy 2 were for, the owner settled it
      part-paid or a late payer, only Dr Anwar finishes it; an order without a receipt only with his approval.
   5. Refusal messages, with the two new ones ("… no new order can be raised until then", "This pharmacy has
      not paid anything on its earlier order of …").
+- **Finance's guide** (28 Nov, after PR 858): hand out and take back the books; record and correct the warehouse
+  exit; review the hand-typed originals (Approve / Reject with the reason the manager reads word for word; Finance's
+  own entries go to the Administrator); daily follow-up; Original 2 on paper and "Print the verified receipt";
+  the special cases (Undo, Ask the CEO, Cancel a spoiled receipt, Returned, Record lost); secrecy. Every label is
+  quoted from the shipped components, so re-read `receipt-books-desk.tsx` and `direct-order-receipt-panel.tsx`
+  before changing it.
+- 28 Nov: the summary's section 6 gained "Typed by hand — waiting for review", "An original still to enter — N late,
+  N not yet due" and "Approved with no receipt book"; the managers' guide gained the red rejection notice step and the
+  "Photograph the page with the camera in Phoenix. A file is not taken." refusal. The 14:25 versions are in
+  `Guides_superseded - before the hand-entry review`.
 - The guides were rebuilt for these rules on 27 Nov ~16:20, after PR 840 shipped. The 14-day versions are in
   the Guides folder's `_old versions - not for use.zip`.
 - Screenshots come from the spare's live page, signed in as Super Admin role-only, in the browser pane.
