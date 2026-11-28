@@ -9,7 +9,7 @@ import { normalizeHrIdForAccess } from "@/lib/hr-id";
 import { parseOutstationTicketAttachmentDataUrl } from "@/lib/outstation/car-evidence-storage";
 import { parseOutstationRequestId } from "@/lib/outstation/request-id";
 import { sameLegAgainRefusal } from "@/lib/outstation/return-ticket";
-import { getOutstationRequestById } from "@/lib/outstation/service";
+import { getOutstationRequestById, readTicketReuseRefusal } from "@/lib/outstation/service";
 import { readTrainTicket, signTicketScan } from "@/lib/outstation/ticket-scan";
 import { judgeTrainTicket, TICKET_SCAN_NEEDS, type TicketDateContext, type TicketVerdict } from "@/lib/outstation/ticket-scan-rules";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
@@ -100,6 +100,19 @@ export async function POST(request: Request) {
         transportation: claim.transportationType,
       });
       if (refusal) verdict = { accepted: false, ...refusal };
+    }
+    // A ticket is claimed once (owner, 2026-11-28, zero leniency): the same train or bus number on the same
+    // day, already on this claim or on another live claim of hers, is refused at the pick.
+    if (verdict.accepted && scan.status === "read") {
+      const reuse = await readTicketReuseRefusal({
+        candidates: [{ matchedTo: verdict.matchedTo, trainNumber: scan.trainNumber, travelDate: verdict.travelDate }],
+        employeeHrId: claim?.employeeHrId ?? hrId,
+        excludeRequestId: claim?.id,
+        onThisClaim: claim?.ticketAttachmentMetadata,
+        tripEndDate: context.tripEndDate,
+        tripStartDate: context.tripStartDate,
+      });
+      if (reuse) verdict = { accepted: false, ...reuse };
     }
     return NextResponse.json({
       needs: TICKET_SCAN_NEEDS,
