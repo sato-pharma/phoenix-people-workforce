@@ -28,6 +28,7 @@ import {
   DELIVERY_DUE_WORKING_DAYS,
   formatReceiptRange,
   formatReceiptSerial,
+  isPhoenixCameraFrame,
   normalizeReceiptCode,
   parseDateKey,
   parseReceiptScanToken,
@@ -125,6 +126,10 @@ async function loadHandEntriesForOrder(requestId: string): Promise<HandEntryDbRo
 /**
  * The QR read from the photo, checked against the number typed: "matched" lets the original in at once,
  * "unread" makes it a hand entry. A QR naming another receipt is refused, and written on the order.
+ *
+ * A manager photographs the page live, with no gallery (owner, 28 Nov 2026), and hiding Choose file is only the
+ * screen — so it holds here too: a manager's PDF is refused, and a manager's picture Phoenix's camera did not draw
+ * (`isPhoenixCameraFrame`) never counts on its QR alone; it waits for review. Finance may attach a file it holds.
  */
 async function photoQrVerdict(
   order: OrderForReceipt,
@@ -133,6 +138,12 @@ async function photoQrVerdict(
   serial: number,
   code: string,
 ): Promise<"matched" | "unread"> {
+  const finance = canManageDirectOrderReceiptBooks(access);
+  if (!finance && photo.contentType === "application/pdf") {
+    const message = "Photograph the page with the camera in Phoenix. A file is not taken.";
+    await recordRefusal(order, access, "bad_photo", message, serial);
+    throw validationError(message);
+  }
   const qr = classifyReceiptPhotoQr(await readReceiptQrTexts(photo.bytes, photo.contentType), { serial, code });
   if (qr.kind === "other_receipt") {
     const message =
@@ -142,7 +153,7 @@ async function photoQrVerdict(
     await recordRefusal(order, access, "qr_other_receipt", message, serial);
     throw validationError(message);
   }
-  return qr.kind;
+  return qr.kind === "matched" && !finance && !isPhoenixCameraFrame(photo) ? "unread" : qr.kind;
 }
 
 /**
@@ -181,19 +192,28 @@ async function openHandEntry(
   return String((data as { id: string }).id);
 }
 
-/** The original was not saved after all: its hand entry is closed, never left waiting for a review of nothing. */
+/**
+ * The original was not saved after all: its hand entry is closed, never left waiting for a review of nothing. Tried
+ * three times — one left waiting would block the paper (one review waits per receipt and original).
+ */
 async function closeUnsavedHandEntry(entryId: string, access: AccessContext): Promise<void> {
-  const { error } = await getSupabaseAdmin()
-    .from(HAND_ENTRIES)
-    .update({
-      status: "rejected",
-      reviewed_by_hr_id: hrIdForStorage(access.hrId),
-      reviewed_at: new Date().toISOString(),
-      review_note: "Not saved: the original was not written to the receipt.",
-    })
-    .eq("id", entryId)
-    .eq("status", "pending");
-  if (error) logError("An unsaved hand entry could not be closed", { labels: { event: "direct_order_hand_entry_close_failed", entryId }, error });
+  let lastError: unknown = null;
+  for (const waitMs of [0, 250, 1000]) {
+    if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
+    const { error } = await getSupabaseAdmin()
+      .from(HAND_ENTRIES)
+      .update({
+        status: "rejected",
+        reviewed_by_hr_id: hrIdForStorage(access.hrId),
+        reviewed_at: new Date().toISOString(),
+        review_note: "Not saved: the original was not written to the receipt.",
+      })
+      .eq("id", entryId)
+      .eq("status", "pending");
+    if (!error) return;
+    lastError = error;
+  }
+  logError("An unsaved hand entry could not be closed", { labels: { event: "direct_order_hand_entry_close_failed", entryId }, error: lastError });
 }
 
 type BookDbRow = {
@@ -450,6 +470,8 @@ export type DirectOrderReceiptPanel = {
   mayDecideWithoutReceipt: boolean;
   /** Finance may attach a file it already holds; a manager photographs the page live, with no gallery (owner, 28 Nov 2026). */
   mayChooseFile: boolean;
+  /** Who reviews an original this viewer types by hand: "Finance", or "the Administrator" for Finance's own. */
+  handEntryReviewerLabel: string;
   /**
    * The last hand-entered original a reviewer rejected and took back out, so the order tells the manager why it is
    * missing again — the reviewer's own words (rejectionToShowManager, receipt-rules.ts).
@@ -527,7 +549,10 @@ function lastRejectedOf(
   used: UsedReceiptDbRow | null,
   names: { get(hrId: string | null | undefined): string | null },
 ): DirectOrderReceiptPanel["lastRejectedHandEntry"] {
-  const rejected = rejectionToShowManager(entries, { custody: used?.photo_storage_path, delivery: used?.delivery_photo_storage_path });
+  const rejected = rejectionToShowManager(
+    entries,
+    used ? { serial: Number(used.serial), custody: used.photo_storage_path, delivery: used.delivery_photo_storage_path } : null,
+  );
   if (!rejected) return null;
   return {
     original: rejected.original,
@@ -617,6 +642,7 @@ export async function loadDirectOrderReceiptPanel(
       mayAskWithoutReceipt: finance && checkNoReceiptAsk({ standing, live, reason: "asking" }).ok,
       mayDecideWithoutReceipt: canDecideDirectOrderWithoutReceipt(access) && live?.status === "pending",
       mayChooseFile: finance,
+      handEntryReviewerLabel: handEntryReviewerLabel(isFinancesOwnHandEntry(access)),
       lastRejectedHandEntry: lastRejectedOf(handEntries, used, names),
     };
   } catch (error) {
@@ -1159,11 +1185,12 @@ export async function decideDirectOrderHandEntry(
   access: AccessContext,
   input: { requestId: string; entryId: unknown; decision: unknown; note: unknown },
 ): Promise<{ message: string }> {
+  await assertPermission(access, "direct_orders", "read");
   const entryId = String(input.entryId ?? "").trim();
   if (!isUuid(entryId) || !isUuid(input.requestId)) throw notFoundError("This hand-entered receipt was not found.");
   const decision = input.decision === "approve" ? "approved" : input.decision === "reject" ? "rejected" : null;
   if (!decision) throw validationError("Choose approve or reject.");
-  const note = String(input.note ?? "").trim();
+  const note = String(input.note ?? "").trim().slice(0, 500);
   if (decision === "rejected" && note.length < 3) throw validationError("Write why the hand-entered receipt is rejected.");
 
   const supabase = getSupabaseAdmin();
@@ -1192,12 +1219,14 @@ export async function decideDirectOrderHandEntry(
   const serialLabel = formatReceiptSerial(Number(entry.serial));
   const which = entry.original === "custody" ? "Original 1 (custody)" : "Original 2 (delivery)";
   const released = Boolean((result as { released?: boolean }).released);
+  // The reason as written, without the full stop the sentence around it adds.
+  const said = note.replace(/\.+$/, "");
   const summary =
     decision === "approved"
       ? `${which} of receipt ${serialLabel}, typed by hand, checked and approved.`
       : entry.original === "custody"
-        ? `${which} of receipt ${serialLabel}, typed by hand, rejected: ${note}. The receipt was taken off the order${released ? "" : " (it was no longer on it)"}.`
-        : `${which} of receipt ${serialLabel}, typed by hand, rejected: ${note}. Original 2 was taken back out, to be entered again.`;
+        ? `${which} of receipt ${serialLabel}, typed by hand, rejected: ${said}. ${released ? "The receipt was taken off the order." : "Nothing was taken off: it was no longer the original on the order."}`
+        : `${which} of receipt ${serialLabel}, typed by hand, rejected: ${said}. Original 2 was taken back out, to be entered again.`;
   await writeRequiredAuditLog({
     actorLoginId: access.loginId ?? access.hrId,
     entityType: "direct_order_request",
@@ -1216,7 +1245,9 @@ export async function decideDirectOrderHandEntry(
       decision === "approved"
         ? `${which} of receipt ${serialLabel} is approved.`
         : entry.original === "custody"
-          ? `${which} of receipt ${serialLabel} is rejected and the receipt is off the order. The manager enters it again.`
+          ? released
+            ? `${which} of receipt ${serialLabel} is rejected and the receipt is off the order. The manager enters it again.`
+            : `${which} of receipt ${serialLabel} is rejected. It was no longer the original on the order, so nothing was taken off.`
           : `${which} of receipt ${serialLabel} is rejected and taken back out. The manager enters it again.`,
   };
 }

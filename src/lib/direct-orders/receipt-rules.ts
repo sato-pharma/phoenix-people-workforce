@@ -617,6 +617,28 @@ export function parseReceiptQrText(text: unknown): { serial: number; code: strin
   return parseReceiptScanToken(link ? link[1] : raw);
 }
 
+/**
+ * A picture Phoenix's own camera drew: a JPEG with no EXIF block. A canvas frame never carries one; a phone photo,
+ * a saved gallery picture or a scan usually does. The server cannot see the screen, so for a manager (camera only,
+ * owner, 28 Nov 2026) only such a frame counts on its QR at once — anything else waits for review. A forged upload
+ * with its EXIF stripped still passes this; it is the check the bytes allow, not proof the page was in front of the
+ * lens.
+ */
+export function isPhoenixCameraFrame(photo: { bytes: Uint8Array; contentType: string }): boolean {
+  const b = photo.bytes;
+  if (photo.contentType !== "image/jpeg" || b.length < 4 || b[0] !== 0xff || b[1] !== 0xd8) return false;
+  let at = 2;
+  while (at + 4 <= b.length && b[at] === 0xff) {
+    const marker = b[at + 1];
+    if (marker === 0xda || marker === 0xd9) return true; // the picture starts: no EXIF came before it
+    const length = (b[at + 2] << 8) | b[at + 3];
+    if (length < 2) return false;
+    if (marker === 0xe1 && String.fromCharCode(...b.subarray(at + 4, at + 10)) === "Exif\0\0") return false;
+    at += 2 + length;
+  }
+  return true;
+}
+
 export type ReceiptPhotoQr =
   /** The QR names the typed receipt: the original goes in at once. */
   | { kind: "matched" }
@@ -676,7 +698,17 @@ export type HandEntryStatus = "pending" | "approved" | "rejected";
  */
 export const RECEIPT_O2_CLOSED_WITH_O1_NOTE = "Original 1 was rejected, so the receipt was taken off the order.";
 
+/**
+ * What Phoenix writes on a hand entry still waiting when Finance takes its receipt off the order: closed, never
+ * reviewed (20261128152929, `direct_order_release_receipt`), so it is never shown as a reason. The migration must
+ * carry this exact text (pinned by the receipt test).
+ */
+export const RECEIPT_CLOSED_BY_RELEASE_NOTE = "Not reviewed: the receipt was taken off the order.";
+
+const RECEIPT_HAND_ENTRY_CLOSING_NOTES = new Set([RECEIPT_O2_CLOSED_WITH_O1_NOTE, RECEIPT_CLOSED_BY_RELEASE_NOTE]);
+
 export type RejectedHandEntryCandidate = {
+  serial: number;
   original: "custody" | "delivery";
   status: HandEntryStatus;
   entered_by_hr_id: string;
@@ -691,12 +723,15 @@ export type RejectedHandEntryCandidate = {
  * while that original is still missing from the order:
  * - the closing note on an Original 2 that left with a rejected Original 1 is never it — the Original 1 decision is,
  *   and when both carry the same instant Original 1 comes first;
+ * - a hand entry closed because Finance took its receipt off the order was never reviewed, so it is no rejection;
  * - a hand entry its own author closed (the original was never saved) is no rejection;
- * - once the original is on the order again, nothing is shown.
+ * - Original 1 rejected: the receipt left the order, so it is said until a receipt is on the order again;
+ * - Original 2 rejected: only for the receipt still on the order, its Original 1 there and its Original 2 missing —
+ *   never for a receipt taken off since, or another receipt entered in its place.
  */
 export function rejectionToShowManager<T extends RejectedHandEntryCandidate>(
   entries: readonly T[],
-  standing: { custody: string | null | undefined; delivery: string | null | undefined },
+  onOrder: { serial: number; custody: string | null | undefined; delivery: string | null | undefined } | null,
 ): T | null {
   const decided = entries
     .filter(
@@ -704,7 +739,7 @@ export function rejectionToShowManager<T extends RejectedHandEntryCandidate>(
         e.status === "rejected" &&
         Boolean(e.reviewed_by_hr_id) &&
         e.reviewed_by_hr_id !== e.entered_by_hr_id &&
-        (e.review_note ?? "").trim() !== RECEIPT_O2_CLOSED_WITH_O1_NOTE,
+        !RECEIPT_HAND_ENTRY_CLOSING_NOTES.has((e.review_note ?? "").trim()),
     )
     .sort((a, b) => {
       const at = Date.parse(b.reviewed_at ?? "") - Date.parse(a.reviewed_at ?? "");
@@ -713,5 +748,6 @@ export function rejectionToShowManager<T extends RejectedHandEntryCandidate>(
     });
   const newest = decided[0];
   if (!newest) return null;
-  return (newest.original === "custody" ? standing.custody : standing.delivery) ? null : newest;
+  if (newest.original === "custody") return onOrder ? null : newest;
+  return onOrder && Number(newest.serial) === onOrder.serial && onOrder.custody && !onOrder.delivery ? newest : null;
 }

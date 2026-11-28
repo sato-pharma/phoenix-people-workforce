@@ -37,6 +37,7 @@ import {
   classifyOrderReceipt,
   classifyReceiptPhotoQr,
   decideReceiptScan,
+  isPhoenixCameraFrame,
   normalizeReceiptCode,
   parseDateKey,
   parseReceiptQrText,
@@ -47,6 +48,7 @@ import {
   receiptEntryBookFor,
   receiptLateness,
   receiptRolloutStart,
+  RECEIPT_CLOSED_BY_RELEASE_NOTE,
   RECEIPT_O2_CLOSED_WITH_O1_NOTE,
   RECEIPT_QR_LOCK_START,
   RECEIPT_QR_LOCK_WINDOW_MS,
@@ -449,28 +451,40 @@ function photoQrPureTests() {
 /** THE REJECTION THE MANAGER IS SHOWN, with the reviewer's own reason (owner, 28 Nov 2026). */
 function rejectionShownPureTests() {
   const rejected = (original: "custody" | "delivery", note: string, at: string, by = "B-185", author = "AI-0001") => ({
-    original, status: "rejected" as const, entered_by_hr_id: author, reviewed_by_hr_id: by, reviewed_at: at, review_note: note,
+    serial: 8, original, status: "rejected" as const, entered_by_hr_id: author, reviewed_by_hr_id: by, reviewed_at: at, review_note: note,
   });
   const T1 = "2026-12-20T10:00:00.000Z";
   const T2 = "2026-12-20T11:00:00.000Z";
-  const missing = { custody: null, delivery: null };
+  const missing = null;
   const o1 = rejected("custody", "الكود المكتوب مش هو اللي في الصورة", T1);
   const o2Closed = rejected("delivery", RECEIPT_O2_CLOSED_WITH_O1_NOTE, T1);
   assert.equal(rejectionToShowManager([o2Closed, o1], missing), o1, "Original 1 rejected: its reason is shown, never Original 2's closing note");
   assert.equal(rejectionToShowManager([rejected("delivery", "another note", T1), o1], missing), o1, "the same instant: Original 1's decision comes first");
   assert.equal(rejectionToShowManager([o2Closed], missing), null, "a closing note alone is never a reason");
   const o2 = rejected("delivery", "The stamp on the page is not the customer's", T1);
-  assert.equal(rejectionToShowManager([o2], { custody: "r/o1.jpg", delivery: null }), o2, "Original 2 rejected alone: its own reason");
-  assert.equal(rejectionToShowManager([o2], { custody: "r/o1.jpg", delivery: "r/o2-again.jpg" }), null, "entered again: nothing is shown");
-  assert.equal(rejectionToShowManager([o2Closed, o1], { custody: "r/o1-again.jpg", delivery: null }), null, "Original 1 entered again: the closing note never takes its place");
+  assert.equal(rejectionToShowManager([o2], { serial: 8, custody: "r/o1.jpg", delivery: null }), o2, "Original 2 rejected alone: its own reason");
+  assert.equal(rejectionToShowManager([o2], { serial: 8, custody: "r/o1.jpg", delivery: "r/o2-again.jpg" }), null, "entered again: nothing is shown");
+  assert.equal(rejectionToShowManager([o2Closed, o1], { serial: 8, custody: "r/o1-again.jpg", delivery: null }), null, "Original 1 entered again: the closing note never takes its place");
   assert.equal(rejectionToShowManager([rejected("custody", "Not saved: the original was not written to the receipt.", T1, "AI-0001")], missing), null, "an entry its own author closed is no rejection");
   const first = rejected("delivery", "first reason", T1);
   const second = rejected("custody", "second reason", T2);
   assert.equal(rejectionToShowManager([first, second], missing), second, "the newest decision, whatever was entered last");
   assert.equal(rejectionToShowManager([{ ...o1, status: "pending" as const }, { ...o1, status: "approved" as const }], missing), null, "only a rejection");
-  // The database writes the closing note itself: it must be this exact text, or the filter above would miss it.
-  const migration = readFileSync(new URL("../supabase/migrations/20261128134224_direct_order_receipt_hand_entries.sql", import.meta.url), "utf8");
+  // The code review of 28 Nov 2026: never a rejection of a receipt that is not the one on the order now.
+  const o2Late = rejected("delivery", "The stamp on the page is not the customer's", T2);
+  assert.equal(rejectionToShowManager([o2Late], { serial: 9, custody: "r/o1-9.jpg", delivery: null }), null, "another receipt on the order: receipt 8's Original 2 rejection is never shown");
+  assert.equal(rejectionToShowManager([o2Late], missing), null, "no receipt on the order: no Original 2 rejection is shown");
+  assert.equal(rejectionToShowManager([o1], { serial: 9, custody: "r/o1-9.jpg", delivery: null }), null, "another receipt entered in its place: Original 1's rejection goes");
+  assert.equal(rejectionToShowManager([rejected("custody", RECEIPT_CLOSED_BY_RELEASE_NOTE, T2), o1], missing), o1, "a review closed by a release is never the reason");
+  // The database writes the closing notes itself: they must be this exact text, or the filter above would miss them.
+  const migration = readFileSync(new URL("../supabase/migrations/20261128152929_direct_order_receipt_hand_entry_review_fixes.sql", import.meta.url), "utf8");
   assert.ok(migration.includes(`review_note = '${RECEIPT_O2_CLOSED_WITH_O1_NOTE}'`), "the migration's closing note is RECEIPT_O2_CLOSED_WITH_O1_NOTE, word for word");
+  assert.ok(migration.includes(`review_note = '${RECEIPT_CLOSED_BY_RELEASE_NOTE}'`), "a release closes a waiting review with RECEIPT_CLOSED_BY_RELEASE_NOTE, word for word");
+  const decideSql = migration.slice(migration.indexOf("create or replace function public.direct_order_decide_hand_entry"));
+  const receiptLock = decideSql.indexOf("from public.direct_order_receipts r where r.serial = v_serial for update");
+  const entryLock = decideSql.indexOf("from public.direct_order_receipt_hand_entries e where e.id = p_entry_id for update");
+  assert.ok(receiptLock > 0 && entryLock > receiptLock, "the receipt is locked before the hand entry, as everywhere else");
+  assert.ok(decideSql.includes("and v_receipt.photo_storage_path = v_entry.photo_storage_path then"), "Original 1 is released only when its photo is the one on the order");
   // The notice the manager reads: the reason on its own line, never folded into a sentence, its direction from its words.
   const panel = readFileSync(new URL("../src/components/direct-orders/direct-order-receipt-panel.tsx", import.meta.url), "utf8").replace(/\s+/g, " ");
   assert.ok(
@@ -478,6 +492,7 @@ function rejectionShownPureTests() {
     "the rejected-original notice shows the reviewer's reason on a line of its own",
   );
   assert.ok(panel.includes("{panel.lastRejectedHandEntry ? <RejectedHandEntryNotice rejected={panel.lastRejectedHandEntry} /> : null}"), "and the order panel draws it");
+  assert.ok(panel.includes("waits for {reviewerLabel} to check the photo"), "the typed-entry form names who checks it");
 }
 
 async function photoQrReaderTests() {
@@ -601,39 +616,48 @@ function databaseFunctions(): StandIn["rpc"] {
         state: "unused", request_id: null, photo_storage_path: null, used_by_hr_id: null, used_at: null,
         delivery_photo_storage_path: null, delivery_photo_content_type: null, delivery_entered_by_hr_id: null, delivery_entered_at: null,
       });
+      // 20261128152929: a review still waiting on the receipt is closed with it.
+      decisions += 1;
+      const closedAt = new Date(NOW.getTime() + decisions * 60_000).toISOString();
+      for (const e of standIn.tables.direct_order_receipt_hand_entries) {
+        if (e.serial === args.p_serial && e.request_id === args.p_request_id && e.status === "pending") {
+          Object.assign(e, { status: "rejected", reviewed_by_hr_id: args.p_actor_hr_id, reviewed_at: closedAt, review_note: RECEIPT_CLOSED_BY_RELEASE_NOTE });
+        }
+      }
       return {
         released: true, serial: before.serial, book_no: before.book_no, photo_storage_path: before.photo_storage_path,
         delivery_photo_storage_path: before.delivery_photo_storage_path ?? null, used_by_hr_id: before.used_by_hr_id, used_at: before.used_at,
       };
     },
-    // 20261128134224: rejecting Original 1 releases the receipt; rejecting Original 2 clears only Original 2.
+    // 20261128152929: the decision is written first; rejecting Original 1 releases the receipt only when its photo is
+    // still the Original 1 on the order; rejecting Original 2 clears only Original 2.
     direct_order_decide_hand_entry: (args, standIn) => {
       const entry = standIn.tables.direct_order_receipt_hand_entries.find((e) => e.id === args.p_entry_id);
       if (!entry || entry.status !== "pending") return { decided: false };
       decisions += 1;
       const at = new Date(NOW.getTime() + decisions * 60_000).toISOString();
+      Object.assign(entry, { status: args.p_decision, reviewed_by_hr_id: args.p_actor_hr_id, reviewed_at: at, review_note: args.p_note ?? null });
       let released = false;
       if (args.p_decision === "rejected") {
+        const r = standIn.tables.direct_order_receipts.find((row) => row.serial === entry.serial);
         if (entry.original === "custody") {
-          const answer = fns.direct_order_release_receipt(
-            { p_serial: entry.serial, p_request_id: entry.request_id, p_actor_hr_id: args.p_actor_hr_id, p_reason: `Hand-entered Original 1 rejected: ${String(args.p_note)}` },
-            standIn,
-          ) as { released?: boolean };
-          released = Boolean(answer.released);
-          // Original 2 went with the receipt: a hand entry waiting on it is closed in the same instant.
-          for (const other of standIn.tables.direct_order_receipt_hand_entries) {
-            if (other.serial === entry.serial && other.request_id === entry.request_id && other.status === "pending" && other.id !== entry.id) {
-              Object.assign(other, { status: "rejected", reviewed_by_hr_id: args.p_actor_hr_id, reviewed_at: at, review_note: RECEIPT_O2_CLOSED_WITH_O1_NOTE });
+          if (r && r.state === "used" && r.request_id === entry.request_id && r.photo_storage_path === entry.photo_storage_path) {
+            // Original 2 goes with the receipt: a hand entry waiting on it is closed in the same instant.
+            for (const other of standIn.tables.direct_order_receipt_hand_entries) {
+              if (other.serial === entry.serial && other.request_id === entry.request_id && other.status === "pending" && other.id !== entry.id) {
+                Object.assign(other, { status: "rejected", reviewed_by_hr_id: args.p_actor_hr_id, reviewed_at: at, review_note: RECEIPT_O2_CLOSED_WITH_O1_NOTE });
+              }
             }
+            const answer = fns.direct_order_release_receipt(
+              { p_serial: entry.serial, p_request_id: entry.request_id, p_actor_hr_id: args.p_actor_hr_id, p_reason: `Hand-entered Original 1 rejected: ${String(args.p_note)}` },
+              standIn,
+            ) as { released?: boolean };
+            released = Boolean(answer.released);
           }
-        } else {
-          const r = standIn.tables.direct_order_receipts.find((row) => row.serial === entry.serial);
-          if (r && r.request_id === entry.request_id && r.delivery_photo_storage_path === entry.photo_storage_path) {
-            Object.assign(r, { delivery_photo_storage_path: null, delivery_photo_content_type: null, delivery_entered_by_hr_id: null, delivery_entered_at: null });
-          }
+        } else if (r && r.request_id === entry.request_id && r.delivery_photo_storage_path === entry.photo_storage_path) {
+          Object.assign(r, { delivery_photo_storage_path: null, delivery_photo_content_type: null, delivery_entered_by_hr_id: null, delivery_entered_at: null });
         }
       }
-      Object.assign(entry, { status: args.p_decision, reviewed_by_hr_id: args.p_actor_hr_id, reviewed_at: at, review_note: args.p_note ?? null });
       return { decided: true, serial: entry.serial, request_id: entry.request_id, original: entry.original, decision: args.p_decision, released };
     },
   };
@@ -1023,6 +1047,50 @@ async function behaviourTests() {
 }
 
 /**
+ * CAMERA ONLY HOLDS ON THE SERVER (code review of PR 858, 28 Nov 2026). Hiding Choose file is only the screen: a
+ * manager's PDF is refused, and a manager's picture Phoenix's camera did not draw — a phone or gallery photo carries
+ * EXIF — never counts on its QR alone; it waits for review. Finance may attach what it holds.
+ */
+async function managerCameraOnlyTests() {
+  const jpeg = (...rest: number[]) => ({ bytes: new Uint8Array([0xff, 0xd8, ...rest]), contentType: "image/jpeg" });
+  const exif = [0xff, 0xe1, 0x00, 0x0a, 0x45, 0x78, 0x69, 0x66, 0x00, 0x00, 0x01, 0x02, 0xff, 0xda, 9, 9];
+  assert.equal(isPhoenixCameraFrame(jpeg(0xff, 0xe0, 0x00, 0x04, 1, 2, 0xff, 0xda, 9)), true, "a canvas frame: no EXIF");
+  assert.equal(isPhoenixCameraFrame(jpeg(...exif)), false, "a phone or gallery photo carries EXIF");
+  assert.equal(isPhoenixCameraFrame(jpeg(0xff, 0xe1, 0x00, 0x08, 0x68, 0x74, 0x74, 0x70, 0x3a, 0x2f, 0xff, 0xda)), true, "an XMP block is not EXIF");
+  assert.equal(isPhoenixCameraFrame({ bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47]), contentType: "image/png" }), false, "a PNG is no camera frame");
+  assert.equal(isPhoenixCameraFrame({ bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46]), contentType: "application/pdf" }), false, "a PDF is no camera frame");
+
+  const LINK = "https://phoenix-hr.satopharma.com/r/";
+  const PDF = `data:application/pdf;base64,${Buffer.from("%PDF-1.4 page").toString("base64")}`;
+  const GALLERY = `data:image/jpeg;base64,${Buffer.from([0xff, 0xd8, ...exif]).toString("base64")}`;
+  const standIn: StandIn = { tables: tables(), rpc: databaseFunctions() };
+  await withPostgrestStandIn(standIn, async () => {
+    const hand = standIn.tables.direct_order_receipt_hand_entries;
+    const receipts = standIn.tables.direct_order_receipts;
+    __setReceiptQrReaderForTests(async () => [`${LINK}000007-AB3K7Q`]);
+    await withStoredUploads(async () => {
+      await rejectsWith(
+        recordDirectOrderReceipt(MOMEN, { requestId: ORDER_A, serial: "7", code: "AB3K7Q", photoDataUrl: PDF }),
+        /camera in Phoenix/,
+        "a manager's PDF is refused on the server",
+      );
+    });
+    assert.equal(receipts.find((r) => r.serial === 7)?.state, "unused", "nothing claimed from a manager's PDF");
+    await withStoredUploads(async () => {
+      const result = await recordDirectOrderReceipt(MOMEN, { requestId: ORDER_A, serial: "7", code: "AB3K7Q", photoDataUrl: GALLERY });
+      assert.equal(result.pendingReview, true, "a manager's gallery photo never counts on its QR alone: it waits for review");
+    });
+    assert.deepEqual(hand.map((e) => [e.serial, e.status]), [[7, "pending"]], "a review is opened for it");
+    __setReceiptQrReaderForTests(async () => [`${LINK}000008-C9D2EF`]);
+    await withStoredUploads(async () => {
+      const result = await recordDirectOrderReceipt(FINANCE, { requestId: ORDER_B, serial: "8", code: "C9D2EF", photoDataUrl: GALLERY });
+      assert.equal(result.pendingReview, false, "Finance may attach a file it holds: its read QR counts at once");
+    });
+  });
+  __setReceiptQrReaderForTests(async () => []);
+}
+
+/**
  * THE QR IN THE PHOTO (owner, 28 Nov 2026: "لايف مش ابلود"; "المدير يدخله مانوال بس يروح للريفيو، ما
  * يدخلش اوتوماتيك"). A photo whose QR names the typed receipt is in at once; one naming another receipt is
  * refused; one whose QR is not read is saved but waits for review — Finance for a manager's, the Super
@@ -1163,6 +1231,63 @@ async function photoQrBehaviourTests() {
     assert.equal(((await loadDirectOrderReceiptPanel(MOMEN, ORDER_B)) as DirectOrderReceiptPanel).lastRejectedHandEntry, null, "Original 2 entered again: the notice goes");
     __setReceiptQrReaderForTests(async () => []);
 
+    // The typed-entry form names who checks it: Finance for a manager, the Administrator for Finance.
+    assert.equal(((await loadDirectOrderReceiptPanel(MOMEN, ORDER_B)) as DirectOrderReceiptPanel).handEntryReviewerLabel, "Finance");
+    assert.equal(((await loadDirectOrderReceiptPanel(FINANCE, ORDER_B)) as DirectOrderReceiptPanel).handEntryReviewerLabel, "the Administrator");
+
+    // Finance takes receipt 8 off: the Original 2 rejected before is never said on an order with no receipt.
+    await releaseDirectOrderReceipt(FINANCE, { requestId: ORDER_B, reason: "Entered on the wrong order" });
+    assert.equal(((await loadDirectOrderReceiptPanel(MOMEN, ORDER_B)) as DirectOrderReceiptPanel).lastRejectedHandEntry, null, "no receipt on the order: no Original 2 rejection is shown");
+
+    // The claim fails and closing its review fails once: it is tried again, so nothing is left waiting.
+    let closeAttempts = 0;
+    standIn.failWrites = {
+      direct_order_receipts: (call) => (call.method === "PATCH" ? { status: 400, body: { code: "P0001", message: "Receipt book 1 is lost" } } : null),
+      direct_order_receipt_hand_entries: (call) => (call.method === "PATCH" && closeAttempts++ === 0 ? { status: 503, body: { code: "PGRST000", message: "connection lost" } } : null),
+    };
+    await withStoredUploads(async () => {
+      await rejectsWith(recordDirectOrderReceipt(MOMEN, { requestId: ORDER_B, serial: "8", code: "C9D2EF", photoDataUrl: PHOTO }), /./, "the claim is refused");
+    });
+    standIn.failWrites = undefined;
+    const unsaved = hand.at(-1);
+    assert.deepEqual(
+      [unsaved?.status, unsaved?.review_note, closeAttempts],
+      ["rejected", "Not saved: the original was not written to the receipt.", 2],
+      "a failed close is tried again: an original never saved leaves no review waiting",
+    );
+
+    // A review still waiting is closed when Finance takes its receipt off, and leaves Finance's desk.
+    await withStoredUploads(async () => {
+      await recordDirectOrderReceipt(MOMEN, { requestId: ORDER_B, serial: "8", code: "C9D2EF", photoDataUrl: PHOTO });
+    });
+    const waiting = hand.find((e) => e.original === "custody" && e.status === "pending");
+    assert.ok(waiting, "typed by hand: it waits");
+    await releaseDirectOrderReceipt(FINANCE, { requestId: ORDER_B, reason: "Entered on the wrong order" });
+    assert.deepEqual([waiting.status, waiting.review_note], ["rejected", RECEIPT_CLOSED_BY_RELEASE_NOTE], "the release closes the review with it");
+    assert.equal((await loadDirectOrderReceiptRegister(FINANCE)).handEntries.some((e) => e.entryId === waiting.id), false, "and it leaves Finance's desk");
+
+    // A review left over from before — its photo no longer the Original 1 on the order — never takes the newer one off.
+    __setReceiptQrReaderForTests(async () => [`${LINK}000008-C9D2EF`]);
+    await withStoredUploads(async () => {
+      await recordDirectOrderReceipt(MOMEN, { requestId: ORDER_B, serial: "8", code: "C9D2EF", photoDataUrl: PHOTO });
+    });
+    __setReceiptQrReaderForTests(async () => []);
+    const leftover = (id: string, original: "custody" | "delivery") => ({
+      id, serial: 8, request_id: ORDER_B, original, photo_storage_path: `direct-order-receipts/old-${original}.jpg`, entered_by_hr_id: "AI-0001",
+      entered_by_finance: false, entered_at: "2026-12-20T08:00:00.000Z", status: "pending", reviewed_by_hr_id: null, reviewed_at: null, review_note: null,
+    });
+    hand.push(leftover("77777777-7777-4777-8777-777777777777", "custody"));
+    const staleTold = await decideDirectOrderHandEntry(FINANCE, { requestId: ORDER_B, entryId: "77777777-7777-4777-8777-777777777777", decision: "reject", note: "An older photo of this page." });
+    assert.match(staleTold.message, /nothing was taken off/);
+    assert.deepEqual([receipts.find((r) => r.serial === 8)?.state, receipts.find((r) => r.serial === 8)?.request_id], ["used", ORDER_B], "the QR-read Original 1 stays on the order");
+    const staleEvent = String(standIn.tables.direct_order_events.at(-1)?.message ?? "");
+    assert.match(staleEvent, /rejected: An older photo of this page\. Nothing was taken off/, "the order says what happened");
+    assert.equal(staleEvent.includes(".."), false, "the reason's own full stop is never doubled");
+    // A reason is kept to the 500 characters the box allows, whoever sends it.
+    hand.push(leftover("88888888-8888-4888-8888-888888888888", "delivery"));
+    await decideDirectOrderHandEntry(FINANCE, { requestId: ORDER_B, entryId: "88888888-8888-4888-8888-888888888888", decision: "reject", note: "x".repeat(600) });
+    assert.equal(String(hand.find((e) => e.id === "88888888-8888-4888-8888-888888888888")?.review_note).length, 500, "a reason is cut at 500 characters");
+
     // Finance's own hand entry goes to the Super Admin alone, and an approval keeps the original.
     hand.push({
       id: OWN_ENTRY,
@@ -1196,6 +1321,7 @@ export async function runDirectOrderReceiptBooksTests() {
   try {
     await behaviourTests();
     await photoQrBehaviourTests();
+    await managerCameraOnlyTests();
     await photoQrReaderTests();
   } finally {
     __setReceiptQrReaderForTests(null);

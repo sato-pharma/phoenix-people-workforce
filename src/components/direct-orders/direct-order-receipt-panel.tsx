@@ -202,6 +202,7 @@ export function DirectOrderReceiptPanel({ requestId, panel: given }: { requestId
             } Hold the signed page in front of the camera: it saves as soon as its QR is read. A receipt proves one order only and can never be used again.`}
             expectedSerial={null}
             mayChooseFile={panel.mayChooseFile}
+            reviewerLabel={panel.handEntryReviewerLabel}
             requestId={requestId}
           />
         ) : null}
@@ -213,6 +214,7 @@ export function DirectOrderReceiptPanel({ requestId, panel: given }: { requestId
             intro={`Original 2 — the page the customer signed and stamped. It carries the same number, ${panel.receipt.serialLabel}, and the same code as Original 1. Tear off its carbon copy for the customer, then hold Original 2 in front of the camera: it saves as soon as its QR is read.`}
             expectedSerial={parseReceiptSerial(panel.receipt.serialLabel)}
             mayChooseFile={panel.mayChooseFile}
+            reviewerLabel={panel.handEntryReviewerLabel}
             requestId={requestId}
           />
         ) : null}
@@ -261,6 +263,7 @@ function OriginalEntry({
   buttonLabel,
   expectedSerial,
   mayChooseFile,
+  reviewerLabel,
 }: {
   requestId: string;
   action?: "delivery";
@@ -269,6 +272,8 @@ function OriginalEntry({
   /** Original 2 must carry Original 1's number; null for Original 1. */
   expectedSerial: number | null;
   mayChooseFile: boolean;
+  /** Who checks an original typed by hand here: "Finance", or "the Administrator" for Finance's own. */
+  reviewerLabel: string;
 }) {
   const router = useRouter();
   const cameraRef = useRef<HTMLInputElement | null>(null);
@@ -360,7 +365,7 @@ function OriginalEntry({
       {typed ? (
         <>
           <p className="text-phx-sm text-slate-700">
-            Typed by hand, this original is saved with the order but waits for Finance to check the photo before it counts. If the QR reads in the photo, it counts at once.
+            Typed by hand, this original is saved with the order but waits for {reviewerLabel} to check the photo before it counts. If the QR reads in the photo, it counts at once.
           </p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <FormField label="Receipt number" required hint="Six digits, at the top of the page" htmlFor={`receipt-serial-${key}`}>

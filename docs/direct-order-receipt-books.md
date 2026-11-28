@@ -215,6 +215,20 @@ The owner's words: "لايف مش ابلود … منوره بالاحمر طو�
   and the page reads Original 2 first — so that closing note is never shown as the reason, and on a tie Original 1
   comes first. Until 28 Nov 2026 the order showed "Original 2 … Original 1 was rejected, so the receipt was taken
   off the order" instead of Finance's words.
+- **A review never outlives its receipt** (migration `20261128152929_direct_order_receipt_hand_entry_review_fixes`,
+  from the code review of PR 858, 28 Nov 2026). Taking a receipt off the order closes every review still waiting on
+  it with `RECEIPT_CLOSED_BY_RELEASE_NOTE` ("Not reviewed: the receipt was taken off the order."), which is never
+  shown as a reason. Rejecting Original 1 takes the receipt off only when that entry's photo is still Original 1 on
+  the receipt of its order, so a stale review never removes a newer, QR-read original; the order then says nothing
+  was taken off. The decision locks the receipt before the hand entry, the same order as every other function, so
+  two reviewers of one receipt never deadlock. Measured on staging before the fix: the review stayed pending after
+  the release, and rejecting it released the receipt entered again; after it: closed, and the receipt stayed. An
+  Original 2 rejection shows only for the receipt still on the order with its Original 1 and without its Original 2.
+  A reason is cut at 500 characters, and an unsaved original is closed with up to three tries.
+- **Camera only holds on the server too** (`photoQrVerdict`, `isPhoenixCameraFrame`): a manager's PDF is refused,
+  and a manager's picture Phoenix's camera did not draw (a phone or gallery photo carries EXIF; a canvas frame
+  never does) waits for review even when its QR reads. Finance may attach a file it holds. A forged upload with its
+  EXIF stripped still counts: the bytes cannot prove the page was in front of the lens.
 - **Where it shows:** each original on the order says whether its QR was read or it waits; Finance's Receipt Books
   desk lists every entry waiting, with its photo and the Approve and Reject buttons; the verified print says for
   each original whether its QR was read, or it was typed by hand and approved, or it still waits.

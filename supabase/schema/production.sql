@@ -6399,6 +6399,7 @@ CREATE FUNCTION public.direct_order_decide_hand_entry(p_entry_id uuid, p_actor_h
     SET search_path TO 'public', 'pg_temp'
     AS $$
 declare
+  v_serial integer;
   v_entry public.direct_order_receipt_hand_entries%rowtype;
   v_receipt public.direct_order_receipts%rowtype;
   v_released jsonb;
@@ -6412,21 +6413,36 @@ begin
   if p_decision = 'rejected' and length(btrim(coalesce(p_note, ''))) < 3 then
     raise exception 'Write why the hand-entered receipt is rejected.' using errcode = '22023';
   end if;
+  -- The receipt first, then the hand entry: the lock order of every function that touches both.
+  select e.serial into v_serial from public.direct_order_receipt_hand_entries e where e.id = p_entry_id;
+  if not found then
+    return jsonb_build_object('decided', false);
+  end if;
+  select * into v_receipt from public.direct_order_receipts r where r.serial = v_serial for update;
   select * into v_entry from public.direct_order_receipt_hand_entries e where e.id = p_entry_id for update;
   if not found or v_entry.status <> 'pending' then
     return jsonb_build_object('decided', false);
   end if;
-  select * into v_receipt from public.direct_order_receipts r where r.serial = v_entry.serial for update;
+
+  update public.direct_order_receipt_hand_entries e
+     set status = p_decision, reviewed_by_hr_id = btrim(p_actor_hr_id), reviewed_at = now(),
+         review_note = nullif(btrim(coalesce(p_note, '')), '')
+   where e.id = v_entry.id;
 
   if p_decision = 'rejected' then
     if v_entry.original = 'custody' then
-      v_released := public.direct_order_release_receipt(
-        v_entry.serial, v_entry.request_id, btrim(p_actor_hr_id), 'Hand-entered Original 1 rejected: ' || btrim(p_note)
-      );
-      update public.direct_order_receipt_hand_entries e
-         set status = 'rejected', reviewed_by_hr_id = btrim(p_actor_hr_id), reviewed_at = now(),
-             review_note = 'Original 1 was rejected, so the receipt was taken off the order.'
-       where e.serial = v_entry.serial and e.request_id = v_entry.request_id and e.status = 'pending' and e.id <> v_entry.id;
+      -- Only the Original 1 this entry photographed: a stale entry never takes a newer original off the order.
+      if v_receipt.state = 'used' and v_receipt.request_id = v_entry.request_id
+         and v_receipt.photo_storage_path = v_entry.photo_storage_path then
+        -- Original 2 goes with the receipt: a hand entry waiting on it has nothing left to review.
+        update public.direct_order_receipt_hand_entries e
+           set status = 'rejected', reviewed_by_hr_id = btrim(p_actor_hr_id), reviewed_at = now(),
+               review_note = 'Original 1 was rejected, so the receipt was taken off the order.'
+         where e.serial = v_entry.serial and e.request_id = v_entry.request_id and e.status = 'pending' and e.id <> v_entry.id;
+        v_released := public.direct_order_release_receipt(
+          v_entry.serial, v_entry.request_id, btrim(p_actor_hr_id), 'Hand-entered Original 1 rejected: ' || btrim(p_note)
+        );
+      end if;
     elsif v_receipt.state = 'used' and v_receipt.request_id = v_entry.request_id
           and v_receipt.delivery_photo_storage_path = v_entry.photo_storage_path then
       perform set_config('phoenix.receipt_delivery_clear', v_entry.serial::text, true);
@@ -6437,11 +6453,6 @@ begin
       perform set_config('phoenix.receipt_delivery_clear', '', true);
     end if;
   end if;
-
-  update public.direct_order_receipt_hand_entries e
-     set status = p_decision, reviewed_by_hr_id = btrim(p_actor_hr_id), reviewed_at = now(),
-         review_note = nullif(btrim(coalesce(p_note, '')), '')
-   where e.id = v_entry.id;
 
   return jsonb_build_object(
     'decided', true,
@@ -6648,6 +6659,11 @@ begin
          updated_at = now()
    where r.serial = p_serial;
   perform set_config('phoenix.receipt_release', '', true);
+  -- The originals left with the receipt: a review still waiting on them has nothing left to check.
+  update public.direct_order_receipt_hand_entries e
+     set status = 'rejected', reviewed_by_hr_id = btrim(p_actor_hr_id), reviewed_at = now(),
+         review_note = 'Not reviewed: the receipt was taken off the order.'
+   where e.serial = p_serial and e.request_id = p_request_id and e.status = 'pending';
   return jsonb_build_object(
     'released', true,
     'serial', v_receipt.serial,
@@ -12274,6 +12290,58 @@ end;
 $$;
 
 ALTER FUNCTION public.phoenix_crm_expire_plan_edit_requests(p jsonb) OWNER TO postgres;
+
+--
+-- Name: phoenix_crm_focus_visits(uuid[], boolean, date, date); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phoenix_crm_focus_visits(p_customer_ids uuid[], p_is_test boolean, p_from date, p_to date) RETURNS jsonb
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  with period as (
+    select v.customer_id, v.visit_date, v.kind
+    from public.phoenix_crm_countable_visits v
+    where v.customer_id = any (p_customer_ids)
+      and v.is_test = p_is_test
+      and v.archived_at is null
+      and v.visit_date between p_from and p_to
+  ),
+  latest as (
+    select distinct on (v.customer_id)
+           v.customer_id, v.visit_date, v.captured_at, v.kind, v.rep_hr_id, v.manager_hr_id, v.place_id,
+           v.imported_from_ireports360_at is not null as imported
+    from public.phoenix_crm_countable_visits_with_history v
+    where v.customer_id = any (p_customer_ids)
+      and v.is_test = p_is_test
+      and v.archived_at is null
+    order by v.customer_id, v.visit_date desc, v.captured_at desc nulls last, v.id desc
+  )
+  select jsonb_build_object(
+    'period', coalesce((
+      select jsonb_agg(jsonb_build_object('customer_id', p.customer_id, 'visit_date', p.visit_date, 'kind', p.kind)
+                       order by p.customer_id, p.visit_date)
+      from period p
+    ), '[]'::jsonb),
+    'latest', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'customer_id', l.customer_id, 'visit_date', l.visit_date, 'captured_at', l.captured_at, 'kind', l.kind,
+        'rep_hr_id', l.rep_hr_id, 'manager_hr_id', l.manager_hr_id, 'imported', l.imported,
+        'place_label', pl.label, 'place_address', pl.address, 'brick_name', pl.brick_name
+      ) order by l.customer_id)
+      from latest l
+      left join public.phoenix_crm_places pl on pl.id = l.place_id
+    ), '[]'::jsonb)
+  );
+$$;
+
+ALTER FUNCTION public.phoenix_crm_focus_visits(p_customer_ids uuid[], p_is_test boolean, p_from date, p_to date) OWNER TO postgres;
+
+--
+-- Name: FUNCTION phoenix_crm_focus_visits(p_customer_ids uuid[], p_is_test boolean, p_from date, p_to date); Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON FUNCTION public.phoenix_crm_focus_visits(p_customer_ids uuid[], p_is_test boolean, p_from date, p_to date) IS 'Phoenix CRM Focus list tracking (2026-11-28): the countable visits to these customers inside [p_from, p_to], and each one''s latest visit ever with its place.';
 
 --
 -- Name: phoenix_crm_fold_name(text); Type: FUNCTION; Schema: public; Owner: postgres
@@ -69030,6 +69098,47 @@ CREATE TABLE public.phoenix_crm_field_camera_releases (
 ALTER TABLE public.phoenix_crm_field_camera_releases OWNER TO postgres;
 
 --
+-- Name: phoenix_crm_focus_customers; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.phoenix_crm_focus_customers (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    seat_id text NOT NULL,
+    line_code text,
+    customer_id uuid NOT NULL,
+    reason text NOT NULL,
+    reason_pick text,
+    pushed_by_hr_id text NOT NULL,
+    pushed_as text NOT NULL,
+    pushed_at timestamp with time zone DEFAULT now() NOT NULL,
+    review_status text DEFAULT 'waiting'::text NOT NULL,
+    reviewed_by_hr_id text,
+    reviewed_at timestamp with time zone,
+    returned_at timestamp with time zone,
+    returned_by_hr_id text,
+    returned_as text,
+    return_note text,
+    is_test boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT phoenix_crm_focus_customers_kept_is_stamped CHECK (((review_status = 'waiting'::text) OR ((reviewed_by_hr_id IS NOT NULL) AND (reviewed_at IS NOT NULL)))),
+    CONSTRAINT phoenix_crm_focus_customers_pushed_as_known CHECK ((pushed_as = ANY (ARRAY['rep'::text, 'manager'::text]))),
+    CONSTRAINT phoenix_crm_focus_customers_reason_pick_known CHECK (((reason_pick IS NULL) OR (reason_pick = ANY (ARRAY['high_potential'::text, 'competitor_prescriber'::text, 'key_opinion_leader'::text, 'growing_prescriber'::text, 'new_prescriber'::text, 'other'::text])))),
+    CONSTRAINT phoenix_crm_focus_customers_reason_written CHECK (((char_length(btrim(reason)) >= 3) AND (char_length(btrim(reason)) <= 500))),
+    CONSTRAINT phoenix_crm_focus_customers_return_is_stamped CHECK (((returned_at IS NULL) OR ((returned_by_hr_id IS NOT NULL) AND (returned_as = ANY (ARRAY['rep'::text, 'manager'::text]))))),
+    CONSTRAINT phoenix_crm_focus_customers_return_note_short CHECK (((return_note IS NULL) OR (char_length(return_note) <= 500))),
+    CONSTRAINT phoenix_crm_focus_customers_review_known CHECK ((review_status = ANY (ARRAY['waiting'::text, 'kept'::text])))
+);
+
+ALTER TABLE public.phoenix_crm_focus_customers OWNER TO postgres;
+
+--
+-- Name: TABLE phoenix_crm_focus_customers; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.phoenix_crm_focus_customers IS 'Phoenix CRM Focus list (owner, 2026-11-28): a PM customer a rep or a manager of his territory put on the territory''s Focus list, with the written reason. Open while returned_at is null; a return closes the row and keeps it as history.';
+
+--
 -- Name: phoenix_crm_late_visits; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -71532,6 +71641,44 @@ COMMENT ON TABLE public.private_calendar_data_disputes IS 'Employee-flagged priv
 --
 
 COMMENT ON COLUMN public.private_calendar_data_disputes.day_part IS 'The half of the day the request explains: whole, am (morning only) or pm (afternoon only). An accepted half clears only that half.';
+
+--
+-- Name: private_calendar_day_records; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.private_calendar_day_records (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    employee_hr_id text NOT NULL,
+    record_date date NOT NULL,
+    activity_type text NOT NULL,
+    note text,
+    origin text NOT NULL,
+    status text NOT NULL,
+    entered_by_hr_id text NOT NULL,
+    named_by_hr_id text,
+    batch_id uuid NOT NULL,
+    decided_by_hr_id text,
+    decided_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    voided_at timestamp with time zone,
+    voided_by_hr_id text,
+    CONSTRAINT private_calendar_day_records_activity_type_check CHECK ((activity_type = ANY (ARRAY['meeting'::text, 'training'::text, 'conference'::text, 'group_meeting'::text, 'admin_work'::text, 'travel'::text, 'other'::text]))),
+    CONSTRAINT private_calendar_day_records_employee_hr_id_check CHECK ((length(btrim(employee_hr_id)) > 0)),
+    CONSTRAINT private_calendar_day_records_entered_by_hr_id_check CHECK ((length(btrim(entered_by_hr_id)) > 0)),
+    CONSTRAINT private_calendar_day_records_named_by CHECK (((origin = 'rep_named'::text) = (named_by_hr_id IS NOT NULL))),
+    CONSTRAINT private_calendar_day_records_note_check CHECK (((note IS NULL) OR (length(note) <= 500))),
+    CONSTRAINT private_calendar_day_records_origin_check CHECK ((origin = ANY (ARRAY['super_admin'::text, 'rep_named'::text, 'line_training'::text]))),
+    CONSTRAINT private_calendar_day_records_pending CHECK (((status <> 'pending'::text) OR (origin = 'rep_named'::text))),
+    CONSTRAINT private_calendar_day_records_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'confirmed'::text, 'declined'::text])))
+);
+
+ALTER TABLE public.private_calendar_day_records OWNER TO postgres;
+
+--
+-- Name: TABLE private_calendar_day_records; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.private_calendar_day_records IS 'Working days recorded FOR a person with no record of his own that day: by the Super Admin in one grouped step, his answer to a line-training question, or a rep naming him on a Conference day (owner, 28 Nov 2026). Only status confirmed covers a day: an entry on the Private Calendar and a proven worked day for the deductions. Never automatic. Voided, never deleted. Service role only. See src/lib/private-calendar/day-records.ts.';
 
 --
 -- Name: private_calendar_dispute_messages; Type: TABLE; Schema: public; Owner: postgres
@@ -80334,6 +80481,13 @@ ALTER TABLE ONLY public.phoenix_crm_field_camera_releases
     ADD CONSTRAINT phoenix_crm_field_camera_releases_pkey PRIMARY KEY (version_code);
 
 --
+-- Name: phoenix_crm_focus_customers phoenix_crm_focus_customers_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.phoenix_crm_focus_customers
+    ADD CONSTRAINT phoenix_crm_focus_customers_pkey PRIMARY KEY (id);
+
+--
 -- Name: phoenix_crm_imported_visit_sources phoenix_crm_imported_visit_sources_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -80899,6 +81053,13 @@ ALTER TABLE ONLY public.positions
 
 ALTER TABLE ONLY public.private_calendar_data_disputes
     ADD CONSTRAINT private_calendar_data_disputes_pkey PRIMARY KEY (id);
+
+--
+-- Name: private_calendar_day_records private_calendar_day_records_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.private_calendar_day_records
+    ADD CONSTRAINT private_calendar_day_records_pkey PRIMARY KEY (id);
 
 --
 -- Name: private_calendar_dispute_messages private_calendar_dispute_messages_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
@@ -88124,6 +88285,24 @@ CREATE UNIQUE INDEX phoenix_crm_double_visit_requests_visit_uniq ON public.phoen
 CREATE INDEX phoenix_crm_far_visit_holds_pending_idx ON public.phoenix_crm_far_visit_holds USING btree (held_at DESC) WHERE (status = 'sfe_pending'::text);
 
 --
+-- Name: phoenix_crm_focus_customers_customer_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX phoenix_crm_focus_customers_customer_idx ON public.phoenix_crm_focus_customers USING btree (customer_id);
+
+--
+-- Name: phoenix_crm_focus_customers_open_customer_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE UNIQUE INDEX phoenix_crm_focus_customers_open_customer_idx ON public.phoenix_crm_focus_customers USING btree (customer_id) WHERE (returned_at IS NULL);
+
+--
+-- Name: phoenix_crm_focus_customers_open_seat_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX phoenix_crm_focus_customers_open_seat_idx ON public.phoenix_crm_focus_customers USING btree (seat_id, is_test) WHERE (returned_at IS NULL);
+
+--
 -- Name: phoenix_crm_imported_visit_sources_visit_idx; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -89100,6 +89279,18 @@ CREATE UNIQUE INDEX private_calendar_data_disputes_pending_uidx ON public.privat
 --
 
 CREATE INDEX private_calendar_data_disputes_status_idx ON public.private_calendar_data_disputes USING btree (status) WHERE (status = 'pending_review'::text);
+
+--
+-- Name: private_calendar_day_records_date_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX private_calendar_day_records_date_idx ON public.private_calendar_day_records USING btree (record_date) WHERE (voided_at IS NULL);
+
+--
+-- Name: private_calendar_day_records_person_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX private_calendar_day_records_person_idx ON public.private_calendar_day_records USING btree (upper(employee_hr_id), record_date) WHERE (voided_at IS NULL);
 
 --
 -- Name: private_calendar_dispute_messages_dispute_idx; Type: INDEX; Schema: public; Owner: postgres
@@ -94722,6 +94913,13 @@ ALTER TABLE ONLY public.phoenix_crm_double_visit_requests
     ADD CONSTRAINT phoenix_crm_double_visit_requests_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.phoenix_crm_customers(id);
 
 --
+-- Name: phoenix_crm_focus_customers phoenix_crm_focus_customers_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.phoenix_crm_focus_customers
+    ADD CONSTRAINT phoenix_crm_focus_customers_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.phoenix_crm_customers(id) ON DELETE CASCADE;
+
+--
 -- Name: phoenix_crm_imported_visit_sources phoenix_crm_imported_visit_sources_visit_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -99972,6 +100170,18 @@ ALTER TABLE public.phoenix_crm_field_camera_releases ENABLE ROW LEVEL SECURITY;
 CREATE POLICY phoenix_crm_field_camera_releases_service_role ON public.phoenix_crm_field_camera_releases TO service_role USING (true) WITH CHECK (true);
 
 --
+-- Name: phoenix_crm_focus_customers; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.phoenix_crm_focus_customers ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: phoenix_crm_focus_customers phoenix_crm_focus_customers_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY phoenix_crm_focus_customers_service_role ON public.phoenix_crm_focus_customers TO service_role USING (true) WITH CHECK (true);
+
+--
 -- Name: phoenix_crm_imported_visit_sources; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
@@ -101368,6 +101578,18 @@ ALTER TABLE public.positions ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.private_calendar_data_disputes ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: private_calendar_day_records; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.private_calendar_day_records ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: private_calendar_day_records private_calendar_day_records_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY private_calendar_day_records_service_role ON public.private_calendar_day_records TO service_role USING (true) WITH CHECK (true);
 
 --
 -- Name: private_calendar_dispute_messages; Type: ROW SECURITY; Schema: public; Owner: postgres
@@ -104226,6 +104448,13 @@ GRANT ALL ON FUNCTION public.phoenix_crm_expire_manager_single_visit_days(p json
 
 REVOKE ALL ON FUNCTION public.phoenix_crm_expire_plan_edit_requests(p jsonb) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.phoenix_crm_expire_plan_edit_requests(p jsonb) TO service_role;
+
+--
+-- Name: FUNCTION phoenix_crm_focus_visits(p_customer_ids uuid[], p_is_test boolean, p_from date, p_to date); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phoenix_crm_focus_visits(p_customer_ids uuid[], p_is_test boolean, p_from date, p_to date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phoenix_crm_focus_visits(p_customer_ids uuid[], p_is_test boolean, p_from date, p_to date) TO service_role;
 
 --
 -- Name: FUNCTION phoenix_crm_fold_name(p_name text); Type: ACL; Schema: public; Owner: postgres
@@ -111044,6 +111273,12 @@ GRANT ALL ON TABLE public.phoenix_crm_double_visit_requests TO service_role;
 GRANT ALL ON TABLE public.phoenix_crm_field_camera_releases TO service_role;
 
 --
+-- Name: TABLE phoenix_crm_focus_customers; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.phoenix_crm_focus_customers TO service_role;
+
+--
 -- Name: TABLE phoenix_crm_late_visits; Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -111462,6 +111697,12 @@ GRANT ALL ON SEQUENCE public.positions_id_seq TO service_role;
 --
 
 GRANT ALL ON TABLE public.private_calendar_data_disputes TO service_role;
+
+--
+-- Name: TABLE private_calendar_day_records; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.private_calendar_day_records TO service_role;
 
 --
 -- Name: TABLE private_calendar_dispute_messages; Type: ACL; Schema: public; Owner: postgres
