@@ -36,6 +36,12 @@
  *      `interviewHalfOnly` to judge it at 0.5. A field Thursday is a morning-only day: two or more
  *      interviews at ANY hour are that Thursday worked (owner, 2026-11-18, "Any time counts").
  *
+ *   6. **A day record** — `@/lib/private-calendar/day-records`. Owner, 2026-11-28: a line's Training day
+ *      (2+ of its people logged Training in Phoenix CRM) is a worked day for the line's product managers,
+ *      who log nothing; a day the Super Admin recorded for a group in one step; a Conference a rep named
+ *      him on. Each only inside the person's hire date .. last working date. The calendar reads the same
+ *      rule, so a day it shows as recorded is never charged here.
+ *
  * Accounts: `docs/deductions-phoenix-work-evidence.md`, `docs/deductions-outstation-trip-days.md`.
  *
  * 🔴 **THE ONE RULE EVERY SOURCE SHARES: THIS ONLY EVER REMOVES A DAY.** It is read where a connector
@@ -68,6 +74,7 @@ import {
   type AcceptedReviewDay,
 } from "@/lib/private-calendar/accepted-review-days.ts";
 import { loadInterviewHalfDays } from "@/lib/private-calendar/interview-items.ts";
+import { describeDayRecord, loadDayRecords, type DayRecord } from "@/lib/private-calendar/day-records.ts";
 import { describeInterviewHalfDay, interviewDayCover, type InterviewHalfDay } from "@/lib/private-calendar/interview-halves.ts";
 
 /**
@@ -94,6 +101,7 @@ export function selectProvenWorkedDays(input: {
   managerOwnVisits?: readonly ManagerOwnVisitDay[];
   acceptedReviews?: readonly AcceptedReviewDay[];
   interviewHalfDays?: readonly InterviewHalfDay[];
+  dayRecords?: readonly DayRecord[];
 }): ProvenWorkedDays {
   const keys = new Set<string>(input.phoenix.keys);
   const reasons = new Map<string, string>();
@@ -121,6 +129,13 @@ export function selectProvenWorkedDays(input: {
     keys.add(key);
     if (!reasons.has(key)) reasons.set(key, describeAcceptedReviewDay(day));
   }
+  // A day record (owner, 2026-11-28) — whole days only, so it never feeds interviewHalfOnly.
+  for (const day of input.dayRecords ?? []) {
+    const key = phoenixWorkedDayKey(day.hrId, day.date);
+    if (!key) continue;
+    keys.add(key);
+    if (!reasons.has(key)) reasons.set(key, describeDayRecord(day));
+  }
   // Last of all: interviews only ever add a day nothing above proves. A field Thursday is one
   // morning-only half, so two or more interviews at any hour are the whole of it.
   for (const day of input.interviewHalfDays ?? []) {
@@ -137,14 +152,15 @@ export function selectProvenWorkedDays(input: {
 
 /** Every provably worked day in the window, from every source, keyed for the connectors. */
 export async function loadProvenWorkedDays(input: { end: string; start: string }): Promise<ProvenWorkedDays> {
-  const [phoenix, trips, managerOwnVisits, acceptedReviews, interviewHalfDays] = await Promise.all([
+  const [phoenix, trips, managerOwnVisits, acceptedReviews, interviewHalfDays, dayRecords] = await Promise.all([
     loadPhoenixWorkedDays(input),
     loadOutstationTripDays(input),
     loadManagerOwnVisitDays({ end: input.end, start: input.start }),
     loadAcceptedReviewDays(input),
     loadInterviewHalfDays(input),
+    loadDayRecords(input),
   ]);
-  return selectProvenWorkedDays({ acceptedReviews, interviewHalfDays, managerOwnVisits, phoenix, trips });
+  return selectProvenWorkedDays({ acceptedReviews, dayRecords, interviewHalfDays, managerOwnVisits, phoenix, trips });
 }
 
 /** The reason line a suppressed day carries into a connector's evidence — Phoenix first, then trips, own visits, accepted reviews, interviews. */

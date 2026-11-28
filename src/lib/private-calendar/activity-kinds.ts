@@ -53,6 +53,7 @@ export const privateCalendarActivityKinds = [
   "other_crm",
   "outstation",
   "interview",
+  "day_record",
   "correction",
 ] as const satisfies readonly PrivateCalendarActivityKind[];
 
@@ -68,6 +69,7 @@ export const privateCalendarActivityKindLabels: Record<PrivateCalendarActivityKi
   other_crm: "Other CRM activity",
   outstation: "Outstation trip",
   interview: "Interview",
+  day_record: "Day record",
   correction: "Admin-verified correction",
 };
 

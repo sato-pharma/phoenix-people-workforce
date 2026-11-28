@@ -1045,6 +1045,7 @@ export const accessRegistry = [
   // A working day that was not a call (owner, 2026-09-26). A record only — nothing downstream reads
   // it — and the rep's own to write, exactly like his list and his plan.
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/day-activities", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/day-activities/companions", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/day-activities", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   // The interviews on an Interviews day (owner, 2026-10-29: "if interviews attach the cvs and scheduled time").
   // The read is any reader of the territory for a recorded day, and the person recording it for today's
@@ -2553,6 +2554,7 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/private-calendar/export", permission: { resource: "attendance", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/private-calendar", permission: { resource: "attendance", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/private-calendar/disputes", permission: { resource: "attendance", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/private-calendar/day-records", permission: { resource: "attendance", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/private-calendar/disputes/pending", permission: { resource: "attendance", action: "approve" }, guard: "domain-helper" }),
   // The sidebar badge for the Calendar Disputes inbox — the LENGTH of the list above, same gate, no
   // audit row: it is polled every 30 s from every open tab and reads nobody's data but the count.
@@ -2997,6 +2999,7 @@ export const accessRegistry = [
   { ...sessionApi({ methods: readOnly, pattern: "/admin/weekly-plans", permission: { resource: "weekly_plans", action: "read" } }), surface: "page" },
   { ...sessionApi({ methods: readOnly, pattern: "/admin/weekly-plans/calendar", permission: { resource: "weekly_plans", action: "read" } }), surface: "page" },
   { ...sessionApi({ methods: readOnly, pattern: "/admin/private-calendars", permission: { resource: "attendance", action: "read" }, guard: "domain-helper" }), surface: "page" },
+  { ...sessionApi({ methods: readOnly, pattern: "/admin/private-calendar-day-records", permission: { resource: "attendance", action: "approve" }, guard: "domain-helper" }), surface: "page" },
   { ...sessionApi({ methods: readOnly, pattern: "/admin/marketing-requests/control", permission: null, guard: "domain-helper" }), surface: "page" },
   { ...sessionApi({ methods: readOnly, pattern: "/admin/double-visit-analytics", permission: { resource: "double_visit_analytics", action: "read" }, guard: "domain-helper" }), surface: "page" },
   // Employee 360 — consolidated per-employee profile (visits/check-ins in v1). Gated by

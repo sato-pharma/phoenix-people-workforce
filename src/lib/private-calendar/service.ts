@@ -17,6 +17,7 @@ import { listMessagesForDisputes } from "@/lib/private-calendar/dispute-messages
 import { loadPlanPrivateCalendarItems } from "@/lib/private-calendar/plan-items";
 import { loadOutstationTripPrivateCalendarItems } from "@/lib/private-calendar/outstation-trip-items";
 import { loadInterviewPrivateCalendarItems } from "@/lib/private-calendar/interview-items";
+import { loadDayRecordPrivateCalendarItems } from "@/lib/private-calendar/day-records";
 import { attachVisitDetails, loadPrivateCalendarVisitDetails } from "@/lib/private-calendar/visit-detail-items";
 import { loadAcceptedDeductionCorrections } from "@/lib/dispute-center/accepted-deduction-days";
 import { loadAcceptedReviewDays } from "@/lib/private-calendar/accepted-review-days";
@@ -491,7 +492,7 @@ export async function getPrivateCalendarWorkspace(input: {
     start,
   });
 
-  const [attendance, vacations, excuses, holidays, doubleVisits, fieldVisits, phoenixWork, managerOwnVisits, plans, trips, interviews, attendancePolicyRows, disputesByEmployee, visitDetails, deductionCorrections, messagesByDispute] =
+  const [attendance, vacations, excuses, holidays, doubleVisits, fieldVisits, phoenixWork, managerOwnVisits, plans, trips, interviews, dayRecords, attendancePolicyRows, disputesByEmployee, visitDetails, deductionCorrections, messagesByDispute] =
     await Promise.all([
       loadAttendanceItems(scopeHrIds, start, end),
       loadVacationItems(scopeHrIds, start, end),
@@ -517,6 +518,9 @@ export async function getPrivateCalendarWorkspace(input: {
       // Every interview he sits in on the recruitment calendar (owner, 2026-10-29). Two or more in one half
       // are that half day worked (owner, 2026-11-18); see lib/private-calendar/interview-halves.ts.
       loadInterviewPrivateCalendarItems(scopeHrIds, start, end),
+      // Every day record (owner, 2026-11-28): the line's training day for its product managers, a day the
+      // Super Admin recorded for a group, a conference a rep named him on; see lib/private-calendar/day-records.ts.
+      loadDayRecordPrivateCalendarItems(scopeHrIds, start, end),
       loadAttendancePolicyScheduleRows(),
       // STARTED TOGETHER (2026-10-01, "slow to transfer between page and page"): a dispute is read by
       // employee and date range alone — nothing loaded beside it feeds it — so it loads with the
@@ -541,6 +545,7 @@ export async function getPrivateCalendarWorkspace(input: {
     ...plans.items,
     ...trips.items,
     ...interviews.items,
+    ...dayRecords.items,
   ], scopeEmployees), employees), visitDetails)
     .sort((left, right) => `${left.startDate}-${left.employeeName ?? ""}-${left.source}-${left.title}`.localeCompare(`${right.startDate}-${right.employeeName ?? ""}-${right.source}-${right.title}`));
 
@@ -562,6 +567,7 @@ export async function getPrivateCalendarWorkspace(input: {
     attendance: attendance.ready,
     // Review requests are read best-effort (none on failure), never a source the day depends on.
     correction: true,
+    day_record: dayRecords.ready,
     double_visit: doubleVisits.ready,
     excuse: excuses.ready,
     // One readiness flag, because both loaders answer the same question: is this employee's own
@@ -694,7 +700,7 @@ export async function getCompanyNoActivityDays(input: {
   const hrIds = employees.map((employee) => employee.hrId);
   const months = monthsTouchedByRange(input.start, input.end);
 
-  const [attendance, vacations, excuses, doubleVisits, fieldVisits, phoenixWork, managerOwnVisits, plans, trips, interviews, attendancePolicyRows, ...holidaysByMonth] =
+  const [attendance, vacations, excuses, doubleVisits, fieldVisits, phoenixWork, managerOwnVisits, plans, trips, interviews, dayRecords, attendancePolicyRows, ...holidaysByMonth] =
     await Promise.all([
       loadAttendanceItems(hrIds, input.start, input.end),
       loadVacationItems(hrIds, input.start, input.end),
@@ -727,6 +733,9 @@ export async function getCompanyNoActivityDays(input: {
       // reads them exactly as the employee's calendar does. STRICT: a failed read throws, because a
       // missing interview here would raise a No Records Activity day he actually worked.
       loadInterviewPrivateCalendarItems(hrIds, input.start, input.end, { strict: true }),
+      // The SAME day records the employee's calendar shows (owner, 2026-11-28). STRICT: a failed read
+      // throws, because a missing record here would raise a No Records day the person worked.
+      loadDayRecordPrivateCalendarItems(hrIds, input.start, input.end, { strict: true }),
       loadAttendancePolicyScheduleRows(),
       ...months.map(({ year, month }) => loadHolidayItems(year, month, input.start, input.end)),
     ]);
@@ -743,6 +752,7 @@ export async function getCompanyNoActivityDays(input: {
     ...plans.items,
     ...trips.items,
     ...interviews.items,
+    ...dayRecords.items,
   ], employees), employees);
 
   // Same per-employee suppression the calendar workspace uses. This path spans
@@ -843,7 +853,7 @@ export async function getPrivateCalendarDayEvidence(
   const hrIds = employees.map((employee) => employee.hrId);
   const months = monthsTouchedByRange(start, end);
 
-  const [visitDetails, attendance, vacations, excuses, doubleVisits, fieldVisits, phoenixWork, managerOwnVisits, plans, trips, interviews, ...holidaysByMonth] = await Promise.all([
+  const [visitDetails, attendance, vacations, excuses, doubleVisits, fieldVisits, phoenixWork, managerOwnVisits, plans, trips, interviews, dayRecords, ...holidaysByMonth] = await Promise.all([
     // A reviewer reads every visit of the disputed day in full, the same record the calendar shows (owner, 2026-10-21).
     loadPrivateCalendarVisitDetails(hrIds, start, end),
     loadAttendanceItems(hrIds, start, end),
@@ -862,6 +872,8 @@ export async function getPrivateCalendarDayEvidence(
     loadOutstationTripPrivateCalendarItems(hrIds, start, end),
     // A reviewer sees the interview the employee sat in, exactly as his calendar shows it.
     loadInterviewPrivateCalendarItems(hrIds, start, end),
+    // A reviewer sees the day record (the line's training, a group day, a named conference) the calendar shows.
+    loadDayRecordPrivateCalendarItems(hrIds, start, end),
     ...months.map(({ year, month }) => loadHolidayItems(year, month, start, end)),
   ]);
 
@@ -874,6 +886,7 @@ export async function getPrivateCalendarDayEvidence(
   if (!plans.ready) unreadableSources.push("plan");
   if (!trips.ready) unreadableSources.push("outstation");
   if (!interviews.ready) unreadableSources.push("interview");
+  if (!dayRecords.ready) unreadableSources.push("day_record");
 
   // The same two passes the workspace runs: employee metadata on, then the field-visit suppression
   // keyed on (employee, date). Skipping the suppression would show a "Late" or "Single punch" flag
@@ -893,6 +906,7 @@ export async function getPrivateCalendarDayEvidence(
         // Loaded above since 2026-10-29 and then never listed, so a reviewer read a day spent in interviews as
         // empty. The workspace lists them; this reader now does too (Daily Deductions' day review, 2026-11-23).
         ...interviews.items,
+        ...dayRecords.items,
       ],
       directory,
     ), visitDetails),
@@ -948,13 +962,14 @@ export async function loadPrivateCalendarEntriesForPhoenixCrm(
     return { ok: false as const, value: empty };
   });
   const none = { items: [] as PrivateCalendarItem[], ready: false };
-  const [attendance, vacations, excuses, plans, trips, interviews, reviews, deductionCorrections, holidaysByMonth] = await Promise.all([
+  const [attendance, vacations, excuses, plans, trips, interviews, dayRecords, reviews, deductionCorrections, holidaysByMonth] = await Promise.all([
     settle(loadAttendanceItems(people, start, end), none),
     settle(loadVacationItems(people, start, end), none),
     settle(loadExcuseItems(people, start, end), none),
     settle(loadPlanPrivateCalendarItems(people, start, end), none),
     settle(loadOutstationTripPrivateCalendarItems(people, start, end), none),
     settle(loadInterviewPrivateCalendarItems(people, start, end), none),
+    settle(loadDayRecordPrivateCalendarItems(people, start, end), none),
     settle(loadAcceptedReviewDays({ end, start }), []),
     settle(
       loadAcceptedDeductionCorrections({
@@ -976,6 +991,7 @@ export async function loadPrivateCalendarEntriesForPhoenixCrm(
     ["plan", plans],
     ["outstation", trips],
     ["interview", interviews],
+    ["day_record", dayRecords],
   ];
   const items: PrivateCalendarItem[] = [];
   for (const [source, result] of sourced) {

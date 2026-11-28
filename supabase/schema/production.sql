@@ -6391,6 +6391,72 @@ $$;
 ALTER FUNCTION public.direct_order_close_receipt_book(p_book_no integer, p_kind text, p_expected_status text, p_actor_hr_id text, p_note text) OWNER TO postgres;
 
 --
+-- Name: direct_order_decide_hand_entry(uuid, text, text, text); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.direct_order_decide_hand_entry(p_entry_id uuid, p_actor_hr_id text, p_decision text, p_note text) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_entry public.direct_order_receipt_hand_entries%rowtype;
+  v_receipt public.direct_order_receipts%rowtype;
+  v_released jsonb;
+begin
+  if p_decision not in ('approved', 'rejected') then
+    raise exception 'A hand-entered receipt is approved or rejected.' using errcode = '22023';
+  end if;
+  if length(btrim(coalesce(p_actor_hr_id, ''))) = 0 then
+    raise exception 'A review names who made it.' using errcode = '22023';
+  end if;
+  if p_decision = 'rejected' and length(btrim(coalesce(p_note, ''))) < 3 then
+    raise exception 'Write why the hand-entered receipt is rejected.' using errcode = '22023';
+  end if;
+  select * into v_entry from public.direct_order_receipt_hand_entries e where e.id = p_entry_id for update;
+  if not found or v_entry.status <> 'pending' then
+    return jsonb_build_object('decided', false);
+  end if;
+  select * into v_receipt from public.direct_order_receipts r where r.serial = v_entry.serial for update;
+
+  if p_decision = 'rejected' then
+    if v_entry.original = 'custody' then
+      v_released := public.direct_order_release_receipt(
+        v_entry.serial, v_entry.request_id, btrim(p_actor_hr_id), 'Hand-entered Original 1 rejected: ' || btrim(p_note)
+      );
+      update public.direct_order_receipt_hand_entries e
+         set status = 'rejected', reviewed_by_hr_id = btrim(p_actor_hr_id), reviewed_at = now(),
+             review_note = 'Original 1 was rejected, so the receipt was taken off the order.'
+       where e.serial = v_entry.serial and e.request_id = v_entry.request_id and e.status = 'pending' and e.id <> v_entry.id;
+    elsif v_receipt.state = 'used' and v_receipt.request_id = v_entry.request_id
+          and v_receipt.delivery_photo_storage_path = v_entry.photo_storage_path then
+      perform set_config('phoenix.receipt_delivery_clear', v_entry.serial::text, true);
+      update public.direct_order_receipts r
+         set delivery_photo_storage_path = null, delivery_photo_content_type = null,
+             delivery_entered_by_hr_id = null, delivery_entered_at = null, updated_at = now()
+       where r.serial = v_entry.serial;
+      perform set_config('phoenix.receipt_delivery_clear', '', true);
+    end if;
+  end if;
+
+  update public.direct_order_receipt_hand_entries e
+     set status = p_decision, reviewed_by_hr_id = btrim(p_actor_hr_id), reviewed_at = now(),
+         review_note = nullif(btrim(coalesce(p_note, '')), '')
+   where e.id = v_entry.id;
+
+  return jsonb_build_object(
+    'decided', true,
+    'serial', v_entry.serial,
+    'request_id', v_entry.request_id,
+    'original', v_entry.original,
+    'decision', p_decision,
+    'released', coalesce((v_released ->> 'released')::boolean, false)
+  );
+end;
+$$;
+
+ALTER FUNCTION public.direct_order_decide_hand_entry(p_entry_id uuid, p_actor_hr_id text, p_decision text, p_note text) OWNER TO postgres;
+
+--
 -- Name: direct_order_no_receipt_requests_guard(); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -6446,6 +6512,33 @@ $$;
 ALTER FUNCTION public.direct_order_receipt_books_guard() OWNER TO postgres;
 
 --
+-- Name: direct_order_receipt_hand_entries_guard(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.direct_order_receipt_hand_entries_guard() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+begin
+  if tg_op = 'DELETE' then
+    raise exception 'A hand-entered receipt is a record: it is never deleted.' using errcode = 'P0001';
+  end if;
+  if new.id is distinct from old.id or new.serial is distinct from old.serial or new.request_id is distinct from old.request_id
+     or new.original is distinct from old.original or new.photo_storage_path is distinct from old.photo_storage_path
+     or new.entered_by_hr_id is distinct from old.entered_by_hr_id or new.entered_by_finance is distinct from old.entered_by_finance
+     or new.entered_at is distinct from old.entered_at then
+    raise exception 'A hand-entered receipt''s receipt, order, photo and who entered it never change.' using errcode = 'P0001';
+  end if;
+  if old.status <> 'pending' then
+    raise exception 'A reviewed hand-entered receipt never changes.' using errcode = 'P0001';
+  end if;
+  return new;
+end;
+$$;
+
+ALTER FUNCTION public.direct_order_receipt_hand_entries_guard() OWNER TO postgres;
+
+--
 -- Name: direct_order_receipt_releases_append_only(); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -6471,6 +6564,7 @@ CREATE FUNCTION public.direct_order_receipts_guard() RETURNS trigger
 declare
   v_book_status text;
   v_releasing boolean;
+  v_clearing_delivery boolean;
 begin
   if tg_op = 'DELETE' then
     raise exception 'A printed receipt is never deleted.' using errcode = 'P0001';
@@ -6482,6 +6576,9 @@ begin
     raise exception 'A cancelled receipt stays cancelled.' using errcode = 'P0001';
   end if;
   v_releasing := coalesce(current_setting('phoenix.receipt_release', true), '') = old.serial::text;
+  v_clearing_delivery := coalesce(current_setting('phoenix.receipt_delivery_clear', true), '') = old.serial::text
+    and new.delivery_photo_storage_path is null and new.delivery_photo_content_type is null
+    and new.delivery_entered_by_hr_id is null and new.delivery_entered_at is null;
   if old.state = 'used' and (new.state is distinct from 'used' or new.request_id is distinct from old.request_id) then
     if not v_releasing then
       raise exception 'A used receipt is released from its order only through direct_order_release_receipt.' using errcode = 'P0001';
@@ -6489,7 +6586,7 @@ begin
   end if;
   if old.state = 'used' and new.state = 'used' and not v_releasing and (
     new.photo_storage_path is distinct from old.photo_storage_path
-    or (old.delivery_photo_storage_path is not null and (
+    or (old.delivery_photo_storage_path is not null and not v_clearing_delivery and (
       new.delivery_photo_storage_path is distinct from old.delivery_photo_storage_path
       or new.delivery_entered_at is distinct from old.delivery_entered_at
       or new.delivery_entered_by_hr_id is distinct from old.delivery_entered_by_hr_id
@@ -6498,7 +6595,6 @@ begin
     raise exception 'An entered original is never replaced; Finance takes the receipt off the order to correct it.' using errcode = 'P0001';
   end if;
   if old.state = 'unused' and new.state = 'used' then
-    -- FOR SHARE waits for a book being returned or recorded lost at this moment, then reads its new state.
     select status into v_book_status from public.direct_order_receipt_books where book_no = new.book_no for share;
     if v_book_status is distinct from 'issued' and v_book_status is distinct from 'returned' then
       raise exception 'Receipt book % is %, so none of its receipts can be used.', new.book_no, coalesce(v_book_status, 'missing')
@@ -12178,6 +12274,58 @@ end;
 $$;
 
 ALTER FUNCTION public.phoenix_crm_expire_plan_edit_requests(p jsonb) OWNER TO postgres;
+
+--
+-- Name: phoenix_crm_focus_visits(uuid[], boolean, date, date); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phoenix_crm_focus_visits(p_customer_ids uuid[], p_is_test boolean, p_from date, p_to date) RETURNS jsonb
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  with period as (
+    select v.customer_id, v.visit_date, v.kind
+    from public.phoenix_crm_countable_visits v
+    where v.customer_id = any (p_customer_ids)
+      and v.is_test = p_is_test
+      and v.archived_at is null
+      and v.visit_date between p_from and p_to
+  ),
+  latest as (
+    select distinct on (v.customer_id)
+           v.customer_id, v.visit_date, v.captured_at, v.kind, v.rep_hr_id, v.manager_hr_id, v.place_id,
+           v.imported_from_ireports360_at is not null as imported
+    from public.phoenix_crm_countable_visits_with_history v
+    where v.customer_id = any (p_customer_ids)
+      and v.is_test = p_is_test
+      and v.archived_at is null
+    order by v.customer_id, v.visit_date desc, v.captured_at desc nulls last, v.id desc
+  )
+  select jsonb_build_object(
+    'period', coalesce((
+      select jsonb_agg(jsonb_build_object('customer_id', p.customer_id, 'visit_date', p.visit_date, 'kind', p.kind)
+                       order by p.customer_id, p.visit_date)
+      from period p
+    ), '[]'::jsonb),
+    'latest', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'customer_id', l.customer_id, 'visit_date', l.visit_date, 'captured_at', l.captured_at, 'kind', l.kind,
+        'rep_hr_id', l.rep_hr_id, 'manager_hr_id', l.manager_hr_id, 'imported', l.imported,
+        'place_label', pl.label, 'place_address', pl.address, 'brick_name', pl.brick_name
+      ) order by l.customer_id)
+      from latest l
+      left join public.phoenix_crm_places pl on pl.id = l.place_id
+    ), '[]'::jsonb)
+  );
+$$;
+
+ALTER FUNCTION public.phoenix_crm_focus_visits(p_customer_ids uuid[], p_is_test boolean, p_from date, p_to date) OWNER TO postgres;
+
+--
+-- Name: FUNCTION phoenix_crm_focus_visits(p_customer_ids uuid[], p_is_test boolean, p_from date, p_to date); Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON FUNCTION public.phoenix_crm_focus_visits(p_customer_ids uuid[], p_is_test boolean, p_from date, p_to date) IS 'Phoenix CRM Focus list tracking (2026-11-28): the countable visits to these customers inside [p_from, p_to], and each one''s latest visit ever with its place.';
 
 --
 -- Name: phoenix_crm_fold_name(text); Type: FUNCTION; Schema: public; Owner: postgres
@@ -60938,6 +61086,37 @@ ALTER TABLE public.direct_order_receipt_books OWNER TO postgres;
 COMMENT ON TABLE public.direct_order_receipt_books IS 'Printed direct-order delivery-receipt books held as custody by District Managers (owner, 26 Nov 2026). Finance issues, returns and reports them lost. Service role only. See src/lib/direct-orders/receipt-books.ts.';
 
 --
+-- Name: direct_order_receipt_hand_entries; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.direct_order_receipt_hand_entries (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    serial integer NOT NULL,
+    request_id uuid NOT NULL,
+    original text NOT NULL,
+    photo_storage_path text NOT NULL,
+    entered_by_hr_id text NOT NULL,
+    entered_by_finance boolean NOT NULL,
+    entered_at timestamp with time zone DEFAULT now() NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    reviewed_by_hr_id text,
+    reviewed_at timestamp with time zone,
+    review_note text,
+    CONSTRAINT direct_order_receipt_hand_entries_original_check CHECK ((original = ANY (ARRAY['custody'::text, 'delivery'::text]))),
+    CONSTRAINT direct_order_receipt_hand_entries_reject_note CHECK (((status <> 'rejected'::text) OR (length(btrim(COALESCE(review_note, ''::text))) >= 3))),
+    CONSTRAINT direct_order_receipt_hand_entries_reviewed CHECK ((((status = 'pending'::text) AND (reviewed_by_hr_id IS NULL) AND (reviewed_at IS NULL)) OR ((status <> 'pending'::text) AND (reviewed_by_hr_id IS NOT NULL) AND (reviewed_at IS NOT NULL)))),
+    CONSTRAINT direct_order_receipt_hand_entries_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text])))
+);
+
+ALTER TABLE public.direct_order_receipt_hand_entries OWNER TO postgres;
+
+--
+-- Name: TABLE direct_order_receipt_hand_entries; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.direct_order_receipt_hand_entries IS 'An original of a delivery receipt entered with its number and code typed, because Phoenix could not read its QR in the photo (owner, 28 Nov 2026). It waits for review: Finance decides a manager''s entry, the Super Admin decides Finance''s. pending -> approved | rejected once; never edited after the decision, never deleted. Service role only. See src/lib/direct-orders/receipt-books.ts.';
+
+--
 -- Name: direct_order_receipt_releases; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -68903,6 +69082,47 @@ CREATE TABLE public.phoenix_crm_field_camera_releases (
 ALTER TABLE public.phoenix_crm_field_camera_releases OWNER TO postgres;
 
 --
+-- Name: phoenix_crm_focus_customers; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.phoenix_crm_focus_customers (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    seat_id text NOT NULL,
+    line_code text,
+    customer_id uuid NOT NULL,
+    reason text NOT NULL,
+    reason_pick text,
+    pushed_by_hr_id text NOT NULL,
+    pushed_as text NOT NULL,
+    pushed_at timestamp with time zone DEFAULT now() NOT NULL,
+    review_status text DEFAULT 'waiting'::text NOT NULL,
+    reviewed_by_hr_id text,
+    reviewed_at timestamp with time zone,
+    returned_at timestamp with time zone,
+    returned_by_hr_id text,
+    returned_as text,
+    return_note text,
+    is_test boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT phoenix_crm_focus_customers_kept_is_stamped CHECK (((review_status = 'waiting'::text) OR ((reviewed_by_hr_id IS NOT NULL) AND (reviewed_at IS NOT NULL)))),
+    CONSTRAINT phoenix_crm_focus_customers_pushed_as_known CHECK ((pushed_as = ANY (ARRAY['rep'::text, 'manager'::text]))),
+    CONSTRAINT phoenix_crm_focus_customers_reason_pick_known CHECK (((reason_pick IS NULL) OR (reason_pick = ANY (ARRAY['high_potential'::text, 'competitor_prescriber'::text, 'key_opinion_leader'::text, 'growing_prescriber'::text, 'new_prescriber'::text, 'other'::text])))),
+    CONSTRAINT phoenix_crm_focus_customers_reason_written CHECK (((char_length(btrim(reason)) >= 3) AND (char_length(btrim(reason)) <= 500))),
+    CONSTRAINT phoenix_crm_focus_customers_return_is_stamped CHECK (((returned_at IS NULL) OR ((returned_by_hr_id IS NOT NULL) AND (returned_as = ANY (ARRAY['rep'::text, 'manager'::text]))))),
+    CONSTRAINT phoenix_crm_focus_customers_return_note_short CHECK (((return_note IS NULL) OR (char_length(return_note) <= 500))),
+    CONSTRAINT phoenix_crm_focus_customers_review_known CHECK ((review_status = ANY (ARRAY['waiting'::text, 'kept'::text])))
+);
+
+ALTER TABLE public.phoenix_crm_focus_customers OWNER TO postgres;
+
+--
+-- Name: TABLE phoenix_crm_focus_customers; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.phoenix_crm_focus_customers IS 'Phoenix CRM Focus list (owner, 2026-11-28): a PM customer a rep or a manager of his territory put on the territory''s Focus list, with the written reason. Open while returned_at is null; a return closes the row and keeps it as history.';
+
+--
 -- Name: phoenix_crm_late_visits; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -71405,6 +71625,44 @@ COMMENT ON TABLE public.private_calendar_data_disputes IS 'Employee-flagged priv
 --
 
 COMMENT ON COLUMN public.private_calendar_data_disputes.day_part IS 'The half of the day the request explains: whole, am (morning only) or pm (afternoon only). An accepted half clears only that half.';
+
+--
+-- Name: private_calendar_day_records; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.private_calendar_day_records (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    employee_hr_id text NOT NULL,
+    record_date date NOT NULL,
+    activity_type text NOT NULL,
+    note text,
+    origin text NOT NULL,
+    status text NOT NULL,
+    entered_by_hr_id text NOT NULL,
+    named_by_hr_id text,
+    batch_id uuid NOT NULL,
+    decided_by_hr_id text,
+    decided_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    voided_at timestamp with time zone,
+    voided_by_hr_id text,
+    CONSTRAINT private_calendar_day_records_activity_type_check CHECK ((activity_type = ANY (ARRAY['meeting'::text, 'training'::text, 'conference'::text, 'group_meeting'::text, 'admin_work'::text, 'travel'::text, 'other'::text]))),
+    CONSTRAINT private_calendar_day_records_employee_hr_id_check CHECK ((length(btrim(employee_hr_id)) > 0)),
+    CONSTRAINT private_calendar_day_records_entered_by_hr_id_check CHECK ((length(btrim(entered_by_hr_id)) > 0)),
+    CONSTRAINT private_calendar_day_records_named_by CHECK (((origin = 'rep_named'::text) = (named_by_hr_id IS NOT NULL))),
+    CONSTRAINT private_calendar_day_records_note_check CHECK (((note IS NULL) OR (length(note) <= 500))),
+    CONSTRAINT private_calendar_day_records_origin_check CHECK ((origin = ANY (ARRAY['super_admin'::text, 'rep_named'::text, 'line_training'::text]))),
+    CONSTRAINT private_calendar_day_records_pending CHECK (((status <> 'pending'::text) OR (origin = 'rep_named'::text))),
+    CONSTRAINT private_calendar_day_records_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'confirmed'::text, 'declined'::text])))
+);
+
+ALTER TABLE public.private_calendar_day_records OWNER TO postgres;
+
+--
+-- Name: TABLE private_calendar_day_records; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.private_calendar_day_records IS 'Working days recorded FOR a person with no record of his own that day: by the Super Admin in one grouped step, his answer to a line-training question, or a rep naming him on a Conference day (owner, 28 Nov 2026). Only status confirmed covers a day: an entry on the Private Calendar and a proven worked day for the deductions. Never automatic. Voided, never deleted. Service role only. See src/lib/private-calendar/day-records.ts.';
 
 --
 -- Name: private_calendar_dispute_messages; Type: TABLE; Schema: public; Owner: postgres
@@ -78080,6 +78338,13 @@ ALTER TABLE ONLY public.direct_order_receipt_books
     ADD CONSTRAINT direct_order_receipt_books_pkey PRIMARY KEY (book_no);
 
 --
+-- Name: direct_order_receipt_hand_entries direct_order_receipt_hand_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.direct_order_receipt_hand_entries
+    ADD CONSTRAINT direct_order_receipt_hand_entries_pkey PRIMARY KEY (id);
+
+--
 -- Name: direct_order_receipt_releases direct_order_receipt_releases_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -80200,6 +80465,13 @@ ALTER TABLE ONLY public.phoenix_crm_field_camera_releases
     ADD CONSTRAINT phoenix_crm_field_camera_releases_pkey PRIMARY KEY (version_code);
 
 --
+-- Name: phoenix_crm_focus_customers phoenix_crm_focus_customers_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.phoenix_crm_focus_customers
+    ADD CONSTRAINT phoenix_crm_focus_customers_pkey PRIMARY KEY (id);
+
+--
 -- Name: phoenix_crm_imported_visit_sources phoenix_crm_imported_visit_sources_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -80765,6 +81037,13 @@ ALTER TABLE ONLY public.positions
 
 ALTER TABLE ONLY public.private_calendar_data_disputes
     ADD CONSTRAINT private_calendar_data_disputes_pkey PRIMARY KEY (id);
+
+--
+-- Name: private_calendar_day_records private_calendar_day_records_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.private_calendar_day_records
+    ADD CONSTRAINT private_calendar_day_records_pkey PRIMARY KEY (id);
 
 --
 -- Name: private_calendar_dispute_messages private_calendar_dispute_messages_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
@@ -84372,6 +84651,24 @@ CREATE INDEX direct_order_pharmacy_validations_request_idx ON public.direct_orde
 CREATE INDEX direct_order_pharmacy_validations_status_idx ON public.direct_order_pharmacy_validations USING btree (status, requested_at DESC);
 
 --
+-- Name: direct_order_receipt_hand_entries_one_pending; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE UNIQUE INDEX direct_order_receipt_hand_entries_one_pending ON public.direct_order_receipt_hand_entries USING btree (serial, original) WHERE (status = 'pending'::text);
+
+--
+-- Name: direct_order_receipt_hand_entries_request_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX direct_order_receipt_hand_entries_request_idx ON public.direct_order_receipt_hand_entries USING btree (request_id);
+
+--
+-- Name: direct_order_receipt_hand_entries_status_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX direct_order_receipt_hand_entries_status_idx ON public.direct_order_receipt_hand_entries USING btree (status, entered_at);
+
+--
 -- Name: direct_order_receipt_releases_request_idx; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -87972,6 +88269,24 @@ CREATE UNIQUE INDEX phoenix_crm_double_visit_requests_visit_uniq ON public.phoen
 CREATE INDEX phoenix_crm_far_visit_holds_pending_idx ON public.phoenix_crm_far_visit_holds USING btree (held_at DESC) WHERE (status = 'sfe_pending'::text);
 
 --
+-- Name: phoenix_crm_focus_customers_customer_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX phoenix_crm_focus_customers_customer_idx ON public.phoenix_crm_focus_customers USING btree (customer_id);
+
+--
+-- Name: phoenix_crm_focus_customers_open_customer_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE UNIQUE INDEX phoenix_crm_focus_customers_open_customer_idx ON public.phoenix_crm_focus_customers USING btree (customer_id) WHERE (returned_at IS NULL);
+
+--
+-- Name: phoenix_crm_focus_customers_open_seat_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX phoenix_crm_focus_customers_open_seat_idx ON public.phoenix_crm_focus_customers USING btree (seat_id, is_test) WHERE (returned_at IS NULL);
+
+--
 -- Name: phoenix_crm_imported_visit_sources_visit_idx; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -88948,6 +89263,18 @@ CREATE UNIQUE INDEX private_calendar_data_disputes_pending_uidx ON public.privat
 --
 
 CREATE INDEX private_calendar_data_disputes_status_idx ON public.private_calendar_data_disputes USING btree (status) WHERE (status = 'pending_review'::text);
+
+--
+-- Name: private_calendar_day_records_date_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX private_calendar_day_records_date_idx ON public.private_calendar_day_records USING btree (record_date) WHERE (voided_at IS NULL);
+
+--
+-- Name: private_calendar_day_records_person_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX private_calendar_day_records_person_idx ON public.private_calendar_day_records USING btree (upper(employee_hr_id), record_date) WHERE (voided_at IS NULL);
 
 --
 -- Name: private_calendar_dispute_messages_dispute_idx; Type: INDEX; Schema: public; Owner: postgres
@@ -90748,6 +91075,12 @@ CREATE TRIGGER direct_order_no_receipt_requests_guard BEFORE DELETE OR UPDATE ON
 --
 
 CREATE TRIGGER direct_order_receipt_books_guard BEFORE DELETE OR UPDATE ON public.direct_order_receipt_books FOR EACH ROW EXECUTE FUNCTION public.direct_order_receipt_books_guard();
+
+--
+-- Name: direct_order_receipt_hand_entries direct_order_receipt_hand_entries_guard; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER direct_order_receipt_hand_entries_guard BEFORE DELETE OR UPDATE ON public.direct_order_receipt_hand_entries FOR EACH ROW EXECUTE FUNCTION public.direct_order_receipt_hand_entries_guard();
 
 --
 -- Name: direct_order_receipt_releases direct_order_receipt_releases_append_only; Type: TRIGGER; Schema: public; Owner: postgres
@@ -92884,6 +93217,20 @@ ALTER TABLE ONLY public.direct_order_pharmacy_validations
     ADD CONSTRAINT direct_order_pharmacy_validations_request_id_fkey FOREIGN KEY (request_id) REFERENCES public.direct_order_requests(id) ON DELETE SET NULL;
 
 --
+-- Name: direct_order_receipt_hand_entries direct_order_receipt_hand_entries_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.direct_order_receipt_hand_entries
+    ADD CONSTRAINT direct_order_receipt_hand_entries_request_id_fkey FOREIGN KEY (request_id) REFERENCES public.direct_order_requests(id);
+
+--
+-- Name: direct_order_receipt_hand_entries direct_order_receipt_hand_entries_serial_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.direct_order_receipt_hand_entries
+    ADD CONSTRAINT direct_order_receipt_hand_entries_serial_fkey FOREIGN KEY (serial) REFERENCES public.direct_order_receipts(serial);
+
+--
 -- Name: direct_order_receipt_releases direct_order_receipt_releases_book_no_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -94548,6 +94895,13 @@ ALTER TABLE ONLY public.phoenix_crm_double_visit_request_people
 
 ALTER TABLE ONLY public.phoenix_crm_double_visit_requests
     ADD CONSTRAINT phoenix_crm_double_visit_requests_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.phoenix_crm_customers(id);
+
+--
+-- Name: phoenix_crm_focus_customers phoenix_crm_focus_customers_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.phoenix_crm_focus_customers
+    ADD CONSTRAINT phoenix_crm_focus_customers_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.phoenix_crm_customers(id) ON DELETE CASCADE;
 
 --
 -- Name: phoenix_crm_imported_visit_sources phoenix_crm_imported_visit_sources_visit_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
@@ -97482,6 +97836,18 @@ ALTER TABLE public.direct_order_receipt_books ENABLE ROW LEVEL SECURITY;
 CREATE POLICY direct_order_receipt_books_service_role ON public.direct_order_receipt_books TO service_role USING (true) WITH CHECK (true);
 
 --
+-- Name: direct_order_receipt_hand_entries; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.direct_order_receipt_hand_entries ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: direct_order_receipt_hand_entries direct_order_receipt_hand_entries_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY direct_order_receipt_hand_entries_service_role ON public.direct_order_receipt_hand_entries TO service_role USING (true) WITH CHECK (true);
+
+--
 -- Name: direct_order_receipt_releases; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
@@ -99788,6 +100154,18 @@ ALTER TABLE public.phoenix_crm_field_camera_releases ENABLE ROW LEVEL SECURITY;
 CREATE POLICY phoenix_crm_field_camera_releases_service_role ON public.phoenix_crm_field_camera_releases TO service_role USING (true) WITH CHECK (true);
 
 --
+-- Name: phoenix_crm_focus_customers; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.phoenix_crm_focus_customers ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: phoenix_crm_focus_customers phoenix_crm_focus_customers_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY phoenix_crm_focus_customers_service_role ON public.phoenix_crm_focus_customers TO service_role USING (true) WITH CHECK (true);
+
+--
 -- Name: phoenix_crm_imported_visit_sources; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
@@ -101184,6 +101562,18 @@ ALTER TABLE public.positions ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.private_calendar_data_disputes ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: private_calendar_day_records; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.private_calendar_day_records ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: private_calendar_day_records private_calendar_day_records_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY private_calendar_day_records_service_role ON public.private_calendar_day_records TO service_role USING (true) WITH CHECK (true);
 
 --
 -- Name: private_calendar_dispute_messages; Type: ROW SECURITY; Schema: public; Owner: postgres
@@ -103419,6 +103809,13 @@ REVOKE ALL ON FUNCTION public.direct_order_close_receipt_book(p_book_no integer,
 GRANT ALL ON FUNCTION public.direct_order_close_receipt_book(p_book_no integer, p_kind text, p_expected_status text, p_actor_hr_id text, p_note text) TO service_role;
 
 --
+-- Name: FUNCTION direct_order_decide_hand_entry(p_entry_id uuid, p_actor_hr_id text, p_decision text, p_note text); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.direct_order_decide_hand_entry(p_entry_id uuid, p_actor_hr_id text, p_decision text, p_note text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.direct_order_decide_hand_entry(p_entry_id uuid, p_actor_hr_id text, p_decision text, p_note text) TO service_role;
+
+--
 -- Name: FUNCTION direct_order_no_receipt_requests_guard(); Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -103431,6 +103828,13 @@ GRANT ALL ON FUNCTION public.direct_order_no_receipt_requests_guard() TO service
 
 REVOKE ALL ON FUNCTION public.direct_order_receipt_books_guard() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.direct_order_receipt_books_guard() TO service_role;
+
+--
+-- Name: FUNCTION direct_order_receipt_hand_entries_guard(); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.direct_order_receipt_hand_entries_guard() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.direct_order_receipt_hand_entries_guard() TO service_role;
 
 --
 -- Name: FUNCTION direct_order_receipt_releases_append_only(); Type: ACL; Schema: public; Owner: postgres
@@ -104028,6 +104432,13 @@ GRANT ALL ON FUNCTION public.phoenix_crm_expire_manager_single_visit_days(p json
 
 REVOKE ALL ON FUNCTION public.phoenix_crm_expire_plan_edit_requests(p jsonb) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.phoenix_crm_expire_plan_edit_requests(p jsonb) TO service_role;
+
+--
+-- Name: FUNCTION phoenix_crm_focus_visits(p_customer_ids uuid[], p_is_test boolean, p_from date, p_to date); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phoenix_crm_focus_visits(p_customer_ids uuid[], p_is_test boolean, p_from date, p_to date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phoenix_crm_focus_visits(p_customer_ids uuid[], p_is_test boolean, p_from date, p_to date) TO service_role;
 
 --
 -- Name: FUNCTION phoenix_crm_fold_name(p_name text); Type: ACL; Schema: public; Owner: postgres
@@ -109257,6 +109668,12 @@ GRANT ALL ON TABLE public.direct_order_pharmacy_validations TO service_role;
 GRANT ALL ON TABLE public.direct_order_receipt_books TO service_role;
 
 --
+-- Name: TABLE direct_order_receipt_hand_entries; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.direct_order_receipt_hand_entries TO service_role;
+
+--
 -- Name: TABLE direct_order_receipt_releases; Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -110840,6 +111257,12 @@ GRANT ALL ON TABLE public.phoenix_crm_double_visit_requests TO service_role;
 GRANT ALL ON TABLE public.phoenix_crm_field_camera_releases TO service_role;
 
 --
+-- Name: TABLE phoenix_crm_focus_customers; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.phoenix_crm_focus_customers TO service_role;
+
+--
 -- Name: TABLE phoenix_crm_late_visits; Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -111258,6 +111681,12 @@ GRANT ALL ON SEQUENCE public.positions_id_seq TO service_role;
 --
 
 GRANT ALL ON TABLE public.private_calendar_data_disputes TO service_role;
+
+--
+-- Name: TABLE private_calendar_day_records; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.private_calendar_day_records TO service_role;
 
 --
 -- Name: TABLE private_calendar_dispute_messages; Type: ACL; Schema: public; Owner: postgres

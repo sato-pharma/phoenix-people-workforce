@@ -207,6 +207,13 @@ const kindTones: Record<PrivateCalendarActivityKind, { accent: string; chip: str
     chip: "border-l-[3px] border-l-neutral-800 bg-neutral-100",
     swatch: "bg-neutral-800",
   },
+  // A day record (2026-11-28): the line's training day, a day the Super Admin recorded for a group, or a
+  // conference a rep named him on — deep indigo, apart from the single-visit blue and every exception hue.
+  day_record: {
+    accent: "border-l-indigo-900",
+    chip: "border-l-[3px] border-l-indigo-900 bg-indigo-50",
+    swatch: "bg-indigo-900",
+  },
   // A day an admin verified on the employee's review request (2026-10-29) — lime, a hue no source and no exception wears.
   correction: {
     accent: "border-l-lime-700",
@@ -1958,13 +1965,14 @@ function KeyFigures({
           {/* Row two — every other kind of day. */}
           <div className="border-t border-slate-100 bg-slate-50 px-4 py-3">
             <p className="mb-2 text-phx-sm font-black uppercase tracking-[0.14em] text-slate-400">Days</p>
-            <div className="grid grid-cols-2 gap-2 min-[560px]:grid-cols-3 lg:grid-cols-5 xl:grid-cols-11">
+            <div className="grid grid-cols-2 gap-2 min-[560px]:grid-cols-3 lg:grid-cols-6 xl:grid-cols-12">
             <KeyFigure big label="Attendance" ready={sourceReadiness.attendance} swatch={kindSwatchColor("attendance")} value={String(summary.attendance)} />
             <KeyFigure big label="Vacations" ready={sourceReadiness.vacation} swatch={kindSwatchColor("vacation")} value={String(summary.vacation)} />
             <KeyFigure big label="Excuses" ready={sourceReadiness.excuse} swatch={kindSwatchColor("excuse")} value={String(summary.excuse)} />
             <KeyFigure big label="National" ready={sourceReadiness.holiday} swatch={kindSwatchColor("holiday")} value={String(summary.holiday)} />
             <KeyFigure big label="Trips" ready={sourceReadiness.outstation} swatch={kindSwatchColor("outstation")} value={String(summary.outstation ?? 0)} />
             <KeyFigure big label="Interviews" ready={sourceReadiness.interview} swatch={kindSwatchColor("interview")} value={String(summary.interview ?? 0)} />
+            <KeyFigure big label="Day records" ready={sourceReadiness.day_record} swatch={kindSwatchColor("day_record")} value={String(summary.day_record ?? 0)} />
             <KeyFigure big label="Planned" ready={sourceReadiness.plan} swatch={kindSwatchColor("plan")} value={String(summary.plan ?? 0)} />
             <KeyFigure big label="Other CRM" ready={sourceReadiness.field_visit} swatch={kindSwatchColor("other_crm")} value={String(otherCrmDays)} />
             <KeyFigure alert={noActivityDays > 0} big label="No activity" swatch={noActivitySwatch} value={String(noActivityDays)} />

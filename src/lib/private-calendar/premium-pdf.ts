@@ -62,6 +62,7 @@ export const PRIVATE_CALENDAR_PDF_KIND_TONES: Record<
   other_crm: { accent: "#64748B", tailwind: "slate-500", tint: "#F1F5F9" },
   outstation: { accent: "#0E7490", tailwind: "cyan-700", tint: "#ECFEFF" },
   interview: { accent: "#262626", tailwind: "neutral-800", tint: "#F5F5F5" },
+  day_record: { accent: "#312E81", tailwind: "indigo-900", tint: "#EEF2FF" },
   correction: { accent: "#4D7C0F", tailwind: "lime-700", tint: "#F7FEE7" },
 };
 
@@ -87,6 +88,7 @@ const KIND_ORDER: PrivateCalendarActivityKind[] = [
   "outstation",
   "plan",
   "interview",
+  "day_record",
   "correction",
 ];
 
