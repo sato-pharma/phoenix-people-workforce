@@ -9599,7 +9599,7 @@ clarifications, word for word:
   from it; the sweep showed one route's second-class AC fares differ by train (Cairo → Asyut 210, 250 or 350 on
   3 Dec 2026), so the cap is the fare of the train taken.
 
-The day's work (within 150 km: AM ≥ 2 and PM ≥ 6; fewer than 2 AM is PM only and pays half; fewer than 6 PM pays
+The day's work (within 150 km: AM ≥ 1 and PM ≥ 6 — AM lowered from 2 to 1 on his word the same evening; no AM visit is PM only and pays half; fewer than 6 PM pays
 PM/6; beyond 150 km a PM half day is allowed), the confirmed first and last double visit, and the live ticket
 evidence are his dictated rules. Only the allowance is cut — never fuel or tickets. The rules apply to claims
 filed from the build on (`dm_work_allowance` stamped at submit); the claims already waiting are never re-priced.
