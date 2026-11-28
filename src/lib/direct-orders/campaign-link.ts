@@ -144,7 +144,7 @@ function text(value: unknown): string | null {
  * carries). Case-insensitive: the order's line comes from the product master and the campaign's
  * from the `lines` table, and nothing guarantees the two agree on capitalisation.
  */
-async function resolveLineId(lineName: string | null): Promise<number | null> {
+export async function resolveLineId(lineName: string | null): Promise<number | null> {
   const clean = String(lineName ?? "").trim();
   if (!clean) return null;
   const supabase = getSupabaseAdmin();

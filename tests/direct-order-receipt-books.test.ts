@@ -26,7 +26,6 @@ import {
   type DirectOrderReceiptPanel,
 } from "../src/lib/direct-orders/receipt-books.ts";
 import { buildDirectOrderNeedsAction, receiptWorkCount } from "../src/lib/direct-orders/needs-action.ts";
-import { forgetReferenceLines } from "../src/lib/reference/reference-lists.ts";
 import type { CreateSystemNotificationInput } from "../src/lib/notifications/system.ts";
 import { canReviewDirectOrderHandEntry } from "../src/lib/direct-orders/finance-authority.ts";
 import { __setReceiptQrReaderForTests, readReceiptQrTexts } from "../src/lib/direct-orders/receipt-photo-qr.ts";
@@ -919,16 +918,15 @@ async function behaviourTests() {
       { hr_id: "PD-0012", full_name: "Mohamed Eleiwa", job_title: "District Sales Manager", employment_status: "active", line_id: 2 },
     );
     await withPostgrestStandIn(standIn, async () => {
-      forgetReferenceLines("receipt books test: this stand-in carries its own lines");
       await rejectsWith(
         issueDirectOrderReceiptBook(ADMIN, { bookNo: 3, holderHrId: "AI-0030" }),
-        /used by the Pedia line only for now, so book 3 stays in the store\. AI-0030 works in the Anti Infective line/,
+        /used by the Pedia line only for now, so book 3 stays in the store\. AI-0030 is not in the Pedia line/,
         "no book is handed to an Anti Infective manager in this wave",
       );
       assert.equal(standIn.tables.direct_order_receipt_books.find((b) => b.book_no === 3)?.status, "in_store", "the refused book is untouched");
       const register = await loadDirectOrderReceiptRegister(ADMIN);
-      assert.equal(register.books.find((b) => b.bookNo === 3)?.waitsForLine, "Anti Infective", "the desk keeps the Anti Infective book in the store");
-      assert.equal(register.books.find((b) => b.bookNo === 2)?.waitsForLine, null, "a Pedia book may go out");
+      assert.equal(register.books.find((b) => b.bookNo === 3)?.waitsForItsLine, true, "the desk keeps the Anti Infective book in the store");
+      assert.equal(register.books.find((b) => b.bookNo === 2)?.waitsForItsLine, false, "a Pedia book may go out");
       assert.deepEqual(register.holderOptions.map((o) => o.hrId), ["PD-0012"], "a spare goes only to a Pedia manager");
       assert.equal(register.receiptLinesLabel, "Pedia");
       assert.ok(

@@ -302,12 +302,12 @@ export function ReceiptBooksDesk({ register }: { register: DirectOrderReceiptReg
                   ) : null}
                 </div>
                 <div className="flex flex-wrap items-start gap-2">
-                  {book.status === "in_store" && book.waitsForLine ? (
+                  {book.status === "in_store" && book.waitsForItsLine ? (
                     <p className="break-words text-phx-sm text-slate-600">
-                      Kept in the store: the {book.waitsForLine} line has not started the receipt books yet, so its direct orders keep the current rule.
+                      Kept in the store: this manager&apos;s line has not started the receipt books yet, so its direct orders keep the current rule.
                     </p>
                   ) : null}
-                  {book.status === "in_store" && book.printedHolderHrId && !book.waitsForLine ? (
+                  {book.status === "in_store" && book.printedHolderHrId && !book.waitsForItsLine ? (
                     <button className={phxButtonGhostClassName} disabled={busy !== null} onClick={() => void act(key, { action: "issue", bookNo: book.bookNo, holderHrId: book.printedHolderHrId })} type="button">
                       Hand to {book.printedHolderName}
                     </button>

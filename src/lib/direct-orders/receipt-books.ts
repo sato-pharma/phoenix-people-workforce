@@ -40,7 +40,6 @@ import {
   receiptReminderFor,
   receiptRolloutStart,
   RECEIPT_BOOK_LINES,
-  lineUsesReceiptBooks,
   receiptBookLinesLabel,
   rejectionToShowManager,
   type HandEntryStatus,
@@ -65,7 +64,7 @@ import { isUuid } from "@/lib/http/uuid";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import type { CreateSystemNotificationInput } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
-import { loadReferenceLines } from "@/lib/reference/reference-lists";
+import { resolveLineId } from "@/lib/direct-orders/campaign-link";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1270,10 +1269,10 @@ export type ReceiptRegisterBook = {
   printedHolderName: string | null;
   printedHolderHrId: string | null;
   /**
-   * The printed manager's line when it is NOT in this wave ("Anti Infective"): the book stays in the store and
-   * the desk offers no hand-out (owner, 28 Nov 2026: Pedia only for now). Null when the book may go out.
+   * The printed manager's line is NOT in this wave (Anti Infective's books 1 to 7): the book stays in the store
+   * and the desk offers no hand-out (owner, 28 Nov 2026: Pedia only for now).
    */
-  waitsForLine: string | null;
+  waitsForItsLine: boolean;
   issuedAt: string | null;
   closedAt: string | null;
   used: number;
@@ -1485,20 +1484,19 @@ export async function loadDirectOrderReceiptRegister(access: AccessContext): Pro
 
   // The line of every printed name and every manager a spare may go to: this wave is the Pedia line only.
   const printedIds = [...new Set(books.map((book) => book.printedHolderHrId).filter((id): id is string => Boolean(id)))];
-  const [printedResult, referenceLines] = await Promise.all([
+  const [printedResult, waveLineIds] = await Promise.all([
     printedIds.length > 0
       ? supabase.from("employees").select("hr_id,line_id").in("hr_id", printedIds.flatMap((id) => hrIdLookupKeys(id)))
       : Promise.resolve({ data: [], error: null }),
-    loadReferenceLines(),
+    receiptBookLineIds(),
   ]);
   if (printedResult.error) throw printedResult.error;
-  const lineNames = new Map(referenceLines.filter((row) => row.id !== null).map((row) => [row.id as number, String(row.name ?? "")]));
-  const lineOf = (lineId: number | null | undefined) => (lineId === null || lineId === undefined ? null : lineNames.get(lineId) ?? null);
-  const printedLine = new Map(
-    ((printedResult.data ?? []) as { hr_id: string; line_id: number | null }[]).map((row) => [canonicalHrIdKey(row.hr_id), lineOf(row.line_id)]),
+  const inWave = (lineId: number | null | undefined) => lineId !== null && lineId !== undefined && waveLineIds.has(Number(lineId));
+  const printedLineId = new Map(
+    ((printedResult.data ?? []) as { hr_id: string; line_id: number | null }[]).map((row) => [canonicalHrIdKey(row.hr_id), row.line_id]),
   );
   const holderOptions = (((holdersResult.data ?? []) as { hr_id: string; full_name: string | null; line_id?: number | null }[]))
-    .filter((row) => lineUsesReceiptBooks(lineOf(row.line_id)))
+    .filter((row) => inWave(row.line_id))
     .map((row) => ({ hrId: hrIdForStorage(row.hr_id) ?? row.hr_id, name: names.get(row.hr_id) ?? String(row.full_name ?? row.hr_id) }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -1531,10 +1529,11 @@ export async function loadDirectOrderReceiptRegister(access: AccessContext): Pro
         holderName: book.holderHrId ? names.get(book.holderHrId) ?? book.holderHrId : null,
         printedHolderHrId: book.printedHolderHrId,
         printedHolderName: book.printedHolderHrId ? names.get(book.printedHolderHrId) ?? book.printedHolderHrId : null,
-        waitsForLine: (() => {
-          const line = book.printedHolderHrId ? printedLine.get(canonicalHrIdKey(book.printedHolderHrId)) ?? null : null;
-          return line && !lineUsesReceiptBooks(line) ? line : null;
-        })(),
+        waitsForItsLine: Boolean(
+          book.printedHolderHrId &&
+            printedLineId.has(canonicalHrIdKey(book.printedHolderHrId)) &&
+            !inWave(printedLineId.get(canonicalHrIdKey(book.printedHolderHrId))),
+        ),
         issuedAt: book.issuedAt,
         closedAt: book.closedAt,
         used: count.used,
@@ -1910,6 +1909,12 @@ function parseBookNo(raw: unknown): number {
 }
 
 /** Finance hands a book to its manager. The issue date is the cutover: orders approved before it owe no receipt. */
+/** The ids of the lines in this wave, read live (never from a cache: it decides who may receive a book). */
+async function receiptBookLineIds(): Promise<Set<number>> {
+  const ids = await Promise.all(RECEIPT_BOOK_LINES.map((name) => resolveLineId(name)));
+  return new Set(ids.filter((id): id is number => id !== null));
+}
+
 export async function issueDirectOrderReceiptBook(access: AccessContext, input: { bookNo: unknown; holderHrId: unknown }): Promise<{ message: string }> {
   if (!canManageDirectOrderReceiptBooks(access)) throw forbiddenError("Only Finance hands out receipt books.");
   const bookNo = parseBookNo(input.bookNo);
@@ -1928,13 +1933,10 @@ export async function issueDirectOrderReceiptBook(access: AccessContext, input: 
   );
   if (!holderRow) throw validationError(`${holder} is not an employee still at work, so book ${bookNo} cannot be handed to them.`);
   // This wave is the Pedia line only (owner, 28 Nov 2026): Anti Infective's books stay in the store.
-  const holderLine =
-    holderRow.line_id === null || holderRow.line_id === undefined
-      ? null
-      : (await loadReferenceLines()).find((line) => line.id === holderRow.line_id)?.name ?? null;
-  if (!lineUsesReceiptBooks(holderLine)) {
+  const waveLineIds = await receiptBookLineIds();
+  if (holderRow.line_id === null || holderRow.line_id === undefined || !waveLineIds.has(Number(holderRow.line_id))) {
     throw validationError(
-      `Receipt books are used by the ${receiptBookLinesLabel()} line only for now, so book ${bookNo} stays in the store. ${holder} works ${holderLine ? `in the ${holderLine} line` : "in no line"}, whose direct orders keep the current rule.`,
+      `Receipt books are used by the ${receiptBookLinesLabel()} line only for now, so book ${bookNo} stays in the store. ${holder} is not in the ${receiptBookLinesLabel()} line, and their direct orders keep the current rule.`,
     );
   }
   const now = new Date().toISOString();
