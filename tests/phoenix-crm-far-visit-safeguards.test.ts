@@ -524,8 +524,8 @@ export function runPhoenixCrmFarVisitSafeguardsTests() {
 
     const visits = stripComments(read("src/lib/phoenix-crm/server/visits.ts"));
     const day = functionBody(visits, /export async function loadVisitDay\(/);
-    assert.match(day, /filter\(\(\[, status\]\) => status === "refused"\)/, "the day asks for the map only for its refused holds");
-    assert.match(day, /loadFarVisitRejections\(refusedIds\)\.catch\(/, "🔴 a failed read leaves the map out, never fails the rep's day");
+    assert.match(day, /loadFarVisitRejections\(\{ seatId: seat\.seatId, date \}\)\.catch\(/, "🔴 the day's own territory and date, and a failed read leaves the map out, never fails the rep's day");
+    assert.match(rejections, /\.is\("imported_from_ireports360_at", null\)/, "a copied old-system visit is never read as one");
     assert.match(day, /rejection \? \{ \.\.\.held, farVisitRejection: rejection \} : held/, "and the rejection rides on that visit alone");
 
     const tab = stripComments(read("src/components/phoenix-crm/visits-tab.tsx"));

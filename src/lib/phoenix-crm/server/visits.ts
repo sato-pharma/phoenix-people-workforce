@@ -676,29 +676,25 @@ export async function loadVisitDay(viewer: PhoenixCrmViewer, raw: { seatId: unkn
     // A visit held for the SFE (owner, 2026-11-10) counts in nothing until he approves it, as the views
     // say. It needs only the date, so it starts beside the rows with the other early reads.
     loadUncountedFarVisitHolds({ from: date, to: date }),
+    // A held visit the SFE REFUSED is shown as rejected, with its read-only map (owner, 28 Nov 2026). A failed
+    // read leaves the map out and the visit as it was, never a failed day.
+    loadFarVisitRejections({ seatId: seat.seatId, date }).catch((error: unknown) => {
+      console.error("[phoenix-crm] rejected far visits not read", { error });
+      return new Map<string, FarVisitRejection>();
+    }),
   ]);
   dayReads.catch(() => undefined);
   const rows = await rowsRead;
   // The visit recordings. Their LENGTH (what draws the player) goes only to a reader who may hear them;
   // the Administrator's approval is read for every reader, because a recorded visit he has not approved
   // counts in nothing (owner, 2026-10-16) and `countsInKpi` must say what the countable view says.
-  const [names, recordings, [activity, ownDayActivity, productManagerRoles, dayStart, farHolds]] = await Promise.all([
+  const [names, recordings, [activity, ownDayActivity, productManagerRoles, dayStart, farHolds, rejections]] = await Promise.all([
     loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...visitPeople(rows)]),
     loadRecordingsByVisit(rows.map((row) => String(row.id))),
     dayReads,
   ]);
   const sight = locationSight(viewer, seat);
   const hears = hearsVisitRecording(viewer, seat);
-  // A held visit the SFE REFUSED is shown as rejected, with its read-only map (owner, 28 Nov 2026). Asked only
-  // when the day holds one; a failed read leaves the map out and the visit as it was, never a failed day.
-  const refusedIds = [...farHolds].filter(([, status]) => status === "refused").map(([visitId]) => visitId);
-  const rejections =
-    refusedIds.length > 0
-      ? await loadFarVisitRejections(refusedIds).catch((error: unknown) => {
-          console.error("[phoenix-crm] rejected far visits not read", { error });
-          return new Map<string, FarVisitRejection>();
-        })
-      : new Map<string, FarVisitRejection>();
   return {
     territory: describeTerritory(viewer.org, seat, names),
     isTest,

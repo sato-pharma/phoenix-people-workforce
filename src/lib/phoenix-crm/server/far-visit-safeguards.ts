@@ -701,24 +701,27 @@ export type FarVisitRejection = {
 const REJECTED_MAP_SIZE = { width: 256, height: 256, padding: 32 };
 
 /**
- * The rep's refused far visits among `visitIds`, each with its map (owner, 28 Nov 2026: "show him what I am
+ * The refused far visits of one territory's visit day, each with its map (owner, 28 Nov 2026: "show him what I am
  * seeing … the map … read only"). The place drawn is the customer's ACTIVE place nearest the visit — the one
  * the rule measures today — and the hold's own place when the customer has none left. Throws on a failed
  * read; the day page leaves the map out rather than failing (`loadVisitDay`).
  */
-export async function loadFarVisitRejections(visitIds: readonly string[]): Promise<Map<string, FarVisitRejection>> {
+export async function loadFarVisitRejections(day: { seatId: string; date: string }): Promise<Map<string, FarVisitRejection>> {
   const out = new Map<string, FarVisitRejection>();
-  const ids = [...new Set(visitIds)].filter((id) => isUuid(id));
-  if (ids.length === 0) return out;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day.date)) return out;
   const supabase = getSupabaseAdmin();
-  const [holds, visits] = await Promise.all([
-    supabase.from("phoenix_crm_far_visit_holds").select("visit_id, customer_id, place_id").in("visit_id", ids).eq("status", "refused"),
-    supabase.from("phoenix_crm_visits").select("id, lat, lon").in("id", ids),
-  ]);
+  const holds = await supabase
+    .from("phoenix_crm_far_visit_holds")
+    .select("visit_id, customer_id, place_id")
+    .eq("seat_id", day.seatId)
+    .eq("visit_date", day.date)
+    .eq("status", "refused");
   throwIfError(holds.error);
-  throwIfError(visits.error);
   const holdRows = (holds.data ?? []) as Row[];
   if (holdRows.length === 0) return out;
+  // A hold is only ever the rep's own entry, never a copied iReports360 visit — the mark says so in the read.
+  const visits = await supabase.from("phoenix_crm_visits").select("id, lat, lon").in("id", holdRows.map((row) => String(row.visit_id))).is("imported_from_ireports360_at", null);
+  throwIfError(visits.error);
   const customerIds = [...new Set(holdRows.map((row) => String(row.customer_id)))];
   const holdPlaceIds = [...new Set(holdRows.map((row) => (row.place_id ? String(row.place_id) : null)).filter((id): id is string => id !== null))];
   const placeColumns = "id, customer_id, status, retired_at, lat, lon, pin_lat, pin_lon, photo_lat, photo_lon";
