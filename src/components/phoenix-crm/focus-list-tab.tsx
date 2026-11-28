@@ -278,16 +278,20 @@ function WeekStrip({ entry }: { entry: FocusEntry }) {
   return (
     <div aria-label="Visits by week" className="mt-1.5 flex flex-wrap gap-1">
       {weeks.map((week) => (
+        // The week's own date sits under its count: a phone has no hover, so a tooltip alone left the manager
+        // reading "0 0 0 0 0" with no way to tell which week was which (browser check, 2026-11-28). Every field
+        // week starts on a Saturday, so the day and month say it; the weekday would only repeat itself.
         <span
           className={
             week.visits > 0
-              ? "inline-flex min-w-7 justify-center border border-orange-200 bg-orange-50 px-1 py-0.5 text-phx-sm font-black text-orange-700"
-              : "inline-flex min-w-7 justify-center border border-slate-200 bg-white px-1 py-0.5 text-phx-sm font-black text-slate-400"
+              ? "inline-flex min-w-11 flex-col items-center border border-orange-200 bg-orange-50 px-1 py-0.5 text-orange-700"
+              : "inline-flex min-w-11 flex-col items-center border border-slate-200 bg-white px-1 py-0.5 text-slate-400"
           }
           key={week.weekStart}
           title={`Week of ${dayLabel(week.weekStart)}: ${plural(week.visits, "visit", "visits")}`}
         >
-          {week.visits}
+          <span className="text-phx-sm font-black">{week.visits}</span>
+          <span className="text-phx-xs font-semibold text-slate-500">{dayLabel(week.weekStart).split(" ").slice(1).join(" ")}</span>
         </span>
       ))}
     </div>
