@@ -84,7 +84,8 @@ export type DirectOrderNeedsActionKind =
   | "verify_customer"
   | "decide_customer"
   | "assign_month"
-  | "decide_without_receipt";
+  | "decide_without_receipt"
+  | "receipt_books";
 
 export type DirectOrderNeedsActionItem = {
   id: string;
@@ -182,9 +183,19 @@ export type DirectOrderNeedsActionInput = {
     reason: string;
     askedAt: string;
   }[];
+  /**
+   * Finance's receipt work (owner, 28 Nov 2026): hand-typed originals to review, late originals, orders waiting
+   * for the warehouse exit — from countDirectOrderReceiptWork, all zero for anyone who does not manage the books.
+   */
+  receiptWork?: { handEntriesToReview: number; lateOriginals: number; awaitingExit: number };
   /** Route prefix for this shell — "/admin/direct-orders" or "/employee-portals/direct-orders". */
   basePath: string;
 };
+
+/** The one number Finance's receipt work adds to the Direct Orders badge — the same the inbox group counts. */
+export function receiptWorkCount(work: DirectOrderNeedsActionInput["receiptWork"]): number {
+  return work ? work.handEntriesToReview + work.lateOriginals + work.awaitingExit : 0;
+}
 
 /**
  * Build the inbox. Groups with nothing in them are omitted entirely rather than
@@ -288,6 +299,26 @@ export function buildDirectOrderNeedsAction(
         flagged: false,
       })),
       seeAllHref: `${basePath}?view=needs-action&queue=decide_without_receipt`,
+    });
+  }
+
+  const receiptWork = receiptWorkCount(input.receiptWork);
+  if (input.receiptWork && receiptWork > 0) {
+    // Like the venue desk below: the work lives on the Receipt Books desk, so the inbox says how much and hands off.
+    const { handEntriesToReview, lateOriginals, awaitingExit } = input.receiptWork;
+    const parts = [
+      handEntriesToReview > 0 ? `${handEntriesToReview} typed by hand to review` : null,
+      lateOriginals > 0 ? `${lateOriginals} with an original late` : null,
+      awaitingExit > 0 ? `${awaitingExit} waiting for the warehouse exit` : null,
+    ].filter(Boolean);
+    groups.push({
+      kind: "receipt_books",
+      headline: `${receiptWork} delivery ${plural(receiptWork, "receipt needs", "receipts need")} you: ${parts.join(", ")}`,
+      actionLabel: "Open Receipt Books",
+      count: receiptWork,
+      totalValue: 0,
+      items: [],
+      seeAllHref: "/admin/direct-orders/receipts",
     });
   }
 

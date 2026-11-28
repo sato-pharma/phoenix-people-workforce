@@ -136,6 +136,8 @@ export const NOTIFICATION_TYPES: readonly NotificationTypeEntry[] = [
   { module: "direct_orders", eventType: "approval_rung_repaired", label: "A direct order is now waiting on you after its approver changed", sentFrom: [DIRECT_ORDERS] },
   { module: "direct_orders", eventType: "direct_order_comment", label: "A new comment on a direct order", sentFrom: [DIRECT_ORDERS] },
   { module: "direct_orders", eventType: "direct_order_approved", label: "A direct order received its final approval", sentFrom: ["src/lib/direct-orders/approved-email.ts"], delivery: "direct_email" },
+  { module: "direct_orders", eventType: "receipt_due_reminder", label: "An original of your delivery receipt is due tomorrow or today", sentFrom: ["src/lib/direct-orders/receipt-books.ts"] },
+  { module: "direct_orders", eventType: "receipt_late_reminder", label: "An original of your delivery receipt is late", sentFrom: ["src/lib/direct-orders/receipt-books.ts"] },
   { module: "direct_orders", eventType: "direct_order_phantom_report", label: "Pharmacies that failed their direct-order probation", sentFrom: ["src/lib/direct-orders/phantom-report.ts"], delivery: "direct_email" },
 
   // ── Early Birds, employee import ────────────────────────────────────────────────────────────

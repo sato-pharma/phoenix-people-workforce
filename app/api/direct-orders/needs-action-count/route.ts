@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { countDirectOrderAwaitingFast, getDirectOrderUnbookedBadge } from "@/lib/direct-orders/service";
 import { countDirectOrderPendingValidations } from "@/lib/direct-orders/pharmacy-validation";
-import { countDirectOrderWithoutReceiptToDecide } from "@/lib/direct-orders/receipt-books";
+import { countDirectOrderReceiptWork, countDirectOrderWithoutReceiptToDecide } from "@/lib/direct-orders/receipt-books";
+import { receiptWorkCount } from "@/lib/direct-orders/needs-action";
 import { logError } from "@/lib/observability/log";
 
 export const runtime = "nodejs";
@@ -40,14 +41,20 @@ export async function GET(request: Request) {
     const access = await resolveAccessContext(request);
     // The fourth term (owner, 27 Nov 2026): orders asking to stand without a delivery receipt, which
     // only the CEO decides — 0 to everyone else, and a head-only count.
-    const [awaiting, unbooked, validations, withoutReceipt] = await Promise.all([
+    // The fifth (owner, 28 Nov 2026): Finance's receipt work — hand-typed originals to review, late originals and
+    // orders waiting for the warehouse exit. 0, with no read, to anyone who does not manage the books.
+    const [awaiting, unbooked, validations, withoutReceipt, receiptWork] = await Promise.all([
       countDirectOrderAwaitingFast(access),
       getDirectOrderUnbookedBadge(access),
       countDirectOrderPendingValidations(access),
       countDirectOrderWithoutReceiptToDecide(access),
+      countDirectOrderReceiptWork(access),
     ]);
     return NextResponse.json(
-      { count: awaiting + unbooked.count + validations + withoutReceipt, overdue: unbooked.overdue },
+      {
+        count: awaiting + unbooked.count + validations + withoutReceipt + receiptWorkCount(receiptWork),
+        overdue: unbooked.overdue || receiptWork.lateOriginals > 0,
+      },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { systemAccessContext } from "@/lib/auth/permissions";
+import { sendDirectOrderReceiptReminders } from "@/lib/direct-orders/receipt-books";
 import { expireStaleHeldDirectOrders } from "@/lib/direct-orders/service";
 import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { logError } from "@/lib/observability/log";
@@ -28,6 +29,11 @@ export const maxDuration = 60;
  * run "emails the owner" — nine silent nights say otherwise, and a red run in a log nobody opens is
  * not an alert. Healthchecks alerts on the ping that DIDN'T arrive, so it catches the case the
  * workflow cannot report on: the request never reaching this handler at all.
+ *
+ * THE DELIVERY-RECEIPT REMINDERS RIDE THIS SWEEP (owner, 28 Nov 2026): each manager is told inside Phoenix, never
+ * by email, the day before an original of his delivery receipt is due and once it is late
+ * (sendDirectOrderReceiptReminders). Each notice is sent once, by its key, so a re-run adds nothing. It runs after
+ * the expiry and on its own: a failure is logged and never undoes or hides the expiry result.
  */
 export async function GET(request: Request) {
   const denied = assertCronAuthorized(request, "cron/direct-orders-expire-held");
@@ -36,7 +42,17 @@ export async function GET(request: Request) {
     const result = await withDeadMansSwitch("phoenix-direct-orders-expire-held", () =>
       expireStaleHeldDirectOrders(systemAccessContext),
     );
-    return NextResponse.json({ success: true, ...result });
+    let receiptReminders: { due: number; late: number } | { failed: true };
+    try {
+      receiptReminders = await sendDirectOrderReceiptReminders();
+    } catch (error) {
+      logError("Direct order receipt reminders failed", {
+        labels: { event: "cron_failed", job: "direct-orders-receipt-reminders" },
+        error,
+      });
+      receiptReminders = { failed: true };
+    }
+    return NextResponse.json({ success: true, ...result, receiptReminders });
   } catch (error) {
     logError("Held direct-order expiry sweep failed", {
       labels: { event: "cron_failed", job: "direct-orders-expire-held" },

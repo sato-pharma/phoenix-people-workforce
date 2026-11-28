@@ -232,3 +232,31 @@ The owner's words: "لايف مش ابلود … منوره بالاحمر طو�
 - **Where it shows:** each original on the order says whether its QR was read or it waits; Finance's Receipt Books
   desk lists every entry waiting, with its photo and the Approve and Reject buttons; the verified print says for
   each original whether its QR was read, or it was typed by hand and approved, or it still waits.
+
+## Who is told, and when (28 Nov 2026)
+
+The owner, 28 Nov 2026, choosing "both": Finance sees a count, and each manager is told inside Phoenix before an
+original is due and once it is late. Never an email.
+
+- **Finance's count.** The Direct Orders row in the sidebar adds Finance's receipt work to its one number
+  (`countDirectOrderReceiptWork`, the fifth term of `/api/direct-orders/needs-action-count`). The Needs Action inbox
+  shows the same number as one group, «N delivery receipts need you», which opens the Receipt Books desk. It counts
+  three things, the same way the desk lists them:
+  - originals typed by hand that this viewer may review (Finance a manager's, the Administrator both, never the
+    author's own);
+  - orders with an original past its due date;
+  - approved orders still waiting for Finance to record the warehouse exit.
+  Anyone who does not manage the books gets 0 with no read. The order half of the count is read once a minute and
+  shared by every poll, so the badge can lag the desk by up to a minute. A late original also turns the badge's
+  overdue colour on.
+- **The manager's notices.** The daily direct-orders sweep (`/api/cron/direct-orders-expire-held`) runs
+  `sendDirectOrderReceiptReminders` after the held-order expiry. It sends in-app notices only, to the manager who
+  raised the order:
+  - «Delivery receipt due tomorrow» the day before (or «due today», if the day before was missed);
+  - «Delivery receipt late» once the due date has passed, saying he cannot raise a new direct order until it is in.
+  Only the first original not yet entered is spoken of. Nothing is sent before the warehouse exit, for an order the
+  CEO let stand without a receipt, or for one from a book recorded lost. Each notice has its own key (order,
+  original, kind), so a re-run sends nothing twice. A failing notice is logged and never stops the others or the
+  expiry.
+
+Pinned by `tests/direct-order-receipt-books.test.ts`.

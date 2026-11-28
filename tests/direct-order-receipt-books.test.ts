@@ -3,8 +3,10 @@ import { readFileSync } from "node:fs";
 
 import { createAccessContext } from "../src/lib/auth/permissions.ts";
 import {
+  __resetReceiptWorkMemoForTests,
   askDirectOrderWithoutReceipt,
   closeDirectOrderReceiptBook,
+  countDirectOrderReceiptWork,
   countDirectOrderWithoutReceiptToDecide,
   decideDirectOrderHandEntry,
   decideDirectOrderWithoutReceipt,
@@ -18,9 +20,13 @@ import {
   recordDirectOrderDelivery,
   recordDirectOrderReceipt,
   recordDirectOrderWarehouseExit,
+  receiptReminderWords,
   releaseDirectOrderReceipt,
+  sendDirectOrderReceiptReminders,
   type DirectOrderReceiptPanel,
 } from "../src/lib/direct-orders/receipt-books.ts";
+import { buildDirectOrderNeedsAction, receiptWorkCount } from "../src/lib/direct-orders/needs-action.ts";
+import type { CreateSystemNotificationInput } from "../src/lib/notifications/system.ts";
 import { canReviewDirectOrderHandEntry } from "../src/lib/direct-orders/finance-authority.ts";
 import { __setReceiptQrReaderForTests, readReceiptQrTexts } from "../src/lib/direct-orders/receipt-photo-qr.ts";
 import {
@@ -47,6 +53,7 @@ import {
   receiptScanPath,
   receiptEntryBookFor,
   receiptLateness,
+  receiptReminderFor,
   receiptRolloutStart,
   RECEIPT_CLOSED_BY_RELEASE_NOTE,
   RECEIPT_O2_CLOSED_WITH_O1_NOTE,
@@ -493,6 +500,64 @@ function rejectionShownPureTests() {
   );
   assert.ok(panel.includes("{panel.lastRejectedHandEntry ? <RejectedHandEntryNotice rejected={panel.lastRejectedHandEntry} /> : null}"), "and the order panel draws it");
   assert.ok(panel.includes("waits for {reviewerLabel} to check the photo"), "the typed-entry form names who checks it");
+}
+
+/**
+ * THE MANAGER'S REMINDERS AND FINANCE'S COUNT (owner, 28 Nov 2026: "الاتنين" — Finance sees a count on the Direct
+ * Orders row, the manager is told inside Phoenix the day before an original is due and once it is late; never email).
+ */
+function reminderPureTests() {
+  // Left Thursday 10 Dec: Original 1 due Sunday 13, Original 2 due Thursday 17 (the Friday skipped).
+  const nothing: ReceiptProgress = { custodyEntered: false, deliveryEntered: false, exitDate: "2026-12-10" };
+  assert.equal(receiptReminderFor({ ...nothing, exitDate: null }, "2026-12-12"), null, "before the exit nothing is due");
+  assert.equal(receiptReminderFor(nothing, "2026-12-11"), null, "two days ahead: no notice yet");
+  assert.deepEqual(receiptReminderFor(nothing, "2026-12-12"), { kind: "due", original: "custody", dueDate: "2026-12-13", daysToDue: 1 }, "the day before");
+  assert.deepEqual(receiptReminderFor(nothing, "2026-12-13"), { kind: "due", original: "custody", dueDate: "2026-12-13", daysToDue: 0 }, "the day itself, if the day before was missed");
+  assert.deepEqual(receiptReminderFor(nothing, "2026-12-14"), { kind: "late", original: "custody", dueDate: "2026-12-13", daysToDue: -1 }, "the day after: late");
+  const custodyIn: ReceiptProgress = { ...nothing, custodyEntered: true };
+  assert.equal(receiptReminderFor(custodyIn, "2026-12-14"), null, "Original 1 in: Original 2 is three days off");
+  assert.deepEqual(receiptReminderFor(custodyIn, "2026-12-16"), { kind: "due", original: "delivery", dueDate: "2026-12-17", daysToDue: 1 }, "Original 2, the day before");
+  assert.equal(receiptReminderFor({ ...custodyIn, deliveryEntered: true }, "2026-12-20"), null, "both in: nothing owed");
+  assert.equal(
+    receiptReminderFor(nothing, "2026-12-20")?.original,
+    "custody",
+    "Original 1 first: Original 2 is never spoken of while Original 1 is missing",
+  );
+
+  const late = receiptReminderWords({ kind: "late", original: "custody", dueDate: "2026-12-13", daysToDue: -1 }, "El Shifa Pharmacy");
+  assert.equal(late.title, "Delivery receipt late");
+  assert.match(late.message, /^Original 1, the custody page you signed, of your direct order for El Shifa Pharmacy was due on Sunday 13 December and is late./);
+  assert.match(late.message, /You cannot raise a new direct order until it is entered./, "the late notice says what it holds");
+  const tomorrow = receiptReminderWords({ kind: "due", original: "delivery", dueDate: "2026-12-17", daysToDue: 1 }, "");
+  assert.equal(tomorrow.title, "Delivery receipt due tomorrow");
+  assert.match(tomorrow.message, /^Original 2, the page the customer signed and stamped, of your direct order for a pharmacy not on file is due tomorrow, Thursday 17 December./);
+  assert.equal(receiptReminderWords({ kind: "due", original: "custody", dueDate: "2026-12-13", daysToDue: 0 }, "X").title, "Delivery receipt due today");
+
+  // The inbox group and the badge add the same number.
+  const work = { handEntriesToReview: 1, lateOriginals: 2, awaitingExit: 0 };
+  const groups = buildDirectOrderNeedsAction({
+    awaitingMyApproval: [], myOrders: [], awaitingFinanceMonth: [], pendingCustomerValidations: 0, receiptWork: work, basePath: "/admin/direct-orders",
+  });
+  assert.deepEqual(groups.map((g) => [g.kind, g.count, g.seeAllHref]), [["receipt_books", 3, "/admin/direct-orders/receipts"]]);
+  assert.equal(groups[0].headline, "3 delivery receipts need you: 1 typed by hand to review, 2 with an original late");
+  assert.equal(receiptWorkCount(work), groups[0].count, "the badge term equals the inbox group");
+  assert.deepEqual(
+    buildDirectOrderNeedsAction({
+      awaitingMyApproval: [], myOrders: [], awaitingFinanceMonth: [], pendingCustomerValidations: 0,
+      receiptWork: { handEntriesToReview: 0, lateOriginals: 0, awaitingExit: 0 }, basePath: "/admin/direct-orders",
+    }),
+    [],
+    "nothing waiting: no group, never a zero",
+  );
+
+  // Wired where the badge and the sweep read them.
+  const badge = readFileSync(new URL("../app/api/direct-orders/needs-action-count/route.ts", import.meta.url), "utf8");
+  assert.match(badge, /countDirectOrderReceiptWork\(access\)/, "the Direct Orders badge counts Finance's receipt work");
+  assert.match(badge, /\+ receiptWorkCount\(receiptWork\)/, "and adds it to the one number");
+  const workspace = readFileSync(new URL("../src/lib/direct-orders/workspace-data.ts", import.meta.url), "utf8");
+  assert.match(workspace, /countDirectOrderReceiptWork\(access\)/, "the Needs Action inbox reads the same count");
+  const sweep = readFileSync(new URL("../app/api/cron/direct-orders-expire-held/route.ts", import.meta.url), "utf8");
+  assert.match(sweep, /await sendDirectOrderReceiptReminders\(\)/, "the daily sweep sends the reminders");
 }
 
 async function photoQrReaderTests() {
@@ -1044,6 +1109,61 @@ async function behaviourTests() {
       await assert.rejects(loadDirectOrderReceiptRegister(ADMIN), "a pharmacy-name failure is not shown as 'Pharmacy not on file'");
     });
   }
+
+  // 14. Finance's count and the manager's reminders (owner, 28 Nov 2026).
+  {
+    const standIn: StandIn = { tables: tables() };
+    await withPostgrestStandIn(standIn, async (seen) => {
+      const reads = seen.length;
+      assert.deepEqual(await countDirectOrderReceiptWork(MOMEN, NOW), { handEntriesToReview: 0, lateOriginals: 0, awaitingExit: 0 });
+      assert.equal(seen.length, reads, "a manager's badge reads nothing");
+
+      __resetReceiptWorkMemoForTests();
+      const register = await loadDirectOrderReceiptRegister(ADMIN);
+      const before = await countDirectOrderReceiptWork(FINANCE, NOW);
+      assert.equal(before.awaitingExit, register.awaitingExit.length, "the count is the desk's own list");
+      assert.deepEqual(before, { handEntriesToReview: 0, lateOriginals: 0, awaitingExit: 2 }, "both of the manager's orders wait for the exit");
+
+      const notices: CreateSystemNotificationInput[] = [];
+      const send = async (notice: CreateSystemNotificationInput) => { notices.push(notice); };
+      assert.deepEqual(await sendDirectOrderReceiptReminders(NOW, { send }), { due: 0, late: 0 }, "no exit: nothing to remind");
+
+      await recordDirectOrderWarehouseExit(ADMIN, { requestId: ORDER_A, exitDate: "2026-12-10", now: NOW });
+      __resetReceiptWorkMemoForTests();
+      assert.deepEqual(await countDirectOrderReceiptWork(FINANCE, NOW), { handEntriesToReview: 0, lateOriginals: 1, awaitingExit: 1 }, "Original 1 due 13 Dec, read on 20 Dec: late");
+
+      assert.deepEqual(await sendDirectOrderReceiptReminders(NOW, { send }), { due: 0, late: 1 });
+      assert.equal(notices.length, 1);
+      const [notice] = notices;
+      assert.equal(notice.recipientHrId, "AI-0001", "the manager who raised it, alone");
+      assert.deepEqual(notice.channels, ["in_app"], "inside Phoenix only — never an email");
+      assert.equal(notice.title, "Delivery receipt late");
+      assert.match(notice.message, /El Shifa Pharmacy was due on Sunday 13 December/);
+      assert.equal(notice.actionUrl, `/admin/direct-orders/${ORDER_A}`);
+      assert.equal(notice.metadata?.idempotencyKey, `direct_orders:${ORDER_A}:receipt_late_reminder:custody:AI-0001`, "one key per order, original and kind: sent once");
+      await sendDirectOrderReceiptReminders(NOW, { send });
+      assert.equal(notices[1].metadata?.idempotencyKey, notice.metadata?.idempotencyKey, "a second run carries the same key, so the notice layer drops it");
+
+      notices.length = 0;
+      assert.deepEqual(await sendDirectOrderReceiptReminders(new Date("2026-12-12T08:00:00.000Z"), { send }), { due: 1, late: 0 });
+      assert.equal(notices[0].title, "Delivery receipt due tomorrow");
+      assert.match(notices[0].message, /is due tomorrow, Sunday 13 December/);
+      assert.equal(notices[0].metadata?.idempotencyKey, `direct_orders:${ORDER_A}:receipt_due_reminder:custody:AI-0001`);
+
+      // A failing notice never stops the sweep.
+      assert.deepEqual(await sendDirectOrderReceiptReminders(NOW, { send: async () => { throw new Error("down"); } }), { due: 0, late: 0 });
+
+      // Hand-typed originals: each reviewer counts only what they may review, never their own.
+      standIn.tables.direct_order_receipt_hand_entries.push(
+        { id: "11111111-aaaa-4aaa-8aaa-111111111111", serial: 7, request_id: ORDER_A, original: "custody", entered_by_hr_id: "AI-0001", entered_by_finance: false, status: "pending" },
+        { id: "22222222-aaaa-4aaa-8aaa-222222222222", serial: 8, request_id: ORDER_B, original: "custody", entered_by_hr_id: "B-185", entered_by_finance: true, status: "pending" },
+        { id: "33333333-aaaa-4aaa-8aaa-333333333333", serial: 9, request_id: ORDER_USED, original: "delivery", entered_by_hr_id: "AI-0001", entered_by_finance: false, status: "approved" },
+      );
+      __resetReceiptWorkMemoForTests();
+      assert.equal((await countDirectOrderReceiptWork(FINANCE, NOW)).handEntriesToReview, 1, "Finance reviews the manager's, not its own");
+      assert.equal((await countDirectOrderReceiptWork(ADMIN, NOW)).handEntriesToReview, 2, "the Administrator reviews both");
+    });
+  }
 }
 
 /**
@@ -1314,6 +1434,7 @@ async function photoQrBehaviourTests() {
 
 export async function runDirectOrderReceiptBooksTests() {
   pureTests();
+  reminderPureTests();
   photoQrPureTests();
   rejectionShownPureTests();
   // The suite's stand-in photos are not real pictures: no QR is read unless a test says otherwise.
