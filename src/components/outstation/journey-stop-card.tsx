@@ -9,7 +9,7 @@ import {
   resolveEvidenceLocationStamp,
 } from "@/components/outstation/evidence-watermark";
 import { JourneyRouteLine, type JourneyRouteLeg } from "@/components/outstation/journey-route-line";
-import { prepareTicketAttachment } from "@/components/outstation/prepare-ticket-attachment";
+import { markLiveTicketCaptures, prepareTicketAttachment } from "@/components/outstation/prepare-ticket-attachment";
 import { TICKET_FILE_ACCEPT } from "@/components/outstation/ticket-upload-card";
 import { Input } from "@/components/ui/input";
 import {
@@ -356,6 +356,19 @@ export function JourneyStopCard({
             <span className={phxLabelClassName}>
               This leg&apos;s ticket{rule.ticket === "optional" ? " (if you have one)" : ""}
             </span>
+            {/* The camera itself, never the gallery: its photo is sent as live (a District Manager's must be). */}
+            <label className="flex min-h-11 cursor-pointer items-center justify-center gap-2 border border-orange-400 bg-white px-3 py-2 text-center text-sm font-bold text-orange-800 transition hover:bg-orange-50">
+              <Camera aria-hidden className="h-4 w-4 shrink-0" />
+              Take a photo of the ticket
+              <input
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                disabled={busy}
+                onChange={(event) => pickTicket(markLiveTicketCaptures(event.target.files))}
+                type="file"
+              />
+            </label>
             <label className="flex min-h-11 cursor-pointer items-center justify-center gap-2 border border-dashed border-orange-400 bg-orange-50 px-3 py-2 text-center text-sm font-bold text-orange-800 transition hover:bg-orange-100">
               <Upload aria-hidden className="h-4 w-4 shrink-0" />
               {ticketFiles.length > 0

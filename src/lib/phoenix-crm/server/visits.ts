@@ -2064,6 +2064,24 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
       isTest,
     );
   }
+  // A double visit with a District Manager: he is told to confirm it (owner, 28 Nov 2026) — his trip
+  // allowance needs the first and the last of each trip day confirmed. In the app and by push, never by
+  // email; the rep is told nothing (Golden Rule #1). After the reply, and it never throws.
+  if (enteredAs === "rep" && result.duplicate !== true && !isTest && (visit.kind === "double" || visit.kind === "chain")) {
+    await afterResponse("phoenix-crm save visit: district manager confirm notice", async () => {
+      const { notifyDmDoubleVisitToConfirm } = await import("@/lib/outstation/dm-work-allowance-server");
+      await notifyDmDoubleVisitToConfirm({
+        customerName: textOrNull(result.customer_name) ?? "a customer",
+        isTest,
+        lat: typeof visit.lat === "number" ? visit.lat : null,
+        lon: typeof visit.lon === "number" ? visit.lon : null,
+        managerHrId: participants.value.managerHrId ?? null,
+        repHrId: participants.value.repHrId ?? viewer.hrId,
+        visitDate: String(result.visit_date),
+        visitId,
+      });
+    });
+  }
   // "Arrange a double visit" (owner, 2026-10-02): the rep's own next step asks his manager for it, by
   // itself and once per visit — the database keys the ask on the visit id, so a save sent twice asks
   // once. Only the rep's own visit: a manager entering a visit is on it already. It never throws and

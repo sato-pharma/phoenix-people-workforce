@@ -504,7 +504,9 @@ export function reasonChips(claim: DeskClaim): ReasonChip[] {
   const chips: ReasonChip[] = [];
   const idle = claim.verdict.idleDates.length;
   const days = tripDayCount(claim);
-  if (failed.has("field_work") && idle > 0) {
+  // The work rule already paid an idle day nothing on a priced District Manager claim: "Idle days" would
+  // name a cut that is in the figure. "No field activity" stays, as a reason to reject.
+  if (failed.has("field_work") && idle > 0 && !(claim.dmWorkPriced && idle < days)) {
     chips.push(
       idle >= days
         ? {
@@ -528,6 +530,9 @@ export function reasonChips(claim: DeskClaim): ReasonChip[] {
   }
   if (failed.has("ticket")) chips.push({ key: "ticket", label: "No ticket", text: "No ticket was attached to this trip." });
   if (failed.has("meeting_day")) chips.push({ key: "meeting-day", label: "Not a Thursday", text: "The meeting on this claim was not held on a Thursday." });
+  if (failed.has("work_allowance")) {
+    chips.push({ key: "work-allowance", label: "Visits not confirmed", text: "A trip day's first or last double visit was not confirmed, so that day pays no allowance." });
+  }
   if (failed.has("amounts")) chips.push({ key: "invoice", label: "No invoice", text: "No invoice or picture was attached to this cost." });
   return chips;
 }

@@ -19,7 +19,7 @@ import {
  * could differ by a byte and the server would read the ticket again.
  */
 
-export type PreparedTicket = { dataUrl: string; name: string };
+export type PreparedTicket = { dataUrl: string; name: string; source?: "live_camera" | "file" };
 
 /** A picked train ticket, prepared, with what the read found. `scanToken` is sent back with the file. */
 export type ScannedTrainTicket = PreparedTicket & {

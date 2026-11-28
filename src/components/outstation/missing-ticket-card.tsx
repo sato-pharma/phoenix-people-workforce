@@ -1,10 +1,10 @@
 "use client";
 
-import { CheckCircle2, Loader2, Ticket, TriangleAlert, Upload } from "lucide-react";
+import { Camera, CheckCircle2, Loader2, Ticket, TriangleAlert, Upload } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { prepareTicketAttachment } from "@/components/outstation/prepare-ticket-attachment";
+import { markLiveTicketCaptures, prepareTicketAttachment } from "@/components/outstation/prepare-ticket-attachment";
 import { TICKET_FILE_ACCEPT } from "@/components/outstation/ticket-upload-card";
 import {
   scanTrainTicket,
@@ -162,7 +162,12 @@ function MissingTicketRow({ request }: { request: MissingTicketRequest }) {
     try {
       // A train ticket goes as the exact bytes that were read, with the signed note of that read.
       const tickets = isTrain
-        ? acceptedTickets.map(({ ticket }) => ({ dataUrl: ticket.dataUrl, name: ticket.name, scanToken: ticket.scanToken ?? undefined }))
+        ? acceptedTickets.map(({ ticket }) => ({
+            dataUrl: ticket.dataUrl,
+            name: ticket.name,
+            scanToken: ticket.scanToken ?? undefined,
+            source: ticket.source,
+          }))
         : await Promise.all(files.map(prepareTicketAttachment));
       const response = await fetch(`/api/outstation/${request.id}/ticket`, {
         body: JSON.stringify({ tickets }),
@@ -208,6 +213,19 @@ function MissingTicketRow({ request }: { request: MissingTicketRequest }) {
         </p>
       ) : (
         <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
+          {/* The camera itself, never the gallery: its photo is sent as live (a District Manager's must be). */}
+          <label className="flex min-h-11 cursor-pointer items-center justify-center gap-2 border border-orange-400 bg-white px-3 py-2 text-sm font-bold text-orange-800 transition hover:bg-orange-50 sm:col-span-2">
+            <Camera aria-hidden className="h-4 w-4" />
+            Take a photo of the {transport} {ticketWord}
+            <input
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              disabled={saving}
+              onChange={(event) => void pick(markLiveTicketCaptures(event.target.files))}
+              type="file"
+            />
+          </label>
           <label className="flex min-h-11 cursor-pointer items-center justify-center gap-2 border border-dashed border-orange-400 bg-orange-50 px-3 py-2 text-sm font-bold text-orange-800 transition hover:bg-orange-100">
             <Upload aria-hidden className="h-4 w-4" />
             {files.length > 0

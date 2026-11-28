@@ -9584,3 +9584,26 @@ Asked three questions at about 19:58 Cairo, each with the measured numbers in fr
 **The map: "Move it to Google Maps".** He first chose "Leave OpenStreetMap", then typed "WHY DONOT WE GO TO GOOGLE MAPS ?" and, asked again with Google's price in the question, chose to move. It replaced his 13 Oct 2026 choice of free OpenStreetMap tiles for the Location Integrity maps. The streets are one Google map picture per map, fetched by the server with the key the app already holds (`GET /api/admin/phoenix-crm/case-map-basemap`). Every picture is counted against the company's Google account, shared with the route map and the outstation map: the first 10,000 a month are free, then 2.00 USD per 1,000 (Google's price page, read that day). What the account may spend is his own setting on Google Cloud console › APIs and Services › Maps Static API › Quotas; the code holds no spend decision, only who may be drawn a map, which frames, and 600 an hour for one person.
 
 **Pinned by** `tests/push-opt-in-nudge.test.ts`, `tests/telegram-home-card.test.ts`, `tests/crm-integrity-board-view.test.ts` and `tests/csp-report-only.test.ts`.
+
+## The District Manager expense rules — owner, 28 Nov 2026
+
+He dictated the District Manager expense policy (the Summary and Full Guide PDFs in `F:\Phoenix Workforce\`)
+and then said "Build them now". Asked who they cover, he picked "District Managers only". His three
+clarifications, word for word:
+
+- **The 3 hours:** "after the medical rep submit his first visit, and this is a double visit with the district
+  manager, send a notification reminder to the district manager. The arrival photo must be at the start of the
+  trip. Submit your arrival now. … Regarding the departure, not to be less than 3 hours from the arrival ticket."
+- **The 12 hours:** "12 hours from the first double visit done for this district manager. at this day."
+- **The train cap:** he had read the Egyptian National Railways site before and asked that the fares be fetched
+  from it; the sweep showed one route's second-class AC fares differ by train (Cairo → Asyut 210, 250 or 350 on
+  3 Dec 2026), so the cap is the fare of the train taken.
+
+The day's work (within 150 km: AM ≥ 2 and PM ≥ 6; fewer than 2 AM is PM only and pays half; fewer than 6 PM pays
+PM/6; beyond 150 km a PM half day is allowed), the confirmed first and last double visit, and the live ticket
+evidence are his dictated rules. Only the allowance is cut — never fuel or tickets. The rules apply to claims
+filed from the build on (`dm_work_allowance` stamped at submit); the claims already waiting are never re-priced.
+
+Later the same day, for everyone: "the weekly meetings are only accepted on Thursday. No any other meeting will
+be accepted not on Thursday" — asked whether that is everyone or District Managers only, he picked everyone. A
+new claim is refused at submit; the desk's flag stays for claims already stored.

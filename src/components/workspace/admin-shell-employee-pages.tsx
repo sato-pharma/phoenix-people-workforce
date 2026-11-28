@@ -869,7 +869,7 @@ export async function WorkspaceSubmitExpensePage() {
   const pendingActions =
     pendingActionsResult.status === "fulfilled"
       ? pendingActionsResult.value
-      : { departurePhotoDue: [], missingTicket: [] };
+      : { departurePhotoDue: [], doubleVisitsToConfirm: [], missingTicket: [] };
   const employeeHrId = access.hrId ?? portalData.employee.hrId;
   const submissions = submissionsResult.status === "fulfilled" ? submissionsResult.value : null;
   return (
@@ -882,6 +882,7 @@ export async function WorkspaceSubmitExpensePage() {
       <div className="space-y-5">
         <OutstationPendingActions
           departurePhotoDue={pendingActions.departurePhotoDue}
+          doubleVisitsToConfirm={pendingActions.doubleVisitsToConfirm}
           employeeHrId={employeeHrId}
           missingTicket={pendingActions.missingTicket}
         />

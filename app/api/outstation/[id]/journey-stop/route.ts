@@ -31,6 +31,8 @@ const stopNumberField = z.union([z.number(), z.string()]).nullable().optional();
 const StopTicketFileSchema = z.object({
   dataUrl: z.string().nullable().optional(),
   name: z.string().nullable().optional(),
+  /** "live_camera" when the app's camera took it; a District Manager's photo must be (dm-expense-rules.ts). */
+  source: z.string().nullable().optional(),
 });
 
 /**
@@ -123,12 +125,13 @@ export async function POST(
       requestId: id,
       ticket: {
         amount: Number.isFinite(ticketAmount) ? ticketAmount : 0,
-        files: rawTickets.map((entry) =>
-          parseOutstationTicketAttachmentDataUrl({
+        files: rawTickets.map((entry) => ({
+          ...parseOutstationTicketAttachmentDataUrl({
             dataUrl: String(entry.dataUrl ?? ""),
             fileName: String(entry.name ?? ""),
           }),
-        ),
+          source: entry.source === "live_camera" ? ("live_camera" as const) : ("file" as const),
+        })),
       },
     });
 

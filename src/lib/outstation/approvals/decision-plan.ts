@@ -21,6 +21,9 @@
  *   - 🔴 a plain Approve on a trip where the server NOW finds an idle-day cut the press did not
  *     name. Paying an idle day in full is "Keep full claim", said out loud (`keepFull`), never
  *     the silence of a page that was read before the field work was;
+ *   - 🔴 an approval of a District Manager trip whose days are not all priced on their field work yet
+ *     (owner, 28 Nov 2026): approving freezes the allowance, so a day still open would stay at what it
+ *     paid so far. Rejecting it stays open (`allowanceHold`, dm-expense-rules.ts);
  *   - 🔴 a reduced amount on a trip the payroll gate would HOLD. A held trip has no payroll row,
  *     and the payable figure lives on that row — the old screen approved the trip, lost the figure
  *     and said so afterwards, and the trip later paid in full. Refused here, in words, instead.
@@ -102,6 +105,8 @@ export function planDeskDecision(claim: DeskClaim | null | undefined, decision: 
       record: { ...base, approvedAmount: claim.total, hrApproved: false, hrComment: comment, status: "Rejected" },
     };
   }
+  if (decision.action !== "reject" && claim.allowanceHold) return refused(claim.allowanceHold);
+
   if (again?.offer === "approve") {
     // Rejected. Approved in full and nothing else: a rejected claim's idle days and payroll hold are
     // not read, so no amount other than the claim itself can be named for it.

@@ -15,6 +15,25 @@ import {
  * Two copies of a file-to-upload path is how one of them starts refusing what the other sends.
  */
 
+/** Where a ticket file came from: the app's own camera, or a file the phone chose (dm-expense-rules.ts). */
+export type TicketSource = "live_camera" | "file";
+
+const liveTicketCaptures = new WeakSet<File>();
+
+/**
+ * Marks the files a "Take a photo of the ticket" button returned — the camera opened by `capture`, never
+ * the gallery — so they are sent as live. A District Manager's ticket photo must be (owner, 28 Nov 2026).
+ */
+export function markLiveTicketCaptures(files: FileList | null): FileList | null {
+  for (const file of Array.from(files ?? [])) liveTicketCaptures.add(file);
+  return files;
+}
+
+/** "live_camera" for a file the app's camera button returned, else "file". */
+export function ticketSourceOf(file: File): TicketSource {
+  return liveTicketCaptures.has(file) ? "live_camera" : "file";
+}
+
 export function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -70,12 +89,13 @@ export function dataUrlToBlob(dataUrl: string): Blob {
  * offers as `image/*`) is not a type the server accepts at all. A PDF cannot be shrunk here, so it
  * goes as it is; checkTicketAttachmentFile has already held it to the size cap.
  */
-export async function prepareTicketAttachment(file: File): Promise<{ dataUrl: string; name: string }> {
+export async function prepareTicketAttachment(file: File): Promise<{ dataUrl: string; name: string; source: TicketSource }> {
   const verdict = checkTicketAttachmentFile(file);
   if (!verdict.ok) throw new Error(verdict.message);
+  const source = ticketSourceOf(file);
 
   if (verdict.kind === "pdf") {
-    return { dataUrl: await fileToDataUrl(file), name: file.name };
+    return { dataUrl: await fileToDataUrl(file), name: file.name, source };
   }
 
   const objectUrl = URL.createObjectURL(file);
@@ -108,7 +128,7 @@ export async function prepareTicketAttachment(file: File): Promise<{ dataUrl: st
     if (dataUrl.length > TICKET_PDF_MAX_BYTES * 1.37) {
       dataUrl = canvas.toDataURL("image/jpeg", TICKET_IMAGE_FALLBACK_QUALITY);
     }
-    return { dataUrl, name: jpegFileName(file.name) };
+    return { dataUrl, name: jpegFileName(file.name), source };
   } finally {
     URL.revokeObjectURL(objectUrl);
   }

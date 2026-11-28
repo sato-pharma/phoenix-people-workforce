@@ -26,6 +26,7 @@ import {
   TicketScanReading,
   type ScannedTrainTicket,
 } from "@/components/outstation/train-ticket-scan";
+import { isDistrictManagerRole } from "@/lib/outstation/dm-expense-rules";
 import { ticketScanApplies } from "@/lib/outstation/ticket-scan-rules";
 import { isNonTravelExpenseType, nonTravelAmountRefusal } from "@/lib/outstation/non-travel-expense";
 import { humanizeCode } from "@/lib/format/code-label";
@@ -599,7 +600,8 @@ export function MobileOutstationWizard({
   // instead of capturing it live. Car is deliberately excluded — validateLiveArrivalEvidence
   // still refuses anything but a live capture there, and offering an upload button that the
   // server would then reject is exactly the dead-end this whole page just got fixed for.
-  const canUploadArrivalPhoto = transportationType !== "car";
+  // A District Manager's arrival photo is live on every trip (owner, 28 Nov 2026; car-evidence.ts refuses an upload).
+  const canUploadArrivalPhoto = transportationType !== "car" && !isDistrictManagerRole(employeeRole);
   const arrivalPhotoHeading = canUploadArrivalPhoto
     ? "Add one arrival photo — take it live or upload it"
     : "Take one live photo of the car";
@@ -1587,7 +1589,7 @@ export function MobileOutstationWizard({
       // phone said "offline", and the claim was held for a ticket he had attached. sync-offline
       // now carries ticketAttachments exactly like submit. Only a draft REPLAYED later from
       // localStorage has no file to send; that claim gets its ticket from My claims.
-      let ticketAttachments: Array<{ dataUrl: string; name: string; scanToken?: string }> | undefined;
+      let ticketAttachments: Array<{ dataUrl: string; name: string; scanToken?: string; source?: "live_camera" | "file" }> | undefined;
       if ((isTicketBased || isNonTravel) && ticketFiles.length > 0) {
         try {
           // A train ticket goes as the exact bytes that were read, with the signed note of that read.
@@ -1596,6 +1598,8 @@ export function MobileOutstationWizard({
                 dataUrl: ticket.dataUrl,
                 name: ticket.name,
                 ...(ticket.scanToken ? { scanToken: ticket.scanToken } : {}),
+                // Taken by the app's camera or chosen from the phone: a District Manager's photo must be live.
+                ...(ticket.source ? { source: ticket.source } : {}),
               }))
             : await Promise.all(ticketFiles.map(prepareTicketAttachment));
         } catch (error) {

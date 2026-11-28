@@ -67,22 +67,31 @@ export function runOutstationCarEvidenceValidationTests() {
     "a car trip still accepts nothing but a live in-app capture — the upload route was never extended to it",
   );
 
+  // The upload route is for everyone but a District Manager: his arrival photo is live on every trip
+  // (owner, 28 Nov 2026, "every photo is taken live"), so the relaxation is pinned on a Medical Representative.
   for (const transportationType of ["train", "bus", "other"] as const) {
     assert.equal(
       validateLiveArrivalEvidence({
-        employeeRole: "District Manager",
+        employeeRole: "Medical Representative",
         carEvidenceMetadata: { ...validMetadata, source: "upload" },
         transportationType,
       }).isValid,
       true,
       `a ${transportationType} trip may satisfy the arrival photo with an upload`,
     );
+    const dmUpload = validateLiveArrivalEvidence({
+      employeeRole: "District Manager",
+      carEvidenceMetadata: { ...validMetadata, source: "upload" },
+      transportationType,
+    });
+    assert.equal(dmUpload.isValid, false, `a District Manager's ${transportationType} arrival photo must be live, never an upload`);
+    assert.match(dmUpload.message, /taken live/, "the refusal says why: a District Manager's photo is taken live");
 
     // The relaxation is about the SOURCE only. Everything else the gate demands still applies,
     // or "upload" would become a way to submit evidence with no GPS and no capture time at all.
     assert.equal(
       validateLiveArrivalEvidence({
-        employeeRole: "District Manager",
+        employeeRole: "Medical Representative",
         carEvidenceMetadata: { ...validMetadata, capturedLatitude: Number.NaN, source: "upload" },
         transportationType,
       }).isValid,

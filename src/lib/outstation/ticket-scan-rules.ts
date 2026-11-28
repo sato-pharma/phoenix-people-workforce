@@ -75,6 +75,9 @@ export type TicketScanRead =
       fromStation: string | null;
       toStation: string | null;
       trainNumber: string | null;
+      /** The traveller's name and the booking number an online ticket prints (owner, 28 Nov 2026); absent on older reads. */
+      passengerName?: string | null;
+      bookingNumber?: string | null;
     }
   | { status: "unreadable"; problems: TicketScanProblem[] }
   /** The reader could not be reached; the ticket is kept, marked "not read". */
@@ -165,6 +168,8 @@ export function normalizeTicketScan(raw: Record<string, unknown>): TicketScanRea
       trainNumber: text(raw.train_number),
       travelDate: date,
       ...(raw.year_printed === false ? { yearPrinted: false } : {}),
+      ...(text(raw.passenger_name) ? { passengerName: text(raw.passenger_name) } : {}),
+      ...(text(raw.booking_number) ? { bookingNumber: text(raw.booking_number) } : {}),
     };
   }
   const problems = (Array.isArray(raw.problems) ? raw.problems : [])
@@ -239,6 +244,9 @@ export type OutstationTicketScanRecord = {
   fromStation: string | null;
   toStation: string | null;
   trainNumber: string | null;
+  /** Read from an online ticket (owner, 28 Nov 2026): who it was issued to, and its booking number — claimed once. */
+  passengerName?: string | null;
+  bookingNumber?: string | null;
   line: string;
 };
 

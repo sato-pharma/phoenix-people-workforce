@@ -126,6 +126,7 @@ const NOT_A_CUSTOMER_NAME: Readonly<Record<string, string>> = {
   "src/lib/crm/campaign-contact-match.ts": "a contact PERSON's name (identityNameKey builds on it)",
   "src/lib/crm/campaign-note.ts": "a campaign note's words",
   "src/lib/geo/egypt-locations.ts": "a governorate or city",
+  "src/lib/outstation/train-fare-cap.ts": "a railway station name read off a train ticket",
   "src/lib/phoenix-crm/dictation-correct.ts": "dictated words",
   "src/lib/phoenix-crm/list-sheet-hours.ts": "a weekday in an opening-hours cell",
   "src/lib/phoenix-crm/speciality-list.ts": "a customer's speciality",

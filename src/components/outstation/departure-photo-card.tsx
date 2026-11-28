@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, CheckCircle2, Loader2, MapPin, TriangleAlert } from "lucide-react";
+import { Camera, CheckCircle2, Clock, Loader2, MapPin, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
@@ -17,6 +17,7 @@ import {
 } from "@/lib/outstation/departure-location-refusals";
 import { DEPARTURE_PHOTO_LOCATION_REQUIRED_MESSAGE } from "@/lib/outstation/departure-photo-location";
 import { blankFrameRefusal } from "@/lib/outstation/blank-frame";
+import { cairoShortTime } from "@/lib/outstation/dm-expense-rules";
 
 /** One request still owing its departure photo. */
 export type DeparturePhotoPendingRequest = {
@@ -29,7 +30,17 @@ export type DeparturePhotoPendingRequest = {
    * the card says what happens instead of offering a camera.
    */
   windowClosed?: boolean;
+  /**
+   * A District Manager's departure camera opens 3 hours after his arrival photo (owner, 28 Nov 2026). Set
+   * only while it has not opened, so the card shows the time instead of a camera the server would refuse.
+   */
+  opensAt?: string;
 };
+
+/** The server set `opensAt` only while the camera is still closed, so the render never reads the clock. */
+function notOpenYet(request: DeparturePhotoPendingRequest): boolean {
+  return Boolean(request.opensAt);
+}
 
 /**
  * Tell Phoenix a departure photo was refused for having no location, and why, so the approver sees
@@ -298,7 +309,7 @@ export function DeparturePhotoCard({
                     {formatPhoenixLongDate(request.tripStartDate)} – {formatPhoenixLongDate(request.tripEndDate)}
                   </p>
                 </div>
-                {!done && !request.windowClosed ? (
+                {!done && !request.windowClosed && !notOpenYet(request) ? (
                   <button
                     className="inline-flex min-h-11 items-center gap-2 bg-orange-500 px-4 text-xs font-black text-white hover:bg-orange-600 disabled:opacity-60"
                     disabled={
@@ -369,7 +380,13 @@ export function DeparturePhotoCard({
                 </p>
               ) : null}
 
-              {request.windowClosed ? (
+              {notOpenYet(request) && !request.windowClosed ? (
+                <p className="mt-2 flex items-start gap-2 text-phx-md leading-relaxed text-slate-600" data-departure-opens-at>
+                  <Clock className="mt-0.5 h-4 w-4 shrink-0 text-orange-600" />
+                  Take the departure photo at the end of the trip, from {cairoShortTime(Date.parse(request.opensAt ?? ""))}. It must be at least 3
+                  hours after your arrival photo.
+                </p>
+              ) : request.windowClosed ? (
                 <p className="mt-2 flex items-start gap-2 text-phx-md leading-relaxed text-slate-600" data-departure-window-closed>
                   <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-orange-600" />
                   The trip ended on {formatPhoenixLongDate(request.tripEndDate)}, so the departure photo can no longer be taken. HR

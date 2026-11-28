@@ -130,6 +130,7 @@ export async function POST(request: Request) {
       }),
       // The signed note of the read made when the file was picked; checked against these bytes.
       scanToken: typeof entry.scanToken === "string" ? entry.scanToken : undefined,
+      source: entry.source === "live_camera" ? ("live_camera" as const) : ("file" as const),
     }));
     const result = await syncOfflineOutstationRequest(access, {
       // Never `Number(...)`: a blank accuracy is null, not a perfect 0 m fix. The service holds a

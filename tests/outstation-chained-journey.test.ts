@@ -521,8 +521,10 @@ function runCaptureGuardPins() {
   assert.ok(!route2.includes("flagReasons"), "the flag wording is the approver's — never returned to the employee");
   const card = source("src/components/outstation/journey-stop-card.tsx");
   assert.ok(card.includes("maximumAge: 0"), "the stop camera takes a FRESH fix at the shutter");
-  // The only file input is the ticket's: the photo is camera only, a gallery picture proves nothing.
-  assert.equal(card.split('type="file"').length, 2, "one file input, the ticket's");
+  // The only file inputs are the ticket's — its live photo (owner, 28 Nov 2026: a District Manager's must be
+  // live) and its file: the stop photo is camera only, a gallery picture proves nothing.
+  assert.equal(card.split('type="file"').length, 3, "two file inputs, both the ticket's");
+  assert.equal((card.match(/onChange=\{\(event\) => pickTicket\(/g) ?? []).length, 2, "and both feed the ticket, never the stop photo");
   assert.ok(
     card.indexOf('{rule.ticket !== "none" ? (') < card.indexOf('type="file"') &&
       card.indexOf('type="file"') < card.indexOf("{rule.photo ? ("),

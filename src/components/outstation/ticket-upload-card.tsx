@@ -1,6 +1,8 @@
 "use client";
 
-import { Upload } from "lucide-react";
+import { Camera, Upload } from "lucide-react";
+
+import { markLiveTicketCaptures } from "@/components/outstation/prepare-ticket-attachment";
 import type { OutstationTransportationType } from "@/lib/outstation/types";
 import { ticketScanApplies } from "@/lib/outstation/ticket-scan-rules";
 
@@ -68,6 +70,18 @@ export function TicketUploadCard({
         </p>
         <p className="mt-1 text-sm leading-6 text-slate-600">{description}</p>
       </div>
+      {/* The camera itself, never the gallery: its photo is sent as live (a District Manager's must be). */}
+      <label className="flex min-h-12 cursor-pointer items-center justify-center gap-2 border border-orange-400 bg-white px-3 py-3 text-sm font-bold text-orange-800 transition hover:bg-orange-50">
+        <Camera aria-hidden className="h-4 w-4" />
+        Take a photo of the ticket
+        <input
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(event) => onFilesSelected(markLiveTicketCaptures(event.target.files))}
+          type="file"
+        />
+      </label>
       <label className="flex min-h-12 cursor-pointer items-center justify-center gap-2 border border-dashed border-orange-400 bg-orange-50 px-3 py-3 text-sm font-bold text-orange-800 transition hover:bg-orange-100">
         <Upload aria-hidden className="h-4 w-4" />
         {attachmentCount > 0

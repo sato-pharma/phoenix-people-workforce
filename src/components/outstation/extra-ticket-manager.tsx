@@ -1,6 +1,8 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
+import { Camera, Plus, Trash2 } from "lucide-react";
+
+import { markLiveTicketCaptures, ticketSourceOf } from "@/components/outstation/prepare-ticket-attachment";
 import { useState } from "react";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
@@ -76,6 +78,7 @@ export function ExtraTicketRowEditor({
         filled.map(async (row) => ({
           dataUrl: await fileToDataUrl(row.file as File),
           name: (row.file as File).name,
+          source: ticketSourceOf(row.file as File),
           amount: Number(row.amount),
         })),
       );
@@ -112,6 +115,18 @@ export function ExtraTicketRowEditor({
               onChange={(event) => updateRow(index, { file: event.target.files?.[0] ?? null })}
               type="file"
             />
+            {/* The camera itself, never the gallery: its photo is sent as live (a District Manager's must be). */}
+            <label className="inline-flex cursor-pointer items-center gap-1 border border-orange-300 bg-white px-2 py-1.5 text-xs font-semibold text-orange-700">
+              <Camera aria-hidden className="h-3.5 w-3.5" />
+              Photo
+              <input
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(event) => updateRow(index, { file: markLiveTicketCaptures(event.target.files)?.[0] ?? null })}
+                type="file"
+              />
+            </label>
             <input
               className={cn(phxFieldClassName, "w-28")}
               min="0"

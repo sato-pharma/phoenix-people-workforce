@@ -24,6 +24,9 @@
  *    is a new file, so the receipt print never sees it (owner, 2026-11-28, ZERO leniency: "مفيش فيها
  *    تهاون", after Weaam Gweed's Superjet 2244150 was photographed twice and her train 976 sent three
  *    times as legs of two claims). `sameTicketTwice` holds the same key inside one claim and one upload.
+ *  - BOOKING: an online ticket's booking number (the reader reads it from the operator's PDF) is already on
+ *    another claim of the same employee, whatever its day — a booking is claimed once (owner, 28 Nov 2026,
+ *    District Manager expense rules). Inside one claim it is never refused: one booking can carry both legs.
  *
  * The same two halves as the same-trip guard, one rule:
  *  - SUBMISSION refuses the copy with words that name the earlier claim (service.ts), checked
@@ -68,7 +71,7 @@ export type DuplicateTicketExisting = DuplicateTicketCandidate & {
 };
 
 /** What the copy repeats, in the order an employee reads it. */
-export type DuplicateTicketRepeat = "tickets" | "other" | "receipt" | "read_ticket";
+export type DuplicateTicketRepeat = "tickets" | "other" | "receipt" | "read_ticket" | "booking";
 
 export type DuplicateTicketMatch = {
   earlier: DuplicateTicketExisting;
@@ -141,7 +144,14 @@ function fingerprints(files: Array<TicketReceiptFile | string> | null | undefine
 }
 
 /** A read ticket, as kept on a claim (`scan` of ticket_attachment_metadata) or just read for a new one. */
-export type ReadTicket = { fromStation?: unknown; matchedTo?: unknown; toStation?: unknown; trainNumber?: unknown; travelDate?: unknown };
+export type ReadTicket = {
+  bookingNumber?: unknown;
+  fromStation?: unknown;
+  matchedTo?: unknown;
+  toStation?: unknown;
+  trainNumber?: unknown;
+  travelDate?: unknown;
+};
 
 const ARABIC_DIGITS = /[٠-٩۰-۹]/g;
 
@@ -174,6 +184,30 @@ export function readTicketKeys(tickets: unknown): string[] {
       if (!entry || typeof entry !== "object") return null;
       const scan = "scan" in entry ? (entry as { scan?: unknown }).scan : entry;
       return scan && typeof scan === "object" ? readTicketKey(scan as ReadTicket) : null;
+    })
+    .filter((key): key is string => Boolean(key));
+}
+
+/**
+ * An online ticket's booking number, made comparable: Western digits, lower case, letters and digits only.
+ * Null under five characters — too short to be a booking code rather than a misread.
+ */
+export function readBookingKey(ticket: ReadTicket | null | undefined): string | null {
+  if (!ticket) return null;
+  const code = asciiDigits(String(ticket.bookingNumber ?? ""))
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "");
+  return code.length >= 5 ? code : null;
+}
+
+/** Every booking number in a claim's stored metadata or a list of scan records. */
+export function readBookingKeys(tickets: unknown): string[] {
+  if (!Array.isArray(tickets)) return [];
+  return tickets
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const scan = "scan" in entry ? (entry as { scan?: unknown }).scan : entry;
+      return scan && typeof scan === "object" ? readBookingKey(scan as ReadTicket) : null;
     })
     .filter((key): key is string => Boolean(key));
 }
@@ -237,6 +271,10 @@ export function ticketRepeats(candidate: DuplicateTicketCandidate, other: Duplic
   // Whatever the dates and the amounts: the ticket's own day and number are the identity.
   const read = new Set(readTicketKeys(candidate.readTickets));
   if (read.size > 0 && readTicketKeys(other.readTickets).some((key) => read.has(key))) repeats.push("read_ticket");
+
+  // An online booking is claimed once, on whichever day (owner, 28 Nov 2026).
+  const bookings = new Set(readBookingKeys(candidate.readTickets));
+  if (bookings.size > 0 && readBookingKeys(other.readTickets).some((key) => bookings.has(key))) repeats.push("booking");
   return repeats;
 }
 
@@ -276,7 +314,9 @@ function repeatWords(repeats: DuplicateTicketRepeat[]) {
         ? "the same other cost (such as parking)"
         : repeat === "read_ticket"
           ? "the same ticket (the same train or bus number on the same day)"
-          : "the same ticket photo",
+          : repeat === "booking"
+            ? "the same online booking (the same booking number)"
+            : "the same ticket photo",
   );
   if (words.length <= 1) return words.join("");
   return `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`;

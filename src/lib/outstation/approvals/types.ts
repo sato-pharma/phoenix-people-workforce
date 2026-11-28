@@ -21,6 +21,7 @@ export type CheckKey =
   | "distance"
   | "odometer"
   | "meeting_day"
+  | "work_allowance"
   | "amounts";
 
 /** What a claim is for: the three kinds Submit Expense offers (claim-kind.ts). */
@@ -59,6 +60,13 @@ export type ClaimPreCut = {
 /** One trip on the desk. Money is whole figures in EGP exactly as the payroll mapper produced them. */
 export type DeskClaim = {
   allowance: number;
+  /**
+   * A District Manager trip under the work rules whose trip days are not all priced yet: why Approve waits
+   * (dm-expense-rules.ts, dmAllowanceApprovalHold). Null or absent when it may be approved.
+   */
+  allowanceHold?: string | null;
+  /** True when the work rule priced this claim's allowance day by day, so its idle days already pay nothing. */
+  dmWorkPriced?: boolean;
   /** The amount he typed when he reduced it; null when the claim pays in full. */
   approvedAmount: number | null;
   daysWaiting: number;
