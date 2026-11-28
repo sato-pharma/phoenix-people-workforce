@@ -40,6 +40,8 @@ const ACKNOWLEDGED: ReadonlyArray<{ file: string; text: string } & ({ forwards: 
   { file: "src/lib/direct-orders/service.ts", text: "opts.eventType", forwards: true },
   // decideDirectOrder announces the decision itself: DirectOrderDecision.
   { file: "src/lib/direct-orders/service.ts", text: "input.decision", values: ["approve", "reject", "return"] },
+  // The daily receipt reminders: receiptReminderFor picks one of the two (owner, 28 Nov 2026).
+  { file: "src/lib/direct-orders/receipt-books.ts", text: "eventType", values: ["receipt_due_reminder", "receipt_late_reminder"] },
   { file: "src/lib/excuses/service.ts", text: "input.eventType", forwards: true },
   { file: "src/lib/hr-ops-reports/notify.ts", text: "input.eventType", forwards: true },
   { file: "src/lib/marketing-functions/notify.ts", text: "input.eventType", forwards: true },
