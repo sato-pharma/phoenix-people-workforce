@@ -417,7 +417,28 @@ export type PhoenixCrmNotice =
        */
       attempt?: string | null;
     }
+  | FocusListNotice
   | ManagerPlanNotice;
+
+/**
+ * The Focus list (owner, 2026-11-28): a PM customer put on a territory's Focus list, kept, or returned to
+ * the normal list. A rep's push WAITS for the territory's reviewing manager (his district manager; SFE
+ * while the chain is vacant), who presses Keep or Return; a manager's own push is kept at once and tells
+ * the rep. A rep's own return tells his manager, a manager's return tells the rep. In-app, Telegram and the
+ * phone — never email, like every Phoenix CRM notice.
+ */
+export type FocusListNotice = {
+  kind: "focus_list";
+  step: "pushed" | "kept" | "returned";
+  org: OrgIndex;
+  seat: OrgSeat;
+  focusId: string;
+  customerName: string;
+  actorHrId: string;
+  actedAs: "rep" | "manager";
+  /** The written reason (on a push) or the return note (on a return), when there is one. */
+  note: string | null;
+};
 
 /**
  * The district manager's weekly plan (owner, 2026-10-16) — each step told to the ONE person it concerns:
@@ -694,7 +715,7 @@ type Delivery = {
   title: string;
   message: string;
   /** A product manager answers an ask on the Reports page, the one page of the module he opens. */
-  tab: "team" | "list" | "plan" | "visits" | "forecast" | "reports";
+  tab: "team" | "list" | "plan" | "visits" | "forecast" | "reports" | "focus";
   /**
    * Where the notice opens when it is NOT a tab of the Phoenix CRM page — the double-visit requests
    * report (owner, 2026-10-16), a page of its own that managers AND product managers both open.
@@ -1263,6 +1284,100 @@ export function doubleVisitRequestDeliveries(notice: Extract<PhoenixCrmNotice, {
   ];
 }
 
+async function describeFocusList(notice: FocusListNotice): Promise<Delivery[]> {
+  const reviewer = territoryReviewer(notice.org, notice.seat.seatId);
+  // A vacant chain is told SFE, never nobody — the same rule as a list request (`request_created`).
+  const sfe = notice.actedAs === "rep" && !reviewer ? await sfeManagerHrIds() : [];
+  const names = await loadPeopleNames([notice.actorHrId]);
+  return focusListDeliveries(notice, names, reviewer?.hrId ?? null, sfe);
+}
+
+/** Every notice ever raised about one Focus list row — each step, and the test-world copies. */
+export function phoenixCrmFocusNoticeKeyPrefix(focusId: string): string {
+  return `phoenix_crm:focus:${focusId}:`;
+}
+
+/**
+ * Who hears one Focus list step, and in what words. Pure, so the people and the words are pinned by
+ * tests/phoenix-crm-focus-list.test.ts. The actor is never told of his own step.
+ *
+ * 🔴 The rep's copy names what to DO with the customer and never a count, a visit or who watches it
+ * (Golden rule #1): "your manager added X to your Focus list", "kept", "back on your normal list".
+ */
+export function focusListDeliveries(
+  notice: FocusListNotice,
+  names: PeopleNames,
+  reviewerHrId: string | null,
+  sfeHrIds: readonly string[],
+): Delivery[] {
+  const territory = territoryName(notice.seat);
+  const actor = deciderNameOf(names, notice.actorHrId, notice.actedAs === "rep" ? "A rep" : "Your manager");
+  const actorKey = personKey(notice.actorHrId);
+  const reps = seatOccupants(notice.seat);
+  const toManager = notice.actedAs === "rep";
+  const people = toManager ? (reviewerHrId ? [reviewerHrId] : [...sfeHrIds]) : reps;
+  const recipients = [
+    ...new Set(people.map((hrId) => personKey(hrId)).filter((key): key is string => Boolean(key) && key !== actorKey)),
+  ];
+  if (recipients.length === 0) return [];
+  const customer = bidiIsolate(notice.customerName);
+  const note = notice.note ? ` Reason: ${notice.note}` : "";
+  const base = {
+    recipients,
+    tab: "focus" as const,
+    recordId: notice.focusId,
+    subjectHrId: toManager ? notice.actorHrId : (reps[0] ?? null),
+    metadata: { focusId: notice.focusId },
+  };
+  const key = (step: string) => `${phoenixCrmFocusNoticeKeyPrefix(notice.focusId)}${step}`;
+  if (notice.step === "pushed" && toManager) {
+    const why = reviewerHrId ? "" : " This territory has no district manager, so it is yours to decide.";
+    return [
+      {
+        ...base,
+        eventType: "focus_list_waiting",
+        title: `Focus list: keep or return ${notice.customerName}`,
+        message: `${actor} put ${customer} (PM) on the ${territory} Focus list.${note} Keep it or return it to the normal list on the Focus list tab.${why}`,
+        idempotencyKey: key("waiting"),
+      },
+    ];
+  }
+  if (notice.step === "pushed") {
+    return [
+      {
+        ...base,
+        eventType: "focus_list_added",
+        title: `${notice.customerName} is on your Focus list`,
+        message: `${actor} added ${customer} (PM) to your Focus list.${note}`,
+        idempotencyKey: key("added"),
+      },
+    ];
+  }
+  if (notice.step === "kept") {
+    return [
+      {
+        ...base,
+        eventType: "focus_list_kept",
+        title: `${notice.customerName} stays on your Focus list`,
+        message: `${actor} kept ${customer} (PM) on your Focus list.`,
+        idempotencyKey: key("kept"),
+      },
+    ];
+  }
+  const returnNote = notice.note ? ` Note: ${notice.note}` : "";
+  return [
+    {
+      ...base,
+      eventType: "focus_list_returned",
+      title: toManager ? `${notice.customerName} is off the ${territory} Focus list` : `${notice.customerName} is back on your normal list`,
+      message: toManager
+        ? `${actor} returned ${customer} (PM) from the ${territory} Focus list to the normal list.${returnNote}`
+        : `${actor} returned ${customer} (PM) from your Focus list to your normal list.${returnNote}`,
+      idempotencyKey: key("returned"),
+    },
+  ];
+}
+
 async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[] | null> {
   // A manager's plan names no territory, and a product manager's has no seat at all.
   if (notice.kind === "manager_plan") return describeManagerPlan(notice);
@@ -1274,6 +1389,7 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
   if (notice.kind === "recorded_visit_decided") return describeRecordedVisitDecided(notice);
   if (notice.kind === "day_start") return describeDayStart(notice);
   if (notice.kind === "visit_ask") return describeVisitAsk(notice);
+  if (notice.kind === "focus_list") return describeFocusList(notice);
 
   if (notice.kind === "request_created") {
     const reviewer = territoryReviewer(notice.org, notice.seat.seatId);
@@ -1711,6 +1827,9 @@ function activityMirrorPeopleIds(notice: PhoenixCrmNotice): string[] {
     case "double_visit_request":
       ids.push(notice.repHrId, ...notice.askedHrIds);
       break;
+    case "focus_list":
+      ids.push(notice.actorHrId, ...seatOccupants(notice.seat));
+      break;
     case "forecast_sent":
     case "unplanned_visit_raised":
     case "day_start":
@@ -1843,6 +1962,24 @@ function activityMirrorLine(notice: PhoenixCrmNotice, names: PeopleNames): Mirro
         recordId: notice.requestId,
         subjectHrId: notice.repHrId,
         keySuffix: `plan_edit:${notice.requestId}:v${notice.version}:${notice.status}`,
+      };
+    }
+    case "focus_list": {
+      const actor = nameOf(names, notice.actorHrId, notice.actedAs === "rep" ? "A rep" : "A manager");
+      const customer = bidiIsolate(notice.customerName);
+      const did =
+        notice.step === "pushed"
+          ? `put ${customer} (PM) on the Focus list`
+          : notice.step === "kept"
+            ? `kept ${customer} (PM) on the Focus list`
+            : `returned ${customer} (PM) from the Focus list to the normal list`;
+      return {
+        title: `Activity · Focus list: ${notice.customerName}`,
+        message: `${actor} ${did}, ${territory}.`,
+        tab: "focus",
+        recordId: notice.focusId,
+        subjectHrId: notice.actedAs === "rep" ? notice.actorHrId : (seatOccupants(notice.seat)[0] ?? null),
+        keySuffix: `focus:${notice.focusId}:${notice.step}`,
       };
     }
     case "forecast_sent": {
@@ -1986,6 +2123,7 @@ function activityMirrorActorHrId(notice: PhoenixCrmNotice): string | null {
     case "request_answered":
       return notice.requesterHrId;
     case "plan_edit":
+    case "focus_list":
       return notice.actorHrId;
     case "visit_ask":
       return notice.status === "waiting" ? notice.repHrId : notice.askedHrId;
@@ -2253,6 +2391,21 @@ export async function withdrawPhoenixCrmVisitAskNotices(askId: string, step: "wa
   }
 }
 
+/**
+ * Take back the manager's "keep or return" line once the push is answered — kept, returned by him, or
+ * returned by the rep himself — so nobody is left with a to-do already done. Never throws.
+ */
+export async function withdrawPhoenixCrmFocusWaitingNotice(focusId: string): Promise<void> {
+  try {
+    await withdrawInAppNotificationsByEventKeyPrefix(`${phoenixCrmFocusNoticeKeyPrefix(focusId)}waiting`);
+  } catch (error) {
+    logError("Phoenix CRM focus notice withdrawal failed", {
+      labels: { event: "phoenix_crm_focus_withdraw_failed", focusId },
+      error,
+    });
+  }
+}
+
 /** Every notice ever raised about one double-visit request — each step, each person, and the test-world copies. */
 function phoenixCrmDoubleVisitNoticeKeyPrefix(requestId: string): string {
   return `phoenix_crm:double_visit:${requestId}:`;
@@ -2284,6 +2437,7 @@ export async function withdrawPhoenixCrmDoubleVisitWaitingNotices(requestId: str
  */
 const PHOENIX_CRM_APPROVAL_KINDS: ReadonlySet<PhoenixCrmNotice["kind"]> = new Set<PhoenixCrmNotice["kind"]>([
   "double_visit_request",
+  "focus_list",
   "manager_plan",
   "monthly_plan_decided",
   "monthly_plan_submitted",

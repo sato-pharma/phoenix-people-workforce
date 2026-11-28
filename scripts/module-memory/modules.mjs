@@ -573,6 +573,23 @@ export const MODULES = [
     keywords: ["customer marks", "go first", "frequency pips", "highlight the customers", "marketing request on the customer", "show visit times", "last visit time"],
     tables: [],
   },
+  // The Focus list (owner, 2026-11-28): a rep or his district manager puts a PM customer in focus with a written
+  // reason; the manager keeps or returns it and reads how often each was visited, when and where last.
+  {
+    id: "phoenix-crm-focus-list",
+    title: "Phoenix CRM — the Focus list",
+    scope: "The PM customers a rep or his manager put in focus with a written reason, grouped by grade then brick; the manager's keep or return, and his tracking of how often, when and where each was visited in a From–To period.",
+    globs: [
+      "src/lib/phoenix-crm/focus-list-rules.ts",
+      "src/lib/phoenix-crm/server/focus-list.ts",
+      "src/components/phoenix-crm/focus-list-tab.tsx",
+      "app/api/phoenix-crm/focus/**",
+      "tests/phoenix-crm-focus-list*",
+      "supabase/migrations/*phoenix_crm_focus_list*",
+    ],
+    keywords: ["focus list", "push to focus", "focus customer", "focus tracking", "keep or return"],
+    tables: ["phoenix_crm_focus_customers"],
+  },
   // 🔴 SPLIT, 2026-10-23, WHEN `phoenix-crm-manager-plan` CROSSED THE POINTER MARGIN AGAIN: its 35th rule — a district
   // manager's half-day with his manager or product manager — measured its injected pointer at 4,038 bytes against
   // the 4,000 margin `tests/module-memory.test.ts` holds. The two half-days spent with another manager (`with_dm`,

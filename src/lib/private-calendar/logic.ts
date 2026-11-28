@@ -17,15 +17,16 @@ import {
   type PrivateCalendarVisitSummary,
 } from "@/lib/private-calendar/activity-kinds";
 
-export type PrivateCalendarSource = "attendance" | "correction" | "double_visit" | "excuse" | "field_visit" | "holiday" | "interview" | "outstation" | "plan" | "vacation";
+export type PrivateCalendarSource = "attendance" | "correction" | "day_record" | "double_visit" | "excuse" | "field_visit" | "holiday" | "interview" | "outstation" | "plan" | "vacation";
 export type PrivateCalendarSeverity = "danger" | "info" | "success" | "warning";
 export type PrivateCalendarViewMode = "employee" | "team";
 
-export const privateCalendarSources = ["attendance", "vacation", "excuse", "holiday", "double_visit", "field_visit", "outstation", "interview", "plan", "correction"] as const satisfies readonly PrivateCalendarSource[];
+export const privateCalendarSources = ["attendance", "vacation", "excuse", "holiday", "double_visit", "field_visit", "outstation", "interview", "day_record", "plan", "correction"] as const satisfies readonly PrivateCalendarSource[];
 
 export const privateCalendarSourceLabels: Record<PrivateCalendarSource, string> = {
   attendance: "Attendance",
   correction: "Admin-verified correction",
+  day_record: "Day record",
   double_visit: "Double Visit",
   excuse: "Excuse",
   field_visit: "Field Visit",
@@ -716,6 +717,7 @@ export function summarizePrivateCalendarItems(items: PrivateCalendarItem[]): Pri
   const summary = {
     attendance: 0,
     correction: 0,
+    day_record: 0,
     double_visit: 0,
     excuse: 0,
     field_visit: 0,
@@ -736,6 +738,7 @@ function sourceCounts() {
   return {
     attendance: 0,
     correction: 0,
+    day_record: 0,
     double_visit: 0,
     excuse: 0,
     field_visit: 0,
@@ -1045,6 +1048,10 @@ export function derivePrivateCalendarExceptions(input: {
       // owner 2026-10-12: any trip not rejected, cancelled or withdrawn). Owner, 2026-10-29: "if their
       // is an expense it must automatic appeared in his private calendar".
       const trips = dayItems.filter((item) => item.source === "outstation");
+      // A DAY RECORD (owner, 2026-11-28): the line's training day for its product managers, a day the
+      // Super Admin recorded for a group, or a conference a rep named him on — day-records.ts. Each is a
+      // captured record of a working day, and the deductions read the same rule via loadProvenWorkedDays.
+      const dayRecords = dayItems.filter((item) => item.source === "day_record");
       // 🔴 AN APPROVED WEEKLY PLAN COVERS NOTHING — ANY ACTIVITY TITLE. Owner, 2026-10-12: *"NEVER
       // COUNT WEEKLY PLAN AS COVERAGE WHAT IF HE PLANNED BUT DIDNT GO WORK?"* and *"Do not ever touch
       // a weekly plan. All what you do that you see the weekly plan and the daily reports and compare
@@ -1088,7 +1095,8 @@ export function derivePrivateCalendarExceptions(input: {
         holidays.length > 0 ||
         doubleVisits.length > 0 ||
         fieldVisits.length > 0 ||
-        trips.length > 0;
+        trips.length > 0 ||
+        dayRecords.length > 0;
 
       for (const item of attendance) {
         for (const flag of item.exceptionFlags) {
@@ -1139,7 +1147,7 @@ export function derivePrivateCalendarExceptions(input: {
         exceptions.push(createException({
           code: "no_activity_recorded",
           date,
-          description: `${employee.fullName}: no CRM field or double visit, no fingerprint attendance, no outstation trip, no approved vacation, no approved excuse and no two interviews in one half recorded for this workday. An approved weekly plan is not a record of work and never clears this day.`,
+          description: `${employee.fullName}: no CRM field or double visit, no fingerprint attendance, no outstation trip, no day record, no approved vacation, no approved excuse and no two interviews in one half recorded for this workday. An approved weekly plan is not a record of work and never clears this day.`,
           employeeHrId: employee.hrId,
           employeeName: employee.fullName,
           relatedItemIds: [],

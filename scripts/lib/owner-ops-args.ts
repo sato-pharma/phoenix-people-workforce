@@ -12,7 +12,7 @@
 // refused rather than "last one wins".
 // ---------------------------------------------------------------------------
 
-export const OWNER_OPS_JOBS = ["link-doctor", "merge-venues", "merge-customers", "remove-customer-pharmacy", "pin-pharmacy", "load-crm-list", "seat-in-building", "tablet-agents", "start-tablet-agent", "bind-tablet-agent", "revoke-tablet-agent", "match-app-version", "lock-rep-tablets", "sync-insurance-master", "end-insurance-cover", "reinstate-insurance-cover"] as const;
+export const OWNER_OPS_JOBS = ["link-doctor", "merge-venues", "merge-customers", "remove-customer-pharmacy", "pin-pharmacy", "load-crm-list", "seat-in-building", "tablet-agents", "start-tablet-agent", "bind-tablet-agent", "revoke-tablet-agent", "match-app-version", "lock-rep-tablets", "sync-insurance-master", "end-insurance-cover", "reinstate-insurance-cover", "reject-expense"] as const;
 export type OwnerOpsJob = (typeof OWNER_OPS_JOBS)[number];
 
 /** Every flag the runner knows, for refuseUnknownFlags. */
@@ -21,6 +21,7 @@ export const OWNER_OPS_FLAGS = [
   "--apply",
   "--body",
   "--building",
+  "--claim",
   "--customer",
   "--customers",
   "--employee",
@@ -55,6 +56,7 @@ const VALUE_FLAGS_BY_JOB: Record<OwnerOpsJob, readonly string[]> = {
   "sync-insurance-master": [],
   "end-insurance-cover": ["--employee"],
   "reinstate-insurance-cover": ["--employee"],
+  "reject-expense": ["--claim", "--reason"],
 };
 
 /** A tablet's number as Headwind holds it — PHX-TAB-0008. Never a database row id. */
@@ -90,7 +92,8 @@ export type OwnerOpsPlan =
   | { job: "lock-rep-tablets"; apply: boolean }
   | { job: "sync-insurance-master"; apply: boolean }
   | { job: "end-insurance-cover"; apply: boolean; hrIds: string[] }
-  | { job: "reinstate-insurance-cover"; apply: boolean; hrIds: string[] };
+  | { job: "reinstate-insurance-cover"; apply: boolean; hrIds: string[] }
+  | { job: "reject-expense"; apply: boolean; requestId: number; reason: string };
 
 export type OwnerOpsParse = { ok: true; plan: OwnerOpsPlan } | { ok: false; error: string };
 
@@ -160,6 +163,10 @@ listed and none is sent. Only --apply writes. Every run ends with a proof read.
       row reopens and the family that end took with them comes back. Used when cover was ended in
       Phoenix before Libano-Suisse was sent the deletion, so the person is back on To remove for the
       Send. Someone with no ended row on the policy in force is refused and nothing is changed.
+  reject-expense --claim <claim number> --reason "<what the employee reads>"
+      Reject one outstation expense claim exactly as Expense Approvals' Reject does: the same press,
+      the claim's own version, the in-payroll lock and the employee's notice (in-app, Telegram, push;
+      never email). The reason is what the employee reads on the claim. One claim per run.
 
   --apply      write for real (refused from a tree behind origin/main)
   --employee   whose draft workspace the proof read opens; by default every employee holding a
@@ -234,6 +241,16 @@ export function parseOwnerOpsArgs(argv: readonly string[]): OwnerOpsParse {
     const bad = hrIds.find((hrId) => !/^[A-Za-z]{1,4}-\d{1,5}$/.test(hrId));
     if (bad) return { ok: false, error: `--employee takes HR ids like PD-0042, got "${bad}"` };
     return { ok: true, plan: { job, apply, hrIds } };
+  }
+
+  if (job === "reject-expense") {
+    const raw = need("--claim");
+    if (typeof raw !== "string") return { ok: false, ...raw };
+    if (!/^[1-9][0-9]{0,8}$/.test(raw)) return { ok: false, error: `--claim must be the claim's number, got "${raw}"` };
+    const reason = need("--reason");
+    if (typeof reason !== "string") return { ok: false, ...reason };
+    if (reason.length < 20 || reason.length > 500) return { ok: false, error: "--reason must be 20 to 500 characters: the employee reads it on the claim" };
+    return { ok: true, plan: { job, apply, requestId: Number(raw), reason } };
   }
 
   if (job === "match-app-version") {

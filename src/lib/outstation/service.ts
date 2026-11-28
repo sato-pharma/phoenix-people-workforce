@@ -76,7 +76,7 @@ import { readCarOdometer } from "@/lib/outstation/odometer-scan";
 import { measureEvidencePhoto } from "@/lib/outstation/blank-frame-server";
 import { inspectEvidencePhoto } from "@/lib/outstation/evidence-photo-inspection";
 import { odometerOfMetadata } from "@/lib/outstation/odometer-scan-rules";
-import { ticketScanApplies } from "@/lib/outstation/ticket-scan-rules";
+import { ticketRefusalMessage, ticketScanApplies } from "@/lib/outstation/ticket-scan-rules";
 import {
   NoTicketFareUnavailableError,
   noTicketFareRecord,
@@ -138,7 +138,7 @@ import {
   OUTSTATION_TICKET_EVIDENCE_REQUIRED_REASON,
   returnTicketAskIsDue,
 } from "@/lib/outstation/missing-ticket";
-import { returnTicketState } from "@/lib/outstation/return-ticket";
+import { legOnClaim, returnTicketState, sameLegAgainRefusal, type LegOnClaim } from "@/lib/outstation/return-ticket";
 import { isDistrictManagerRole } from "@/lib/outstation/dm-double-visit-distance";
 import {
   isNonTravelExpenseType,
@@ -183,7 +183,9 @@ import {
 import {
   duplicateTicketMessage,
   findDuplicateTicket,
+  sameTicketTwice,
   type DuplicateTicketCandidate,
+  type ReadTicket,
   type DuplicateTicketExisting,
   type TicketReceiptFile,
 } from "@/lib/outstation/duplicate-ticket-guard";
@@ -772,6 +774,7 @@ async function assertNoDuplicateTicket(input: DuplicateTicketCandidate, excludeR
     goTicketAmount: Number(row.go_ticket_amount ?? 0),
     id: Number(row.id),
     otherAmount: Number(row.other_amount ?? 0),
+    readTickets: row.ticket_attachment_metadata,
     receipts: storedReceipts(row.ticket_attachment_metadata),
     returnTicketAmount: Number(row.return_ticket_amount ?? 0),
     status: String(row.status ?? ""),
@@ -782,6 +785,38 @@ async function assertNoDuplicateTicket(input: DuplicateTicketCandidate, excludeR
 
   const match = findDuplicateTicket(input, existing, excludeRequestId);
   if (match) throw new Error(duplicateTicketMessage(match));
+}
+
+/**
+ * A read ticket is claimed ONCE (duplicate-ticket-guard.ts, owner 2026-11-28, zero leniency): refused when
+ * the same train or bus number on the same day is chosen twice in one upload, is already on this claim, or
+ * is on another live claim of the same employee. Asked at the pick (the ticket-scan route), and again at the
+ * submit and the late upload, before any file is stored. It refuses the ticket — it never rejects a claim.
+ */
+export async function readTicketReuseRefusal(input: {
+  candidates: ReadonlyArray<ReadTicket | null | undefined>;
+  employeeHrId: string;
+  excludeRequestId?: number;
+  onThisClaim?: unknown;
+  tripEndDate?: string | null;
+  tripStartDate: string;
+}): Promise<{ guidance: string[]; reason: string } | null> {
+  const twice = sameTicketTwice({ candidates: input.candidates, onThisClaim: input.onThisClaim });
+  if (twice) return twice;
+  try {
+    await assertNoDuplicateTicket(
+      { employeeHrId: input.employeeHrId, readTickets: input.candidates, tripEndDate: input.tripEndDate, tripStartDate: input.tripStartDate },
+      input.excludeRequestId,
+    );
+  } catch (error) {
+    return { guidance: [], reason: error instanceof Error ? error.message : String(error) };
+  }
+  return null;
+}
+
+async function assertReadTicketsNotReused(input: Parameters<typeof readTicketReuseRefusal>[0]) {
+  const refusal = await readTicketReuseRefusal(input);
+  if (refusal) throw new TrainTicketRefusedError([refusal.reason, ...refusal.guidance].join(" "));
 }
 
 /**
@@ -2361,6 +2396,13 @@ export async function submitOutstationRequest(
         hrId: access.hrId ?? calculation.employeeHrId,
         tickets: receivedTicketAttachments,
       });
+      // The same ticket twice, or a ticket already on another live claim, is refused like an unread one.
+      await assertReadTicketsNotReused({
+        candidates: trainTicketScans,
+        employeeHrId: calculation.employeeHrId,
+        tripEndDate: calculation.tripEndDate,
+        tripStartDate: calculation.tripStartDate,
+      });
     } catch (error) {
       if (!(options.dropRefusedTrainTickets && error instanceof TrainTicketRefusedError)) throw error;
       receivedTicketAttachments = [];
@@ -3440,6 +3482,26 @@ export async function attachMissingTicketsToOwnOutstationRequest(
         tickets,
       })
     : null;
+  // The second leg must be the other way: a copy of the leg already on the claim is refused (return-ticket.ts).
+  if (returnMissing && scans) {
+    const refusal = sameLegAgainRefusal({
+      candidates: scans,
+      returnAmount: existing.returnTicketAmount,
+      tickets: existing.ticketAttachmentMetadata,
+      transportation: existing.transportationType,
+    });
+    if (refusal) throw new TrainTicketRefusedError(ticketRefusalMessage({ accepted: false, ...refusal }));
+  }
+  if (scans) {
+    await assertReadTicketsNotReused({
+      candidates: scans,
+      employeeHrId: existing.employeeHrId,
+      excludeRequestId: existing.id,
+      onThisClaim: existing.ticketAttachmentMetadata,
+      tripEndDate: existing.tripEndDate,
+      tripStartDate: String(existing.tripStartDate ?? ""),
+    });
+  }
 
   const uploaded = await uploadOutstationTicketAttachments(
     tickets.map((ticket, index) => ({
@@ -7548,6 +7610,8 @@ export async function getOwnOutstationRequestsAwaitingDeparturePhoto(
 export type OutstationMissingTicketDue = OutstationDeparturePhotoDue & {
   /** True when it is the RETURN ticket that is asked for: the claim pays a return fare (owner, 2026-11-23). */
   returnTicket?: boolean;
+  /** The read leg already on the claim, so the card names the ticket it has and the way the missing one runs. */
+  legOnClaim?: LegOnClaim;
   transportationType: string;
 };
 
@@ -7605,14 +7669,18 @@ export async function getOwnOutstationRequestsMissingTicket(
         transportationType: row.transportationType,
       }),
     )
-    .map(({ returnMissing, row }) => ({
-      destination: text(row.toLabel) || text(row.toCity) || text(row.toArea) || "—",
-      id: row.id,
-      ...(returnMissing ? { returnTicket: true } : {}),
-      transportationType: row.transportationType,
-      tripEndDate: row.tripEndDate,
-      tripStartDate: row.tripStartDate,
-    }));
+    .map(({ returnMissing, row }) => {
+      const leg = returnMissing ? legOnClaim(row.ticketAttachmentMetadata) : null;
+      return {
+        destination: text(row.toLabel) || text(row.toCity) || text(row.toArea) || "—",
+        id: row.id,
+        ...(returnMissing ? { returnTicket: true } : {}),
+        ...(leg ? { legOnClaim: leg } : {}),
+        transportationType: row.transportationType,
+        tripEndDate: row.tripEndDate,
+        tripStartDate: row.tripStartDate,
+      };
+    });
 }
 
 /**

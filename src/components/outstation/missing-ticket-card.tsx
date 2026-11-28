@@ -14,6 +14,7 @@ import {
 } from "@/components/outstation/train-ticket-scan";
 import { phxButtonPrimaryClassName } from "@/components/ui/form-tokens";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
+import type { LegOnClaim } from "@/lib/outstation/return-ticket";
 import { checkTicketAttachmentFile } from "@/lib/outstation/ticket-attachment-limits";
 import { judgeTrainTicket, type TicketVerdict } from "@/lib/outstation/ticket-scan-rules";
 import { cn } from "@/lib/utils";
@@ -24,6 +25,8 @@ export type MissingTicketRequest = {
   id: number;
   /** True when it is the RETURN ticket that is asked for — the claim pays a return fare (owner, 2026-11-23). */
   returnTicket?: boolean;
+  /** The read leg already on the claim — named on the card, with the way the missing one runs (2026-11-28). */
+  legOnClaim?: LegOnClaim;
   transportationType: string;
   tripEndDate: string;
   tripStartDate: string;
@@ -55,16 +58,17 @@ export function MissingTicketCard({ requests }: { requests: MissingTicketRequest
       <div className="flex items-center gap-2">
         <Ticket aria-hidden className="h-4 w-4 text-orange-600" />
         <span className="bg-orange-100 px-2 py-1 text-phx-sm font-bold uppercase tracking-wider text-orange-700">
-          {allReturns ? "Return ticket missing" : "Ticket missing"}
+          {allReturns ? "Second ticket missing" : "Ticket missing"}
         </span>
       </div>
       {allReturns ? (
         <p className="mt-2 max-w-3xl text-phx-md leading-relaxed text-orange-900">
           {requests.length === 1
-            ? "One train or bus claim pays a return fare without the return ticket."
-            : `${requests.length} train or bus claims pay a return fare without the return ticket.`}{" "}
-          Attach a photo or PDF of the ticket you came back on. Nothing else on the claim changes. The ticket is read when you
-          choose it, and its travel date must match your departure photo.
+            ? "One train or bus claim pays a fare each way but carries the ticket of one way only."
+            : `${requests.length} train or bus claims pay a fare each way but carry the ticket of one way only.`}{" "}
+          Attach a photo or PDF of the ticket of the other way — a second photo of the same ticket is not accepted.
+          Nothing else on the claim changes. The ticket is read when you choose it, and its travel date must match your
+          trip&apos;s photos.
         </p>
       ) : (
         <p className="mt-2 max-w-3xl text-phx-md leading-relaxed text-orange-900">
@@ -109,7 +113,9 @@ function MissingTicketRow({ request }: { request: MissingTicketRequest }) {
   const refusedTickets = judged.flatMap((entry) => (entry.verdict.accepted ? [] : [{ ticket: entry.ticket, verdict: entry.verdict }]));
   const readyCount = isTrain ? acceptedTickets.length : files.length;
   const isReturn = isReturnAsk(request);
-  const ticketWord = isReturn ? "return ticket" : "ticket";
+  const ticketWord = isReturn ? "second ticket" : "ticket";
+  const leg = isReturn ? request.legOnClaim : undefined;
+  const legRoute = leg?.fromStation && leg.toStation ? `${leg.fromStation} to ${leg.toStation}` : null;
 
   async function pick(list: FileList | null) {
     const picked = Array.from(list ?? []);
@@ -188,7 +194,9 @@ function MissingTicketRow({ request }: { request: MissingTicketRequest }) {
         </p>
         {isReturn ? (
           <p className="mt-1 text-phx-md leading-relaxed text-orange-900">
-            This claim pays a return fare. Attach the ticket you came back on.
+            {legRoute
+              ? `On this claim: the ticket ${legRoute}${leg?.day ? `, ${leg.day}` : ""}. The claim pays a fare each way — attach the ticket you travelled on to ${leg?.fromStation}.`
+              : "This claim pays a fare each way. Attach the ticket of the other way."}
           </p>
         ) : null}
       </div>
@@ -196,7 +204,7 @@ function MissingTicketRow({ request }: { request: MissingTicketRequest }) {
       {state.kind === "done" ? (
         <p className="mt-3 flex items-start gap-2 text-phx-md leading-relaxed text-emerald-700">
           <CheckCircle2 aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
-          {isReturn ? "Return ticket attached." : "Ticket attached."} Your approver now sees it on the claim.
+          {isReturn ? "Second ticket attached." : "Ticket attached."} Your approver now sees it on the claim.
         </p>
       ) : (
         <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">

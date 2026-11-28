@@ -25,6 +25,8 @@ import {
   duplicateTicketMessage,
   findDuplicateTicket,
   flagDuplicateTicketRows,
+  readTicketKey,
+  sameTicketTwice,
   ticketReceiptFingerprint,
   type DuplicateTicketExisting,
 } from "@/lib/outstation/duplicate-ticket-guard";
@@ -197,6 +199,65 @@ export async function runOutstationClaimGuardsTests() {
   assert.deepEqual(flags.get("318"), ["320"]);
   assert.deepEqual(flags.get("320"), ["318"]);
   assert.equal(flags.has("321"), false, "a rejected row is no copy and is not flagged");
+
+  // ── A READ ticket is claimed once: the same train or bus number on the same day (owner, 2026-11-28, zero
+  // leniency, "مفيش فيها تهاون"). Weaam Gweed's two claims, as stored: claim 368 carried Superjet 2244150 twice
+  // (two photos of one ticket — different files, so the receipt print never saw it), claim 399 train 976
+  // three times (one file, sent again on 23, 24 and 25 Nov).
+  const superjet = { fromStation: "سوهاج", matchedTo: "arrival", toStation: "الغردقة", trainNumber: "2244150", travelDate: "2026-11-11" };
+  const train976 = { fromStation: "Cairo", matchedTo: "arrival", toStation: "Luxor", trainNumber: "976", travelDate: "2026-11-19" };
+  assert.equal(readTicketKey(superjet), "2026-11-11|2244150");
+  assert.equal(readTicketKey({ ...train976, trainNumber: "٠٩٧٦" }), "2026-11-19|976", "Arabic digits and a leading zero read as the same number");
+  assert.equal(readTicketKey({ ...train976, matchedTo: "not_read" }), null, "a ticket the reader did not read has no identity");
+  assert.equal(readTicketKey({ ...train976, trainNumber: "" }), null, "nor one whose number was not read");
+
+  const onClaim368 = [{ name: "image.jpg", scan: superjet, size: 225788 }];
+  const rePhoto = sameTicketTwice({ candidates: [{ ...superjet, matchedTo: "departure" }], onThisClaim: onClaim368 });
+  assert.ok(rePhoto, "a second photo of the ticket already on the claim is refused, whichever photo it was matched to");
+  assert.match(rePhoto.reason, /same ticket \(train or bus number 2244150 on 11 Nov 2026\) already on this claim/);
+  assert.ok(sameTicketTwice({ candidates: [train976, train976] }), "the same ticket chosen twice in one upload is refused");
+  assert.equal(
+    sameTicketTwice({ candidates: [{ ...train976, fromStation: "Luxor", toStation: "Cairo", trainNumber: "981" }], onThisClaim: [{ scan: train976 }] }),
+    null,
+    "the ticket of the other way — another train — is accepted",
+  );
+  assert.equal(sameTicketTwice({ candidates: [{ ...train976, matchedTo: "not_read" }], onThisClaim: [{ scan: train976 }] }), null, "an unread ticket is left to the approver, as everywhere");
+
+  // On another live claim of hers: refused whatever the amounts or the dates of the two trips say.
+  const weaam399: DuplicateTicketExisting = {
+    employeeHrId: "AI-0013",
+    goTicketAmount: 429,
+    id: 399,
+    readTickets: [{ name: "IMG_9772.jpg", scan: train976, size: 515199 }],
+    returnTicketAmount: 520,
+    status: "submitted",
+    tripStartDate: "2026-11-19",
+  };
+  const reused = findDuplicateTicket({ employeeHrId: "ai-0013", readTickets: [train976], tripStartDate: "2026-11-20" }, [weaam399]);
+  assert.deepEqual(reused?.repeats, ["read_ticket"], "train 976 of 19 Nov on a new claim repeats claim 399");
+  assert.match(duplicateTicketMessage(reused!), /the same ticket \(the same train or bus number on the same day\) already claimed on OUTSTATION-399/);
+  assert.equal(findDuplicateTicket({ employeeHrId: "AI-0013", readTickets: [train976], tripStartDate: "2026-11-20" }, [{ ...weaam399, status: "rejected_by_admin" }]), null, "a rejected claim paid nothing, so its ticket may be claimed properly");
+  assert.equal(findDuplicateTicket({ employeeHrId: "AI-0013", readTickets: [{ ...train976, travelDate: "2026-11-26" }], tripStartDate: "2026-11-26" }, [weaam399]), null, "the same train another day is another ticket");
+  assert.equal(findDuplicateTicket({ employeeHrId: "AI-0999", readTickets: [train976], tripStartDate: "2026-11-19" }, [weaam399]), null, "another employee on the same train holds her own ticket");
+  const readFlags = flagDuplicateTicketRows([
+    { date: "2026-11-19", goTicketAmount: 429, hrId: "AI-0013", readTickets: [{ scan: train976 }], returnTicketAmount: 520, status: "submitted", tripId: "399" },
+    { date: "2026-11-20", goTicketAmount: 100, hrId: "AI-0013", readTickets: [{ scan: train976 }], returnTicketAmount: 0, status: "submitted", tripId: "410" },
+  ]);
+  assert.deepEqual(readFlags.get("410"), ["399"], "the desk flags a stored pair that shares a read ticket");
+
+  // Asked at the pick, at the submit and at the late upload — never a claim rejected by it.
+  const scanRoute = read("app/api/outstation/ticket-scan/route.ts");
+  assert.ok(scanRoute.includes("await readTicketReuseRefusal({"), "the ticket-scan route refuses a reused ticket at the pick");
+  const serviceSource = read("src/lib/outstation/service.ts");
+  const mainSubmitAt = serviceSource.indexOf("export async function submitOutstationRequest(");
+  const mainScanAt = serviceSource.indexOf("trainTicketScans = await checkTrainTicketsOnServer(", mainSubmitAt);
+  const mainReuseAt = serviceSource.indexOf("await assertReadTicketsNotReused({", mainScanAt);
+  const mainUploadAt = serviceSource.indexOf("uploadedTicketAttachments = await uploadOutstationTicketAttachments(", mainSubmitAt);
+  assert.ok(mainScanAt > 0 && mainReuseAt > mainScanAt && mainUploadAt > mainReuseAt, "the submit refuses a reused ticket after it is read and before it is stored");
+  const attachAt = serviceSource.indexOf("export async function attachMissingTicketsToOwnOutstationRequest(");
+  const attachReuseAt = serviceSource.indexOf("await assertReadTicketsNotReused({", attachAt);
+  const attachUploadAt = serviceSource.indexOf("const uploaded = await uploadOutstationTicketAttachments(", attachAt);
+  assert.ok(attachAt > 0 && attachReuseAt > attachAt && attachUploadAt > attachReuseAt, "the late upload refuses a reused ticket before it is stored");
 
   // The service refuses BEFORE any file is stored, on both submit paths.
   const service = read("src/lib/outstation/service.ts");

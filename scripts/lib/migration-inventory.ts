@@ -2744,6 +2744,15 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // columns on each table and the direct_order_receipts_delivery check in place. Re-applying is a no-op
   // (`if not exists`, `create or replace`, `drop ... if exists`).
   "20261127173244_direct_order_receipt_two_originals.sql",
+  // Private Calendar day records (owner, 28 Nov 2026: "these activities must be synchronized in her private calendar
+  // and not show as deductions", then "never automatic"). One new empty table (private_calendar_day_records), two
+  // partial indexes, row-level security with a service_role policy; no existing row changed. The Supabase tool declined
+  // it twice on staging; on the owner's own words, 28 Nov 2026 ("apply the day records migration to staging and
+  // production"), applied through scripts/apply-sql-file.mjs, staging then production, which writes NO ledger row.
+  // Read back on cifwmndunmlxjhyjugxa and on ozucdzovmcqvepbozvqf (project name Phoenix HR) straight after: the table
+  // present with row-level security on, 1 policy, grants to postgres and service_role only, 3 indexes, 0 rows on
+  // production. Re-applying is a no-op (`if not exists`, `drop ... if exists`).
+  "20261128125508_private_calendar_day_records.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

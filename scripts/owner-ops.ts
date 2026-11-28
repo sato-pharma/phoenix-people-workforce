@@ -1027,6 +1027,32 @@ PROOF — the register rows as they are now${plan.apply ? "" : " (the dry run ch
   return { employees: [], focus: {}, proofDone: true };
 }
 
+function describeDeskClaim(claim: import("@/lib/outstation/approvals/types").DeskClaim): string {
+  return `claim ${claim.requestId} · ${claim.employeeName} (${claim.hrId ?? "no HR id"}) · ${claim.from} → ${claim.to} · ${claim.tripStart} to ${claim.tripEnd} · EGP ${claim.total} · ${claim.standing}${claim.decidedAt ? ` · decided ${claim.decidedAt}` : ""}${claim.locked ? " · LOCKED by payroll" : ""}`;
+}
+
+async function runRejectExpense(plan: Extract<OwnerOpsPlan, { job: "reject-expense" }>, owner: AccessContext) {
+  const { loadDeskClaims } = await import("@/lib/outstation/approvals/queue");
+  const { decideDeskClaims } = await import("@/lib/outstation/approvals/decide");
+  // Read as the desk reads it, so the press carries the claim's own version (a claim that moved since
+  // is refused by the same check a stale screen meets).
+  const before = (await loadDeskClaims(owner, [plan.requestId])).get(plan.requestId);
+  if (!before) throw new Error(`Expense Approvals shows no claim ${plan.requestId} to this owner — nothing was rejected`);
+  console.log(`  ${plan.apply ? "Rejecting" : "Would reject"} ${describeDeskClaim(before)}`);
+  console.log(`  Reason the employee reads: ${plan.reason}`);
+  const [outcome] = await decideDeskClaims(owner, [{ action: "reject", comment: plan.reason, requestId: plan.requestId, revision: before.revision }]);
+  if (!outcome) throw new Error("the desk answered nothing for this claim");
+  // A dry run's writes never land, so the desk's own re-read finds the claim unchanged and answers
+  // "not saved": that answer proves nothing either way, and the writes listed below are the reading.
+  if (!plan.apply) console.log(`  (dry run: the desk's re-read cannot see a write the fence held back, so its "${outcome.code}" is not a verdict)`);
+  else if (outcome.code !== "saved") throw new Error(`the desk answered ${outcome.code}: ${outcome.message ?? "no message"}`);
+  const after = (await loadDeskClaims(owner, [plan.requestId])).get(plan.requestId);
+  console.log(`
+PROOF — the claim as it stands now${plan.apply ? "" : " (the dry run changed nothing)"}:`);
+  console.log(`  ${after ? describeDeskClaim(after) : "could not be re-read"}${after?.hrComment ? ` · comment: ${after.hrComment}` : ""}`);
+  return { employees: [], focus: {}, proofDone: true };
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   if (argv.includes("--help") || argv.includes("-h")) {
@@ -1077,6 +1103,7 @@ async function main() {
     else if (plan.job === "sync-insurance-master") outcome = await runSyncInsuranceMaster(plan, owner.access);
     else if (plan.job === "end-insurance-cover") outcome = await runEndInsuranceCover(plan, owner.access);
     else if (plan.job === "reinstate-insurance-cover") outcome = await runReinstateInsuranceCover(plan, owner.access);
+    else if (plan.job === "reject-expense") outcome = await runRejectExpense(plan, owner.access);
     else outcome = await runPinPharmacy(plan, owner.access);
   } catch (error) {
     refused = errorText(error);

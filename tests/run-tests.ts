@@ -524,6 +524,8 @@ import { runDailyDeductionsReleaseByDayTests } from "./daily-deductions-release-
 import { runDailyDeductionsNoRecordsTests } from "./daily-deductions-no-records.test.ts";
 import { runDailyDeductionsNoWeeklyPlanTests } from "./daily-deductions-no-weekly-plan.test.ts";
 import { runDailyDeductionsViewFiltersTests } from "./daily-deductions-view-filters.test.ts";
+import { runDailyDeductionsHideReleasedTests } from "./daily-deductions-hide-released.test.ts";
+import { runDailyDeductionsReleasedCollapseTests } from "./daily-deductions-released-collapse.test.ts";
 import { runDailyDeductionsDayReviewTests } from "./daily-deductions-day-review.test.ts";
 import { runWeeklyPlansOneStoreTests } from "./weekly-plans-one-store.test.ts";
 import { runDeductionsExemptEmployeesTests } from "./deductions-exempt-employees.test.ts";
@@ -2237,6 +2239,7 @@ import { runPhoenixCrmWakeRefreshTests } from "./phoenix-crm-wake-refresh.test.t
 import { runRouteNavigationStallRetryTests } from "./route-navigation-stall-retry.test.ts";
 import { runPhoenixCrmFirstReadTests } from "./phoenix-crm-first-read.test.ts";
 import { runPhoenixCrmSplitModulesTests } from "./phoenix-crm-split-modules.test.ts";
+import { runPhoenixCrmFocusListTests } from "./phoenix-crm-focus-list.test.ts";
 import { runPhoenixCrmVisitFormEaseTests } from "./phoenix-crm-visit-form-ease.test.ts";
 import { runPhoenixCrmValidateNextTests } from "./phoenix-crm-validate-next.test.ts";
 import { runPhoenixCrmSignboardCheckTests } from "./phoenix-crm-signboard-check.test.ts";
@@ -3095,6 +3098,7 @@ import { runDoubleVisitReseatedAccountOverrideTests } from "./double-visit-resea
 import { runPrivateCalendarPlanSourceTests } from "./private-calendar-plan-source.test.ts";
 import { runPrivateCalendarOutstationTripsTests } from "./private-calendar-outstation-trips.test.ts";
 import { runPrivateCalendarInterviewsTests } from "./private-calendar-interviews.test.ts";
+import { runPrivateCalendarDayRecordsTests } from "./private-calendar-day-records.test.ts";
 import { runPrivateCalendarsAdminAnyEmployeeTests } from "./private-calendars-admin-any-employee.test.ts";
 import { runStoreSplitDriftTests } from "./store-split-drift.test.ts";
 import { runOfficeAllocationDriftTests } from "./office-allocation-drift.test.ts";
@@ -3109,6 +3113,7 @@ import { runPrivateCalendarPlanActualTests } from "./private-calendar-plan-actua
 import { runPrivateCalendarNoticePeriodTests } from "./private-calendar-notice-period.test.ts";
 import { runPrivateCalendarReadsStartTogetherTests } from "./private-calendar-reads-start-together.test.ts";
 import { runPhoenixCrmOffplanDayTests } from "./phoenix-crm-offplan-day.test.ts";
+import { runPhoenixCrmWaitingStepTests } from "./phoenix-crm-waiting-step.test.ts";
 import { runPhoenixCrmBulkDropTests } from "./phoenix-crm-bulk-drop.test.ts";
 import { runPhoenixCrmBulkRespondTests } from "./phoenix-crm-bulk-respond.test.ts";
 import { runPhoenixCrmReturnForCommentTests } from "./phoenix-crm-return-for-comment.test.ts";
@@ -4622,6 +4627,14 @@ await runTest(
 await runTest(
   "daily deductions view filters (owner, 17 Nov 2026): exclude fingerprint and exclude Head Office employees hide only their own lines, combine, start off, live in the address, and a release from the filtered list never carries a hidden line",
   runDailyDeductionsViewFiltersTests,
+);
+await runTest(
+  "daily deductions Hide released (owner, 28 Nov 2026): the toggle hides only lines already released at the figures shown and every released snapshot row, starts off, lives in the address, leaves the input unchanged, and a release from the filtered list never carries a hidden line",
+  runDailyDeductionsHideReleasedTests,
+);
+await runTest(
+  "daily deductions Released to employees folds (owner, 28 Nov 2026): starts open, one header button says Collapse or Expand with aria-expanded, folding hides only the list, and Withdraw all is not offered while folded",
+  runDailyDeductionsReleasedCollapseTests,
 );
 await runTest(
   "daily deductions day review (owner, 23 Nov 2026): choose a person and a day, push one day or half a day with a comment the employee reads — Pending until approved, one per person per day, refused on a day already charged",
@@ -8633,6 +8646,11 @@ await runTest(
 );
 
 await runTest(
+  "Phoenix CRM Focus list (owner, 2026-11-28): the reason is written and required with an optional pick, the tracking reads a From-To period of field weeks and never a future day, the list groups by grade then brick, a rep push waits for his manager (SFE on a vacant chain) while a manager push, keep and return tell the rep in words that name no visit, the table and its read are the service role alone, and the rep view carries no tracking",
+  runPhoenixCrmFocusListTests,
+);
+
+await runTest(
   "Phoenix CRM first read (2026-11-01): the page starts the read its tab is about to ask for, on the route's own call and the tab's own address, and Back or a refresh never redraws it",
   runPhoenixCrmFirstReadTests,
 );
@@ -12393,6 +12411,10 @@ await runTest(
   runPrivateCalendarInterviewsTests,
 );
 await runTest(
+  "a Private Calendar day covers a day only once the Super Admin confirms it: a line training day (2+ of the line, Training only, inside the employment window) is a question with the days as ticks, a rep names who was at his whole-day Conference as pending names, the group save skips the not-hired, the departed and the already-recorded, and a confirmed record proves the worked day for the deductions",
+  runPrivateCalendarDayRecordsTests,
+);
+await runTest(
   "/admin/private-calendars reaches EVERY employee — no role shortlist narrows the picker, all six filters (name or HR id, line, area, department, title, employment status) are read, rendered, applied and carried on the row links, the selected employee resolves against the whole directory so a filter change cannot break an open calendar link, a failed read says so, and the company-wide table is table-fixed with a colgroup that merges its middle columns on a phone",
   runPrivateCalendarsAdminAnyEmployeeTests,
 );
@@ -12447,6 +12469,10 @@ await runTest(
 await runTest(
   "Phoenix CRM off-plan day and moved day (owner, 2026-10-02): the off-plan visits waiting at the viewer's step are one card per rep per visit day, oldest first, and a person still decides each visit — Approve all is the per-visit decision once per visit through the one decide route, behind a confirm, naming any that fail; an out-of-plan visit to a customer on the SENT plan for another day of the same field week (Saturday to Thursday, Friday with the week before) fills the reason with that day for the rep to change, and the approver reads that day from the plan as it stood at the visit's captured_at, never a returned day, a plan sent after, or a passed day he was seen on, and never from the rep's text",
   runPhoenixCrmOffplanDayTests,
+);
+await runTest(
+  "Phoenix CRM Team tab steps apart (owner, 2026-11-28): one rule names the step a list request or an off-plan visit waits at (a grade change is the district manager's; with the rep, decided or the Administrator's recorded step is neither), the Show filter and its counts read that same rule, the district manager's step wears amber and SFE's indigo on both cards, and a saved decision is said on the card at once with no button left to press again while the team reloads",
+  runPhoenixCrmWaitingStepTests,
 );
 await runTest(
   "Phoenix CRM bulk drop (owner, 2026-10-12): a rep's request to drop a customer always carries a written comment — on every reason, refused on the server and on the screen — while the SFE Manager's own drop keeps it optional; the Team tab lets the viewer tick the drops waiting at HIS step or select them all (never an add, a grade, a bring-back, another manager's or a decided one), behind a confirm, and approves each through the one decide route one at a time with the step the screen showed, naming any that fail while the rest stand",

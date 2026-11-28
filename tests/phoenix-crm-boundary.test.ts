@@ -404,6 +404,8 @@ const ROUTE_GATES: RouteGate[] = [
   // checked: re-adding the route without a gate fails, and adding a gate without the route fails.
   get("today"),
   get("day-activities"),
+  // Who from his line a rep can name on a whole-day Conference (owner, 2026-11-28): the day's own writer gate.
+  get("day-activities/companions", "create"),
   post("day-activities", "create"),
   // The interviews on an Interviews day (owner, 2026-10-29): the read, an add (multipart, with the CV)
   // and a remove are the day's own; opening an added CV hands back a candidate's file, so it audits.
@@ -456,6 +458,10 @@ const ROUTE_GATES: RouteGate[] = [
   // with no network, and the sync that keeps a sealed photo for the Super Admin's camera page. Both the app's alone
   // (`captureClientOf`), at the gate entering a visit takes, because that is what they are.
   get("field-camera/pack", "create"),
+  // The Focus list (owner, 2026-11-28): the list and its tracking are a read; a push, a keep and a return are a
+  // field write, at the gate entering a visit takes. The service narrows each to the territory's rep or manager.
+  get("focus"),
+  post("focus", "create"),
   post("field-camera/sync", "create"),
   // The Super Admin's Camera reviews page (owner, 20 Nov 2026: "leave the decision to the decision maker"):
   // approve or reject an item the camera sent, the daily limit and one rep-day's raise. `update` is the Super Admin's gate here,
@@ -1226,6 +1232,9 @@ const LATER_MIGRATIONS = [
   // Seat a waiting customer in a building its timetable names (owner, 26 Nov 2026: "We validate them with this timetable
   // photo if it carries their name"): one NEW function, phoenix_crm_seat_waiting_customers_in_venue. It replaces nothing.
   "supabase/migrations/20261126003900_phoenix_crm_seat_waiting_customers_in_venue.sql",
+  // The Focus list (owner, 28 Nov 2026): one NEW table, phoenix_crm_focus_customers, and one NEW read-only function,
+  // phoenix_crm_focus_visits, the tracking a manager reads. It replaces nothing.
+  "supabase/migrations/20261128135234_phoenix_crm_focus_list.sql",
 ];
 
 /**

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Clock3, PlayCircle, RotateCcw, Search, XCircle } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Clock3, PlayCircle, RotateCcw, Search, XCircle } from "lucide-react";
 
 import { dailyDeductionConnectorLabels, dailyDeductionConnectors, type DailyDeductionConnector } from "@/lib/daily-deductions/types.ts";
 import {
@@ -241,7 +241,7 @@ export function DailyDeductionsWorkspace({
   defaultTo: string;
   /** Compact HR ids of the Head Office line, read on the server; null when that read failed. */
   headOfficeCompacts: string[] | null;
-  /** The two view filters as the address carried them. */
+  /** The three view filters as the address carried them. */
   initialFilters: DailyDeductionViewFilters;
 }) {
   const [from, setFrom] = useState(defaultFrom);
@@ -273,6 +273,9 @@ export function DailyDeductionsWorkspace({
   // "Show me the 9th" — narrows the list to one day; it never ties that day's deductions together.
   const [dayFilter, setDayFilter] = useState<string>("all");
   const [releasedSearch, setReleasedSearch] = useState("");
+  // "Released to employees" folds away and opens again (owner, 2026-11-28). It starts open, so the
+  // screen reads as before until it is folded; folding only hides the list, it changes nothing.
+  const [releasedListOpen, setReleasedListOpen] = useState(true);
   // The two VIEW filters (owner, 2026-11-17) — exclude fingerprint, exclude Head Office employees. They
   // narrow the SCOPE everything below is derived from (counts, totals, ticks, Release ticked), so a
   // hidden deduction can never ride along in a release. They change, release and re-price nothing.
@@ -316,14 +319,22 @@ export function DailyDeductionsWorkspace({
     );
   }, [runs]);
 
+  const releasedIndex = useMemo(() => indexReleasedLines(releasedLines), [releasedLines]);
+  // "Hide released" (owner, 2026-11-28) asks each tally line its release state; a `changed` line still
+  // needs a decision, so only `released` hides. Every row of the released snapshot is released.
+  const isTallyLineReleased = useCallback(
+    (line: SingleLine) => releaseStateOf(line, releasedIndex) === "released",
+    [releasedIndex],
+  );
+
   // What the view filters leave — the ONLY list the tally below counts, ticks and releases from.
   const tallyScope = useMemo(
-    () => applyDailyDeductionViewFilters(tallyLines, viewFilters, headOfficeSet),
-    [tallyLines, viewFilters, headOfficeSet],
+    () => applyDailyDeductionViewFilters(tallyLines, viewFilters, headOfficeSet, isTallyLineReleased),
+    [tallyLines, viewFilters, headOfficeSet, isTallyLineReleased],
   );
   const allLines = tallyScope.lines;
   const releasedScope = useMemo(
-    () => applyDailyDeductionViewFilters(releasedLines, viewFilters, headOfficeSet),
+    () => applyDailyDeductionViewFilters(releasedLines, viewFilters, headOfficeSet, () => true),
     [releasedLines, viewFilters, headOfficeSet],
   );
   const shownReleasedLines = releasedScope.lines;
@@ -352,8 +363,6 @@ export function DailyDeductionsWorkspace({
 
   const anyComputed = runs.some((run) => run.state === "done");
   const failedRuns = runs.filter((run) => run.state === "failed");
-
-  const releasedIndex = useMemo(() => indexReleasedLines(releasedLines), [releasedLines]);
 
   // The range inputs moved after the tally was computed. The figures on screen belong to the OLD
   // window, so releasing them under the new one would file real deductions against days nobody
@@ -426,7 +435,9 @@ export function DailyDeductionsWorkspace({
       // The address could not be rewritten; the filter still applies on this screen.
     }
     if (on) {
-      const keep = new Set(applyDailyDeductionViewFilters(tallyLines, next, headOfficeSet).lines.map((line) => lineKey(line)));
+      const keep = new Set(
+        applyDailyDeductionViewFilters(tallyLines, next, headOfficeSet, isTallyLineReleased).lines.map((line) => lineKey(line)),
+      );
       setSelected((prev) => new Set([...prev].filter((key) => keep.has(key))));
     }
   }
@@ -649,18 +660,30 @@ export function DailyDeductionsWorkspace({
       <section className={PANEL}>
         <div className={cn("flex flex-wrap items-center justify-between gap-3 px-4 py-3", adminPanelHeaderClassName)}>
           <h2 className={PANEL_TITLE}>Released to employees</h2>
-          {canPublish && active && !filtersOn ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {canPublish && active && !filtersOn && releasedListOpen ? (
+              <button
+                className={cn(SMALL_BUTTON, "border-white/25 bg-white/10 text-white hover:border-rose-300 hover:text-rose-100")}
+                disabled={publishing}
+                onClick={() => setPending({ kind: "withdraw_all" })}
+                type="button"
+              >
+                Withdraw all
+              </button>
+            ) : null}
             <button
-              className={cn(SMALL_BUTTON, "border-white/25 bg-white/10 text-white hover:border-rose-300 hover:text-rose-100")}
-              disabled={publishing}
-              onClick={() => setPending({ kind: "withdraw_all" })}
+              aria-controls="daily-deductions-released-list"
+              aria-expanded={releasedListOpen}
+              className={cn(SMALL_BUTTON, "border-white/25 bg-white/10 text-white hover:border-white/60")}
+              onClick={() => setReleasedListOpen((open) => !open)}
               type="button"
             >
-              Withdraw all
+              {releasedListOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+              {releasedListOpen ? "Collapse" : "Expand"}
             </button>
-          ) : null}
+          </div>
         </div>
-        <div className="space-y-3 p-4">
+        <div className="space-y-3 p-4" hidden={!releasedListOpen} id="daily-deductions-released-list">
           {activeLoading ? (
             <p className="text-sm text-slate-500">Loading…</p>
           ) : activeError ? (
@@ -1189,7 +1212,7 @@ function pendingFacts(
   ];
 }
 
-// The two view filters, above everything they narrow. A filter that hides something says how much; a
+// The three view filters, above everything they narrow. A filter that hides something says how much; a
 // Head Office filter whose list could not be read says it is NOT applied, never a silent no-op.
 function ViewFilterStrip({
   filters,
@@ -1214,12 +1237,15 @@ function ViewFilterStrip({
         <h2 className={PANEL_TITLE}>View</h2>
       </div>
       <div className="space-y-2 p-4">
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
           <CheckTile checked={filters.excludeFingerprint} onChange={(next) => onChange("excludeFingerprint", next)}>
             <span className="min-w-0 break-words">Exclude fingerprint</span>
           </CheckTile>
           <CheckTile checked={filters.excludeHeadOffice} onChange={(next) => onChange("excludeHeadOffice", next)}>
             <span className="min-w-0 break-words">Exclude Head Office employees</span>
+          </CheckTile>
+          <CheckTile checked={filters.hideReleased} onChange={(next) => onChange("hideReleased", next)}>
+            <span className="min-w-0 break-words">Hide released</span>
           </CheckTile>
         </div>
         {headOfficeUnavailable ? (
@@ -1235,7 +1261,7 @@ function ViewFilterStrip({
             ? hiddenParts.length > 0
               ? `Hidden: ${hiddenParts.join(" · ")}. Counts, totals, ticks and releases below cover only what is shown. Nothing hidden is changed.`
               : "Nothing on screen matches the filters, so nothing is hidden. Counts, totals, ticks and releases below cover only what is shown."
-            : "Fingerprint lines are the fingerprint device's late, absent and missing-punch days. Head Office is the employee master's Head Office line. These only change what is shown."}
+            : "Fingerprint lines are the fingerprint device's late, absent and missing-punch days. Head Office is the employee master's Head Office line. Hide released hides what is already released. These only change what is shown."}
         </p>
       </div>
     </section>

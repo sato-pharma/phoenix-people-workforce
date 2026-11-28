@@ -708,6 +708,9 @@ export const adminNavigationSectionSeeds = [
       // manager holding attendance:read opens this page and sees only what that rule allows.
       { href: "/admin/disputes", icon: Scale, label: "Dispute Center", permissions: [{ resource: "attendance", action: "read" }] },
       { href: "/admin/private-calendar-disputes", icon: FileSearch, label: "Calendar Disputes", roles: ["Super Admin"], navBadge: "calendar-disputes-pending" },
+      // DAY RECORDS (owner, 2026-11-28): the questions Phoenix asks him about a line's training days and a rep's
+      // conference, and the one-step record for a group. Super Admin only, like the inbox above it.
+      { href: "/admin/private-calendar-day-records", icon: CalendarCheck, label: "Day Records", roles: ["Super Admin"] },
       // DEDUCTION DISPUTES — the owner, 2026-10-08, in the same breath as the Approvals tab itself:
       // *"don't forget the deduction disputes"*, *"make every approval inbox its own row under the
       // orange Approvals tab"*. An employee contesting a published deduction is an approval queue by

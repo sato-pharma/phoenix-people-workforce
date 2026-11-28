@@ -5,6 +5,7 @@ import { readTestFlag, territoryForDayWrite, territoryForRead, territoryForView,
 import { callPhoenixCrm, chunk, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { dropDayInterviews, interviewsForDaySave, snapshotBookedInterviews } from "@/lib/phoenix-crm/server/interview-cvs";
 import { validationError } from "@/lib/http/api-errors";
+import { recordConferenceCompanions, withdrawConferenceCompanions } from "@/lib/private-calendar/conference-companions";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -153,7 +154,7 @@ export async function loadDayActivities(
  */
 export async function saveDayActivity(
   viewer: PhoenixCrmViewer,
-  raw: { seatId: unknown; test: unknown; activityType?: unknown; halfDay?: unknown; note?: unknown; clear?: unknown },
+  raw: { seatId: unknown; test: unknown; activityType?: unknown; halfDay?: unknown; note?: unknown; clear?: unknown; withHrIds?: unknown },
 ): Promise<{ cleared: boolean; activity: DayActivityRow | null }> {
   const { seat, isTest } = territoryForDayWrite(viewer, raw.seatId, readTestFlag(raw.test));
 
@@ -167,6 +168,7 @@ export async function saveDayActivity(
       },
     });
     await dropDayInterviews(seat.seatId, isTest, viewer.visitDay);
+    if (!isTest) await withdrawConferenceCompanions(seat.occupantHrId ?? viewer.hrId, viewer.visitDay);
     return { cleared: true, activity: null };
   }
 
@@ -193,6 +195,19 @@ export async function saveDayActivity(
 
   if (booked) await snapshotBookedInterviews(seat, isTest, viewer.visitDay, booked, viewer.hrId);
   else await dropDayInterviews(seat.seatId, isTest, viewer.visitDay);
+
+  // A whole-day Conference names who from the line was there (owner, 2026-11-28: "ask the rep"). Each name
+  // is a PENDING Private Calendar day record the Super Admin confirms or declines — it covers nothing on its
+  // own. Any other day, or a half day, withdraws the rep's still-pending names for today. Never on a test account.
+  if (!isTest) {
+    const namer = seat.occupantHrId ?? viewer.hrId;
+    if (parsed.value.activityType === "conference" && !parsed.value.halfDay) {
+      // A save that does not carry the list (the day screen's own block) leaves the names as they are.
+      if (Array.isArray(raw.withHrIds)) await recordConferenceCompanions({ date: viewer.visitDay, lineCode: seat.lineCode ?? null, note: parsed.value.note, repHrId: namer, ticked: raw.withHrIds });
+    } else {
+      await withdrawConferenceCompanions(namer, viewer.visitDay);
+    }
+  }
 
   return { cleared: false, activity: mapDayActivityRow(result) };
 }

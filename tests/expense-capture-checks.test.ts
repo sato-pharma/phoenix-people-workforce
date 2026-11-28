@@ -59,7 +59,7 @@ import {
   ODOMETER_VIEW_TURNS,
   type OdometerRead,
 } from "@/lib/outstation/odometer-scan-rules";
-import { returnFareLabel, returnTicketState } from "@/lib/outstation/return-ticket";
+import { legOnClaim, returnFareLabel, returnTicketState, sameLegAgainRefusal } from "@/lib/outstation/return-ticket";
 
 const SIZE = FRAME_SAMPLE_SIZE;
 const flat = (value: number) => new Uint8Array(SIZE * SIZE).fill(value);
@@ -296,6 +296,24 @@ export async function runExpenseCaptureChecksTests() {
   assert.equal(state([leg("arrival")], { returnAmount: 0 }), "not_claimed");
   assert.equal(state([leg("arrival")], { transportation: "car" }), "not_claimed");
   assert.equal(state([leg("arrival")], { transportation: "Bus" }), "missing");
+  // A second photo of the leg already on the claim is refused at the pick (2026-11-28: Weaam Gweed's
+  // Cairo → Luxor ticket went on three times and the card came back after each "Return ticket attached").
+  const again = (candidates: unknown[], tickets: unknown = [leg("arrival", "Cairo", "Luxor")], returnAmount = 520) =>
+    sameLegAgainRefusal({ candidates: candidates as never, returnAmount, tickets, transportation: "train" });
+  const copy = again([leg("arrival", "Cairo", "Luxor").scan]);
+  assert.ok(copy, "HEADLINE: the same leg again is refused, never taken as the return");
+  assert.match(copy.reason, /same ticket already on this claim \(Cairo to Luxor, Wed,? 18 Nov 2026\)/);
+  assert.match(copy.guidance[0], /the one you travelled on to Cairo/, "it names the way the missing leg runs");
+  assert.equal(again([leg("arrival", "Sohag", "Cairo").scan]), null, "the other way is the second leg");
+  assert.equal(again([leg("departure", "Cairo", "Luxor").scan]), null, "a ticket matched to the departure is the return");
+  assert.equal(again([{ matchedTo: "not_read" }]), null, "a ticket the reader could not reach is never refused");
+  assert.equal(again([leg("arrival", "Cairo", "Luxor").scan], [leg("arrival", "Cairo", "Luxor")], 0), null, "no return fare, nothing owed");
+  assert.equal(again([leg("arrival").scan], [leg("arrival"), leg("departure", "Asyut", "Cairo")]), null, "a claim with both legs is left alone");
+  assert.equal(again([]), null);
+  const onClaim = legOnClaim([leg("arrival", "Cairo", "Luxor")]);
+  assert.deepEqual({ ...onClaim, day: undefined }, { day: undefined, fromStation: "Cairo", toStation: "Luxor" });
+  assert.match(String(onClaim?.day), /^Wed,? 18 Nov 2026$/);
+  assert.equal(legOnClaim([{ name: "ticket.jpg" }]), null);
   assert.equal(returnFareLabel(270), "EGP 270");
   assert.equal(returnFareLabel(92.5), "EGP 92.5");
 

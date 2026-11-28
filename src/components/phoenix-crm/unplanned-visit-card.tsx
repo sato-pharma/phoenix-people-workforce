@@ -30,7 +30,17 @@ import { cairoStamp, countText, dayLabelLong } from "@/components/phoenix-crm/fo
 import { listText } from "@/components/phoenix-crm/labels";
 import { OffPlanStandingStrip } from "@/components/phoenix-crm/offplan-allowance";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
-import { CrmButton, CrmCard, CrmField, CrmNote, CrmPill, crmTextareaClassName, type NoteTone, type PillTone } from "@/components/phoenix-crm/ui";
+import {
+  CrmButton,
+  CrmCard,
+  CrmField,
+  CrmNote,
+  CrmPill,
+  crmTextareaClassName,
+  WAITING_STEP_LOOK,
+  type NoteTone,
+  type PillTone,
+} from "@/components/phoenix-crm/ui";
 import {
   APPROVE_ALL_FROM,
   approveAllFailureText,
@@ -49,8 +59,9 @@ import type { TeamUnplannedVisit } from "@/lib/phoenix-crm/view-types";
 const STATUS: Record<UnplannedVisitStatus, { label: string; tone: PillTone; accent: string }> = {
   // A recorded visit: the Administrator approves it first, on the Visit Recording page (owner, 2026-10-16).
   admin_pending: { label: "Waiting for the Administrator", tone: "warn", accent: "border-l-amber-500" },
-  manager_pending: { label: "Waiting for the manager", tone: "warn", accent: "border-l-amber-500" },
-  sfe_pending: { label: "Waiting for SFE", tone: "warn", accent: "border-l-amber-500" },
+  // The manager's step and SFE's wear different colours (owner, 2026-11-28: "visually differentiated").
+  manager_pending: { label: "Waiting for the manager", ...WAITING_STEP_LOOK.manager },
+  sfe_pending: { label: "Waiting for SFE", ...WAITING_STEP_LOOK.sfe },
   approved: { label: "Approved — it counts", tone: "good", accent: "border-l-emerald-500" },
   refused: { label: "Refused — it does not count", tone: "bad", accent: "border-l-rose-500" },
 };
@@ -105,12 +116,19 @@ function OffPlanVisitRow({
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState<"approve" | "refuse" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  // 🔴 A SAVED DECISION IS SAID ON THE ROW AT ONCE (owner, 2026-11-28: "when I press approve … nothing
+  // happened"). Production, 28 Nov 13:51:54: his approval at SFE's step saved, the Team tab took 4.25 s
+  // to reload, the row sat there with Approve live again and the notice at the top of the tab out of
+  // sight, and he pressed it again at 13:51:59. The row now says it is saved and offers nothing more
+  // until the reload moves the visit on (its status changes) or takes it away.
+  const [saved, setSaved] = useState<{ message: string; at: string } | null>(null);
+  const savedHere = saved !== null && saved.at === visit.status ? saved.message : null;
 
   const status = STATUS[visit.status];
   const noteId = `${fieldId}-note`;
   const location = locationLine(visit.locationFlag);
   const plannedFor = plannedForText(visit.plannedFor);
-  const locked = disabled || busy !== null;
+  const locked = disabled || busy !== null || savedHere !== null;
 
   async function decide(decision: "approve" | "refuse") {
     const trimmed = note.trim();
@@ -122,7 +140,14 @@ function OffPlanVisitRow({
     setProblem(null);
     try {
       await postOffPlanDecision(visit, decision, trimmed || null);
-      onChanged(`${decision === "approve" ? "Approved" : "Refused"}: off-plan visit to ${visit.customerName}.`);
+      const message =
+        decision === "refuse"
+          ? `Refused: off-plan visit to ${visit.customerName}.`
+          : visit.status === "manager_pending"
+            ? `Approved — now waiting for SFE: off-plan visit to ${visit.customerName}.`
+            : `Approved — it counts: off-plan visit to ${visit.customerName}.`;
+      setSaved({ message, at: visit.status });
+      onChanged(message);
     } catch (error) {
       setProblem(messageOf(error));
       const code = errorCodeOf(error);
@@ -201,7 +226,11 @@ function OffPlanVisitRow({
         </div>
       </div>
 
-      {visit.canDecide || (visit.canOverride && (visit.status === "manager_pending" || visit.status === "sfe_pending")) ? (
+      {savedHere ? (
+        <CrmNote title="Saved" tone="good">
+          {savedHere}
+        </CrmNote>
+      ) : visit.canDecide || (visit.canOverride && (visit.status === "manager_pending" || visit.status === "sfe_pending")) ? (
         <div className="grid min-w-0 gap-2">
           {/* The Administrator takes the step the visit is AT, with the same buttons (owner, 2026-10-14). */}
           {!visit.canDecide ? <AdministratorStepNote holder={visit.status === "sfe_pending" ? "SFE" : "the district manager"} /> : null}

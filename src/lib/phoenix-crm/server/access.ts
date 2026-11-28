@@ -407,6 +407,48 @@ export function canValidateReference(viewer: PhoenixCrmViewer, seat: OrgSeat, is
 }
 
 /**
+ * PUTTING A PM CUSTOMER ON THE FOCUS LIST (owner, 2026-11-28): the territory's rep, or a manager of it ("a
+ * manager can also choose from the rep's list and push him"). The same two people as validation, by the same
+ * downward-only chain test, and the Super Admin is no field writer here either.
+ */
+export function territoryForFocusPush(
+  viewer: PhoenixCrmViewer,
+  seatId: unknown,
+): TerritoryAccess & { pushedAs: "rep" | "manager" } {
+  const seat = territory(viewer, seatId);
+  if (viewer.isSuperAdmin) throw superAdminHasNoFieldWrite("put a customer on a rep's Focus list");
+  if (!viewer.canCreate) throw forbiddenError("Your role cannot change a Focus list.");
+  const isTest = viewer.isTestPersona;
+  if (viewer.ownTerritories.some((entry) => entry.seatId === seat.seatId)) return { seat, isTest, pushedAs: "rep" };
+  if (isManagerOfTerritory(viewer, seat)) return { seat, isTest, pushedAs: "manager" };
+  if (viewer.waitingTerritories.some((entry) => entry.seatId === seat.seatId)) throw lineNotOpen(viewer, seat);
+  throw forbiddenError("Only the territory's rep or one of its managers changes its Focus list.");
+}
+
+/**
+ * KEEPING A REP'S FOCUS PUSH, or returning one to the normal list as his manager: a manager of the territory, and
+ * the Administrator in any holder's place on a real row. The rep's own return is `canReturnOwnFocus`.
+ */
+export function canDecideFocus(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: boolean): boolean {
+  if (canOverrideDecision(viewer, isTest)) return true;
+  if (viewer.isSuperAdmin || !viewer.canCreate) return false;
+  if (viewer.isTestPersona !== isTest) return false;
+  return isManagerOfTerritory(viewer, seat);
+}
+
+/** The territory's own rep returns a customer from his Focus list himself (owner's pick, 2026-11-28: "Rep or DM"). */
+export function canReturnOwnFocus(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: boolean): boolean {
+  if (viewer.isSuperAdmin || !viewer.canCreate || viewer.isTestPersona !== isTest) return false;
+  return viewer.ownTerritories.some((entry) => entry.seatId === seat.seatId);
+}
+
+/** Whether the viewer may put customers on this territory's Focus list — the screen's twin of `territoryForFocusPush`. */
+export function canPushFocus(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: boolean): boolean {
+  if (viewer.isSuperAdmin || !viewer.canCreate || viewer.isTestPersona !== isTest) return false;
+  return viewer.ownTerritories.some((entry) => entry.seatId === seat.seatId) || isManagerOfTerritory(viewer, seat);
+}
+
+/**
  * Entering a visit: the territory's rep, or a manager of the territory (his own single visit, or a
  * double or chain visit with the rep). The Super Admin reached this in test mode, which is retired —
  * his one real path is "Record a missed visit", which has its own gate (`territoryForMissedRecord`).

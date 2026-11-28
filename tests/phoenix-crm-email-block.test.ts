@@ -107,6 +107,11 @@ const EVENT_TYPES = [
   "manager_single_visit_day_expired",
   "manager_plan_with_you",
   "manager_plan_conversation",
+  // The Focus list (owner, 2026-11-28) — born after the email ban, so never emailed.
+  "focus_list_waiting",
+  "focus_list_added",
+  "focus_list_kept",
+  "focus_list_returned",
   // Every type that once emailed — now ordinary: never email, the phone allowed.
   ...FORMERLY_EMAILED_EVENT_TYPES,
 ];

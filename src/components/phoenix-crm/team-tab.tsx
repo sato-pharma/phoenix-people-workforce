@@ -69,6 +69,15 @@ import {
 import { RETURN_NOTE_MAX } from "@/lib/phoenix-crm/list-request-rules";
 import { fieldWeekStart, plannableWeeks } from "@/lib/phoenix-crm/calendar";
 import { splitOffPlanDays, type OffPlanDay } from "@/lib/phoenix-crm/offplan-day";
+import {
+  listRequestWaitingStep,
+  matchesWaitingStep,
+  offPlanWaitingStep,
+  WAITING_STEP_FILTER_LABELS,
+  waitingStepCounts,
+  type WaitingStep,
+  type WaitingStepFilter,
+} from "@/lib/phoenix-crm/waiting-step";
 import { planStatusLine, withPlanDeadline } from "@/lib/phoenix-crm/plan-rules";
 import { filterByTeamRep, teamCountsOf, teamRepLabel, teamRepsOf, teamRepScope, teamWeeksForRep } from "@/lib/phoenix-crm/team-rep-filter";
 import { teamTodayLine, teamTodayTone } from "@/lib/phoenix-crm/team-today";
@@ -1250,6 +1259,48 @@ function PlanEditsSection({
  * place"). Every visit on a card is still decided on its own; "Approve all" on a card is that same
  * decision, once per visit, behind a confirm (unplanned-visit-card.tsx).
  */
+/**
+ * "Show": every step, the district manager's, or SFE's (owner, 2026-11-28: "filter by waiting for manager
+ * or waiting for SFE"). The key under it names the colour each step's cards wear on their left edge and
+ * pill, amber for the manager and indigo for SFE, so the filter and the cards read as one.
+ */
+function WaitingStepChoice({
+  counts,
+  onChange,
+  value,
+}: {
+  counts: Record<WaitingStepFilter, number>;
+  onChange: (next: WaitingStepFilter) => void;
+  value: WaitingStepFilter;
+}) {
+  const options: Array<CrmChoiceOption<WaitingStepFilter>> = (["all", "manager", "sfe"] as const).map((key) => ({
+    value: key,
+    label: WAITING_STEP_FILTER_LABELS[key],
+    note: countText(counts[key]),
+  }));
+  return (
+    <CrmField label="Show">
+      <div className="grid min-w-0 gap-1.5">
+        <CrmChoice columns={3} label="Show" onChange={onChange} options={options} value={value} />
+        <p className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold leading-5 text-slate-500">
+          <StepKey step="manager" />
+          <StepKey step="sfe" />
+        </p>
+      </div>
+    </CrmField>
+  );
+}
+
+/** The colour key under the filter: the left edge each step's cards wear. */
+function StepKey({ step }: { step: WaitingStep }) {
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1.5">
+      <span aria-hidden className={cn("inline-block h-3 w-1", step === "sfe" ? "bg-indigo-600" : "bg-amber-500")} />
+      <span className="break-words">{step === "sfe" ? "SFE’s step" : "The manager’s step"}</span>
+    </span>
+  );
+}
+
 function UnplannedSection({
   idPrefix,
   onBatchDone,
@@ -1265,6 +1316,7 @@ function UnplannedSection({
   test: boolean;
 }) {
   const [query, setQuery] = useState("");
+  const [step, setStep] = useState<WaitingStepFilter>("all");
   // A page is a number of CARDS — one rep's day each.
   const [limit, setLimit] = useState(PAGE);
   const [othersLimit, setOthersLimit] = useState(PAGE);
@@ -1285,9 +1337,11 @@ function UnplannedSection({
   }
 
   const searchable = team.unplannedVisits.length > SEARCH_FROM;
-  const visits = searchable
+  const searched = searchable
     ? team.unplannedVisits.filter((visit) => matchesWords(query, [visit.customerName, visit.territoryName, visit.repName, visit.clarification]))
     : team.unplannedVisits;
+  const stepCounts = waitingStepCounts(searched, (visit) => offPlanWaitingStep(visit.status));
+  const visits = searched.filter((visit) => matchesWaitingStep(offPlanWaitingStep(visit.status), step));
   const { forYou, others } = splitOffPlanDays(visits);
   const forYouVisits = visits.filter((visit) => visit.canDecide).length;
   const othersVisits = visits.length - forYouVisits;
@@ -1298,25 +1352,39 @@ function UnplannedSection({
 
   return (
     <>
-      {searchable ? (
-        <CrmBlock className="border-t border-slate-100">
-          <CrmSearchField
-            id={`${idPrefix}-unplanned-search`}
-            label="Find an off-plan visit"
+      <CrmBlock className="border-t border-slate-100">
+        <div className={cn("grid min-w-0 gap-3", searchable ? "md:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] md:items-start" : undefined)}>
+          <WaitingStepChoice
+            counts={stepCounts}
             onChange={(next) => {
-              setQuery(next);
+              setStep(next);
               setLimit(PAGE);
               setOthersLimit(PAGE);
             }}
-            placeholder="Customer, territory or reason"
-            value={query}
+            value={step}
           />
-        </CrmBlock>
-      ) : null}
+          {searchable ? (
+            <CrmSearchField
+              id={`${idPrefix}-unplanned-search`}
+              label="Find an off-plan visit"
+              onChange={(next) => {
+                setQuery(next);
+                setLimit(PAGE);
+                setOthersLimit(PAGE);
+              }}
+              placeholder="Customer, territory or reason"
+              value={query}
+            />
+          ) : null}
+        </div>
+      </CrmBlock>
 
       {visits.length === 0 ? (
         <div className="border-t border-slate-100">
-          <CrmEmpty message="Clear the search to see every off-plan visit." title="No off-plan visit matches" />
+          <CrmEmpty
+            message={step === "all" ? "Clear the search to see every off-plan visit." : "Choose “Every step”, or clear the search."}
+            title={step === "all" ? "No off-plan visit matches" : `No off-plan visit ${WAITING_STEP_FILTER_LABELS[step].toLowerCase()}`}
+          />
         </div>
       ) : null}
 
@@ -1365,6 +1433,7 @@ function RequestsSection({
   test: boolean;
 }) {
   const [query, setQuery] = useState("");
+  const [step, setStep] = useState<WaitingStepFilter>("all");
   const [limit, setLimit] = useState(PAGE);
   const [othersLimit, setOthersLimit] = useState(PAGE);
   // The requests ticked for the bulk respond. Read through `pruneRespondSelection` below, so a tick on a
@@ -1395,7 +1464,7 @@ function RequestsSection({
   }
 
   const searchable = team.requests.length > SEARCH_FROM;
-  const requests = searchable
+  const searched = searchable
     ? team.requests.filter((request) =>
         matchesWords(query, [
           request.customerName,
@@ -1406,6 +1475,10 @@ function RequestsSection({
         ]),
       )
     : team.requests;
+  // The step filter narrows what the bulk respond can tick too, so "Waiting for SFE" then "Select all"
+  // answers SFE's step only.
+  const stepCounts = waitingStepCounts(searched, listRequestWaitingStep);
+  const requests = searched.filter((request) => matchesWaitingStep(listRequestWaitingStep(request), step));
   const forYou = requests.filter((request) => request.canDecide);
   // Returned to the rep for a comment: it waits for HIM, so it is neither yours to decide nor another manager's.
   const withRep = requests.filter((request) => request.withRep);
@@ -1540,25 +1613,41 @@ function RequestsSection({
 
   return (
     <>
-      {searchable ? (
-        <CrmBlock className="border-t border-slate-100">
-          <CrmSearchField
-            id={`${idPrefix}-requests-search`}
-            label="Find a request"
+      <CrmBlock className="border-t border-slate-100">
+        <div className={cn("grid min-w-0 gap-3", searchable ? "md:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] md:items-start" : undefined)}>
+          <WaitingStepChoice
+            counts={stepCounts}
             onChange={(next) => {
-              setQuery(next);
+              setStep(next);
               setLimit(PAGE);
               setOthersLimit(PAGE);
+              setConfirming(null);
+              setBulkResult(null);
             }}
-            placeholder="Customer or territory"
-            value={query}
+            value={step}
           />
-        </CrmBlock>
-      ) : null}
+          {searchable ? (
+            <CrmSearchField
+              id={`${idPrefix}-requests-search`}
+              label="Find a request"
+              onChange={(next) => {
+                setQuery(next);
+                setLimit(PAGE);
+                setOthersLimit(PAGE);
+              }}
+              placeholder="Customer or territory"
+              value={query}
+            />
+          ) : null}
+        </div>
+      </CrmBlock>
 
       {requests.length === 0 ? (
         <div className="border-t border-slate-100">
-          <CrmEmpty message="Clear the search to see every request." title="No request matches" />
+          <CrmEmpty
+            message={step === "all" ? "Clear the search to see every request." : "Choose “Every step”, or clear the search."}
+            title={step === "all" ? "No request matches" : `No request ${WAITING_STEP_FILTER_LABELS[step].toLowerCase()}`}
+          />
         </div>
       ) : null}
 

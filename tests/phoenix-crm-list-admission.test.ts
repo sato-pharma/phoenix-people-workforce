@@ -240,7 +240,7 @@ export function checkListAdmissionScreens(): void {
   assert.match(decide[1], /\bapprovedGrade:/, "an add's approval sends the A/B/C the district manager confirmed");
   assert.match(decide[1], /\bpotentialGrade:/, "and the potential he set");
   assert.match(decide[1], /\bstage: request\.stage\b/, "and the step the card was showing, so two deciders cannot both decide it");
-  assert.match(card, /const decides = pending && canDecide && request\.canDecide;/, "Approve and Refuse are offered only where the server says this viewer decides this step");
+  assert.match(card, /const decides = pending && canDecide && request\.canDecide(?: && savedHere === null)?;/, "Approve and Refuse are offered only where the server says this viewer decides this step (and not again once a decision saved on that card)");
   // The grading step of an add is the district manager's — and SFE's where the territory has no manager
   // at all (owner's pick, 2026-10-02), which is the only reason this is a shared rule and not a literal
   // `stage === "manager"` here. `setsAdmissionGrades` is pinned by tests/phoenix-crm-list-edges.test.ts.

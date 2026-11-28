@@ -179,6 +179,7 @@ export function findDuplicates(subjects: ReadonlyArray<ClaimRow>, others: Readon
         goTicketAmount: num(row.go_ticket_amount),
         hrId: text(row.employee_hr_id),
         otherAmount: num(row.report_other_amount) ?? num(row.other_amount),
+        readTickets: row.ticket_attachment_metadata,
         receipts: receiptPrintsOfRow(row),
         returnTicketAmount: num(row.return_ticket_amount),
         status: text(row.status),
