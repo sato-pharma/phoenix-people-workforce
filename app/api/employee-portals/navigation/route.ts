@@ -61,6 +61,7 @@ export async function GET(request: Request) {
       phoenixCrm.placeChecks,
       phoenixCrm.doubleVisitRequests,
       phoenixCrm.myMap,
+      phoenixCrm.farVisitWeek,
     );
 
     const activeLocks = await locksPromise;

@@ -173,6 +173,11 @@ export type EmployeePortalNavVisibility = {
    * Not a role test either: `phoenixCrmSidebarEntries` answers it with `canReadMyMap`, the page's own gate.
    */
   showMyMapTab?: boolean;
+  /**
+   * The Far-visit week: each rep's week, clean or rejected day by day (owner, 28 Nov 2026). Not a role test:
+   * `phoenixCrmSidebarEntries` answers it with `canReadFarVisitWeekReport`, the page's own gate.
+   */
+  showFarVisitWeekTab?: boolean;
   // Sales Intelligence (Product / Group Product Managers): line- or product-scoped
   // analytics surfaces that mirror the admin dashboards inside the employee portal.
   showRoiIntelligenceTab?: boolean;
@@ -615,6 +620,7 @@ export function resolveEmployeePortalNavVisibility(
   hasTeamPlaceChecks?: boolean,
   hasDoubleVisitRequests?: boolean,
   hasMyMap?: boolean,
+  hasFarVisitWeek?: boolean,
 ): EmployeePortalNavVisibility {
   const resolvedRole = resolvePortalRole(roleLabel, accessRole);
   const normalizedLine = String(employeeLineName ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -1038,6 +1044,8 @@ export function resolveEmployeePortalNavVisibility(
     showDoubleVisitRequestsTab: hasDoubleVisitRequests === true,
     // And My map (owner, 2026-10-27), answered by the page's own `canReadMyMap`.
     showMyMapTab: hasMyMap === true,
+    // And the Far-visit week (owner, 28 Nov 2026), answered by the page's own `canReadFarVisitWeekReport`.
+    showFarVisitWeekTab: hasFarVisitWeek === true,
     showRoiIntelligenceTab,
     // Mirrors PORTAL_SOS_ACTION_ROLES (portal-sos-dashboard.ts). Medical Rep added 2026-09-14 (owner):
     // he sees his own area's pharmacy action lists only, never the distributor dashboard.

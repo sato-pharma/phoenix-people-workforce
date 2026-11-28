@@ -535,7 +535,7 @@ export function runPhoenixCrmFarVisitSafeguardsTests() {
     assert.doesNotMatch(map, /<button|onClick|<form|fetch\(/, "🔴 read only: the map offers nothing to press but Google Maps");
 
     const route = stripComments(read("app/api/admin/phoenix-crm/case-map-basemap/route.ts"));
-    assert.match(route, /!canDecideFarVisitHolds\(viewer\) && !\(await hasOwnFarVisitRejection\(viewer\)\)/, "the streets are drawn for a rep with a rejected visit of his own");
+    assert.match(route, /!canDecideFarVisitHolds\(viewer\) && !canReadFarVisitWeekReport\(viewer\) && !\(await hasOwnFarVisitRejection\(viewer\)\)/, "the streets are drawn for a rep with a rejected visit of his own");
     const own = functionBody(server, /export async function hasOwnFarVisitRejection\(/);
     assert.match(own, /\.eq\("status", "refused"\)\s*\.eq\("rep_hr_id", viewer\.hrId\.toUpperCase\(\)\)/, "and only for his own refused visit");
   }

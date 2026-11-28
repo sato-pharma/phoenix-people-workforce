@@ -827,8 +827,8 @@ function runScreenTests() {
   assert.match(basemapRoute, /await assertPermission\(access, "phoenix_crm", "read"\);/, "the permission is asserted on the server");
   assert.match(
     basemapRoute,
-    /if \(!canReadIntegrityBoard\(viewer\) && !canReadRefusedReadings\(viewer\) && !canDecideFarVisitHolds\(viewer\) && !\(await hasOwnFarVisitRejection\(viewer\)\)\) \{\s*throw notFoundError\(/,
-    "only a reader of one of the boards, or a rep with a refused far visit of their own (owner, 28 Nov 2026), is drawn a map; anybody else gets the boards' own 404",
+    /if \(!canReadIntegrityBoard\(viewer\) && !canReadRefusedReadings\(viewer\) && !canDecideFarVisitHolds\(viewer\) && !canReadFarVisitWeekReport\(viewer\) && !\(await hasOwnFarVisitRejection\(viewer\)\)\) \{\s*throw notFoundError\(/,
+    "only a reader of one of the boards or of the Far-visit week, or a rep with a refused far visit of their own (owner, 28 Nov 2026), is drawn a map; anybody else gets the boards' own 404",
   );
   const order = ["assertPermission(", "notFoundError(", "parseCaseMapBasemapQuery(", "assertApiRateLimit(", "fetchBasemapPng("].map((step) => basemapRoute.indexOf(step, basemapRoute.indexOf("export async function GET(")));
   assert.ok(order.every((at) => at > 0) && order.every((at, index) => index === 0 || at > order[index - 1]!), "who, then what, then how often, and only then is Google asked");

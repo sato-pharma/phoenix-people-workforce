@@ -263,7 +263,8 @@
     "Far Visits Held": 82,
     "Probation Due": 84,
     "Open Renewals": 89,
-    "Day Records": 79
+    "Day Records": 79,
+    "Far-Visit Week": 84
   },
   "portal": {
     "All Marketing Requests": 131,
@@ -353,7 +354,8 @@
     "Weekly Attendance": 110,
     "Weekly Plan": 69,
     "Weekly Sales": 73,
-    "Weekly Stock": 76
+    "Weekly Stock": 76,
+    "Far-visit week": 79
   },
   "bottom-bar": {
     "360": 18,
@@ -713,7 +715,8 @@
       "Far Visits Held": 89,
       "Probation Due": 88,
       "Open Renewals": 96,
-      "Day Records": 79
+      "Day Records": 79,
+      "Far-Visit Week": 88
     },
     "portal": {
       "All Marketing Requests": 133,
@@ -803,7 +806,8 @@
       "Weekly Attendance": 110,
       "Weekly Plan": 70,
       "Weekly Sales": 76,
-      "Weekly Stock": 78
+      "Weekly Stock": 78,
+      "Far-visit week": 80
     },
     "bottom-bar": {
       "360": 17,
