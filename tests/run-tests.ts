@@ -3109,6 +3109,7 @@ import { runPrivateCalendarPlanActualTests } from "./private-calendar-plan-actua
 import { runPrivateCalendarNoticePeriodTests } from "./private-calendar-notice-period.test.ts";
 import { runPrivateCalendarReadsStartTogetherTests } from "./private-calendar-reads-start-together.test.ts";
 import { runPhoenixCrmOffplanDayTests } from "./phoenix-crm-offplan-day.test.ts";
+import { runPhoenixCrmWaitingStepTests } from "./phoenix-crm-waiting-step.test.ts";
 import { runPhoenixCrmBulkDropTests } from "./phoenix-crm-bulk-drop.test.ts";
 import { runPhoenixCrmBulkRespondTests } from "./phoenix-crm-bulk-respond.test.ts";
 import { runPhoenixCrmReturnForCommentTests } from "./phoenix-crm-return-for-comment.test.ts";
@@ -12447,6 +12448,10 @@ await runTest(
 await runTest(
   "Phoenix CRM off-plan day and moved day (owner, 2026-10-02): the off-plan visits waiting at the viewer's step are one card per rep per visit day, oldest first, and a person still decides each visit — Approve all is the per-visit decision once per visit through the one decide route, behind a confirm, naming any that fail; an out-of-plan visit to a customer on the SENT plan for another day of the same field week (Saturday to Thursday, Friday with the week before) fills the reason with that day for the rep to change, and the approver reads that day from the plan as it stood at the visit's captured_at, never a returned day, a plan sent after, or a passed day he was seen on, and never from the rep's text",
   runPhoenixCrmOffplanDayTests,
+);
+await runTest(
+  "Phoenix CRM Team tab steps apart (owner, 2026-11-28): one rule names the step a list request or an off-plan visit waits at (a grade change is the district manager's; with the rep, decided or the Administrator's recorded step is neither), the Show filter and its counts read that same rule, the district manager's step wears amber and SFE's indigo on both cards, and a saved decision is said on the card at once with no button left to press again while the team reloads",
+  runPhoenixCrmWaitingStepTests,
 );
 await runTest(
   "Phoenix CRM bulk drop (owner, 2026-10-12): a rep's request to drop a customer always carries a written comment — on every reason, refused on the server and on the screen — while the SFE Manager's own drop keeps it optional; the Team tab lets the viewer tick the drops waiting at HIS step or select them all (never an add, a grade, a bring-back, another manager's or a decided one), behind a confirm, and approves each through the one decide route one at a time with the step the screen showed, naming any that fail while the rest stand",
