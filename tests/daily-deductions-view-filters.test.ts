@@ -174,7 +174,8 @@ export async function runDailyDeductionsViewFiltersTests(): Promise<void> {
     );
     assert.match(workspace, /applyDailyDeductionViewFilters\(tallyLines, viewFilters, headOfficeSet, isTallyLineReleased\)/);
     assert.match(workspace, /applyDailyDeductionViewFilters\(releasedLines, viewFilters, headOfficeSet, \(\) => true\)/);
-    assert.match(workspace, /canPublish && active && !filtersOn \?/, "Withdraw all (the whole snapshot) is off while a filter hides lines");
+    // The folded released list (owner, 2026-11-28) also takes Withdraw all away — it never brings it back.
+    assert.match(workspace, /canPublish && active && !filtersOn && releasedListOpen \?/, "Withdraw all (the whole snapshot) is off while a filter hides lines");
     assert.match(workspace, /writeDailyDeductionViewFilters\(window\.location\.search, next\)/, "the filter state is written to the address");
     const page = readFileSync(new URL("../app/(admin)/admin/daily-deductions/page.tsx", import.meta.url), "utf8");
     assert.match(page, /parseDailyDeductionViewFilters\(await searchParams\)/, "the page starts from the address's filters");
