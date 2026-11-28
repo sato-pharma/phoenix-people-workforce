@@ -169,6 +169,7 @@
     "heic-to": "1.6.7",
     "html-to-image": "^1.11.13",
     "imapflow": "^2.1.2",
+    "jsqr": "1.4.0",
     "jszip": "^3.10.1",
     "lucide-react": "^1.62.0",
     "mailparser": "^3.9.26",

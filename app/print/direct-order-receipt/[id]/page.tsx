@@ -30,6 +30,13 @@ function Original({ title, original }: { title: string; original: DirectOrderRec
             Entered on Phoenix{original.enteredByName ? ` by ${original.enteredByName}` : ""}
             {original.enteredAt ? ` on ${cairoDateTime(original.enteredAt)}` : ""}.
           </p>
+          <p className="mt-1 text-[12px] font-bold text-slate-900">
+            {original.review === null
+              ? "Its QR was read from the photo."
+              : original.review.status === "approved"
+                ? `Typed by hand (its QR was not read); checked and approved${original.review.reviewedByName ? ` by ${original.review.reviewedByName}` : ""}${original.review.reviewedAt ? ` on ${cairoDateTime(original.review.reviewedAt)}` : ""}.`
+                : `Typed by hand (its QR was not read) — still waiting for ${original.review.reviewerLabel} to check it.`}
+          </p>
           {original.photoUrl && !original.photoIsPdf ? (
             // eslint-disable-next-line @next/next/no-img-element -- a signed, short-lived storage URL printed as it is
             <img alt={title} className="mt-3 max-h-[120mm] w-full object-contain" src={original.photoUrl} />
@@ -48,7 +55,7 @@ function Original({ title, original }: { title: string; original: DirectOrderRec
 
 /**
  * The verified print of an order's delivery receipt (owner, 27 Nov 2026). A photo of an original is not
- * an original (the two originals are printed on anti-copy paper, which shows a word on any copy or scan), so a
+ * an original (a photocopy carries the same number, code and QR as the page it was copied from), so a
  * photocopy is never proof; this page is — both originals as they were entered on Phoenix, with who
  * entered each and when, and who printed it.
  *
@@ -106,7 +113,7 @@ export default async function DirectOrderReceiptPrintPage({ params }: { params: 
       <footer className="mt-5 border-t border-slate-400 pt-2 text-[10px] text-slate-600">
         Printed from Phoenix on {cairoDateTime(print.printedAt)}
         {print.printedByName ? ` by ${print.printedByName}` : ""}. The paper originals stay in the receipt book and with the manager; the carbon copy is the
-        customer&apos;s. A photocopy of a receipt page is never proof — the originals are printed on anti-copy paper, which marks any copy or scan.
+        customer&apos;s. A photocopy of a receipt page is never proof — it carries the same number, code and QR as its original; only the originals entered on Phoenix count.
       </footer>
     </main>
   );

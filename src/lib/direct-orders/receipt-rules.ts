@@ -189,7 +189,8 @@ export type ReceiptAttemptRefusal =
   | "bad_photo"
   | "claim_lost"
   | "book_changed"
-  | "delivery_lost";
+  | "delivery_lost"
+  | "qr_other_receipt";
 
 /** "000123" — the serial exactly as it is printed. */
 export function formatReceiptSerial(serial: number): string {
@@ -600,3 +601,36 @@ export function decideReceiptScan(token: { serial: number; code: string } | null
   if (receipt.state === "voided") return { kind: "voided", serial: receipt.serial, bookNo: receipt.bookNo, reason: receipt.voidedReason };
   return { kind: "unused", serial: receipt.serial, bookNo: receipt.bookNo };
 }
+
+// ─── The QR read from the photo (owner, 28 Nov 2026) ─────────────────────────
+//
+// "فينيكس يطلب منهم ان هم يصوروها بطريقه معينه … يتعرف على … رقم الاذن ورمز التحقق والكيو ار كود
+// … اوتوماتيك بغض النظر عن اللي هم كاتبينه بايديهم". The photo of an original is read on the SERVER
+// (the camera's green light is only a help): a QR that names the typed receipt lets it in at once; a QR
+// that names ANOTHER receipt is refused; no QR read means the number was typed by hand, and the original
+// waits for review — "المدير يدخله مانوال بس يروح للريفيو، ما يدخلش اوتوماتيك".
+
+/** The receipt a QR's text names: the Phoenix link `…/r/000401-TMDD9C`, or the bare token. */
+export function parseReceiptQrText(text: unknown): { serial: number; code: string } | null {
+  const raw = String(text ?? "").trim();
+  const link = /\/r\/([^/?#\s]+)\/?(?:[?#].*)?$/.exec(raw);
+  return parseReceiptScanToken(link ? link[1] : raw);
+}
+
+export type ReceiptPhotoQr =
+  /** The QR names the typed receipt: the original goes in at once. */
+  | { kind: "matched" }
+  /** The QR names a different receipt: refused. Never says the other receipt's code. */
+  | { kind: "other_receipt"; serial: number }
+  /** No receipt QR could be read: the original goes in as a hand entry and waits for review. */
+  | { kind: "unread" };
+
+/** What the QRs read from the photo say about the receipt typed. Every receipt QR in it must be the typed one. */
+export function classifyReceiptPhotoQr(qrTexts: readonly string[], typed: { serial: number; code: string }): ReceiptPhotoQr {
+  const tokens = qrTexts.map(parseReceiptQrText).filter((t): t is { serial: number; code: string } => t !== null);
+  if (tokens.length === 0) return { kind: "unread" };
+  const other = tokens.find((t) => t.serial !== typed.serial || t.code !== typed.code);
+  return other ? { kind: "other_receipt", serial: other.serial } : { kind: "matched" };
+}
+
+export type HandEntryStatus = "pending" | "approved" | "rejected";

@@ -87,6 +87,29 @@ export function canManageDirectOrderReceiptBooks(access: DirectOrderFinanceAcces
 }
 
 /**
+ * Whether a receipt original typed by hand (its QR not read) is Finance's OWN entry, which the Super Admin
+ * reviews, rather than one Finance reviews (owner, 28 Nov 2026: "المالية، وإنت لو المالية دخلته"). Finance's
+ * officer only — an entry by the Super Admin himself goes to Finance, so nobody ever reviews his own.
+ */
+export function isFinancesOwnHandEntry(access: DirectOrderFinanceAccess): boolean {
+  return isDirectOrderFinanceOfficer(access) && !isSystemAdmin(access);
+}
+
+/**
+ * Who may approve or reject one hand-entered receipt original. Never the person who entered it. Finance's own
+ * entry: the Super Admin alone. Anyone else's (a manager's, or the Super Admin's): Finance, or the Super Admin.
+ */
+export function canReviewDirectOrderHandEntry(
+  access: DirectOrderFinanceAccess,
+  entry: { enteredByHrId: string | null; enteredByFinance: boolean },
+): boolean {
+  const reviewer = canonicalHrIdKey(access.hrId);
+  if (!reviewer || reviewer === canonicalHrIdKey(entry.enteredByHrId ?? "")) return false;
+  if (entry.enteredByFinance) return isSystemAdmin(access);
+  return isSystemAdmin(access) || isDirectOrderFinanceOfficer(access);
+}
+
+/**
  * Who decides whether an approved direct order may stand WITHOUT a delivery receipt: the CEO alone
  * (owner, 27 Nov 2026: "صلاحيه عمل اى اوردر بدون ايصال هى صلاحيه انور فقط لاغير" — Dr Anwar's
  * authority only). By ROLE, like the CEO rung of the approval chain, and deliberately NOT the Super

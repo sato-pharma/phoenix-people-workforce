@@ -164,7 +164,7 @@ body { font-family: ${FONT}; color: ${C.body}; font-size: 9.4pt; line-height: 1.
 .mast__title h1 { margin: 0.6mm 0 0; font-size: 17pt; font-weight: 700; color: ${C.deep}; line-height: 1.25; }
 .mast__sec { flex: none; display: flex; direction: ltr; align-items: center; gap: 2.5mm; }
 .seal { width: 25mm; height: 25mm; display: block; }
-.qr { width: 15mm; height: 15mm; display: block; }
+.qr { width: 24mm; height: 24mm; display: block; }
 .band { height: 1.5mm; margin: 2.6mm 0 0; background: BAND center / 6mm 1.5mm repeat-x; }
 .micro { margin-top: 0.6mm; font-family: Consolas, monospace; font-size: 2.6pt; line-height: 1; color: ${C.blue}; white-space: nowrap; overflow: hidden; letter-spacing: 0.02em; }
 .part { display: flex; justify-content: space-between; align-items: baseline; margin-top: 2mm; padding-bottom: 1.2mm; border-bottom: 0.3mm solid ${C.hair}; font-size: 8.6pt; }

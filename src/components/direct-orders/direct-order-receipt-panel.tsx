@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { adminPanelClassName, adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
 import { ApprovalConfirmButtons, approvalActionClassName } from "@/components/approvals-hub/approval-action-kit";
 import { prepareDirectOrderInvoiceFile, type PreparedDirectOrderInvoice } from "@/components/direct-orders/invoice-file";
+import { ReceiptQrCamera, type ReceiptCameraShot } from "@/components/direct-orders/receipt-qr-camera";
 import { FormField } from "@/components/ui/form-kit";
 import {
   phxButtonAccentClassName,
@@ -16,10 +17,12 @@ import {
 } from "@/components/ui/form-tokens";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import type {
+  DirectOrderHandEntryReview,
   DirectOrderReceiptOriginal,
   DirectOrderReceiptPanel as Panel,
   DirectOrderReceiptPanelUnavailable,
 } from "@/lib/direct-orders/receipt-books";
+import { formatReceiptSerial, parseReceiptSerial } from "@/lib/direct-orders/receipt-rules";
 import { cairoDateTime, utcDate } from "@/lib/format/cairo-datetime";
 import { cn } from "@/lib/utils";
 
@@ -126,6 +129,15 @@ export function DirectOrderReceiptPanel({ requestId, panel: given }: { requestId
           </p>
         ) : null}
 
+        {panel.lastRejectedHandEntry ? (
+          <p className="text-phx-sm font-bold text-rose-700">
+            {panel.lastRejectedHandEntry.original === "custody" ? "Original 1" : "Original 2"}, typed by hand, was rejected
+            {panel.lastRejectedHandEntry.reviewedByName ? ` by ${panel.lastRejectedHandEntry.reviewedByName}` : ""}
+            {panel.lastRejectedHandEntry.reviewedAt ? ` on ${cairoDateTime(panel.lastRejectedHandEntry.reviewedAt)}` : ""}
+            {panel.lastRejectedHandEntry.note ? `: ${panel.lastRejectedHandEntry.note}` : ""}. Enter it again.
+          </p>
+        ) : null}
+
         {panel.mayRecordExit ? <WarehouseExitField exitDate={exit?.date ?? null} requestId={requestId} todayCairo={panel.todayCairo} /> : null}
 
         {panel.receipt ? (
@@ -133,9 +145,9 @@ export function DirectOrderReceiptPanel({ requestId, panel: given }: { requestId
             <p className="text-phx-sm text-slate-700">
               Receipt <span className="font-black tabular-nums text-slate-900">{panel.receipt.serialLabel}</span> from book {panel.receipt.bookNo}.
             </p>
-            <OriginalShown label="Original 1 — the custody page the manager signed" original={panel.receipt.custody} serialLabel={panel.receipt.serialLabel} />
+            <OriginalShown label="Original 1 — the custody page the manager signed" original={panel.receipt.custody} requestId={requestId} serialLabel={panel.receipt.serialLabel} />
             {panel.receipt.delivery ? (
-              <OriginalShown label="Original 2 — signed and stamped by the customer" original={panel.receipt.delivery} serialLabel={panel.receipt.serialLabel} />
+              <OriginalShown label="Original 2 — signed and stamped by the customer" original={panel.receipt.delivery} requestId={requestId} serialLabel={panel.receipt.serialLabel} />
             ) : (
               <p className="text-phx-sm text-slate-600">Original 2 — the page the customer signs and stamps — is not entered yet.</p>
             )}
@@ -194,8 +206,9 @@ export function DirectOrderReceiptPanel({ requestId, panel: given }: { requestId
             buttonLabel="Save Original 1"
             intro={`Original 1 — the custody page you signed when the goods left the warehouse. From book ${panel.entryBook.bookNo} (${panel.entryBook.rangeLabel}).${
               panel.entryBook.returned ? " The book is back with Finance; a page from it still proves this order, because it was approved while the manager held the book." : ""
-            } A receipt proves one order only and can never be used again.`}
-            photoLabel="Photograph Original 1"
+            } Hold the signed page in front of the camera: it saves as soon as its QR is read. A receipt proves one order only and can never be used again.`}
+            expectedSerial={null}
+            mayChooseFile={panel.mayChooseFile}
             requestId={requestId}
           />
         ) : null}
@@ -204,8 +217,9 @@ export function DirectOrderReceiptPanel({ requestId, panel: given }: { requestId
           <OriginalEntry
             action="delivery"
             buttonLabel="Save Original 2"
-            intro={`Original 2 — the page the customer signed and stamped. It carries the same number, ${panel.receipt.serialLabel}, and the same code as Original 1. Tear off its carbon copy for the customer before you photograph it.`}
-            photoLabel="Photograph Original 2"
+            intro={`Original 2 — the page the customer signed and stamped. It carries the same number, ${panel.receipt.serialLabel}, and the same code as Original 1. Tear off its carbon copy for the customer, then hold Original 2 in front of the camera: it saves as soon as its QR is read.`}
+            expectedSerial={parseReceiptSerial(panel.receipt.serialLabel)}
+            mayChooseFile={panel.mayChooseFile}
             requestId={requestId}
           />
         ) : null}
@@ -217,14 +231,16 @@ export function DirectOrderReceiptPanel({ requestId, panel: given }: { requestId
   );
 }
 
-function OriginalShown({ label, original, serialLabel }: { label: string; original: DirectOrderReceiptOriginal; serialLabel: string }) {
+function OriginalShown({ label, original, serialLabel, requestId }: { label: string; original: DirectOrderReceiptOriginal; serialLabel: string; requestId: string }) {
   return (
     <div className="space-y-1">
       <p className="text-phx-xs font-black uppercase tracking-wider text-slate-500">{label}</p>
       <p className="text-phx-sm text-slate-700">
         Entered{original.enteredByName ? ` by ${original.enteredByName}` : ""}
-        {original.enteredAt ? ` on ${cairoDateTime(original.enteredAt)}` : ""}.
+        {original.enteredAt ? ` on ${cairoDateTime(original.enteredAt)}` : ""}
+        {original.review ? "" : ", its QR read from the photo"}.
       </p>
+      {original.review ? <HandEntryNotice requestId={requestId} review={original.review} /> : null}
       {original.photoUrl && !original.photoIsPdf ? (
         <ZoomablePhoto alt={`${label}, receipt ${serialLabel}`} caption={`${label}, receipt ${serialLabel}`} className="w-full max-w-md border border-slate-200" src={original.photoUrl} />
       ) : original.photoUrl ? (
@@ -238,29 +254,41 @@ function OriginalShown({ label, original, serialLabel }: { label: string; origin
   );
 }
 
-/** The number, the code and a photo of one original. The server checks all three. */
+/**
+ * One original: photographed LIVE, its QR read (owner, 28 Nov 2026: "لايف مش ابلود"). The camera turns
+ * green and saves on its own once it reads the receipt; the number and code come from the QR, whatever
+ * would have been typed. "QR won't read?" opens the typed number and code with a shutter: that original
+ * is saved too, but waits for review before it counts. A manager has no gallery and no file; Finance keeps
+ * "Choose file" for a page it already holds. The server reads the QR again from the photo and decides.
+ */
 function OriginalEntry({
   requestId,
   action,
   intro,
-  photoLabel,
   buttonLabel,
+  expectedSerial,
+  mayChooseFile,
 }: {
   requestId: string;
   action?: "delivery";
   intro: string;
-  photoLabel: string;
   buttonLabel: string;
+  /** Original 2 must carry Original 1's number; null for Original 1. */
+  expectedSerial: number | null;
+  mayChooseFile: boolean;
 }) {
   const router = useRouter();
   const cameraRef = useRef<HTMLInputElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const [mode, setMode] = useState<"scan" | "manual">("scan");
+  const [cameraProblem, setCameraProblem] = useState<string | null>(null);
   const [serial, setSerial] = useState("");
   const [code, setCode] = useState("");
   const [photo, setPhoto] = useState<PreparedDirectOrderInvoice | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const key = `${action ?? "custody"}-${requestId}`;
 
   async function choose(file: File | null | undefined) {
@@ -273,17 +301,175 @@ function OriginalEntry({
     }
   }
 
-  async function send() {
-    if (!serial.trim()) return setError("Type the receipt number printed at the top of the page.");
-    if (!code.trim()) return setError("Type the six-character code printed beside the number.");
-    if (!photo) return setError("Photograph the signed page.");
+  async function send(values: { serial: string; code: string; photoDataUrl: string }) {
     setBusy(true);
     setError(null);
     try {
-      setMessage(await postReceipt(requestId, { ...(action ? { action } : {}), serial, code, photoDataUrl: photo.dataUrl }, "Could not save the receipt."));
+      setMessage(await postReceipt(requestId, { ...(action ? { action } : {}), ...values }, "Could not save the receipt."));
       router.refresh();
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : "Something went wrong.");
+      setPhoto(null);
+      // A fresh camera for the next try: the one that saved has stopped looking.
+      setAttempt((n) => n + 1);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function shot(taken: ReceiptCameraShot) {
+    if (taken.read) {
+      void send({ serial: formatReceiptSerial(taken.read.serial), code: taken.read.code, photoDataUrl: taken.dataUrl });
+      return;
+    }
+    setPhoto({ dataUrl: taken.dataUrl, fileName: "receipt-photo.jpg", isPdf: false });
+  }
+
+  function sendTyped() {
+    if (!serial.trim()) return setError("Type the receipt number printed at the top of the page.");
+    if (!code.trim()) return setError("Type the six-character code printed beside the number.");
+    if (!photo) return setError("Photograph the signed page.");
+    void send({ serial, code, photoDataUrl: photo.dataUrl });
+  }
+
+  if (message) return <p className="text-phx-sm font-semibold text-slate-800">{message}</p>;
+  const typed = mode === "manual" || cameraProblem !== null || photo !== null;
+  return (
+    <div className="space-y-3 border-t border-slate-200 pt-3">
+      <p className="text-phx-sm text-slate-600">{intro}</p>
+
+      {cameraProblem === null && photo === null && !busy ? (
+        <ReceiptQrCamera
+          expectedSerial={expectedSerial}
+          key={`${mode}-${attempt}`}
+          manual={mode === "manual"}
+          onShot={shot}
+          onUnavailable={setCameraProblem}
+        />
+      ) : null}
+      {busy ? <p className="text-phx-sm font-bold text-emerald-700">Checking the receipt…</p> : null}
+      {cameraProblem ? (
+        <div className="space-y-2">
+          <p className="text-phx-sm font-bold text-rose-700">{cameraProblem}</p>
+          <input accept="image/*" capture="environment" className="hidden" onChange={(event) => void choose(event.target.files?.[0])} ref={cameraRef} type="file" />
+          <button className={phxButtonGhostClassName} disabled={busy} onClick={() => cameraRef.current?.click()} type="button">
+            Open the phone&apos;s camera
+          </button>
+        </div>
+      ) : null}
+
+      {mode === "scan" && cameraProblem === null && photo === null && !busy ? (
+        <button className={phxButtonGhostClassName} onClick={() => { setMode("manual"); setError(null); }} type="button">
+          QR won&apos;t read? Type the number
+        </button>
+      ) : null}
+
+      {typed ? (
+        <>
+          <p className="text-phx-sm text-slate-700">
+            Typed by hand, this original is saved with the order but waits for Finance to check the photo before it counts. If the QR reads in the photo, it counts at once.
+          </p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <FormField label="Receipt number" required hint="Six digits, at the top of the page" htmlFor={`receipt-serial-${key}`}>
+              <input
+                autoComplete="off"
+                className={phxFieldClassName}
+                id={`receipt-serial-${key}`}
+                inputMode="numeric"
+                maxLength={8}
+                onChange={(event) => setSerial(event.target.value)}
+                placeholder="000123"
+                value={serial}
+              />
+            </FormField>
+            <FormField label="Code beside the number" required hint="Six letters and digits" htmlFor={`receipt-code-${key}`}>
+              <input
+                autoCapitalize="characters"
+                autoComplete="off"
+                className={cn(phxFieldClassName, "uppercase tracking-widest")}
+                id={`receipt-code-${key}`}
+                maxLength={8}
+                onChange={(event) => setCode(event.target.value)}
+                placeholder="AB3K7Q"
+                value={code}
+              />
+            </FormField>
+          </div>
+        </>
+      ) : null}
+
+      {mayChooseFile ? (
+        <>
+          <input accept="image/*,application/pdf" className="hidden" onChange={(event) => void choose(event.target.files?.[0])} ref={fileRef} type="file" />
+          <button className={phxButtonGhostClassName} disabled={busy} onClick={() => fileRef.current?.click()} type="button">
+            Choose file
+          </button>
+        </>
+      ) : null}
+
+      {photo && !photo.isPdf ? (
+        <div className="space-y-2">
+          <ZoomablePhoto alt="The photo of the page" caption="The photo of the page" className="w-full max-w-md border border-slate-200" src={photo.dataUrl} />
+          <button className={phxButtonGhostClassName} disabled={busy} onClick={() => { setPhoto(null); setAttempt((n) => n + 1); }} type="button">
+            Take it again
+          </button>
+        </div>
+      ) : photo ? (
+        <p className="break-all text-phx-sm font-bold text-slate-700" dir="auto">
+          {photo.fileName}
+        </p>
+      ) : null}
+      {error ? <p className={phxFormErrorClassName}>{error}</p> : null}
+      {typed ? (
+        <button className={cn(phxButtonAccentClassName, "w-full justify-center")} disabled={busy || !photo} onClick={sendTyped} type="button">
+          {busy ? "Checking the receipt…" : buttonLabel}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/** How a hand-entered original stands, and — for its reviewer — the approve and reject buttons. */
+function HandEntryNotice({ requestId, review }: { requestId: string; review: DirectOrderHandEntryReview }) {
+  if (review.status === "approved") {
+    return (
+      <p className="text-phx-sm text-slate-700">
+        Typed by hand (its QR was not read); checked and approved{review.reviewedByName ? ` by ${review.reviewedByName}` : ""}
+        {review.reviewedAt ? ` on ${cairoDateTime(review.reviewedAt)}` : ""}.
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-2 border-l-4 border-amber-600 bg-white pl-3">
+      <p className="text-phx-sm font-bold text-amber-800">
+        Typed by hand — its QR was not read in the photo. It waits for {review.reviewerLabel} to check the photo before it counts.
+      </p>
+      {review.mayDecide ? <HandEntryReviewButtons entryId={review.entryId} requestId={requestId} /> : null}
+    </div>
+  );
+}
+
+/**
+ * Approve or reject one hand-entered original (owner, 28 Nov 2026: Finance reviews a manager's, the Super
+ * Admin reviews Finance's). A rejection needs a reason and takes the original back out, so it is entered again.
+ */
+export function HandEntryReviewButtons({ requestId, entryId }: { requestId: string; entryId: string }) {
+  const router = useRouter();
+  const [rejecting, setRejecting] = useState(false);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function decide(decision: "approve" | "reject") {
+    if (decision === "reject" && note.trim().length < 3) return setError("Write why it is rejected.");
+    setBusy(true);
+    setError(null);
+    try {
+      setMessage(await postReceipt(requestId, { action: "decide_hand_entry", entryId, decision, note }, "Could not save the review."));
+      router.refresh();
+    } catch (decideError) {
+      setError(decideError instanceof Error ? decideError.message : "Something went wrong.");
     } finally {
       setBusy(false);
     }
@@ -291,55 +477,40 @@ function OriginalEntry({
 
   if (message) return <p className="text-phx-sm font-semibold text-slate-800">{message}</p>;
   return (
-    <div className="space-y-3 border-t border-slate-200 pt-3">
-      <p className="text-phx-sm text-slate-600">{intro}</p>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <FormField label="Receipt number" required hint="Six digits, at the top of the page" htmlFor={`receipt-serial-${key}`}>
+    <div className="space-y-2">
+      {rejecting ? (
+        <FormField label="Why is it rejected" required htmlFor={`hand-entry-note-${entryId}`}>
           <input
-            autoComplete="off"
             className={phxFieldClassName}
-            id={`receipt-serial-${key}`}
-            inputMode="numeric"
-            maxLength={8}
-            onChange={(event) => setSerial(event.target.value)}
-            placeholder="000123"
-            value={serial}
+            id={`hand-entry-note-${entryId}`}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder="The number in the photo is not the one typed"
+            value={note}
           />
         </FormField>
-        <FormField label="Code beside the number" required hint="Six letters and digits" htmlFor={`receipt-code-${key}`}>
-          <input
-            autoCapitalize="characters"
-            autoComplete="off"
-            className={cn(phxFieldClassName, "uppercase tracking-widest")}
-            id={`receipt-code-${key}`}
-            maxLength={8}
-            onChange={(event) => setCode(event.target.value)}
-            placeholder="AB3K7Q"
-            value={code}
-          />
-        </FormField>
-      </div>
-      <input accept="image/*" capture="environment" className="hidden" onChange={(event) => void choose(event.target.files?.[0])} ref={cameraRef} type="file" />
-      <input accept="image/*,application/pdf" className="hidden" onChange={(event) => void choose(event.target.files?.[0])} ref={fileRef} type="file" />
-      <div className="flex flex-wrap items-center gap-2">
-        <button className={phxButtonGhostClassName} disabled={busy} onClick={() => cameraRef.current?.click()} type="button">
-          {photoLabel}
-        </button>
-        <button className={phxButtonGhostClassName} disabled={busy} onClick={() => fileRef.current?.click()} type="button">
-          Choose file
-        </button>
-      </div>
-      {photo && !photo.isPdf ? (
-        <ZoomablePhoto alt={photoLabel} caption={photoLabel} className="w-full max-w-md border border-slate-200" src={photo.dataUrl} />
-      ) : photo ? (
-        <p className="break-all text-phx-sm font-bold text-slate-700" dir="auto">
-          {photo.fileName}
-        </p>
       ) : null}
       {error ? <p className={phxFormErrorClassName}>{error}</p> : null}
-      <button className={cn(phxButtonAccentClassName, "w-full justify-center")} disabled={busy} onClick={() => void send()} type="button">
-        {busy ? "Checking the receipt…" : buttonLabel}
-      </button>
+      <div className="flex flex-wrap gap-2">
+        {rejecting ? (
+          <>
+            <button className={phxButtonDangerClassName} disabled={busy || note.trim().length < 3} onClick={() => void decide("reject")} type="button">
+              {busy ? "Saving…" : "Reject — take it back out"}
+            </button>
+            <button className={phxButtonGhostClassName} disabled={busy} onClick={() => { setRejecting(false); setError(null); }} type="button">
+              Back
+            </button>
+          </>
+        ) : (
+          <>
+            <button className={phxButtonAccentClassName} disabled={busy} onClick={() => void decide("approve")} type="button">
+              {busy ? "Saving…" : "Approve — the photo matches"}
+            </button>
+            <button className={phxButtonGhostClassName} disabled={busy} onClick={() => { setRejecting(true); setError(null); }} type="button">
+              Reject
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }
