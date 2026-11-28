@@ -87,6 +87,7 @@ const MODULE_PLACEMENT: Readonly<Record<string, { icon: string; section: NativeM
   "/employee-portals/double-visit-requests": { icon: "people-outline", section: "Phoenix CRM" },
   // My map rides the same band, with its own flag (owner, 2026-10-27).
   "/employee-portals/my-map": { icon: "map-outline", section: "Phoenix CRM" },
+  "/employee-portals/far-visit-week": { icon: "calendar-outline", section: "Phoenix CRM" },
   // ── My Workspace ──────────────────────────────────────────────────────────────────────────────
   "/employee-portals/interview-calendar": { icon: "videocam-outline", section: "My Workspace" },
   "/employee-portals/organogram": { icon: "business-outline", section: "My Workspace" },

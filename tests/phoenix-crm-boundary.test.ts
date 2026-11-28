@@ -433,6 +433,9 @@ const ROUTE_GATES: RouteGate[] = [
   // workbook is an export for the reason the pack's is: a file naming employees leaves the building.
   { route: "visit-report", method: "POST", action: "read", audit: "access-read", auditRequired: true },
   exportGet("visit-report/export"),
+  // The Far-visit week workbook (owner, 28 Nov 2026): the same "read" gate as the screen, narrowed in the loader to
+  // the far-visit count's readers; the file names reps and where their phones were, so it is an audited export.
+  exportGet("far-visit-week-report/export"),
   // The Visit report's saved views (owner, 2026-10-16): each reader's own named choices of fields. The
   // report's own `read` gate and 404 (`canReadVisitReport`); the service keys every call on the viewer's
   // HR id and takes no owner argument. A save and a delete write to the database, so both are audited as
@@ -681,12 +684,12 @@ const NOT_THIS_MODULE: ReadonlyArray<readonly [RegExp, string]> = [
   // module file linking to either is the defect this catches. Six sub-paths beneath it are NOT the
   // pilot's: the integrity board, the duplicate sweep, the refused readings, the visits held for SFE
   // (owner, 2026-11-10), the list template and the visits archive (owner, 2026-11-07) are this module's
-  // own admin screens, linked from
+  // own admin screens, as is the Far-visit week (owner, 2026-11-28), linked from
   // system-navigation.ts, and the board page is pinned as
   // a blind reader in tests/phoenix-crm-blind-half.test.ts. They are named one at a time on purpose —
   // anything else under the retired path still fails, so a real pilot link cannot ride in behind them.
   [
-    /["'`]\/(?:admin|employee-portals)\/phoenix-crm(?!\/(?:integrity|duplicates|refused-readings|far-visit-holds|list-template|visits-archive)\b)\b/,
+    /["'`]\/(?:admin|employee-portals)\/phoenix-crm(?!\/(?:integrity|duplicates|refused-readings|far-visit-holds|far-visit-week|list-template|visits-archive)\b)\b/,
     "the pilot's pages",
   ],
 ];

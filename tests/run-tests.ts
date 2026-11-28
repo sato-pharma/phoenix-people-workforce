@@ -2368,6 +2368,7 @@ import { runPhoenixCrmPlaceCheckLanesTests } from "./phoenix-crm-place-check-lan
 import { runPhoenixCrmVendorLeftoverTests } from "./phoenix-crm-vendor-leftovers.test.ts";
 import { runPhoenixCrmBlindPayloadTests } from "./phoenix-crm-blind-payloads.test.ts";
 import { runPhoenixCrmVisitReportTests } from "./phoenix-crm-visit-report.test.ts";
+import { runPhoenixCrmFarVisitWeekTests } from "./phoenix-crm-far-visit-week.test.ts";
 import { runPhoenixCrmVisitDetailEditTests } from "./phoenix-crm-visit-detail-edit.test.ts";
 import { runPhoenixCrmVisitRecordingTests } from "./phoenix-crm-visit-recording.test.ts";
 import { runPhoenixCrmVenueCapsTests } from "./phoenix-crm-venue-caps.test.ts";
@@ -8544,6 +8545,11 @@ await runTest(
 await runTest(
   "PHOENIX CRM: the Visit report generator (owner, 2026-10-15) — 113 fields in ten categories with no word the module never prints and ONLY the mock-location answer above the SFE Manager's sight, so his selection drops it and the evidence loader never queries a position case or selects device_mocked for him; one visit yields a value or an explicit null for every catalogue key, a blank is null and never zero; the day's order, gap and distance are save-order facts and the speed is worked out ONLY from the phone's own reading times; the dashboard says recorded on X of Y visits for a sparse field and draws nothing for a field that was not chosen; the workbook is read back out of the real .xlsx bytes — ONE tab, only the chosen headings, only the filtered visits, Cairo wall-clock dates, real numbers, the house masthead; and the page, the POST and the export hold their gates in order, with the rate limit before the heavy read)",
   runPhoenixCrmVisitReportTests,
+);
+
+await runTest(
+  "PHOENIX CRM: the Far-visit week (owner, 28 Nov 2026) — a rep per row and a day per column from Saturday to Friday, Clean, N rejected, N waiting or a dash; EVERY far try is a rejection, refused at once when saved and never accepted, even when the rep later visited that customer from the right place; read by the Super Admin, the SFE Manager, a District Manager (acting or not) and the National Sales Manager across their own scope, never the CEO, an RSM or a rep, and never on a manager's own rep seat; the pages, the export and the sidebar hold their gates in order, the map route draws for its readers, the view is read-only and fits the screen, and the workbook is read back from its real bytes: two sheets, the screen's words, no coloured fill, a Google Maps link",
+  runPhoenixCrmFarVisitWeekTests,
 );
 
 await runTest(

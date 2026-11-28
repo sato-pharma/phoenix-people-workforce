@@ -489,7 +489,7 @@ function checkTheTab(): void {
   assert.match(crmPage, /placeChecks: readsTeamPlaceChecks\(viewer\)/, "the sidebar row asks the page's own predicate");
   assert.match(
     crmPage,
-    /export const NO_PHOENIX_CRM_ENTRIES: PhoenixCrmSidebarEntries = \{\s*crm: false,\s*forecast: false,\s*placeChecks: false,\s*doubleVisitRequests: false,\s*myMap: false,?\s*\}/,
+    /export const NO_PHOENIX_CRM_ENTRIES: PhoenixCrmSidebarEntries = \{\s*crm: false,\s*forecast: false,\s*placeChecks: false,\s*doubleVisitRequests: false,\s*myMap: false,\s*farVisitWeek: false,?\s*\}/,
     "and a failed lookup offers no row",
   );
 

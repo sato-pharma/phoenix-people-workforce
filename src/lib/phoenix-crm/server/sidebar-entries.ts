@@ -23,6 +23,7 @@ import {
   resolvePhoenixCrmViewer,
   type PhoenixCrmViewer,
 } from "@/lib/phoenix-crm/server/access";
+import { canReadFarVisitWeekReport } from "@/lib/phoenix-crm/server/far-visit-week-report";
 
 /**
  * Has the module anything to say to this person — a territory to work, or a date to wait for?
@@ -65,6 +66,7 @@ export type PhoenixCrmSidebarEntries = {
   placeChecks: boolean;
   doubleVisitRequests: boolean;
   myMap: boolean;
+  farVisitWeek: boolean;
 };
 
 /** No row at all — what a failed, refused or seatless lookup answers. */
@@ -74,6 +76,7 @@ export const NO_PHOENIX_CRM_ENTRIES: PhoenixCrmSidebarEntries = {
   placeChecks: false,
   doubleVisitRequests: false,
   myMap: false,
+  farVisitWeek: false,
 };
 
 /**
@@ -105,6 +108,8 @@ export async function phoenixCrmSidebarEntries(access: AccessContext): Promise<P
       // My map (owner, 2026-10-27) — the rep, his managers up the chain, and the company roles. The page's own
       // predicate, so the row cannot open onto a redirect.
       myMap: canReadMyMap(viewer),
+      // The Far-visit week (owner, 28 Nov 2026) — a District or National Sales Manager, his own scope. The page's own predicate.
+      farVisitWeek: canReadFarVisitWeekReport(viewer),
       // No plan-switch answer here any more (2026-10-23): the Plans tab stopped reading it on 2026-10-17,
       // and asking it cost every district manager a third sequential wave on every portal page.
     };

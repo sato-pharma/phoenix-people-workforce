@@ -123,6 +123,7 @@ export async function EmployeePortalServerShell({
     phoenixCrm.placeChecks,
     phoenixCrm.doubleVisitRequests,
     phoenixCrm.myMap,
+    phoenixCrm.farVisitWeek,
   );
 
   // The tab stays in the sidebar wearing a padlock — taking it away would say "this was removed",

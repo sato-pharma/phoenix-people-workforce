@@ -5,6 +5,7 @@ import { fetchBasemapPng } from "@/lib/field-activity/map";
 import { notFoundError, validationError } from "@/lib/http/api-errors";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { canDecideFarVisitHolds, hasOwnFarVisitRejection } from "@/lib/phoenix-crm/server/far-visit-safeguards";
+import { canReadFarVisitWeekReport } from "@/lib/phoenix-crm/server/far-visit-week-report";
 import { phoenixCrmFailure } from "@/lib/phoenix-crm/server/http";
 import { canReadIntegrityBoard } from "@/lib/phoenix-crm/server/integrity-board";
 import { canReadRefusedReadings } from "@/lib/phoenix-crm/server/refused-readings-board";
@@ -33,6 +34,9 @@ const PICTURES_PER_HOUR = 600;
  *
  * Since 28 Nov 2026 (owner: "show him what I am seeing in here, the map … read only") a rep with a far visit of
  * his own the SFE refused is drawn the streets behind that visit's map too (`hasOwnFarVisitRejection`).
+ * And since the same day (owner: "in the managers' accounts, each within his own scope … clicking a day opens the
+ * map") every reader of the Far-visit week is drawn the streets behind its day maps (`canReadFarVisitWeekReport`);
+ * the 600-an-hour ceiling below still holds each one.
  *
  * Anybody else gets the boards' own 404, never a 403 that names what it guards. A picture Google would not
  * draw is a 503 that is not kept, and the page's markers and metres stand without it.
@@ -42,7 +46,7 @@ export async function GET(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "phoenix_crm", "read");
     const viewer = await resolvePhoenixCrmViewer(access);
-    if (!canReadIntegrityBoard(viewer) && !canReadRefusedReadings(viewer) && !canDecideFarVisitHolds(viewer) && !(await hasOwnFarVisitRejection(viewer))) {
+    if (!canReadIntegrityBoard(viewer) && !canReadRefusedReadings(viewer) && !canDecideFarVisitHolds(viewer) && !canReadFarVisitWeekReport(viewer) && !(await hasOwnFarVisitRejection(viewer))) {
       throw notFoundError("Not found.");
     }
     const frame = parseCaseMapBasemapQuery(new URL(request.url).searchParams);

@@ -384,6 +384,7 @@ function buildEmployeePortalSections({
   showTeamPlaceChecksTab = false,
   showDoubleVisitRequestsTab = false,
   showMyMapTab = false,
+  showFarVisitWeekTab = false,
   showDailyForecastTab = false,
   showDeductionsTab = true,
   showMyCoachingTab: _showMyCoachingTab = false,
@@ -500,6 +501,9 @@ function buildEmployeePortalSections({
         // in their own colours (owner, 2026-10-27). `canReadMyMap` through `phoenixCrmSidebarEntries`; the page
         // gates again. `MapIcon`, never `Map`: this file builds `new Map` lookups. No `highlight`.
         ...(showMyMapTab ? [{ href: "/employee-portals/my-map", label: "My map", icon: MapIcon }] : []),
+        // Far-visit week — each rep's week, clean or rejected day by day, with the map behind a rejected visit
+        // (owner, 28 Nov 2026). `canReadFarVisitWeekReport` through `phoenixCrmSidebarEntries`; the page gates again.
+        ...(showFarVisitWeekTab ? [{ href: "/employee-portals/far-visit-week", label: "Far-visit week", icon: CalendarRange }] : []),
       ],
     },
     {

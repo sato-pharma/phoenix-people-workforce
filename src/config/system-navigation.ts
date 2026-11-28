@@ -2283,6 +2283,9 @@ const employeePortalNavigationSectionSeeds = [
       // NO `roles:` list: `canReadMyMap` (a seat of his own, a manager's scope, or the company roles) is the
       // boundary inside the page, and a roles list would hide it from an acting district manager.
       { href: "/employee-portals/my-map", icon: MapIcon, label: "My map", permissions: [{ resource: "phoenix_crm", action: "read" }] },
+      // Far-visit week — each rep's week, clean or rejected day by day (owner, 28 Nov 2026). NO `roles:` list:
+      // `canReadFarVisitWeekReport` (a District or National Sales Manager, his own scope) is the boundary inside the page.
+      { href: "/employee-portals/far-visit-week", icon: CalendarRange, label: "Far-visit week", permissions: [{ resource: "phoenix_crm", action: "read" }] },
     ],
     label: "Leave Management",
   },
@@ -4901,6 +4904,18 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "CEO", "SFE Manager"],
   },
   {
+    // The Far-visit week (owner, 28 Nov 2026): every rep's week day by day, green where it was clean and red
+    // where a visit was refused for where it was logged, each red day opening onto its visits and maps, and the
+    // same week as Excel. A District or National Sales Manager reads his own scope at /employee-portals/far-visit-week.
+    // `canReadFarVisitWeekReport` is the enforcing gate inside the page and the export; this card only draws the link.
+    href: "/admin/phoenix-crm/far-visit-week",
+    icon: CalendarRange,
+    label: "Far-Visit Week",
+    description: "Every rep's week, day by day: clean, rejected for where the visit was logged, or waiting for the SFE. Open a red day for each visit and its map; download the week as Excel. Shown to no rep.",
+    permissions: [{ resource: "phoenix_crm", action: "read" }],
+    roles: ["Super Admin", "SFE Manager"],
+  },
+  {
     // Captures Phoenix CRM turned away on their LOCATION, and whether the rep got through afterwards
     // (owner, 2026-10-03: "build the refused readings view for the SFE").
     //
@@ -5697,6 +5712,8 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/field-crm",
           // A report he builds from the visits rather than a check on them — a board, not data quality.
           "/admin/phoenix-crm/visit-report",
+          // Each rep's week, clean or rejected day by day: a board, not data quality.
+          "/admin/phoenix-crm/far-visit-week",
           // What the reps ask their managers for, and the answers: a board, not data quality.
           "/admin/phoenix-crm/double-visit-requests",
           // Where the validated customers are: a board, not data quality.

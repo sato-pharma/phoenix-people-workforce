@@ -222,6 +222,7 @@ export const API_PAGE_MAP: Readonly<Record<string, ApiPageTargets>> = {
   "/api/phoenix-crm/venue-caps": { admin: "/admin/field-crm/venue-caps" },
   "/api/phoenix-crm/validation-reviews": { admin: "/admin/field-crm/validation-reviews", portal: "/employee-portals/field-crm" },
   "/api/phoenix-crm/visit-report": { admin: "/admin/phoenix-crm/visit-report", portal: "/employee-portals/visit-report" },
+  "/api/phoenix-crm/far-visit-week-report": { admin: "/admin/phoenix-crm/far-visit-week", portal: "/employee-portals/far-visit-week" },
   "/api/crm": { admin: "/admin/crm", portal: "/employee-portals/crm" },
   "/api/outstation": { admin: "/admin/outstation/expenses", portal: "/employee-portals/expenses" },
   "/api/outstation/medical-rep-expenses": { admin: "/admin/outstation/expenses", portal: "/employee-portals/expenses" },
