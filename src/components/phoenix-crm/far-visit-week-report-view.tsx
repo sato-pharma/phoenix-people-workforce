@@ -32,7 +32,7 @@ import {
   type FarVisitWeek,
   type FarVisitWeekFilter,
 } from "@/lib/phoenix-crm/far-visit-week-rules";
-import type { FarVisitWeekCell, FarVisitWeekDayItem, FarVisitWeekOption, FarVisitWeekReport, FarVisitWeeksReport } from "@/lib/phoenix-crm/far-visit-week-types";
+import type { FarVisitWeekCell, FarVisitWeekDayItem, FarVisitWeekOption, FarVisitWeekReport, FarVisitWeeksReport } from "@/lib/phoenix-crm/view-types";
 
 export const FAR_VISIT_WEEK_EXPORT_PATH = "/api/phoenix-crm/far-visit-week-report/export";
 
