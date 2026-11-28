@@ -763,11 +763,10 @@ export async function loadFarVisitRejections(visitIds: readonly string[]): Promi
     if (!place && hold.place_id) place = heldById.get(String(hold.place_id));
     const pin = place ? pinOf(place) : null;
     const photo = place ? pointOf(place.photo_lat, place.photo_lon) : null;
-    const labelled = [
-      submitted ? { label: FAR_VISIT_REJECTED_POINT_LABELS.submitted, ...submitted } : null,
-      pin ? { label: FAR_VISIT_REJECTED_POINT_LABELS.place, ...pin } : null,
-      photo ? { label: FAR_VISIT_REJECTED_POINT_LABELS.photo, ...photo } : null,
-    ].filter((point): point is { label: string; lat: number; lon: number } => point !== null);
+    const labelled: Array<{ label: string; lat: number; lon: number }> = [];
+    if (submitted) labelled.push({ label: FAR_VISIT_REJECTED_POINT_LABELS.submitted, lat: submitted.lat, lon: submitted.lon });
+    if (pin) labelled.push({ label: FAR_VISIT_REJECTED_POINT_LABELS.place, lat: pin.lat, lon: pin.lon });
+    if (photo) labelled.push({ label: FAR_VISIT_REJECTED_POINT_LABELS.photo, lat: photo.lat, lon: photo.lon });
     const map = submitted
       ? buildCaseMap(
           labelled.map((point) => ({ ...point, accuracyMeters: null })),
