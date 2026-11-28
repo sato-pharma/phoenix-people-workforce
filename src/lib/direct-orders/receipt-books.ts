@@ -1,3 +1,4 @@
+import { approvalIdentity, raiseApproval } from "@/lib/approvals/raise-approval";
 import { isGuestFallbackAccess } from "@/lib/auth/page-access-guard";
 import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
@@ -36,6 +37,7 @@ import {
   receiptDueDates,
   receiptEntryBookFor,
   receiptLateness,
+  receiptReminderFor,
   receiptRolloutStart,
   rejectionToShowManager,
   type HandEntryStatus,
@@ -47,6 +49,7 @@ import {
   type ReceiptBookStatus,
   type ReceiptLateness,
   type ReceiptProgress,
+  type ReceiptReminder,
   type ReceiptRow,
   type ReceiptScanOutcome,
   type ReceiptStanding,
@@ -57,6 +60,7 @@ import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { isUuid } from "@/lib/http/uuid";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
+import type { CreateSystemNotificationInput } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -1626,6 +1630,39 @@ async function loadApprovedOrdersSinceRollout(books: readonly ReceiptBookRow[]):
   return rows;
 }
 
+/**
+ * What has been entered on each order, whether the CEO let it stand without a receipt, and its warehouse exit
+ * day. Batches of 100 ids: about four hundred in one .in() overflow the request URL and read back EMPTY with no
+ * error, which would make every order look receipt-less and refuse its manager falsely.
+ */
+async function loadReceiptProgressFor(ids: readonly string[]): Promise<{
+  withReceipt: Map<string, { delivery_entered_at: string | null }>;
+  waived: Set<string>;
+  exitDates: Map<string, string>;
+}> {
+  const supabase = getSupabaseAdmin();
+  const withReceipt = new Map<string, { delivery_entered_at: string | null }>();
+  const waived = new Set<string>();
+  const exitDates = new Map<string, string>();
+  for (let i = 0; i < ids.length; i += 100) {
+    const batch = ids.slice(i, i + 100);
+    const [{ data: receiptRows, error: receiptError }, { data: askRows, error: askError }, { data: exitRows, error: exitError }] = await Promise.all([
+      supabase.from(RECEIPTS).select("request_id,delivery_entered_at").in("request_id", batch),
+      supabase.from(NO_RECEIPT).select("request_id").in("request_id", batch).eq("status", "approved"),
+      supabase.from(EXITS).select("request_id,exit_date").in("request_id", batch),
+    ]);
+    if (receiptError) throw receiptError;
+    if (askError) throw askError;
+    if (exitError) throw exitError;
+    for (const row of (receiptRows ?? []) as { request_id: string | null; delivery_entered_at: string | null }[]) {
+      if (row.request_id) withReceipt.set(row.request_id, { delivery_entered_at: row.delivery_entered_at });
+    }
+    for (const row of (askRows ?? []) as { request_id: string }[]) waived.add(row.request_id);
+    for (const row of (exitRows ?? []) as { request_id: string; exit_date: string }[]) exitDates.set(row.request_id, String(row.exit_date).slice(0, 10));
+  }
+  return { withReceipt, waived, exitDates };
+}
+
 export type LateReceiptOrder = {
   requestId: string;
   pharmacyName: string;
@@ -1653,29 +1690,8 @@ export async function listLateReceiptsForRequester(requesterHrId: string, now: D
     (row) => canonicalHrIdKey(row.order.requesterHrId) === key && bookHeldAtApproval(row.order, books)?.status !== "lost",
   );
   if (mine.length === 0) return [];
-  const ids = mine.map((row) => row.order.id);
   const supabase = getSupabaseAdmin();
-  // Batches of 100 ids: about four hundred in one .in() overflow the request URL and read back EMPTY
-  // with no error, which would make every order look receipt-less and refuse the manager falsely.
-  const withReceipt = new Map<string, { delivery_entered_at: string | null }>();
-  const waived = new Set<string>();
-  const exitDates = new Map<string, string>();
-  for (let i = 0; i < ids.length; i += 100) {
-    const batch = ids.slice(i, i + 100);
-    const [{ data: receiptRows, error: receiptError }, { data: askRows, error: askError }, { data: exitRows, error: exitError }] = await Promise.all([
-      supabase.from(RECEIPTS).select("request_id,delivery_entered_at").in("request_id", batch),
-      supabase.from(NO_RECEIPT).select("request_id").in("request_id", batch).eq("status", "approved"),
-      supabase.from(EXITS).select("request_id,exit_date").in("request_id", batch),
-    ]);
-    if (receiptError) throw receiptError;
-    if (askError) throw askError;
-    if (exitError) throw exitError;
-    for (const row of (receiptRows ?? []) as { request_id: string | null; delivery_entered_at: string | null }[]) {
-      if (row.request_id) withReceipt.set(row.request_id, { delivery_entered_at: row.delivery_entered_at });
-    }
-    for (const row of (askRows ?? []) as { request_id: string }[]) waived.add(row.request_id);
-    for (const row of (exitRows ?? []) as { request_id: string; exit_date: string }[]) exitDates.set(row.request_id, String(row.exit_date).slice(0, 10));
-  }
+  const { withReceipt, waived, exitDates } = await loadReceiptProgressFor(mine.map((row) => row.order.id));
   const todayCairo = cairoDateKeyOf(now);
   const late = mine.flatMap((row) => {
     const progress = progressOf(withReceipt.get(row.order.id), exitDates.get(row.order.id));
@@ -1696,6 +1712,160 @@ export async function listLateReceiptsForRequester(requesterHrId: string, now: D
     days: lateness.daysLate,
     original: lateness.original,
   }));
+}
+
+export type DirectOrderReceiptWork = {
+  /** Originals typed by hand, waiting for THIS viewer's review (never one the viewer typed). */
+  handEntriesToReview: number;
+  /** Orders with an original past its due date. */
+  lateOriginals: number;
+  /** Approved orders whose warehouse exit Finance has not recorded, so no due date counts yet. */
+  awaitingExit: number;
+};
+
+/**
+ * Finance's receipt work, for the Direct Orders badge and the Needs Action inbox (owner, 28 Nov 2026: Finance
+ * sees a count of the hand-typed originals waiting for review, the late originals and the orders waiting for
+ * the warehouse exit). The same three the Receipt Books desk lists, counted the same way. Zero, with no read,
+ * for anyone who does not manage the books: a count nobody can clear is how people learn to ignore counts.
+ */
+export async function countDirectOrderReceiptWork(access: AccessContext, now: Date = new Date()): Promise<DirectOrderReceiptWork> {
+  const none: DirectOrderReceiptWork = { handEntriesToReview: 0, lateOriginals: 0, awaitingExit: 0 };
+  if (!canManageDirectOrderReceiptBooks(access)) return none;
+  const [books, { data: handRows, error: handError }] = await Promise.all([
+    loadBooks(),
+    getSupabaseAdmin().from(HAND_ENTRIES).select("entered_by_hr_id,entered_by_finance").eq("status", "pending"),
+  ]);
+  if (handError) throw handError;
+  const handEntriesToReview = ((handRows ?? []) as { entered_by_hr_id: string; entered_by_finance: boolean }[]).filter((row) =>
+    canReviewDirectOrderHandEntry(access, { enteredByHrId: row.entered_by_hr_id, enteredByFinance: row.entered_by_finance }),
+  ).length;
+  if (books.length === 0) return { ...none, handEntriesToReview };
+  return { handEntriesToReview, ...(await countOrderReceiptWork(books, now)) };
+}
+
+// The order half is the same for every viewer and reads every approved order since the rollout, so the badge's
+// 30-second poll shares one reading for a minute instead of repeating it per poll and per person.
+const ORDER_WORK_TTL_MS = 60_000;
+let orderWorkMemo: { at: number; work: Promise<{ lateOriginals: number; awaitingExit: number }> } | null = null;
+
+function countOrderReceiptWork(books: readonly ReceiptBookRow[], now: Date): Promise<{ lateOriginals: number; awaitingExit: number }> {
+  if (orderWorkMemo && now.getTime() - orderWorkMemo.at >= 0 && now.getTime() - orderWorkMemo.at < ORDER_WORK_TTL_MS) return orderWorkMemo.work;
+  const work = (async () => {
+    const orders = await loadApprovedOrdersSinceRollout(books);
+    if (orders.length === 0) return { lateOriginals: 0, awaitingExit: 0 };
+    const { withReceipt, waived, exitDates } = await loadReceiptProgressFor(orders.map((row) => row.order.id));
+    let lateOriginals = 0;
+    let awaitingExit = 0;
+    for (const row of orders) {
+      const progress = progressOf(withReceipt.get(row.order.id), exitDates.get(row.order.id));
+      const standing = classifyOrderReceipt({ order: row.order, books, progress, now, withoutReceiptApproved: waived.has(row.order.id) });
+      if (standing === "overdue") lateOriginals += 1;
+      else if (standing === "awaiting_exit") awaitingExit += 1;
+    }
+    return { lateOriginals, awaitingExit };
+  })();
+  orderWorkMemo = { at: now.getTime(), work };
+  // A failed reading is never kept: the next poll reads again.
+  work.catch(() => { if (orderWorkMemo?.work === work) orderWorkMemo = null; });
+  return work;
+}
+
+/** For the tests: forget the shared reading. */
+export function __resetReceiptWorkMemoForTests(): void {
+  orderWorkMemo = null;
+}
+
+const ORIGINAL_SPOKEN = {
+  custody: "Original 1, the custody page you signed,",
+  delivery: "Original 2, the page the customer signed and stamped,",
+} as const;
+
+function spokenDay(dateKey: string): string {
+  return new Date(`${dateKey}T00:00:00Z`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
+}
+
+/** The words of one reminder. Exported for the test that pins them. */
+export function receiptReminderWords(reminder: ReceiptReminder, pharmacyName: string): { title: string; message: string } {
+  const what = `${ORIGINAL_SPOKEN[reminder.original]} of your direct order for ${pharmacyName || "a pharmacy not on file"}`;
+  const how = "Open the order and photograph it with the Phoenix camera.";
+  if (reminder.kind === "late") {
+    return {
+      title: "Delivery receipt late",
+      message: `${what} was due on ${spokenDay(reminder.dueDate)} and is late. You cannot raise a new direct order until it is entered. ${how}`,
+    };
+  }
+  const when = reminder.daysToDue === 0 ? "today" : "tomorrow";
+  return {
+    title: `Delivery receipt due ${when}`,
+    message: `${what} is due ${when}, ${spokenDay(reminder.dueDate)}. ${how} Once it is late, you cannot raise a new direct order until it is entered.`,
+  };
+}
+
+/**
+ * The daily reminders to the managers (owner, 28 Nov 2026): inside Phoenix only, never an email — one when an
+ * original is due tomorrow (or today, if the day before was missed), and one once it is late. Each is sent once:
+ * its key is the order, the original and the kind, so a second run the same day, or the next day, adds nothing.
+ * An order from a book recorded lost is skipped, as the late block skips it: its receipt can no longer be entered.
+ */
+export async function sendDirectOrderReceiptReminders(
+  now: Date = new Date(),
+  options: { send?: (notice: CreateSystemNotificationInput) => Promise<unknown> } = {},
+): Promise<{ due: number; late: number }> {
+  const send = options.send ?? ((notice: CreateSystemNotificationInput) => raiseApproval(approvalIdentity("direct_order", notice.eventType), { via: "notice", notice }));
+  const books = await loadBooks();
+  if (books.length === 0) return { due: 0, late: 0 };
+  const orders = (await loadApprovedOrdersSinceRollout(books)).filter((row) => bookHeldAtApproval(row.order, books)?.status !== "lost");
+  if (orders.length === 0) return { due: 0, late: 0 };
+  const { withReceipt, waived, exitDates } = await loadReceiptProgressFor(orders.map((row) => row.order.id));
+  const todayCairo = cairoDateKeyOf(now);
+  const toSend = orders.flatMap((row) => {
+    const progress = progressOf(withReceipt.get(row.order.id), exitDates.get(row.order.id));
+    const standing = classifyOrderReceipt({ order: row.order, books, progress, now, withoutReceiptApproved: waived.has(row.order.id) });
+    if (standing !== "waiting" && standing !== "overdue") return [];
+    const reminder = receiptReminderFor(progress, todayCairo);
+    return reminder ? [{ row, reminder }] : [];
+  });
+  if (toSend.length === 0) return { due: 0, late: 0 };
+  const pharmacyIds = [...new Set(toSend.map(({ row }) => row.pharmacyId))];
+  const names = new Map<string, string>();
+  for (let start = 0; start < pharmacyIds.length; start += 100) {
+    const { data, error } = await getSupabaseAdmin().from("direct_order_pharmacies").select("id,pharmacy_name").in("id", pharmacyIds.slice(start, start + 100));
+    if (error) throw error;
+    for (const row of (data ?? []) as { id: string; pharmacy_name: string | null }[]) names.set(row.id, String(row.pharmacy_name ?? "").trim());
+  }
+  let due = 0;
+  let late = 0;
+  for (const { row, reminder } of toSend) {
+    const words = receiptReminderWords(reminder, names.get(row.pharmacyId) ?? "");
+    const eventType = reminder.kind === "late" ? "receipt_late_reminder" : "receipt_due_reminder";
+    try {
+      await send({
+        actionUrl: `/admin/direct-orders/${encodeURIComponent(row.order.id)}`,
+        category: "direct_order_request",
+        channels: ["in_app"],
+        eventType,
+        message: words.message,
+        metadata: {
+          directOrderId: row.order.id,
+          employeeHrId: row.order.requesterHrId,
+          idempotencyKey: `direct_orders:${row.order.id}:${eventType}:${reminder.original}:${row.order.requesterHrId}`,
+        },
+        module: "direct_orders",
+        priority: reminder.kind === "late" ? "high" : "normal",
+        recipientHrId: row.order.requesterHrId,
+        recordId: row.order.id,
+        subjectHrId: row.order.requesterHrId,
+        title: words.title,
+      });
+      if (reminder.kind === "late") late += 1;
+      else due += 1;
+    } catch (error) {
+      // One manager's notice failing never stops the others'; the error table says which.
+      logError("Direct order receipt reminder failed", { labels: { event: "direct_order_receipt_reminder_failed" }, error });
+    }
+  }
+  return { due, late };
 }
 
 // ─── Finance: book custody and spoiled pages ─────────────────────────────────

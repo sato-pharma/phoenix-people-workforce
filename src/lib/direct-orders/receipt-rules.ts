@@ -396,6 +396,36 @@ export function receiptRolloutStart(books: readonly ReceiptBookRow[]): number | 
  * `no_book`: approved after the rollout, but its requester held no book that day, so no signed page
  * stands behind it. Flagged on Finance's desk at once (owner, 27 Nov 2026: "Flag them").
  */
+export type ReceiptReminder = {
+  /** `due`: the original is due today or tomorrow. `late`: its due date has passed. */
+  kind: "due" | "late";
+  original: "custody" | "delivery";
+  dueDate: string;
+  /** Days from today to the due date: 1 tomorrow, 0 today, below 0 late. */
+  daysToDue: number;
+};
+
+/**
+ * The notice the manager gets inside Phoenix about the next original he still owes (owner, 28 Nov 2026: a
+ * notice the day before an original is due, and once it is late; never an email). Only the FIRST original
+ * not entered is spoken of: Original 2 waits until Original 1 is in, as the lateness check does. Null when
+ * nothing is owed, before Finance records the warehouse exit, and while the due date is two days or more away.
+ */
+export function receiptReminderFor(progress: ReceiptProgress, todayCairo: string): ReceiptReminder | null {
+  if (!progress.exitDate) return null;
+  const due = receiptDueDates(progress.exitDate);
+  const next = !progress.custodyEntered
+    ? { original: "custody" as const, dueDate: due.custodyDue }
+    : !progress.deliveryEntered
+      ? { original: "delivery" as const, dueDate: due.deliveryDue }
+      : null;
+  if (!next) return null;
+  const daysToDue = daysBetweenDateKeys(todayCairo, next.dueDate);
+  if (daysToDue < 0) return { kind: "late", ...next, daysToDue };
+  if (daysToDue <= 1) return { kind: "due", ...next, daysToDue };
+  return null;
+}
+
 export type ReceiptStanding = "has_receipt" | "not_required" | "awaiting_exit" | "waiting" | "overdue" | "no_book" | "without_receipt";
 
 /** Whole days since approval, Cairo-agnostic (a duration, not a date). */
