@@ -54,9 +54,12 @@ const TITLE_AR = { "District Sales Manager": "مدير منطقة", "Senior Dist
 const LINE_AR = { Pedia: "خط الأطفال (Pedia)", "Anti Infective": "خط المضادات الحيوية (Anti Infective)" };
 
 // ── the register: serial ⇄ code ⇄ book ⇄ manager. Made ONCE, then reused, so a re-run never re-issues codes.
-const regPath = path.join(OUT, "register.json");
+// The register lives beside this script since 28 Nov 2026 (the folder tidy): the books folder no longer holds it,
+// and a run that cannot find it REFUSES rather than minting 800 new codes that Phoenix does not know.
+const regPath = path.join(HERE, "register.json");
+if (!SAMPLE && !fs.existsSync(regPath) && !process.argv.includes("--new-register")) { console.error("Refused: no register.json beside build.mjs. Its codes are the ones on Phoenix; a new register needs --new-register AND a new Phoenix import."); process.exit(1); }
 // A sample never touches a register: it refuses a folder that holds one, and its codes are minted fresh and never saved.
-if (SAMPLE && fs.existsSync(regPath)) { console.error("Refused: --sample into a folder with register.json would print REAL codes. Use a new empty folder."); process.exit(1); }
+if (SAMPLE && fs.existsSync(path.join(OUT, "register.json"))) { console.error("Refused: --sample into a folder with register.json would print REAL codes. Use a new empty folder."); process.exit(1); }
 const managers = JSON.parse(fs.readFileSync(path.join(HERE, "managers.json"), "utf8"));
 let register;
 if (!SAMPLE && fs.existsSync(regPath)) {

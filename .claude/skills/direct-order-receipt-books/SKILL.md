@@ -52,22 +52,22 @@ has to rediscover it. The code side is module memory: the first bullet of `.clau
 
 `F:\Phoenix Workforce\Direct Order Receipt Books\` (not in Git):
 
-| File | What it is |
+Tidied into four folders by who receives them, on the owner's word (28 Nov 2026, "it's a chaos"). Nothing was
+deleted: every older build, test and video is under `Archive\`. The folder's own index is `اقرأني - محتوى المجلد.txt`.
+
+| Folder / file | What it is |
 | --- | --- |
-| `Receipt Book NN - <area> - <line> - <first>-<last>.pdf` × 16 | the print files: books 01–14 named, 15–16 spare |
-| `Book Custody Acknowledgements - all books.pdf` | 16 pages, one acknowledgement per book (signature + right-thumb print) |
-| `Receipt Book Register.xlsx`, `register.json` | 🔴 every serial ⇄ code ⇄ book ⇄ holder |
-| `preview-*.png` | previews of the real pages (real codes: never share) |
-| `_superseded v1 - no copy mark\` | the first build, before the hidden watermark: never print it |
-| `_generator\build.mjs`, `guides.mjs`, `managers.json` | the generators; `managers.json` holds the national IDs and is never committed |
-| `Guides\دفاتر إيصالات الطلبات المباشرة - ملخص للإدارة.pdf` | management summary, 6 pages |
-| `Guides\دليل العمل - إيصالات الطلبات المباشرة - لمديري المناطق.pdf` | area managers' guide, 4 pages |
-| `Guidesدليل المالية - إيصالات الطلبات المباشرة.pdf` | Finance's guide (Ahmed El Maraghy), 3 pages, since 28 Nov |
-| `Guides\عينة دفتر - دفتر 01 القاهرة - إيصالان للعرض.pdf` | sample book, 7 pages, 1.1 MB, codes NOT in Phoenix |
-| `Guides\مسودة الإيميل - مقترح دفاتر الإيصالات.txt` | the Arabic proposal email draft (6 attachments; Phoenix checks 1–18) |
-| `Guides\تعليمات الطباعة - للمطبعة.pdf` | printer's instructions, 2 pages: spec, 3-part sets, proof copier test, secrecy |
-| `Guides\اختبار ورق الأمان - ماكينة التصوير.pdf` | security-paper copier test: instructions + one sample receipt (codes NOT in Phoenix) |
-| `Guides\_img\desk-top.png`, `desk-bottom.png` | real screenshots of Finance's desk |
+| `1 - إيميل للإدارة - دكتور أنور وأستاذ أحمد\` | `0 - مسودة الإيميل.txt` (the draft; the owner sends it) and attachments `1 -` … `6 -` in the email's own order: summary (6 pages), managers' guide (4), custody acknowledgements (16, national IDs: Dr Anwar and Ahmed El Maraghy only), sample book (7, codes NOT in Phoenix), printer's instructions (2), Finance's guide (3) |
+| `2 - فلاشة للمطبعة - عن طريق أستاذ أحمد\` | `الدفاتر الـ16\Receipt Book NN - <area> - <line> - <first>-<last>.pdf` × 16 (🔴 real codes: USB only), the printer's instructions, the QR phone test |
+| `3 - للمالية فقط - سجل الدفاتر\Receipt Book Register.xlsx` | 🔴 every serial ⇄ book ⇄ holder, for Finance alone |
+| `4 - للمديرين - ملف مضغوط لكل مدير\` | 14 zips, `<production name> - دفتر NN.zip`: the managers' guide + a personal message (book, line, area, range; no code). Names read from production with `hr-names.mjs` |
+| `Archive\` | `old builds and tests` (every `_staging-*`), `superseded books` (v3–v5), `superseded guides`, `old zips`, `old videos - out of date` |
+| `_generator\` | `build.mjs`, `guides.mjs`, `managers.json` (national IDs, never committed), 🔴 **`register.json`** (every serial ⇄ code ⇄ book ⇄ holder, moved here 28 Nov), `_img\desk-top.png`, `desk-bottom.png` |
+
+🔴 **`build.mjs` reads the register from beside itself since 28 Nov and REFUSES to run without it** (`--new-register`
+overrides, and would need a new Phoenix import). Before, it read `<OUT>\register.json` and silently minted 800 new
+codes into any folder that lacked one. `guides.mjs` still wants `_img\` and the sample PDF inside its out folder:
+copy `_generator\_img` and the sample into a fresh staging folder, render there, then move the PDFs into folder 1.
 
 A copy of both generators is in this skill's `generator/` folder, so they survive the laptop. To use the copy,
 put `managers.json` beside it. Each script finds the repo four folders up from itself, so its libraries resolve
