@@ -141,7 +141,7 @@ function fingerprints(files: Array<TicketReceiptFile | string> | null | undefine
 }
 
 /** A read ticket, as kept on a claim (`scan` of ticket_attachment_metadata) or just read for a new one. */
-export type ReadTicket = { matchedTo?: unknown; trainNumber?: unknown; travelDate?: unknown };
+export type ReadTicket = { fromStation?: unknown; matchedTo?: unknown; toStation?: unknown; trainNumber?: unknown; travelDate?: unknown };
 
 const ARABIC_DIGITS = /[٠-٩۰-۹]/g;
 

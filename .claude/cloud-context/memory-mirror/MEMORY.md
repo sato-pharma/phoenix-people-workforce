@@ -33,8 +33,10 @@
 
 ## Inbox — new notes land here
 
-- [CodeQL dismissals of 27 Nov STAND](codeql-dismissals-2026-11-27-stand.md) — owner: "keep the 85 CodeQL dismissals"; 112 → 18 open; the password-hash alerts and the 2 mobile alerts stay open; never reopen or re-triage.
-- [Spare's screen blanked + quiet; never a desktop on it](spare-screen-is-blanked-and-quiet.md) — 27 Nov: printk 3, blank after 1 min, power TAP ignored (5 s hold powers off); an OOM line on its screen may be the hubqa job, not the dev server.
+- [A name for an HR ID is READ, never guessed](a-name-for-an-hr-id-is-read-never-guessed.md) — owner 27 Nov: "train yourself on all HRIDs and names"; `node ~/.claude/scripts/hr-names.mjs <ids>` (production only), skill `employee-names`. AA = Anwar Gaweesh, CEO.
+- [Heavy RAM fix 27 Nov](heavy-ram-fix-2026-11-27.md) — playwright + chrome-devtools MCP REMOVED from ~/.claude.json (every session spawned them, ~4 GB commit) — never re-add; spare: zram1 added, zram sysctls, MemoryLow live / MemoryHigh preview.
+- [Laptop WhatsApp = Edge web app](laptop-whatsapp-is-an-edge-web-app.md) — receives only while open; starts with Windows since 27 Nov; watchdog rule 14 (closing it under 2.6 GB) turned OFF on his pick, 27 Nov 23:05.
+- [Ahmed Helal B-3: July+Aug paid OUTSIDE Phoenix](ahmed-helal-b3-july-august-paid-outside-phoenix.md) — owner 27 Nov: never release his held July/Aug pay; B-3 + CN-0013 are a re-hire, never merge.
 
 
 
