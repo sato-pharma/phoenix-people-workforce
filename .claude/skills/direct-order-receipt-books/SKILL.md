@@ -1,6 +1,6 @@
 ---
 name: direct-order-receipt-books
-description: Everything about the direct-order delivery-receipt books (إذن تسليم وتسلم بضاعة) built on 26–27 Nov 2026 — the 16 printed books and their security marks (the yellow «أصل · ORIGINAL» ground a black-and-white copier drops, the red serial, blue-ink signatures, per-receipt seal, microtext, QR), the register of 800 codes, the Phoenix check that ships with PR 812 (Finance's Receipt Books desk, the receipt panel on an order), the two Arabic guides (management summary, area managers' guide), the sample book, the proposal email to Dr Anwar and Ahmed El Maraghy, and what is still open. Use whenever the owner mentions receipt books, دفاتر الإيصالات, إيصال, the custody acknowledgement, the printer, the copier test, the guides, the sample book, the proposal email, or handing a book to a manager.
+description: Everything about the direct-order delivery-receipt books (إذن تسليم وتسلم بضاعة) built on 26–27 Nov 2026 — the 16 printed books and their security marks (ready-made anti-copy VOID paper for the two originals, the red serial, blue-ink signatures, per-receipt seal, microtext, QR), the register of 800 codes, the Phoenix check that ships with PR 812 (Finance's Receipt Books desk, the receipt panel on an order), the two Arabic guides (management summary, area managers' guide), the sample book, the proposal email to Dr Anwar and Ahmed El Maraghy, and what is still open. Use whenever the owner mentions receipt books, دفاتر الإيصالات, إيصال, the custody acknowledgement, the printer, the copier test, the guides, the sample book, the proposal email, or handing a book to a manager.
 ---
 
 # Direct-order receipt books
@@ -65,7 +65,7 @@ has to rediscover it. The code side is module memory: the first bullet of `.clau
 | `Guides\عينة دفتر - دفتر 01 القاهرة - إيصالان للعرض.pdf` | sample book, 7 pages, 1.1 MB, codes NOT in Phoenix |
 | `Guides\مسودة الإيميل - مقترح دفاتر الإيصالات.txt` | the Arabic proposal email draft (5 attachments) |
 | `Guides\تعليمات الطباعة - للمطبعة.pdf` | printer's instructions, 2 pages: spec, 3-part sets, proof copier test, secrecy |
-| `Guides\اختبار أصل الصفراء - ماكينة التصوير.pdf` | office copier test: instructions + one sample receipt (codes NOT in Phoenix) |
+| `Guides\اختبار ورق الأمان - ماكينة التصوير.pdf` | security-paper copier test: instructions + one sample receipt (codes NOT in Phoenix) |
 | `Guides\_img\desk-top.png`, `desk-bottom.png` | real screenshots of Finance's desk |
 
 A copy of both generators is in this skill's `generator/` folder, so they survive the laptop. To use the copy,
@@ -90,21 +90,20 @@ the browser on another machine.
   - the venue's acknowledgement text;
   - five rules.
 - **Security marks on every page:**
-  1. 🔴 **The yellow «أصل · ORIGINAL» ground, on Original 1 and Original 2 only** (owner, 27 Nov 2026 ~23:58
-     Cairo: "Rebuild the books"). `originalGround()` in `build.mjs`: Tahoma bold 3 mm, rows 9 mm apart, rotated
-     −14°, in pure yellow `#FFE200`, behind everything on the sheet. The eye sees it plainly; a black-and-white
-     copier reads by brightness (yellow ≈ 85% white) and drops it, the way a yellow highlighter vanishes. So a
-     copy has no «أصل». The customer copy carries none. A colour copier keeps it: Phoenix's one-order-per-code
-     rule is what stops a colour copy, never the paper.
-     - 🔴 **The hidden "photocopied — not valid" word (void pantograph) is DROPPED — never bring it back.** On the
-       owner's office laser and copier (27 Nov 2026, three test sheets) the word showed on the print itself, or on
-       neither: an office laser cannot print the fine dots, and his copier keeps what the eye sees and drops what
-       it cannot. It needs an offset press, and even then a good copier can beat it. A stuck-on hologram (peeled and
-       reused) and a raised seal (re-made by any seal maker) were rejected by the owner too.
-     - The SVG's text must stay `direction: ltr` (`.yo` in the CSS): in the page's RTL, `text-anchor` start put
-       every row off the left edge and the yellow printed nowhere.
-  2. **The serial in red** (`#C8102E`): a black-and-white copy shows it black.
-  3. **Every signature line says «بالقلم الأزرق»**: a copy shows the signature black.
+  1. 🔴 **The copy mark is the PAPER: ready-made anti-copy (VOID) security paper for Original 1 and Original 2**
+     (owner, 28 Nov 2026 ~02:00 Cairo, his pick: "Ready-made anti-copy paper"; his words: "a sign … not appear if
+     print original; if this original is then scanned or printed it has a mark that shows it's not the original").
+     The press buys it; its own pre-printed pattern shows a word (VOID, COPY …) on any photocopy or scan while the
+     original looks plain. Nothing in the files draws it. The customer copy is plain white NCR.
+     - 🔴 **The yellow «أصل · ORIGINAL» ground is DROPPED — never bring it back** (built 27 Nov ~23:58, dropped 28 Nov
+       ~02:00). On the owner's black-and-white copier the copy KEPT the yellow ("الابيض والاسود كل حاجه بطبع التاني
+       عادي"), so a copy still said «أصل» — worse than no mark. The only proof had been a brightness simulation.
+     - 🔴 **The drawn hidden "photocopied — not valid" word (void pantograph) is DROPPED too — never bring it back.**
+       On his office laser and copier (27 Nov, three test sheets) it showed on the print itself, or on neither: an
+       office laser cannot print the fine dots. Ready-made VOID paper is that same mark made by a security printer.
+       A stuck-on hologram (peeled and reused) and a raised seal (re-made by any seal maker) were rejected too.
+  2. **The serial in red** (`#C8102E`).
+  3. **Every signature line says «بالقلم الأزرق»**.
   4. **Guilloche seal per receipt.** Its rosette is seeded from the serial and code, so no two of the 800 match.
      The serial and code run round its ring.
   5. **Visible watermark**: the same rosette, large and pale, behind the items table.
@@ -112,17 +111,16 @@ the browser on another machine.
      claim a copy loses it: his copier keeps what the eye can see.
   7. **QR code** carrying `SATO-DO|<serial>|<code>`. Phoenix does not scan it yet, so never claim it does.
 - **Print spec, written by Claude on 27 Nov and NOT yet confirmed by the owner or the printer:**
-  - each receipt is a 3-part self-copying (NCR) set with all plies WHITE, so the yellow and the red read true;
+  - each receipt is a 3-part self-copying (NCR) set: the two originals on anti-copy VOID paper, the customer copy white;
   - the order is Original on top, then Copy 1, then Copy 2;
   - only the Copy 1 ply is perforated to tear out;
   - the cover and 50 sets are bound in file order and cannot be taken apart;
   - spoiled pages go back to Finance, and the files are deleted from the printer's machines.
 - **Printing conditions (in the email):**
-  - Print the files as they are, in colour, with no scaling and no image "enhancement"; «أصل» in pure Yellow 100%
-    (no black or cyan in it), the serial red, the customer copy with no yellow.
-  - **Photocopy one receipt of the printer's proof in black and white BEFORE the full run**: «أصل» must vanish and
-    the red serial come out black. Only a simulation has been run (Rec.709 brightness, background cut at ~80%
-    white); no paper test yet.
+  - Original 1 and Original 2 on ready-made anti-copy (VOID) security paper; print the files as they are, with no
+    scaling and no image "enhancement".
+  - **Photocopy one receipt of the printer's proof BEFORE the full run**: the paper's word must show on the copy and
+    not on the original. No paper test yet.
 
 ## 🔴 Two originals and a copy (owner, 27 Nov 2026 ~17:10) — the design every sheet moves to
 
@@ -290,9 +288,17 @@ After Dr Anwar asked what the original and Copy 2 were for, the owner settled it
     sheets and the old management video are in `Guides\_superseded - hidden word\`. Never print them.
   - The custody PDF and the register workbook were not swapped: neither carries the yellow.
 
+- ✅ **Rebuilt on 28 Nov 2026, ~02:20 Cairo, WITHOUT the yellow, for anti-copy paper** (owner's pick, ~02:00).
+  - Rebuilt: the 16 books, the sample, the summary, the printer's instructions (a new «الورق» row), the copier
+    test (now `اختبار ورق الأمان - ماكينة التصوير.pdf`) and the management video's scenes 4, 6 and 15.
+  - `register.json` unchanged (sha256 `34abe243…`); all 800 codes read back on all three sheets; 0 yellow pixels.
+  - The yellow books are in `_superseded v4 - yellow ground\`, the yellow guides and video in
+    `Guides\_superseded - yellow ground\`. Never print them.
+  - The managers' guide still names no security mark.
+
 - The physical copier test. Two ways to do it:
-  - on an office printer, now: `اختبار أصل الصفراء - ماكينة التصوير.pdf`, page 2, printed in COLOUR at 100%,
-    then photocopied in black and white («أصل» gone, serial black);
+  - on a sheet of the press's security paper: `اختبار ورق الأمان - ماكينة التصوير.pdf`, page 2, printed on it at
+    100%, then photocopied and scanned (the paper's word must show on both);
   - on the printer's proof, before the full run.
   A session cannot do this test.
 - Swapping the guide's drawing for the real entry screen after the first hand-over.

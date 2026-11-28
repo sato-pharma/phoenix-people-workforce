@@ -41,7 +41,7 @@ const PARTS = [
   { key: "O2", kind: "customer", ar: "الأصل الثاني — استلام العميل", note: "يُنزع ويُرفع على فينكس خلال 6 أيام عمل، ثم للمالية", en: "ORIGINAL 2" },
   { key: "C", kind: "customer", ar: "صورة العميل", note: "تُنزع وتُسلَّم للعميل", en: "CUSTOMER COPY" },
 ];
-const C = { yellow: "#FFE200", red: "#C8102E", deep: "#0A527D", blue: "#0A6BA6", light: "#1482C2", tint: "#F2F6FA", hair: "#B9C7D4", muted: "#5A6B7C", body: "#1A1A1A", ghost: "#DCE6EF" };
+const C = { red: "#C8102E", deep: "#0A527D", blue: "#0A6BA6", light: "#1482C2", tint: "#F2F6FA", hair: "#B9C7D4", muted: "#5A6B7C", body: "#1A1A1A", ghost: "#DCE6EF" };
 const FONT = '"Tahoma", "Segoe UI", "Traditional Arabic", "Noto Sans Arabic", Arial, sans-serif';
 const LOGO = fs.readFileSync(REPO + "/public/brand/sato-pharma-logo-on-light.svg", "utf8")
   .replace(/<\?xml[^>]*>/, "").replace(/<title>.*?<\/title>/, "")
@@ -131,16 +131,10 @@ function groundSvg(code, serial, partEn) {
 // or on neither. A stuck-on hologram can be peeled and reused, and a raised seal re-made by any seal maker, so
 // neither is used either. What proves a receipt is Phoenix: each serial and its secret code are accepted for ONE
 // order only. The serial prints in red (a black-and-white copy shows it black); every signature is in blue ink.
-// The ORIGINAL is told apart by colour, which a black-and-white copier cannot see: «أصل · ORIGINAL» runs across the
-// page in yellow. The eye sees yellow plainly, but a copier reads it by brightness, where yellow is almost white, so
-// the copy comes out with no «أصل» at all (the way a yellow highlighter vanishes on a photocopy). The red serial
-// comes out black. Only the two originals carry it; the customer's carbon copy does not.
-function originalGround(part) {
-  if (part.key === "C") return "";
-  const row = "أصل · ORIGINAL · ".repeat(22);
-  const lines = Array.from({ length: 42 }, (_, i) => `<text x="${-90 + (i % 2) * 10}" y="${-40 + i * 9}" font-family="Tahoma" font-weight="bold" font-size="3" fill="${C.yellow}">${row}</text>`).join("");
-  return `<svg class="yo" viewBox="0 0 210 297"><g transform="rotate(-14 105 148)">${lines}</g></svg>`;
-}
+// A COPY is told apart by the PAPER (owner, 28 Nov 2026: "Ready-made anti-copy paper"): the press prints Original 1
+// and Original 2 on ready-made anti-copy (VOID) security paper, whose own hidden pattern shows a word on any photocopy
+// or scan while the original looks plain. Nothing in these files draws it. The yellow «أصل · ORIGINAL» ground tried
+// on 27 Nov is DROPPED: on the owner's black-and-white copier the copy kept it, so a copy still said «أصل».
 function microLine(code, serial, partEn) {
   return `<div class="micro" dir="ltr">${esc(`SATOPHARMA${pad(serial)}${code}${partEn.replace(/\s/g, "")}`.repeat(24))}</div>`;
 }
@@ -156,9 +150,8 @@ html, body { margin: 0; padding: 0; background: #fff; -webkit-print-color-adjust
 body { font-family: ${FONT}; color: ${C.body}; font-size: 9.4pt; line-height: 1.5; }
 .sheet { position: relative; background: #fff; width: 210mm; height: 297mm; padding: 9mm 11mm 8mm; overflow: hidden; page-break-after: always; break-after: page; }
 .sheet:last-child { page-break-after: auto; break-after: auto; }
-.yo { position: absolute; inset: 0; width: 210mm; height: 297mm; z-index: 0; direction: ltr; }
 .wm { position: absolute; width: 150mm; height: 150mm; left: 30mm; top: 95mm; z-index: 0; }
-.sheet > *:not(.wm):not(.yo):not(.foot):not(.zoneA):not(.zoneB) { position: relative; z-index: 1; }
+.sheet > *:not(.wm):not(.foot):not(.zoneA):not(.zoneB) { position: relative; z-index: 1; }
 .sheet > .foot { z-index: 1; }
 .mast { display: flex; direction: ltr; align-items: center; gap: 5mm; }
 .mast__logo { width: 36mm; height: 14.2mm; flex: none; }
@@ -291,7 +284,6 @@ function receiptPage(book, r, idx, part) {
     <div class="stamp">ختم المنشأة</div>
   </div>`;
   return `<section class="sheet">
-  ${originalGround(part)}
   ${groundSvg(code, s, part.en)}
   <header class="mast">
     <div class="mast__logo">${LOGO}</div>
