@@ -6399,6 +6399,7 @@ CREATE FUNCTION public.direct_order_decide_hand_entry(p_entry_id uuid, p_actor_h
     SET search_path TO 'public', 'pg_temp'
     AS $$
 declare
+  v_serial integer;
   v_entry public.direct_order_receipt_hand_entries%rowtype;
   v_receipt public.direct_order_receipts%rowtype;
   v_released jsonb;
@@ -6412,21 +6413,36 @@ begin
   if p_decision = 'rejected' and length(btrim(coalesce(p_note, ''))) < 3 then
     raise exception 'Write why the hand-entered receipt is rejected.' using errcode = '22023';
   end if;
+  -- The receipt first, then the hand entry: the lock order of every function that touches both.
+  select e.serial into v_serial from public.direct_order_receipt_hand_entries e where e.id = p_entry_id;
+  if not found then
+    return jsonb_build_object('decided', false);
+  end if;
+  select * into v_receipt from public.direct_order_receipts r where r.serial = v_serial for update;
   select * into v_entry from public.direct_order_receipt_hand_entries e where e.id = p_entry_id for update;
   if not found or v_entry.status <> 'pending' then
     return jsonb_build_object('decided', false);
   end if;
-  select * into v_receipt from public.direct_order_receipts r where r.serial = v_entry.serial for update;
+
+  update public.direct_order_receipt_hand_entries e
+     set status = p_decision, reviewed_by_hr_id = btrim(p_actor_hr_id), reviewed_at = now(),
+         review_note = nullif(btrim(coalesce(p_note, '')), '')
+   where e.id = v_entry.id;
 
   if p_decision = 'rejected' then
     if v_entry.original = 'custody' then
-      v_released := public.direct_order_release_receipt(
-        v_entry.serial, v_entry.request_id, btrim(p_actor_hr_id), 'Hand-entered Original 1 rejected: ' || btrim(p_note)
-      );
-      update public.direct_order_receipt_hand_entries e
-         set status = 'rejected', reviewed_by_hr_id = btrim(p_actor_hr_id), reviewed_at = now(),
-             review_note = 'Original 1 was rejected, so the receipt was taken off the order.'
-       where e.serial = v_entry.serial and e.request_id = v_entry.request_id and e.status = 'pending' and e.id <> v_entry.id;
+      -- Only the Original 1 this entry photographed: a stale entry never takes a newer original off the order.
+      if v_receipt.state = 'used' and v_receipt.request_id = v_entry.request_id
+         and v_receipt.photo_storage_path = v_entry.photo_storage_path then
+        -- Original 2 goes with the receipt: a hand entry waiting on it has nothing left to review.
+        update public.direct_order_receipt_hand_entries e
+           set status = 'rejected', reviewed_by_hr_id = btrim(p_actor_hr_id), reviewed_at = now(),
+               review_note = 'Original 1 was rejected, so the receipt was taken off the order.'
+         where e.serial = v_entry.serial and e.request_id = v_entry.request_id and e.status = 'pending' and e.id <> v_entry.id;
+        v_released := public.direct_order_release_receipt(
+          v_entry.serial, v_entry.request_id, btrim(p_actor_hr_id), 'Hand-entered Original 1 rejected: ' || btrim(p_note)
+        );
+      end if;
     elsif v_receipt.state = 'used' and v_receipt.request_id = v_entry.request_id
           and v_receipt.delivery_photo_storage_path = v_entry.photo_storage_path then
       perform set_config('phoenix.receipt_delivery_clear', v_entry.serial::text, true);
@@ -6437,11 +6453,6 @@ begin
       perform set_config('phoenix.receipt_delivery_clear', '', true);
     end if;
   end if;
-
-  update public.direct_order_receipt_hand_entries e
-     set status = p_decision, reviewed_by_hr_id = btrim(p_actor_hr_id), reviewed_at = now(),
-         review_note = nullif(btrim(coalesce(p_note, '')), '')
-   where e.id = v_entry.id;
 
   return jsonb_build_object(
     'decided', true,
@@ -6648,6 +6659,11 @@ begin
          updated_at = now()
    where r.serial = p_serial;
   perform set_config('phoenix.receipt_release', '', true);
+  -- The originals left with the receipt: a review still waiting on them has nothing left to check.
+  update public.direct_order_receipt_hand_entries e
+     set status = 'rejected', reviewed_by_hr_id = btrim(p_actor_hr_id), reviewed_at = now(),
+         review_note = 'Not reviewed: the receipt was taken off the order.'
+   where e.serial = p_serial and e.request_id = p_request_id and e.status = 'pending';
   return jsonb_build_object(
     'released', true,
     'serial', v_receipt.serial,

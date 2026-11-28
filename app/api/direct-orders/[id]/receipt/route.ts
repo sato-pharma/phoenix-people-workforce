@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
   askDirectOrderWithoutReceipt,
+  decideDirectOrderHandEntry,
   decideDirectOrderWithoutReceipt,
   recordDirectOrderDelivery,
   recordDirectOrderReceipt,
@@ -31,6 +32,10 @@ export const dynamic = "force-dynamic";
  * `{ action: "ask_without_receipt", reason }` — Finance asks the CEO to let the order stand without a
  * receipt; `{ action: "decide_without_receipt", decision: "approve" | "refuse", note }` — the CEO alone
  * decides (owner, 27 Nov 2026: making an order without a receipt is Dr Anwar's authority only).
+ *
+ * `{ action: "decide_hand_entry", entryId, decision: "approve" | "reject", note }` — an original typed by hand
+ * (its QR not read in the photo) is reviewed: Finance reviews a manager's, the Super Admin reviews Finance's
+ * (owner, 28 Nov 2026). Never by the person who typed it.
  */
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -47,6 +52,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       code?: unknown;
       photoDataUrl?: unknown;
       exitDate?: unknown;
+      entryId?: unknown;
     };
     if (body.action === "ask_without_receipt") {
       const asked = await askDirectOrderWithoutReceipt(access, { requestId: id, reason: body.reason ?? null });
@@ -54,6 +60,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     }
     if (body.action === "decide_without_receipt") {
       const decided = await decideDirectOrderWithoutReceipt(access, { requestId: id, decision: body.decision ?? null, note: body.note ?? null });
+      return NextResponse.json({ success: true, message: decided.message });
+    }
+    if (body.action === "decide_hand_entry") {
+      const decided = await decideDirectOrderHandEntry(access, { requestId: id, entryId: body.entryId ?? null, decision: body.decision ?? null, note: body.note ?? null });
       return NextResponse.json({ success: true, message: decided.message });
     }
     if (body.action === "warehouse_exit") {
@@ -67,7 +77,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         code: body.code ?? null,
         photoDataUrl: body.photoDataUrl ?? null,
       });
-      return NextResponse.json({ success: true, message: delivered.message, serial: delivered.serialLabel });
+      return NextResponse.json({ success: true, message: delivered.message, serial: delivered.serialLabel, pendingReview: delivered.pendingReview });
     }
     if (body.action === "release") {
       const released = await releaseDirectOrderReceipt(access, { requestId: id, reason: body.reason ?? null });
@@ -79,7 +89,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       code: body.code ?? null,
       photoDataUrl: body.photoDataUrl ?? null,
     });
-    return NextResponse.json({ success: true, message: result.message, serial: result.serialLabel });
+    return NextResponse.json({ success: true, message: result.message, serial: result.serialLabel, pendingReview: result.pendingReview });
   } catch (error) {
     const apiError = toApiError(error, "Could not save the receipt.");
     const status = isForbiddenError(error) ? 403 : apiError.status;

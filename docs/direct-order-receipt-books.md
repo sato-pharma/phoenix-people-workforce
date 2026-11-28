@@ -159,3 +159,76 @@ were replaced by the two due dates above.
 - The manager's orders, and the exits, are read in batches of 100 ids: about 400 in one request overflow the
   address and read back empty with no error.
 - Pinned by `tests/direct-order-payment-standing.test.ts` and `tests/direct-order-receipt-books.test.ts`.
+
+## The live camera, the QR read and the hand-entered original (28 Nov 2026)
+
+The owner's words: "لايف مش ابلود … منوره بالاحمر طول ما هو مش قادر يتعرف عليهم. اول ما … يقدر يتعرف عليهم تنور
+بالاخضر ويعمل ابلود"; for a damaged QR, "المدير يدخله مانوال بس يروح للريفيو، ما يدخلش اوتوماتيك … ممكن الاثنين
+المدير يدخله بايده والماليه تدخله، بس هو بيروح للريفيو الاول"; and who reviews: "المالية، وإنت لو المالية دخلته".
+
+- **The order page opens the live camera** (`src/components/direct-orders/receipt-qr-camera.tsx`), never the gallery.
+  The frame is red until the same receipt is read twice, then green, and the photo saves itself with the number and
+  code taken from the QR. Original 2 must carry Original 1's number; another number stays red.
+- **How the camera makes sure a correct receipt is recognised** (the owner, 28 Nov 2026: "max effort to be sure the
+  camera can recognize the receipt if it is correct"):
+  - it asks for the 2560 x 1440 the signboard camera already uses on the reps' phones and reads every frame WHOLE —
+    a 1080-wide frame read at 960, the first version, needed the page to fill three quarters of the picture;
+  - the phone's own QR reader (`BarcodeDetector`, Chrome on Android) reads first, jsQR after it; a native reader
+    that fails once is dropped and jsQR carries on;
+  - the lock is `stepReceiptQrLock` (`receipt-rules.ts`): two reads of the same receipt, each within 2 s of the one
+    before. A frame that reads nothing in between does NOT undo it — a hand-held phone reads, misses and reads again;
+  - it asks the lens for continuous focus, and after 4 s with nothing read the line under the frame asks for the
+    phone to come closer to the QR;
+  - the photo saved is the very frame that was read, so the server sees what turned the frame green; a photo that
+    fails to save no longer stops the camera.
+  - Measured on 28 Nov 2026 with the real component and a simulated camera showing the sample pages: green from
+    the page filling the picture down to a third of it when sharp; at 15° and 30°, upside down, at 30 % brightness and
+    under strong glare; Original 2 of another receipt stayed red. All 25 photos the camera saved were read and
+    matched again by the server reader. The server's 1,200 / 1,800 / 2,600 px ladder already read every photo that a
+    full-size or sharpened read could; only a badly shaken photo reads nowhere, and it waits for review.
+  A manager has no "Choose file"; Finance keeps it for a page it already holds (`mayChooseFile`).
+- **The camera is only a help — the server reads the QR again** (`src/lib/direct-orders/receipt-photo-qr.ts`, sharp
+  plus jsqr, at 1,200, 1,800 and 2,600 px wide; it never throws). `classifyReceiptPhotoQr` decides:
+  - the QR names the typed receipt → the original counts at once;
+  - the QR names another receipt (or the right number with a wrong code) → refused, written on the order as
+    `qr_other_receipt`, and the other receipt's code is never written down;
+  - no receipt QR read, a PDF, or a reader failure → the original is saved with the order (so the paper can never
+    be used twice and the manager is not held late), and a pending row goes in
+    `direct_order_receipt_hand_entries`. Unread is the safe side: never let an unread photo count.
+- **"QR won't read? Type the number"** opens the typed number and code with a shutter; that original always waits.
+- **The table** (migration `20261128134224_direct_order_receipt_hand_entries`) is append-only by trigger, server
+  only, one pending entry per receipt original. The hand entry is opened BEFORE the receipt is claimed, so the
+  one-pending index stops a race; if the claim then fails, the entry is closed, never left waiting.
+- **Who reviews** (`canReviewDirectOrderHandEntry`, `finance-authority.ts`): Finance reviews a manager's (or the
+  Super Admin's); the Super Admin alone reviews Finance's own; nobody reviews one they typed.
+- **A decision is one database call**, `direct_order_decide_hand_entry`. Approving keeps the original. Rejecting
+  needs a written reason: Original 1 goes through `direct_order_release_receipt` (the release record keeps the
+  photo) and any waiting Original 2 entry closes with it; Original 2 clears only itself, through the receipt
+  guard's `phoenix.receipt_delivery_clear` door. The order then says which original was rejected and why.
+- **The manager reads the reviewer's own reason** (owner, 28 Nov 2026: "it must show the manager the reason of the
+  rejection, the accurate reason"). The order's red notice names the original, the receipt number, who rejected it
+  and when (Cairo), then the reason on a line of its own, word for word, its direction taken from its words so an
+  Arabic reason reads right to left, then what to do now. The reviewer's box says the manager reads exactly what is
+  written. Which rejection shows is `rejectionToShowManager` (`receipt-rules.ts`): the newest decision a reviewer
+  made, while that original is still missing. Rejecting Original 1 closes a waiting Original 2 in the SAME instant
+  with `RECEIPT_O2_CLOSED_WITH_O1_NOTE` — measured on staging, both rows carry one timestamp to the microsecond,
+  and the page reads Original 2 first — so that closing note is never shown as the reason, and on a tie Original 1
+  comes first. Until 28 Nov 2026 the order showed "Original 2 … Original 1 was rejected, so the receipt was taken
+  off the order" instead of Finance's words.
+- **A review never outlives its receipt** (migration `20261128152929_direct_order_receipt_hand_entry_review_fixes`,
+  from the code review of PR 858, 28 Nov 2026). Taking a receipt off the order closes every review still waiting on
+  it with `RECEIPT_CLOSED_BY_RELEASE_NOTE` ("Not reviewed: the receipt was taken off the order."), which is never
+  shown as a reason. Rejecting Original 1 takes the receipt off only when that entry's photo is still Original 1 on
+  the receipt of its order, so a stale review never removes a newer, QR-read original; the order then says nothing
+  was taken off. The decision locks the receipt before the hand entry, the same order as every other function, so
+  two reviewers of one receipt never deadlock. Measured on staging before the fix: the review stayed pending after
+  the release, and rejecting it released the receipt entered again; after it: closed, and the receipt stayed. An
+  Original 2 rejection shows only for the receipt still on the order with its Original 1 and without its Original 2.
+  A reason is cut at 500 characters, and an unsaved original is closed with up to three tries.
+- **Camera only holds on the server too** (`photoQrVerdict`, `isPhoenixCameraFrame`): a manager's PDF is refused,
+  and a manager's picture Phoenix's camera did not draw (a phone or gallery photo carries EXIF; a canvas frame
+  never does) waits for review even when its QR reads. Finance may attach a file it holds. A forged upload with its
+  EXIF stripped still counts: the bytes cannot prove the page was in front of the lens.
+- **Where it shows:** each original on the order says whether its QR was read or it waits; Finance's Receipt Books
+  desk lists every entry waiting, with its photo and the Approve and Reject buttons; the verified print says for
+  each original whether its QR was read, or it was typed by hand and approved, or it still waits.

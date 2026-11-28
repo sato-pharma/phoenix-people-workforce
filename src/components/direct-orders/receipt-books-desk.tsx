@@ -5,8 +5,9 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { adminPanelClassName, adminPanelDepthClassName, adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
-import { WarehouseExitField } from "@/components/direct-orders/direct-order-receipt-panel";
+import { HandEntryReviewButtons, WarehouseExitField } from "@/components/direct-orders/direct-order-receipt-panel";
 import { FormField } from "@/components/ui/form-kit";
+import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import {
   phxButtonAccentClassName,
   phxButtonDangerClassName,
@@ -103,6 +104,50 @@ export function ReceiptBooksDesk({ register }: { register: DirectOrderReceiptReg
     <div className="space-y-5">
       {message ? <p className={`border border-slate-300 bg-white px-3 py-2 text-phx-sm font-bold text-slate-800 ${adminPanelDepthClassName}`}>{message}</p> : null}
       {error ? <p className={phxFormErrorClassName}>{error}</p> : null}
+
+      {register.handEntries.length > 0 ? (
+        <Panel title={`Typed by hand — waiting for review — ${register.handEntries.length}`}>
+          <p className="mb-2 text-phx-sm text-slate-600">
+            The QR of these originals was not read in the photo, so the number and code were typed. Check the photo against them: approve it if they match; reject it with the reason and the original is taken back out, to be entered again. Nobody reviews an original they typed themselves.
+          </p>
+          <ul className="divide-y divide-slate-200">
+            {register.handEntries.map((entry) => (
+              <li className="grid grid-cols-1 gap-3 py-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" key={entry.entryId}>
+                <div className="min-w-0 space-y-1">
+                  <Link className="break-words text-phx-sm font-bold text-slate-900 underline-offset-2 hover:underline" href={`/admin/direct-orders/${entry.requestId}?from=/admin/direct-orders/receipts`}>
+                    {entry.pharmacyName}
+                  </Link>
+                  <p className="break-words text-phx-sm text-slate-700">
+                    Receipt {entry.serialLabel} · {entry.original === "custody" ? "Original 1 (custody)" : "Original 2 (delivery)"}
+                  </p>
+                  <p className="break-words text-phx-xs text-slate-500">
+                    Typed by {entry.enteredByName} on {cairoDateTime(entry.enteredAt)} · reviewed by {entry.reviewerLabel}
+                  </p>
+                  {entry.mayDecide ? (
+                    <HandEntryReviewButtons entryId={entry.entryId} requestId={entry.requestId} />
+                  ) : (
+                    <p className="text-phx-sm font-bold text-slate-700">Waiting for {entry.reviewerLabel}.</p>
+                  )}
+                </div>
+                {entry.photoUrl && !entry.photoIsPdf ? (
+                  <ZoomablePhoto
+                    alt={`Receipt ${entry.serialLabel}, typed by hand`}
+                    caption={`Receipt ${entry.serialLabel}, typed by hand`}
+                    className="w-full max-w-md border border-slate-200"
+                    src={entry.photoUrl}
+                  />
+                ) : entry.photoUrl ? (
+                  <a className="text-phx-sm font-bold text-slate-900 underline" href={entry.photoUrl} rel="noreferrer" target="_blank">
+                    Open the PDF
+                  </a>
+                ) : (
+                  <p className="text-phx-sm text-slate-600">The photo could not be opened.</p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </Panel>
+      ) : null}
 
       <Panel title={`Waiting for the warehouse exit — ${register.awaitingExit.length}`}>
         {register.awaitingExit.length === 0 ? (

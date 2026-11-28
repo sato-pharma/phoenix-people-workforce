@@ -189,7 +189,8 @@ export type ReceiptAttemptRefusal =
   | "bad_photo"
   | "claim_lost"
   | "book_changed"
-  | "delivery_lost";
+  | "delivery_lost"
+  | "qr_other_receipt";
 
 /** "000123" — the serial exactly as it is printed. */
 export function formatReceiptSerial(serial: number): string {
@@ -554,4 +555,199 @@ export function checkNoReceiptDecision(input: {
   }
   if (input.decision === "refuse" && input.note.trim().length < 3) return { ok: false, message: "Write why the request is refused." };
   return { ok: true, decision: input.decision === "approve" ? "approved" : "refused" };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE QR ON EVERY PAGE (owner, 28 Nov 2026: "كيو ار كود يقرا فينيكس ده اساسي"; "هيطلب منه لوجن …
+// اللي هيحط لوجن هيدخله على تفاصيل الاوردر، اللي مش هيحط لوجن مش هيدخله").
+//
+// Each sheet's QR is a Phoenix link, `/r/<serial>-<code>`. Scanning it asks for a sign-in; once signed
+// in, a used receipt opens its order (whose own page decides who may see it) and any other receipt says
+// what it is. The code in the link is the one printed beside the serial on the same sheet, so the link
+// gives away nothing the paper does not already show. As in checkReceiptForOrder, the code is checked
+// BEFORE the receipt's state is said, so a made-up link learns nothing about a real serial.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The path the QR on a receipt sheet opens. */
+export function receiptScanPath(serial: number, code: string): string {
+  return `/r/${formatReceiptSerial(serial)}-${code}`;
+}
+
+/** `000401-TMDD9C` as it arrives in the link. Null when it is not a serial and a code of the printer's alphabet. */
+export function parseReceiptScanToken(raw: unknown): { serial: number; code: string } | null {
+  let text = String(raw ?? "").trim();
+  try {
+    text = decodeURIComponent(text);
+  } catch {
+    return null;
+  }
+  const match = /^(\d{6})-([0-9A-Za-z]{6})$/.exec(text);
+  if (!match) return null;
+  const serial = parseReceiptSerial(match[1]);
+  const code = normalizeReceiptCode(match[2]);
+  return serial !== null && code !== null ? { serial, code } : null;
+}
+
+export type ReceiptScanOutcome =
+  | { kind: "not_genuine" }
+  | { kind: "used"; serial: number; bookNo: number; requestId: string | null }
+  | { kind: "unused"; serial: number; bookNo: number }
+  | { kind: "voided"; serial: number; bookNo: number; reason: string | null };
+
+/** What a scanned link proves. The code first, then the state. */
+export function decideReceiptScan(token: { serial: number; code: string } | null, receipt: ReceiptRow | null): ReceiptScanOutcome {
+  if (!token || !receipt || receipt.serial !== token.serial || receipt.checkCode !== token.code) return { kind: "not_genuine" };
+  if (receipt.state === "used") return { kind: "used", serial: receipt.serial, bookNo: receipt.bookNo, requestId: receipt.requestId };
+  if (receipt.state === "voided") return { kind: "voided", serial: receipt.serial, bookNo: receipt.bookNo, reason: receipt.voidedReason };
+  return { kind: "unused", serial: receipt.serial, bookNo: receipt.bookNo };
+}
+
+// ─── The QR read from the photo (owner, 28 Nov 2026) ─────────────────────────
+//
+// "فينيكس يطلب منهم ان هم يصوروها بطريقه معينه … يتعرف على … رقم الاذن ورمز التحقق والكيو ار كود
+// … اوتوماتيك بغض النظر عن اللي هم كاتبينه بايديهم". The photo of an original is read on the SERVER
+// (the camera's green light is only a help): a QR that names the typed receipt lets it in at once; a QR
+// that names ANOTHER receipt is refused; no QR read means the number was typed by hand, and the original
+// waits for review — "المدير يدخله مانوال بس يروح للريفيو، ما يدخلش اوتوماتيك".
+
+/** The receipt a QR's text names: the Phoenix link `…/r/000401-TMDD9C`, or the bare token. */
+export function parseReceiptQrText(text: unknown): { serial: number; code: string } | null {
+  const raw = String(text ?? "").trim();
+  const link = /\/r\/([^/?#\s]+)\/?(?:[?#].*)?$/.exec(raw);
+  return parseReceiptScanToken(link ? link[1] : raw);
+}
+
+/**
+ * A picture Phoenix's own camera drew: a JPEG with no EXIF block. A canvas frame never carries one; a phone photo,
+ * a saved gallery picture or a scan usually does. The server cannot see the screen, so for a manager (camera only,
+ * owner, 28 Nov 2026) only such a frame counts on its QR at once — anything else waits for review. A forged upload
+ * with its EXIF stripped still passes this; it is the check the bytes allow, not proof the page was in front of the
+ * lens.
+ */
+export function isPhoenixCameraFrame(photo: { bytes: Uint8Array; contentType: string }): boolean {
+  const b = photo.bytes;
+  if (photo.contentType !== "image/jpeg" || b.length < 4 || b[0] !== 0xff || b[1] !== 0xd8) return false;
+  let at = 2;
+  while (at + 4 <= b.length && b[at] === 0xff) {
+    const marker = b[at + 1];
+    if (marker === 0xda || marker === 0xd9) return true; // the picture starts: no EXIF came before it
+    const length = (b[at + 2] << 8) | b[at + 3];
+    if (length < 2) return false;
+    if (marker === 0xe1 && String.fromCharCode(...b.subarray(at + 4, at + 10)) === "Exif\0\0") return false;
+    at += 2 + length;
+  }
+  return true;
+}
+
+export type ReceiptPhotoQr =
+  /** The QR names the typed receipt: the original goes in at once. */
+  | { kind: "matched" }
+  /** The QR names a different receipt: refused. Never says the other receipt's code. */
+  | { kind: "other_receipt"; serial: number }
+  /** No receipt QR could be read: the original goes in as a hand entry and waits for review. */
+  | { kind: "unread" };
+
+/** What the QRs read from the photo say about the receipt typed. Every receipt QR in it must be the typed one. */
+export function classifyReceiptPhotoQr(qrTexts: readonly string[], typed: { serial: number; code: string }): ReceiptPhotoQr {
+  const tokens = qrTexts.map(parseReceiptQrText).filter((t): t is { serial: number; code: string } => t !== null);
+  if (tokens.length === 0) return { kind: "unread" };
+  const other = tokens.find((t) => t.serial !== typed.serial || t.code !== typed.code);
+  return other ? { kind: "other_receipt", serial: other.serial } : { kind: "matched" };
+}
+
+/**
+ * THE LIVE CAMERA'S LOCK (owner, 28 Nov 2026: the frame "تنور بالاخضر" once the receipt is recognised). The same
+ * receipt read on RECEIPT_QR_READS_TO_LOCK frames, each within RECEIPT_QR_LOCK_WINDOW_MS of the one before, locks —
+ * one stray read never does. A frame that reads nothing does not undo the reads before it: a hand-held phone at the
+ * edge of focus reads, misses and reads again, and that must still lock. Original 2 must carry `expectedSerial`;
+ * another receipt is "wrong_receipt" and starts the count again.
+ */
+export const RECEIPT_QR_READS_TO_LOCK = 2;
+export const RECEIPT_QR_LOCK_WINDOW_MS = 2000;
+
+export type ReceiptQrLock = { key: string; at: number; streak: number };
+export const RECEIPT_QR_LOCK_START: ReceiptQrLock = { key: "", at: 0, streak: 0 };
+
+export type ReceiptQrFrame =
+  | { kind: "nothing"; lock: ReceiptQrLock }
+  | { kind: "wrong_receipt"; serial: number; lock: ReceiptQrLock }
+  | { kind: "reading"; lock: ReceiptQrLock }
+  | { kind: "locked"; read: { serial: number; code: string }; lock: ReceiptQrLock };
+
+/** One camera frame's read, carried into the lock. `read` is what parseReceiptQrText made of the frame's QR, if any. */
+export function stepReceiptQrLock(
+  lock: ReceiptQrLock,
+  read: { serial: number; code: string } | null,
+  now: number,
+  expectedSerial: number | null,
+): ReceiptQrFrame {
+  if (!read) return { kind: "nothing", lock };
+  if (expectedSerial !== null && read.serial !== expectedSerial) return { kind: "wrong_receipt", serial: read.serial, lock: RECEIPT_QR_LOCK_START };
+  const key = `${read.serial}-${read.code}`;
+  const streak = key === lock.key && now - lock.at <= RECEIPT_QR_LOCK_WINDOW_MS ? lock.streak + 1 : 1;
+  const next = { key, at: now, streak };
+  return streak >= RECEIPT_QR_READS_TO_LOCK ? { kind: "locked", read, lock: next } : { kind: "reading", lock: next };
+}
+
+export type HandEntryStatus = "pending" | "approved" | "rejected";
+
+/**
+ * What Phoenix writes on a waiting Original 2 when Original 1 is rejected: the whole receipt left the order, so the
+ * Original 2 review is closed in the same instant (20261128134224, `direct_order_decide_hand_entry`). It is a closing
+ * note, never the reviewer's reason — the migration must carry this exact text (pinned by the receipt test).
+ */
+export const RECEIPT_O2_CLOSED_WITH_O1_NOTE = "Original 1 was rejected, so the receipt was taken off the order.";
+
+/**
+ * What Phoenix writes on a hand entry still waiting when Finance takes its receipt off the order: closed, never
+ * reviewed (20261128152929, `direct_order_release_receipt`), so it is never shown as a reason. The migration must
+ * carry this exact text (pinned by the receipt test).
+ */
+export const RECEIPT_CLOSED_BY_RELEASE_NOTE = "Not reviewed: the receipt was taken off the order.";
+
+const RECEIPT_HAND_ENTRY_CLOSING_NOTES = new Set([RECEIPT_O2_CLOSED_WITH_O1_NOTE, RECEIPT_CLOSED_BY_RELEASE_NOTE]);
+
+export type RejectedHandEntryCandidate = {
+  serial: number;
+  original: "custody" | "delivery";
+  status: HandEntryStatus;
+  entered_by_hr_id: string;
+  reviewed_by_hr_id: string | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+};
+
+/**
+ * THE REJECTION THE MANAGER IS SHOWN (owner, 28 Nov 2026: "it must show the manager the reason of the rejection,
+ * the accurate reason"). The newest rejection a REVIEWER made, carrying the reason the reviewer wrote word for word,
+ * while that original is still missing from the order:
+ * - the closing note on an Original 2 that left with a rejected Original 1 is never it — the Original 1 decision is,
+ *   and when both carry the same instant Original 1 comes first;
+ * - a hand entry closed because Finance took its receipt off the order was never reviewed, so it is no rejection;
+ * - a hand entry its own author closed (the original was never saved) is no rejection;
+ * - Original 1 rejected: the receipt left the order, so it is said until a receipt is on the order again;
+ * - Original 2 rejected: only for the receipt still on the order, its Original 1 there and its Original 2 missing —
+ *   never for a receipt taken off since, or another receipt entered in its place.
+ */
+export function rejectionToShowManager<T extends RejectedHandEntryCandidate>(
+  entries: readonly T[],
+  onOrder: { serial: number; custody: string | null | undefined; delivery: string | null | undefined } | null,
+): T | null {
+  const decided = entries
+    .filter(
+      (e) =>
+        e.status === "rejected" &&
+        Boolean(e.reviewed_by_hr_id) &&
+        e.reviewed_by_hr_id !== e.entered_by_hr_id &&
+        !RECEIPT_HAND_ENTRY_CLOSING_NOTES.has((e.review_note ?? "").trim()),
+    )
+    .sort((a, b) => {
+      const at = Date.parse(b.reviewed_at ?? "") - Date.parse(a.reviewed_at ?? "");
+      if (Number.isFinite(at) && at !== 0) return at;
+      return (a.original === "custody" ? 0 : 1) - (b.original === "custody" ? 0 : 1);
+    });
+  const newest = decided[0];
+  if (!newest) return null;
+  if (newest.original === "custody") return onOrder ? null : newest;
+  return onOrder && Number(newest.serial) === onOrder.serial && onOrder.custody && !onOrder.delivery ? newest : null;
 }

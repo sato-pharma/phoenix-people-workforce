@@ -110,7 +110,7 @@ export function runPageTimingsTests() {
 
   // The list of sections is the app's own: a section added to app/ without it would go untimed, and a
   // name left in it after its section went would let a script fill the table with a page that is not there.
-  const PUBLIC_SECTIONS = [".well-known", "api","connector", "dev", "join", "login", "password-reset", "password-setup", "print", "privacy", "share", "terms", "whatsapp-connect"];
+  const PUBLIC_SECTIONS = [".well-known", "api","connector", "dev", "join", "login", "password-reset", "password-setup", "print", "privacy", "r", "share", "terms", "whatsapp-connect"];
   const appRoot = new URL("../app/", import.meta.url);
   const directories = (dir: URL) => readdirSync(dir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
   const sections = directories(appRoot).flatMap((name) => (/^\(.*\)$/.test(name) ? directories(new URL(`${name}/`, appRoot)) : [name]));

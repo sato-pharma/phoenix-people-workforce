@@ -1,6 +1,12 @@
+import { isGuestFallbackAccess } from "@/lib/auth/page-access-guard";
 import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
-import { canDecideDirectOrderWithoutReceipt, canManageDirectOrderReceiptBooks } from "@/lib/direct-orders/finance-authority";
+import {
+  canDecideDirectOrderWithoutReceipt,
+  canManageDirectOrderReceiptBooks,
+  canReviewDirectOrderHandEntry,
+  isFinancesOwnHandEntry,
+} from "@/lib/direct-orders/finance-authority";
 import { DIRECT_ORDER_INVOICE_BUCKET, parseDirectOrderInvoiceDataUrl } from "@/lib/direct-orders/invoice-evidence";
 import {
   bookHeldAtApproval,
@@ -15,18 +21,24 @@ import {
   checkReceiptVoid,
   checkWarehouseExit,
   classifyOrderReceipt,
+  classifyReceiptPhotoQr,
   CUSTODY_DUE_DAYS,
   daysSinceApproval,
+  decideReceiptScan,
   DELIVERY_DUE_WORKING_DAYS,
   formatReceiptRange,
   formatReceiptSerial,
+  isPhoenixCameraFrame,
   normalizeReceiptCode,
   parseDateKey,
+  parseReceiptScanToken,
   parseReceiptSerial,
   receiptDueDates,
   receiptEntryBookFor,
   receiptLateness,
   receiptRolloutStart,
+  rejectionToShowManager,
+  type HandEntryStatus,
   type NoReceiptRow,
   type NoReceiptStatus,
   type OrderForReceipt,
@@ -36,9 +48,11 @@ import {
   type ReceiptLateness,
   type ReceiptProgress,
   type ReceiptRow,
+  type ReceiptScanOutcome,
   type ReceiptStanding,
   type ReceiptState,
 } from "@/lib/direct-orders/receipt-rules";
+import { readReceiptQrTexts } from "@/lib/direct-orders/receipt-photo-qr";
 import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { isUuid } from "@/lib/http/uuid";
@@ -49,8 +63,9 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // ─────────────────────────────────────────────────────────────────────────────
 // The delivery-receipt books — reads and writes. Every decision is in receipt-rules.ts.
 //
-// 🔴 A receipt's check code NEVER leaves the server. No read here returns it, and the only place it
-// is compared is checkReceiptForOrder. The codes are not in Git either: the rows were seeded once
+// 🔴 A receipt's check code NEVER leaves the server. No read here returns it, and the only places it
+// is compared are checkReceiptForOrder and decideReceiptScan (the QR link carries the code printed on the
+// same sheet; nothing here sends it back). The codes are not in Git either: the rows were seeded once
 // from the printer's register.json, which is kept off GitHub with the printed books.
 //
 // The database guards the paper as well (migration 20261127121951): a used receipt goes back to
@@ -64,6 +79,142 @@ const BOOK_COLUMNS = "book_no,first_serial,last_serial,printed_holder_hr_id,hold
 const PHOTO_TTL_SECONDS = 60 * 60;
 /** The database guard's refusal (raise ... using errcode 'P0001'). */
 const GUARD_REFUSED = "P0001";
+
+// ─── Hand-entered originals: the QR was not read, so the original waits for review ───
+//
+// Owner, 28 Nov 2026: "المدير يدخله مانوال بس يروح للريفيو، ما يدخلش اوتوماتيك … ممكن الاثنين المدير يدخله
+// بايده والماليه تدخله، بس هو بيروح للريفيو الاول" — and "المالية، وإنت لو المالية دخلته": Finance reviews a
+// manager's hand entry, the Super Admin reviews Finance's (finance-authority.ts). The original is saved with
+// the order at once (the receipt can never be used twice, and the manager is not held late while it waits),
+// but it is marked as waiting. A rejection takes it back out in the database, in one transaction
+// (direct_order_decide_hand_entry): Original 1 releases the receipt, Original 2 clears only itself.
+
+const HAND_ENTRIES = "direct_order_receipt_hand_entries";
+const HAND_ENTRY_COLUMNS =
+  "id,serial,request_id,original,photo_storage_path,entered_by_hr_id,entered_by_finance,entered_at,status,reviewed_by_hr_id,reviewed_at,review_note";
+
+type HandEntryDbRow = {
+  id: string;
+  serial: number;
+  request_id: string;
+  original: "custody" | "delivery";
+  photo_storage_path: string;
+  entered_by_hr_id: string;
+  entered_by_finance: boolean;
+  entered_at: string;
+  status: HandEntryStatus;
+  reviewed_by_hr_id: string | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+};
+
+/** Who reviews a hand entry, said the way the person reads it. */
+function handEntryReviewerLabel(enteredByFinance: boolean): string {
+  return enteredByFinance ? "the Administrator" : "Finance";
+}
+
+async function loadHandEntriesForOrder(requestId: string): Promise<HandEntryDbRow[]> {
+  const { data, error } = await getSupabaseAdmin()
+    .from(HAND_ENTRIES)
+    .select(HAND_ENTRY_COLUMNS)
+    .eq("request_id", requestId)
+    .order("entered_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as HandEntryDbRow[];
+}
+
+/**
+ * The QR read from the photo, checked against the number typed: "matched" lets the original in at once,
+ * "unread" makes it a hand entry. A QR naming another receipt is refused, and written on the order.
+ *
+ * A manager photographs the page live, with no gallery (owner, 28 Nov 2026), and hiding Choose file is only the
+ * screen — so it holds here too: a manager's PDF is refused, and a manager's picture Phoenix's camera did not draw
+ * (`isPhoenixCameraFrame`) never counts on its QR alone; it waits for review. Finance may attach a file it holds.
+ */
+async function photoQrVerdict(
+  order: OrderForReceipt,
+  access: AccessContext,
+  photo: { bytes: Uint8Array; contentType: string },
+  serial: number,
+  code: string,
+): Promise<"matched" | "unread"> {
+  const finance = canManageDirectOrderReceiptBooks(access);
+  if (!finance && photo.contentType === "application/pdf") {
+    const message = "Photograph the page with the camera in Phoenix. A file is not taken.";
+    await recordRefusal(order, access, "bad_photo", message, serial);
+    throw validationError(message);
+  }
+  const qr = classifyReceiptPhotoQr(await readReceiptQrTexts(photo.bytes, photo.contentType), { serial, code });
+  if (qr.kind === "other_receipt") {
+    const message =
+      qr.serial === serial
+        ? `The QR in the photo does not match receipt ${formatReceiptSerial(serial)}. Photograph the receipt you are entering.`
+        : `The QR in the photo is receipt ${formatReceiptSerial(qr.serial)}, not ${formatReceiptSerial(serial)}. Photograph the receipt you are entering.`;
+    await recordRefusal(order, access, "qr_other_receipt", message, serial);
+    throw validationError(message);
+  }
+  return qr.kind === "matched" && !finance && !isPhoenixCameraFrame(photo) ? "unread" : qr.kind;
+}
+
+/**
+ * Opens the hand entry BEFORE the original is written, so the one-pending-per-original index stops a second
+ * hand entry racing the first. Removes the uploaded photo when it cannot be opened.
+ */
+async function openHandEntry(
+  access: AccessContext,
+  order: OrderForReceipt,
+  serial: number,
+  original: "custody" | "delivery",
+  path: string,
+): Promise<string> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from(HAND_ENTRIES)
+    .insert({
+      serial,
+      request_id: order.id,
+      original,
+      photo_storage_path: path,
+      entered_by_hr_id: hrIdForStorage(access.hrId),
+      entered_by_finance: isFinancesOwnHandEntry(access),
+      entered_at: new Date().toISOString(),
+      status: "pending",
+    })
+    .select("id")
+    .single();
+  if (error || !data) {
+    await supabase.storage.from(DIRECT_ORDER_INVOICE_BUCKET).remove([path]).catch(() => undefined);
+    if ((error as { code?: string } | null)?.code === "23505") {
+      throw conflictError(`This original of receipt ${formatReceiptSerial(serial)} is already waiting for review. Reload the order.`);
+    }
+    throw error ?? new Error("The hand entry was not recorded.");
+  }
+  return String((data as { id: string }).id);
+}
+
+/**
+ * The original was not saved after all: its hand entry is closed, never left waiting for a review of nothing. Tried
+ * three times — one left waiting would block the paper (one review waits per receipt and original).
+ */
+async function closeUnsavedHandEntry(entryId: string, access: AccessContext): Promise<void> {
+  let lastError: unknown = null;
+  for (const waitMs of [0, 250, 1000]) {
+    if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
+    const { error } = await getSupabaseAdmin()
+      .from(HAND_ENTRIES)
+      .update({
+        status: "rejected",
+        reviewed_by_hr_id: hrIdForStorage(access.hrId),
+        reviewed_at: new Date().toISOString(),
+        review_note: "Not saved: the original was not written to the receipt.",
+      })
+      .eq("id", entryId)
+      .eq("status", "pending");
+    if (!error) return;
+    lastError = error;
+  }
+  logError("An unsaved hand entry could not be closed", { labels: { event: "direct_order_hand_entry_close_failed", entryId }, error: lastError });
+}
 
 type BookDbRow = {
   book_no: number;
@@ -257,6 +408,21 @@ export type DirectOrderReceiptOriginal = {
   enteredByName: string | null;
   photoUrl: string | null;
   photoIsPdf: boolean;
+  /** Typed by hand because its QR was not read: the review it waits for, or the one it passed. Null when its QR was read. */
+  review: DirectOrderHandEntryReview | null;
+};
+
+/** One hand-entered original's review, as the order shows it. */
+export type DirectOrderHandEntryReview = {
+  entryId: string;
+  status: HandEntryStatus;
+  /** "Finance" or "the Administrator". */
+  reviewerLabel: string;
+  reviewedByName: string | null;
+  reviewedAt: string | null;
+  note: string | null;
+  /** The viewer may approve or reject it now. */
+  mayDecide: boolean;
 };
 
 export type DirectOrderReceiptPanel = {
@@ -302,6 +468,21 @@ export type DirectOrderReceiptPanel = {
   mayAskWithoutReceipt: boolean;
   /** The CEO may decide the ask waiting on this order (owner, 27 Nov 2026: the CEO's authority alone). */
   mayDecideWithoutReceipt: boolean;
+  /** Finance may attach a file it already holds; a manager photographs the page live, with no gallery (owner, 28 Nov 2026). */
+  mayChooseFile: boolean;
+  /** Who reviews an original this viewer types by hand: "Finance", or "the Administrator" for Finance's own. */
+  handEntryReviewerLabel: string;
+  /**
+   * The last hand-entered original a reviewer rejected and took back out, so the order tells the manager why it is
+   * missing again — the reviewer's own words (rejectionToShowManager, receipt-rules.ts).
+   */
+  lastRejectedHandEntry: {
+    original: "custody" | "delivery";
+    serialLabel: string;
+    note: string | null;
+    reviewedByName: string | null;
+    reviewedAt: string | null;
+  } | null;
 };
 
 /** The receipt could not be read: said on the order as such, never as "no receipt". */
@@ -313,13 +494,42 @@ async function signedPhoto(path: string | null): Promise<string | null> {
   return signed?.data?.signedUrl ?? null;
 }
 
-async function originalsOf(used: UsedReceiptDbRow, names: { get(hrId: string | null | undefined): string | null }) {
+/** The hand entry behind the original now on the receipt — matched by its photo, so an older, rejected one never shows. */
+function reviewOf(
+  access: AccessContext,
+  entries: readonly HandEntryDbRow[],
+  original: "custody" | "delivery",
+  photoPath: string | null,
+  names: { get(hrId: string | null | undefined): string | null },
+): DirectOrderHandEntryReview | null {
+  if (!photoPath) return null;
+  const entry = entries.find((e) => e.original === original && e.photo_storage_path === photoPath);
+  if (!entry) return null;
+  return {
+    entryId: entry.id,
+    status: entry.status,
+    reviewerLabel: handEntryReviewerLabel(entry.entered_by_finance),
+    reviewedByName: entry.reviewed_by_hr_id ? names.get(entry.reviewed_by_hr_id) : null,
+    reviewedAt: entry.reviewed_at,
+    note: entry.review_note,
+    mayDecide:
+      entry.status === "pending" &&
+      canReviewDirectOrderHandEntry(access, { enteredByHrId: entry.entered_by_hr_id, enteredByFinance: entry.entered_by_finance }),
+  };
+}
+
+async function originalsOf(
+  used: UsedReceiptDbRow,
+  names: { get(hrId: string | null | undefined): string | null },
+  review: (original: "custody" | "delivery", photoPath: string | null) => DirectOrderHandEntryReview | null = () => null,
+) {
   const [custodyUrl, deliveryUrl] = await Promise.all([signedPhoto(used.photo_storage_path), signedPhoto(used.delivery_photo_storage_path)]);
   const custody: DirectOrderReceiptOriginal = {
     enteredAt: used.used_at,
     enteredByName: names.get(used.used_by_hr_id),
     photoUrl: custodyUrl,
     photoIsPdf: used.photo_content_type === "application/pdf",
+    review: review("custody", used.photo_storage_path),
   };
   const delivery: DirectOrderReceiptOriginal | null = used.delivery_entered_at
     ? {
@@ -327,9 +537,30 @@ async function originalsOf(used: UsedReceiptDbRow, names: { get(hrId: string | n
         enteredByName: names.get(used.delivery_entered_by_hr_id),
         photoUrl: deliveryUrl,
         photoIsPdf: used.delivery_photo_content_type === "application/pdf",
+        review: review("delivery", used.delivery_photo_storage_path),
       }
     : null;
   return { custody, delivery };
+}
+
+/** The rejection the order shows its manager, with the reviewer's reason — see rejectionToShowManager. */
+function lastRejectedOf(
+  entries: readonly HandEntryDbRow[],
+  used: UsedReceiptDbRow | null,
+  names: { get(hrId: string | null | undefined): string | null },
+): DirectOrderReceiptPanel["lastRejectedHandEntry"] {
+  const rejected = rejectionToShowManager(
+    entries,
+    used ? { serial: Number(used.serial), custody: used.photo_storage_path, delivery: used.delivery_photo_storage_path } : null,
+  );
+  if (!rejected) return null;
+  return {
+    original: rejected.original,
+    serialLabel: formatReceiptSerial(Number(rejected.serial)),
+    note: rejected.review_note?.trim() || null,
+    reviewedByName: names.get(rejected.reviewed_by_hr_id),
+    reviewedAt: rejected.reviewed_at,
+  };
 }
 
 /**
@@ -346,7 +577,13 @@ export async function loadDirectOrderReceiptPanel(
   try {
     const order = await loadOrder(requestId);
     if (!order) return null;
-    const [books, used, asks, exit] = await Promise.all([loadBooks(), loadReceiptForOrder(order.id), loadNoReceiptAsks(order.id), loadExit(order.id)]);
+    const [books, used, asks, exit, handEntries] = await Promise.all([
+      loadBooks(),
+      loadReceiptForOrder(order.id),
+      loadNoReceiptAsks(order.id),
+      loadExit(order.id),
+      loadHandEntriesForOrder(order.id),
+    ]);
     if (books.length === 0) return null;
     const now = new Date();
     const todayCairo = cairoDateKeyOf(now);
@@ -360,11 +597,12 @@ export async function loadDirectOrderReceiptPanel(
       exit?.recorded_by_hr_id ?? null,
       shownAsk?.askedByHrId ?? null,
       shownAsk?.decidedByHrId ?? null,
+      ...handEntries.map((e) => e.reviewed_by_hr_id),
     ]);
 
     let receipt: DirectOrderReceiptPanel["receipt"] = null;
     if (used) {
-      const originals = await originalsOf(used, names);
+      const originals = await originalsOf(used, names, (original, photoPath) => reviewOf(access, handEntries, original, photoPath, names));
       receipt = { serialLabel: formatReceiptSerial(Number(used.serial)), bookNo: Number(used.book_no), ...originals };
     }
 
@@ -403,6 +641,9 @@ export async function loadDirectOrderReceiptPanel(
         : null,
       mayAskWithoutReceipt: finance && checkNoReceiptAsk({ standing, live, reason: "asking" }).ok,
       mayDecideWithoutReceipt: canDecideDirectOrderWithoutReceipt(access) && live?.status === "pending",
+      mayChooseFile: finance,
+      handEntryReviewerLabel: handEntryReviewerLabel(isFinancesOwnHandEntry(access)),
+      lastRejectedHandEntry: lastRejectedOf(handEntries, used, names),
     };
   } catch (error) {
     logError("Direct-order receipt panel could not be read", { labels: { event: "direct_order_receipt_panel_failed", requestId }, error });
@@ -428,7 +669,7 @@ async function recordRefusal(order: OrderForReceipt, access: AccessContext, reas
 export async function recordDirectOrderReceipt(
   access: AccessContext,
   input: { requestId: string; serial: unknown; code: unknown; photoDataUrl: unknown },
-): Promise<{ message: string; serialLabel: string }> {
+): Promise<{ message: string; serialLabel: string; pendingReview: boolean }> {
   // Signed out or a role with no direct orders is refused before the order is looked up, so the
   // answer never says whether an order id exists.
   await assertPermission(access, "direct_orders", "read");
@@ -482,6 +723,7 @@ export async function recordDirectOrderReceipt(
     await recordRefusal(order, access, "bad_photo", message, serial);
     throw validationError(message);
   }
+  const qr = await photoQrVerdict(order, access, photo, serial, code);
 
   const supabase = getSupabaseAdmin();
   const now = new Date();
@@ -490,6 +732,7 @@ export async function recordDirectOrderReceipt(
     .from(DIRECT_ORDER_INVOICE_BUCKET)
     .upload(path, photo.bytes, { contentType: photo.contentType, upsert: false });
   if (uploadError) throw uploadError;
+  const handEntryId = qr === "unread" ? await openHandEntry(access, order, serial, "custody", path) : null;
 
   const { data: claimed, error: claimError } = await supabase
     .from(RECEIPTS)
@@ -508,6 +751,7 @@ export async function recordDirectOrderReceipt(
     .select("serial");
   if (claimError || !claimed || claimed.length === 0) {
     await supabase.storage.from(DIRECT_ORDER_INVOICE_BUCKET).remove([path]).catch(() => undefined);
+    if (handEntryId) await closeUnsavedHandEntry(handEntryId, access);
     const errorCode = (claimError as { code?: string } | null)?.code;
     if (claimError && errorCode !== "23505" && errorCode !== GUARD_REFUSED) throw claimError;
     const reason: ReceiptAttemptRefusal = errorCode === "23505" ? "order_has_receipt" : errorCode === GUARD_REFUSED ? "book_changed" : "claim_lost";
@@ -526,17 +770,23 @@ export async function recordDirectOrderReceipt(
     actorLoginId: access.loginId ?? access.hrId,
     entityType: "direct_order_request",
     entityId: order.id,
-    newValues: { receiptSerial: serialLabel, receiptBook: receipt?.bookNo ?? null, original: "custody", photoPath: path },
-    summary: `Original 1 (custody) of delivery receipt ${serialLabel} entered for the direct order.`,
+    newValues: { receiptSerial: serialLabel, receiptBook: receipt?.bookNo ?? null, original: "custody", photoPath: path, qrRead: qr === "matched", handEntryId },
+    summary: `Original 1 (custody) of delivery receipt ${serialLabel} entered for the direct order${handEntryId ? ", typed by hand: it waits for review" : ", its QR read from the photo"}.`,
   });
-  await insertOrderEvent(order.id, access.hrId, "receipt_recorded", `Original 1 (custody) of receipt ${serialLabel} entered.`, {
-    serial,
-    bookNo: receipt?.bookNo ?? null,
-    original: "custody",
-  });
+  const reviewer = handEntryReviewerLabel(isFinancesOwnHandEntry(access));
+  await insertOrderEvent(
+    order.id,
+    access.hrId,
+    "receipt_recorded",
+    `Original 1 (custody) of receipt ${serialLabel} entered${handEntryId ? ` by hand — waiting for ${reviewer} to review it` : ""}.`,
+    { serial, bookNo: receipt?.bookNo ?? null, original: "custody", qrRead: qr === "matched", handEntryId },
+  );
   return {
-    message: `Original 1 of receipt ${serialLabel} is saved with the order, and the receipt can never be used on another order. Enter Original 2 — the page the customer signs and stamps — once it is delivered.`,
+    message: handEntryId
+      ? `Original 1 of receipt ${serialLabel} is saved with the order, and the receipt can never be used on another order. Phoenix could not read its QR, so ${reviewer} checks the photo before it counts.`
+      : `Original 1 of receipt ${serialLabel} is saved with the order, and the receipt can never be used on another order. Enter Original 2 — the page the customer signs and stamps — once it is delivered.`,
     serialLabel,
+    pendingReview: handEntryId !== null,
   };
 }
 
@@ -549,7 +799,7 @@ export async function recordDirectOrderReceipt(
 export async function recordDirectOrderDelivery(
   access: AccessContext,
   input: { requestId: string; serial: unknown; code: unknown; photoDataUrl: unknown },
-): Promise<{ message: string; serialLabel: string }> {
+): Promise<{ message: string; serialLabel: string; pendingReview: boolean }> {
   await assertPermission(access, "direct_orders", "read");
   const order = await loadOrder(input.requestId);
   if (!order) throw notFoundError("This direct order was not found.");
@@ -593,6 +843,7 @@ export async function recordDirectOrderDelivery(
     await recordRefusal(order, access, "bad_photo", message, serial);
     throw validationError(message);
   }
+  const qr = await photoQrVerdict(order, access, photo, serial, code);
 
   const supabase = getSupabaseAdmin();
   const now = new Date();
@@ -602,6 +853,7 @@ export async function recordDirectOrderDelivery(
     .from(DIRECT_ORDER_INVOICE_BUCKET)
     .upload(path, photo.bytes, { contentType: photo.contentType, upsert: false });
   if (uploadError) throw uploadError;
+  const handEntryId = qr === "unread" ? await openHandEntry(access, order, serial, "delivery", path) : null;
 
   const { data: written, error: writeError } = await supabase
     .from(RECEIPTS)
@@ -619,6 +871,7 @@ export async function recordDirectOrderDelivery(
     .select("serial");
   if (writeError || !written || written.length === 0) {
     await supabase.storage.from(DIRECT_ORDER_INVOICE_BUCKET).remove([path]).catch(() => undefined);
+    if (handEntryId) await closeUnsavedHandEntry(handEntryId, access);
     const errorCode = (writeError as { code?: string } | null)?.code;
     if (writeError && errorCode !== GUARD_REFUSED) throw writeError;
     const message = `Original 2 of receipt ${serialLabel} was just entered, or the receipt was taken off this order. Reload the order.`;
@@ -630,14 +883,24 @@ export async function recordDirectOrderDelivery(
     actorLoginId: access.loginId ?? access.hrId,
     entityType: "direct_order_request",
     entityId: order.id,
-    newValues: { receiptSerial: serialLabel, original: "delivery", photoPath: path },
-    summary: `Original 2 (delivery, signed and stamped by the customer) of receipt ${serialLabel} entered for the direct order.`,
+    newValues: { receiptSerial: serialLabel, original: "delivery", photoPath: path, qrRead: qr === "matched", handEntryId },
+    summary: `Original 2 (delivery, signed and stamped by the customer) of receipt ${serialLabel} entered for the direct order${handEntryId ? ", typed by hand: it waits for review" : ", its QR read from the photo"}.`,
   });
-  await insertOrderEvent(order.id, access.hrId, "receipt_delivery_recorded", `Original 2 (delivery) of receipt ${serialLabel} entered.`, {
-    serial,
-    original: "delivery",
-  });
-  return { message: `Original 2 of receipt ${serialLabel} is saved. Both originals of this order are now on Phoenix.`, serialLabel };
+  const reviewer = handEntryReviewerLabel(isFinancesOwnHandEntry(access));
+  await insertOrderEvent(
+    order.id,
+    access.hrId,
+    "receipt_delivery_recorded",
+    `Original 2 (delivery) of receipt ${serialLabel} entered${handEntryId ? ` by hand — waiting for ${reviewer} to review it` : ""}.`,
+    { serial, original: "delivery", qrRead: qr === "matched", handEntryId },
+  );
+  return {
+    message: handEntryId
+      ? `Original 2 of receipt ${serialLabel} is saved. Phoenix could not read its QR, so ${reviewer} checks the photo before it counts.`
+      : `Original 2 of receipt ${serialLabel} is saved. Both originals of this order are now on Phoenix.`,
+    serialLabel,
+    pendingReview: handEntryId !== null,
+  };
 }
 
 /**
@@ -897,6 +1160,98 @@ export async function listDirectOrderWithoutReceiptToDecide(access: AccessContex
 
 // ─── Finance: the register ───────────────────────────────────────────────────
 
+/** The pharmacy of each order a hand entry waits on that the register did not already read. */
+async function pharmacyIdsOfOrders(orderIds: readonly string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const ids = [...new Set(orderIds)];
+  for (let start = 0; start < ids.length; start += 100) {
+    const { data, error } = await getSupabaseAdmin().from("direct_order_requests").select("id,pharmacy_id").in("id", ids.slice(start, start + 100));
+    if (error) throw error;
+    for (const row of (data ?? []) as { id: string; pharmacy_id: string | null }[]) if (row.pharmacy_id) out.set(row.id, row.pharmacy_id);
+  }
+  return out;
+}
+
+// ─── Reviewing a hand-entered original ───────────────────────────────────────
+
+/**
+ * Finance (or the Super Admin, for Finance's own entry) approves or rejects one original typed by hand
+ * (owner, 28 Nov 2026). Approving keeps it as entered. Rejecting takes it back out in ONE database call:
+ * Original 1 releases the receipt from the order (kept in the release record, photo included), Original 2
+ * clears only itself — and the manager enters it again. A rejection needs a written reason, which the
+ * order then shows.
+ */
+export async function decideDirectOrderHandEntry(
+  access: AccessContext,
+  input: { requestId: string; entryId: unknown; decision: unknown; note: unknown },
+): Promise<{ message: string }> {
+  await assertPermission(access, "direct_orders", "read");
+  const entryId = String(input.entryId ?? "").trim();
+  if (!isUuid(entryId) || !isUuid(input.requestId)) throw notFoundError("This hand-entered receipt was not found.");
+  const decision = input.decision === "approve" ? "approved" : input.decision === "reject" ? "rejected" : null;
+  if (!decision) throw validationError("Choose approve or reject.");
+  const note = String(input.note ?? "").trim().slice(0, 500);
+  if (decision === "rejected" && note.length < 3) throw validationError("Write why the hand-entered receipt is rejected.");
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.from(HAND_ENTRIES).select(HAND_ENTRY_COLUMNS).eq("id", entryId).maybeSingle();
+  if (error) throw error;
+  const entry = data as HandEntryDbRow | null;
+  if (!entry || entry.request_id !== input.requestId) throw notFoundError("This hand-entered receipt was not found.");
+  if (!canReviewDirectOrderHandEntry(access, { enteredByHrId: entry.entered_by_hr_id, enteredByFinance: entry.entered_by_finance })) {
+    throw forbiddenError(
+      canonicalHrIdKey(access.hrId) === canonicalHrIdKey(entry.entered_by_hr_id)
+        ? "You typed this receipt yourself, so someone else reviews it."
+        : `Only ${handEntryReviewerLabel(entry.entered_by_finance)} reviews this hand-entered receipt.`,
+    );
+  }
+  if (entry.status !== "pending") throw conflictError("This hand-entered receipt was already reviewed. Reload the page.");
+
+  const { data: result, error: rpcError } = await supabase.rpc("direct_order_decide_hand_entry", {
+    p_entry_id: entry.id,
+    p_actor_hr_id: hrIdForStorage(access.hrId),
+    p_decision: decision,
+    p_note: note || null,
+  });
+  if (rpcError) throw rpcError;
+  if (!(result as { decided?: boolean } | null)?.decided) throw conflictError("This hand-entered receipt was already reviewed. Reload the page.");
+
+  const serialLabel = formatReceiptSerial(Number(entry.serial));
+  const which = entry.original === "custody" ? "Original 1 (custody)" : "Original 2 (delivery)";
+  const released = Boolean((result as { released?: boolean }).released);
+  // The reason as written, without the full stop the sentence around it adds.
+  const said = note.replace(/\.+$/, "");
+  const summary =
+    decision === "approved"
+      ? `${which} of receipt ${serialLabel}, typed by hand, checked and approved.`
+      : entry.original === "custody"
+        ? `${which} of receipt ${serialLabel}, typed by hand, rejected: ${said}. ${released ? "The receipt was taken off the order." : "Nothing was taken off: it was no longer the original on the order."}`
+        : `${which} of receipt ${serialLabel}, typed by hand, rejected: ${said}. Original 2 was taken back out, to be entered again.`;
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? access.hrId,
+    entityType: "direct_order_request",
+    entityId: entry.request_id,
+    oldValues: { handEntryStatus: "pending" },
+    newValues: { handEntryId: entry.id, receiptSerial: serialLabel, original: entry.original, decision, note: note || null, released },
+    summary,
+  });
+  await insertOrderEvent(entry.request_id, access.hrId, decision === "approved" ? "receipt_hand_entry_approved" : "receipt_hand_entry_rejected", summary, {
+    serial: Number(entry.serial),
+    original: entry.original,
+    handEntryId: entry.id,
+  });
+  return {
+    message:
+      decision === "approved"
+        ? `${which} of receipt ${serialLabel} is approved.`
+        : entry.original === "custody"
+          ? released
+            ? `${which} of receipt ${serialLabel} is rejected and the receipt is off the order. The manager enters it again.`
+            : `${which} of receipt ${serialLabel} is rejected. It was no longer the original on the order, so nothing was taken off.`
+          : `${which} of receipt ${serialLabel} is rejected and taken back out. The manager enters it again.`,
+  };
+}
+
 export type ReceiptRegisterBook = {
   bookNo: number;
   rangeLabel: string;
@@ -977,6 +1332,25 @@ export type DirectOrderReceiptRegister = {
   deliveryDueWorkingDays: number;
   /** Everyone a spare book may be handed to: District Managers on a line with direct orders, still employed. */
   holderOptions: { hrId: string; name: string }[];
+  /** Originals typed by hand (their QR was not read), waiting for review — the oldest first. */
+  handEntries: ReceiptHandEntryToReview[];
+};
+
+/** One hand-entered original waiting for review, on Finance's desk. */
+export type ReceiptHandEntryToReview = {
+  entryId: string;
+  requestId: string;
+  serialLabel: string;
+  original: "custody" | "delivery";
+  pharmacyName: string;
+  enteredByName: string;
+  enteredAt: string;
+  photoUrl: string | null;
+  photoIsPdf: boolean;
+  /** "Finance" or "the Administrator". */
+  reviewerLabel: string;
+  /** The viewer may approve or reject it — never the person who typed it. */
+  mayDecide: boolean;
 };
 
 /** Finance's desk. Refuses anyone who is not Finance or the Administrator. */
@@ -985,7 +1359,13 @@ export async function loadDirectOrderReceiptRegister(access: AccessContext): Pro
   const supabase = getSupabaseAdmin();
   const books = await loadBooks();
 
-  const [{ data: receiptRows, error: receiptError }, ordersResult, holdersResult, { data: askRows, error: askError }] = await Promise.all([
+  const [
+    { data: receiptRows, error: receiptError },
+    ordersResult,
+    holdersResult,
+    { data: askRows, error: askError },
+    { data: handRows, error: handError },
+  ] = await Promise.all([
     supabase
       .from(RECEIPTS)
       .select("serial,book_no,state,request_id,used_by_hr_id,used_at,voided_by_hr_id,voided_at,voided_reason,delivery_entered_at")
@@ -998,12 +1378,15 @@ export async function loadDirectOrderReceiptRegister(access: AccessContext): Pro
       .eq("job_title", "District Sales Manager")
       .in("employment_status", ["active", "on_leave"]),
     supabase.from(NO_RECEIPT).select(NO_RECEIPT_COLUMNS).in("status", ["pending", "approved"]),
+    supabase.from(HAND_ENTRIES).select(HAND_ENTRY_COLUMNS).eq("status", "pending").order("entered_at"),
   ]);
   // Every read the desk shows is checked: a failed read is said as "could not be read", never as an
   // empty spare list or "Pharmacy not on file".
   if (receiptError) throw receiptError;
   if (holdersResult.error) throw holdersResult.error;
   if (askError) throw askError;
+  if (handError) throw handError;
+  const pendingHandEntries = (handRows ?? []) as HandEntryDbRow[];
   const liveAsks = new Map(((askRows ?? []) as NoReceiptDbRow[]).map((row) => [row.request_id, toNoReceipt(row)]));
   const touched = (receiptRows ?? []) as {
     serial: number; book_no: number; state: ReceiptState; request_id: string | null; used_by_hr_id: string | null;
@@ -1062,6 +1445,10 @@ export async function loadDirectOrderReceiptRegister(access: AccessContext): Pro
       ...orders.filter((o) => receiptByOrder.has(o.order.id)).map((o) => o.pharmacyId),
     ]),
   ];
+  const handOrderPharmacy = await pharmacyIdsOfOrders(
+    pendingHandEntries.map((e) => e.request_id).filter((id) => !orders.some((o) => o.order.id === id)),
+  );
+  for (const id of handOrderPharmacy.values()) if (!pharmacyIds.includes(id)) pharmacyIds.push(id);
   const pharmacyNames = new Map<string, string>();
   for (let start = 0; start < pharmacyIds.length; start += 100) {
     const { data, error } = await supabase.from("direct_order_pharmacies").select("id,pharmacy_name").in("id", pharmacyIds.slice(start, start + 100));
@@ -1069,13 +1456,16 @@ export async function loadDirectOrderReceiptRegister(access: AccessContext): Pro
     for (const row of (data ?? []) as { id: string; pharmacy_name: string | null }[]) pharmacyNames.set(row.id, String(row.pharmacy_name ?? "").trim());
   }
   const pharmacyByOrder = new Map(orders.map((o) => [o.order.id, pharmacyNames.get(o.pharmacyId) ?? null]));
+  for (const [orderId, pharmacyId] of handOrderPharmacy) pharmacyByOrder.set(orderId, pharmacyNames.get(pharmacyId) ?? null);
 
   const names = await namesByHrId([
     ...books.flatMap((book) => [book.holderHrId, book.printedHolderHrId]),
     ...orders.map((o) => o.order.requesterHrId),
     ...touched.flatMap((row) => [row.used_by_hr_id, row.voided_by_hr_id]),
     ...[...liveAsks.values()].map((ask) => ask.decidedByHrId),
+    ...pendingHandEntries.map((e) => e.entered_by_hr_id),
   ]);
+  const handEntryPhotos = await Promise.all(pendingHandEntries.map((e) => signedPhoto(e.photo_storage_path)));
 
   const holderOptions = (((holdersResult.data ?? []) as { hr_id: string; full_name: string | null }[]))
     .map((row) => ({ hrId: hrIdForStorage(row.hr_id) ?? row.hr_id, name: names.get(row.hr_id) ?? String(row.full_name ?? row.hr_id) }))
@@ -1085,6 +1475,19 @@ export async function loadDirectOrderReceiptRegister(access: AccessContext): Pro
     custodyDueDays: CUSTODY_DUE_DAYS,
     deliveryDueWorkingDays: DELIVERY_DUE_WORKING_DAYS,
     holderOptions,
+    handEntries: pendingHandEntries.map((entry, index) => ({
+      entryId: entry.id,
+      requestId: entry.request_id,
+      serialLabel: formatReceiptSerial(Number(entry.serial)),
+      original: entry.original,
+      pharmacyName: pharmacyByOrder.get(entry.request_id) || "Pharmacy not on file",
+      enteredByName: names.get(entry.entered_by_hr_id) ?? entry.entered_by_hr_id,
+      enteredAt: entry.entered_at,
+      photoUrl: handEntryPhotos[index],
+      photoIsPdf: /\.pdf$/i.test(entry.photo_storage_path),
+      reviewerLabel: handEntryReviewerLabel(entry.entered_by_finance),
+      mayDecide: canReviewDirectOrderHandEntry(access, { enteredByHrId: entry.entered_by_hr_id, enteredByFinance: entry.entered_by_finance }),
+    })),
     books: books.map((book) => {
       const count = counts.get(book.bookNo) ?? { used: 0, voided: 0 };
       const size = book.lastSerial - book.firstSerial + 1;
@@ -1484,10 +1887,11 @@ export async function loadDirectOrderReceiptPrint(access: AccessContext, request
   if (!canManageDirectOrderReceiptBooks(access)) throw forbiddenError("The verified receipt print is Finance's.");
   if (!isUuid(requestId)) return null;
   const supabase = getSupabaseAdmin();
-  const [{ data: orderRow, error: orderError }, used, exit] = await Promise.all([
+  const [{ data: orderRow, error: orderError }, used, exit, handEntries] = await Promise.all([
     supabase.from("direct_order_requests").select("id,requester_hr_id,pharmacy_id,product_name,sales_value,decided_at").eq("id", requestId).maybeSingle(),
     loadReceiptForOrder(requestId),
     loadExit(requestId),
+    loadHandEntriesForOrder(requestId),
   ]);
   if (orderError) throw orderError;
   if (!orderRow || !used) return null;
@@ -1498,8 +1902,15 @@ export async function loadDirectOrderReceiptPrint(access: AccessContext, request
     if (pharmacyError) throw pharmacyError;
     pharmacyName = String((pharmacy as { pharmacy_name: string | null } | null)?.pharmacy_name ?? "").trim() || pharmacyName;
   }
-  const names = await namesByHrId([order.requester_hr_id, used.used_by_hr_id, used.delivery_entered_by_hr_id, access.hrId]);
-  const originals = await originalsOf(used, names);
+  const names = await namesByHrId([
+    order.requester_hr_id,
+    used.used_by_hr_id,
+    used.delivery_entered_by_hr_id,
+    access.hrId,
+    ...handEntries.map((e) => e.reviewed_by_hr_id),
+  ]);
+  // The print says when an original was typed by hand, and whether its review passed: it is never shown as read.
+  const originals = await originalsOf(used, names, (original, photoPath) => reviewOf(access, handEntries, original, photoPath, names));
   return {
     requestId: order.id,
     serialLabel: formatReceiptSerial(Number(used.serial)),
@@ -1514,4 +1925,31 @@ export async function loadDirectOrderReceiptPrint(access: AccessContext, request
     printedAt: new Date().toISOString(),
     printedByName: names.get(access.hrId),
   };
+}
+
+export type DirectOrderReceiptScan = {
+  outcome: ReceiptScanOutcome;
+  /** "000401", or null when the link is not a genuine receipt. */
+  serialLabel: string | null;
+  /** The manager holding the book — told to Finance and the Administrator only. */
+  holderName: string | null;
+};
+
+/**
+ * What a scanned receipt QR proves (owner, 28 Nov 2026: the QR is read by Phoenix, behind a sign-in).
+ * Anyone signed in may scan; a used receipt's order is opened on its own page, which keeps its own
+ * scope rule, so the scan never shows an order its reader could not already open.
+ */
+export async function loadDirectOrderReceiptScan(access: AccessContext, rawToken: unknown): Promise<DirectOrderReceiptScan> {
+  if (isGuestFallbackAccess(access)) throw forbiddenError("Sign in to check a receipt.");
+  const token = parseReceiptScanToken(rawToken);
+  const receipt = token ? await loadReceipt(token.serial) : null;
+  const outcome = decideReceiptScan(token, receipt);
+  if (outcome.kind === "not_genuine") return { outcome, serialLabel: null, holderName: null };
+  let holderName: string | null = null;
+  if (canManageDirectOrderReceiptBooks(access)) {
+    const book = await loadBook(outcome.bookNo);
+    if (book?.holderHrId) holderName = (await namesByHrId([book.holderHrId])).get(book.holderHrId) ?? book.holderHrId;
+  }
+  return { outcome, serialLabel: formatReceiptSerial(outcome.serial), holderName };
 }
