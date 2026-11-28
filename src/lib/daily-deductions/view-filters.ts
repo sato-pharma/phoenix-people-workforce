@@ -1,4 +1,4 @@
-// Daily Deductions module: the two VIEW filters the Super Admin reviews with (owner, 2026-11-17: "In
+// Daily Deductions module: the three VIEW filters the Super Admin reviews with (owner, 2026-11-17: "In
 // daily deductions, make an option to exclude fingerprint or filter by exclude fingerprint or filter by
 // exclude head office employees").
 //
@@ -10,31 +10,41 @@
 //                             id 4, else a line named "Head Office" / "Office"). The set is read on the
 //                             server by head-office.ts and handed to the screen; this file never guesses it.
 //
-// Both are off by default, independent, and combine. They are VIEW filters only: nothing here changes,
+//   - Hide released         — hides every deduction that is already released at the figures shown
+//                             (owner, 2026-11-28: "In daily deductions, make a toggle. When I press this
+//                             toggle, hide the released."). A tally line hides when its release state is
+//                             `released` (release-state.ts) — a `changed` line, which still needs a
+//                             decision, stays; every row of the released snapshot hides. The screen hands
+//                             in the "is this released?" answer; this file never guesses it.
+//
+// All three are off by default, independent, and combine. They are VIEW filters only: nothing here changes,
 // releases, withdraws or re-prices a deduction. What they DO decide is the scope every count, total,
 // tick and bulk release on the screen works from — the workspace derives everything from the lines this
 // returns, so a deduction hidden by a filter can never ride along in a "Release ticked" click.
 //
 // Pure and browser-safe (no database, no server-only import): the workspace imports it and the unit
 // test loads it directly. The state lives in the URL query (`excludeFingerprint=1`,
-// `excludeHeadOffice=1`) so a refresh or a shared link keeps it.
+// `excludeHeadOffice=1`, `hideReleased=1`) so a refresh or a shared link keeps it.
 
 import { compactDeductionsHrId } from "../deductions/candidate-key.ts";
 
 export type DailyDeductionViewFilters = {
   excludeFingerprint: boolean;
   excludeHeadOffice: boolean;
+  hideReleased: boolean;
 };
 
 export const DAILY_DEDUCTION_VIEW_FILTERS_OFF: DailyDeductionViewFilters = {
   excludeFingerprint: false,
   excludeHeadOffice: false,
+  hideReleased: false,
 };
 
 /** The query keys the filters live under. */
 export const DAILY_DEDUCTION_VIEW_FILTER_PARAMS = {
   excludeFingerprint: "excludeFingerprint",
   excludeHeadOffice: "excludeHeadOffice",
+  hideReleased: "hideReleased",
 } as const;
 
 /** The category whose source is the fingerprint device — the only one the fingerprint filter hides. */
@@ -63,6 +73,7 @@ export function parseDailyDeductionViewFilters(
   return {
     excludeFingerprint: readViewFilterFlag(get(DAILY_DEDUCTION_VIEW_FILTER_PARAMS.excludeFingerprint)),
     excludeHeadOffice: readViewFilterFlag(get(DAILY_DEDUCTION_VIEW_FILTER_PARAMS.excludeHeadOffice)),
+    hideReleased: readViewFilterFlag(get(DAILY_DEDUCTION_VIEW_FILTER_PARAMS.hideReleased)),
   };
 }
 
@@ -82,7 +93,7 @@ export function writeDailyDeductionViewFilters(search: string, filters: DailyDed
 }
 
 export function isAnyDailyDeductionViewFilterOn(filters: DailyDeductionViewFilters): boolean {
-  return filters.excludeFingerprint || filters.excludeHeadOffice;
+  return filters.excludeFingerprint || filters.excludeHeadOffice || filters.hideReleased;
 }
 
 type FilterableLine = {
@@ -135,13 +146,17 @@ export type DailyDeductionViewFilterResult<T> = {
 };
 
 /**
- * Narrows deduction lines by the two view filters. The order of `lines` is kept. `headOfficeCompacts`
- * is the compact HR ids head-office.ts read on the server; `null` means that read failed.
+ * Narrows deduction lines by the view filters. The order of `lines` is kept. `headOfficeCompacts` is
+ * the compact HR ids head-office.ts read on the server; `null` means that read failed. `isReleased`
+ * answers "is this line already released?" for "Hide released" — the tally passes its release state,
+ * the released snapshot passes `() => true`; with no answer given, "Hide released" hides nothing.
+ * The input array and its lines are never changed.
  */
 export function applyDailyDeductionViewFilters<T extends FilterableLine>(
   lines: readonly T[],
   filters: DailyDeductionViewFilters,
   headOfficeCompacts: ReadonlySet<string> | null,
+  isReleased?: (line: T) => boolean,
 ): DailyDeductionViewFilterResult<T> {
   const headOfficeUnavailable = filters.excludeHeadOffice && headOfficeCompacts === null;
   const kept: T[] = [];
@@ -149,7 +164,8 @@ export function applyDailyDeductionViewFilters<T extends FilterableLine>(
   for (const line of lines) {
     const hide =
       (filters.excludeFingerprint && isFingerprintDeduction(line)) ||
-      (filters.excludeHeadOffice && headOfficeCompacts !== null && isHeadOfficeDeduction(line, headOfficeCompacts));
+      (filters.excludeHeadOffice && headOfficeCompacts !== null && isHeadOfficeDeduction(line, headOfficeCompacts)) ||
+      (filters.hideReleased && isReleased !== undefined && isReleased(line));
     (hide ? hidden : kept).push(line);
   }
   return { lines: kept, hidden, headOfficeUnavailable };

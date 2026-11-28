@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Clock3, PlayCircle, RotateCcw, Search, XCircle } from "lucide-react";
 
 import { dailyDeductionConnectorLabels, dailyDeductionConnectors, type DailyDeductionConnector } from "@/lib/daily-deductions/types.ts";
@@ -241,7 +241,7 @@ export function DailyDeductionsWorkspace({
   defaultTo: string;
   /** Compact HR ids of the Head Office line, read on the server; null when that read failed. */
   headOfficeCompacts: string[] | null;
-  /** The two view filters as the address carried them. */
+  /** The three view filters as the address carried them. */
   initialFilters: DailyDeductionViewFilters;
 }) {
   const [from, setFrom] = useState(defaultFrom);
@@ -316,14 +316,22 @@ export function DailyDeductionsWorkspace({
     );
   }, [runs]);
 
+  const releasedIndex = useMemo(() => indexReleasedLines(releasedLines), [releasedLines]);
+  // "Hide released" (owner, 2026-11-28) asks each tally line its release state; a `changed` line still
+  // needs a decision, so only `released` hides. Every row of the released snapshot is released.
+  const isTallyLineReleased = useCallback(
+    (line: SingleLine) => releaseStateOf(line, releasedIndex) === "released",
+    [releasedIndex],
+  );
+
   // What the view filters leave — the ONLY list the tally below counts, ticks and releases from.
   const tallyScope = useMemo(
-    () => applyDailyDeductionViewFilters(tallyLines, viewFilters, headOfficeSet),
-    [tallyLines, viewFilters, headOfficeSet],
+    () => applyDailyDeductionViewFilters(tallyLines, viewFilters, headOfficeSet, isTallyLineReleased),
+    [tallyLines, viewFilters, headOfficeSet, isTallyLineReleased],
   );
   const allLines = tallyScope.lines;
   const releasedScope = useMemo(
-    () => applyDailyDeductionViewFilters(releasedLines, viewFilters, headOfficeSet),
+    () => applyDailyDeductionViewFilters(releasedLines, viewFilters, headOfficeSet, () => true),
     [releasedLines, viewFilters, headOfficeSet],
   );
   const shownReleasedLines = releasedScope.lines;
@@ -352,8 +360,6 @@ export function DailyDeductionsWorkspace({
 
   const anyComputed = runs.some((run) => run.state === "done");
   const failedRuns = runs.filter((run) => run.state === "failed");
-
-  const releasedIndex = useMemo(() => indexReleasedLines(releasedLines), [releasedLines]);
 
   // The range inputs moved after the tally was computed. The figures on screen belong to the OLD
   // window, so releasing them under the new one would file real deductions against days nobody
@@ -426,7 +432,9 @@ export function DailyDeductionsWorkspace({
       // The address could not be rewritten; the filter still applies on this screen.
     }
     if (on) {
-      const keep = new Set(applyDailyDeductionViewFilters(tallyLines, next, headOfficeSet).lines.map((line) => lineKey(line)));
+      const keep = new Set(
+        applyDailyDeductionViewFilters(tallyLines, next, headOfficeSet, isTallyLineReleased).lines.map((line) => lineKey(line)),
+      );
       setSelected((prev) => new Set([...prev].filter((key) => keep.has(key))));
     }
   }
@@ -1189,7 +1197,7 @@ function pendingFacts(
   ];
 }
 
-// The two view filters, above everything they narrow. A filter that hides something says how much; a
+// The three view filters, above everything they narrow. A filter that hides something says how much; a
 // Head Office filter whose list could not be read says it is NOT applied, never a silent no-op.
 function ViewFilterStrip({
   filters,
@@ -1214,12 +1222,15 @@ function ViewFilterStrip({
         <h2 className={PANEL_TITLE}>View</h2>
       </div>
       <div className="space-y-2 p-4">
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
           <CheckTile checked={filters.excludeFingerprint} onChange={(next) => onChange("excludeFingerprint", next)}>
             <span className="min-w-0 break-words">Exclude fingerprint</span>
           </CheckTile>
           <CheckTile checked={filters.excludeHeadOffice} onChange={(next) => onChange("excludeHeadOffice", next)}>
             <span className="min-w-0 break-words">Exclude Head Office employees</span>
+          </CheckTile>
+          <CheckTile checked={filters.hideReleased} onChange={(next) => onChange("hideReleased", next)}>
+            <span className="min-w-0 break-words">Hide released</span>
           </CheckTile>
         </div>
         {headOfficeUnavailable ? (
@@ -1235,7 +1246,7 @@ function ViewFilterStrip({
             ? hiddenParts.length > 0
               ? `Hidden: ${hiddenParts.join(" · ")}. Counts, totals, ticks and releases below cover only what is shown. Nothing hidden is changed.`
               : "Nothing on screen matches the filters, so nothing is hidden. Counts, totals, ticks and releases below cover only what is shown."
-            : "Fingerprint lines are the fingerprint device's late, absent and missing-punch days. Head Office is the employee master's Head Office line. These only change what is shown."}
+            : "Fingerprint lines are the fingerprint device's late, absent and missing-punch days. Head Office is the employee master's Head Office line. Hide released hides what is already released. These only change what is shown."}
         </p>
       </div>
     </section>
