@@ -71,6 +71,7 @@ import { cn } from "@/lib/utils";
 const tabLoading = () => <CrmLoading />;
 const VisitsTab = dynamic(() => import("@/components/phoenix-crm/visits-tab").then((mod) => mod.VisitsTab), { loading: tabLoading });
 const ListTab = dynamic(() => import("@/components/phoenix-crm/list-tab").then((mod) => mod.ListTab), { loading: tabLoading });
+const FocusListTab = dynamic(() => import("@/components/phoenix-crm/focus-list-tab").then((mod) => mod.FocusListTab), { loading: tabLoading });
 const PlanBoard = dynamic(() => import("@/components/phoenix-crm/plan-board").then((mod) => mod.PlanBoard), { loading: tabLoading });
 // The district manager's own week and his own single visits (owner, 2026-10-16) — fetched only by him.
 const ManagerPlanBoard = dynamic(() => import("@/components/phoenix-crm/manager-plan-board").then((mod) => mod.ManagerPlanBoard), { loading: tabLoading });
@@ -90,6 +91,7 @@ const TestApprovalsTab = dynamic(() => import("@/components/phoenix-crm/test-acc
 const TAB_LABELS: Record<TabKey, string> = {
   visits: "Visits",
   list: "List",
+  focus: "Focus list",
   plan: "Plan",
   forecast: "Forecast",
   team: "Team",
@@ -129,6 +131,9 @@ const TAB_COLUMNS: Record<number, string> = {
   // (two even rows), and two rows of five on a wide screen too: ten across would squeeze the longest
   // label onto two lines, and the rule is wrap or merge, never shrink the type.
   10: "grid-cols-2 sm:grid-cols-5",
+  // Eleven since the Focus list (owner, 2026-11-28) — the Super Admin's full set. Two a row on a phone, four from
+  // `sm`, six on a wide screen (two rows): eleven across would squeeze the labels, and the rule is wrap, never shrink.
+  11: "grid-cols-2 sm:grid-cols-4 lg:grid-cols-6",
 };
 
 const SEAT_TABS: readonly SeatTab[] = ["visits", "list", "plan"];
@@ -138,7 +143,8 @@ const SEAT_TABS: readonly SeatTab[] = ["visits", "list", "plan"];
 /** Nor does the Calendar: it is a month laid out to be read, and nothing on it is entered. */
 /** Nor the Forecast: every box is pre-filled from the target, so leaving it loses nothing he typed out. */
 /** Nor the Super Admin's test tab: each decision saves at the press, so nothing typed waits on it. */
-type HoldingTab = Exclude<TabKey, "reports" | "doctors" | "calendar" | "forecast" | "testAccounts">;
+/** Nor the Focus list: a push, a keep and a return each save at the press. */
+type HoldingTab = Exclude<TabKey, "reports" | "doctors" | "calendar" | "forecast" | "testAccounts" | "focus">;
 
 /** Each tab's work, as the question before letting it go names it. */
 const HELD_WORK: Record<HoldingTab, string> = {
@@ -189,7 +195,7 @@ function isSeatTab(key: TabKey): key is SeatTab {
 }
 
 function isHoldingTab(key: TabKey): key is HoldingTab {
-  return key !== "reports" && key !== "doctors" && key !== "calendar" && key !== "forecast" && key !== "testAccounts";
+  return key !== "reports" && key !== "doctors" && key !== "calendar" && key !== "forecast" && key !== "testAccounts" && key !== "focus";
 }
 
 /** A territory's place without its line, which the picker's group already names. */
@@ -937,6 +943,7 @@ export function PhoenixCrmApp({
     }
     if (key === "settings") return <SettingsTab onChanged={settingsChanged} onDirtyChange={holdReporters.settings} />;
     if (key === "testAccounts") return <TestApprovalsTab onChanged={refreshOverview} />;
+    if (key === "focus") return <FocusListTab key={`focus|${test}`} test={test} />;
 
     const seatId = seats[key];
     if (seatId === null) {

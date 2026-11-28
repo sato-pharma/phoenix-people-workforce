@@ -2239,6 +2239,7 @@ import { runPhoenixCrmWakeRefreshTests } from "./phoenix-crm-wake-refresh.test.t
 import { runRouteNavigationStallRetryTests } from "./route-navigation-stall-retry.test.ts";
 import { runPhoenixCrmFirstReadTests } from "./phoenix-crm-first-read.test.ts";
 import { runPhoenixCrmSplitModulesTests } from "./phoenix-crm-split-modules.test.ts";
+import { runPhoenixCrmFocusListTests } from "./phoenix-crm-focus-list.test.ts";
 import { runPhoenixCrmVisitFormEaseTests } from "./phoenix-crm-visit-form-ease.test.ts";
 import { runPhoenixCrmValidateNextTests } from "./phoenix-crm-validate-next.test.ts";
 import { runPhoenixCrmSignboardCheckTests } from "./phoenix-crm-signboard-check.test.ts";
@@ -8641,6 +8642,11 @@ await runTest(
 await runTest(
   "Phoenix CRM split modules (owner, 2026-09-30, given priority): the sidebar opens a CHOOSER and never a module, each module is its own page with its own address, ?tab= and ?add= are forwarded not dropped, a module he may not open is a sentence not a 404, and the module list cannot drift from the overview's tab flags",
   runPhoenixCrmSplitModulesTests,
+);
+
+await runTest(
+  "Phoenix CRM Focus list (owner, 2026-11-28): the reason is written and required with an optional pick, the tracking reads a From-To period of field weeks and never a future day, the list groups by grade then brick, a rep push waits for his manager (SFE on a vacant chain) while a manager push, keep and return tell the rep in words that name no visit, the table and its read are the service role alone, and the rep view carries no tracking",
+  runPhoenixCrmFocusListTests,
 );
 
 await runTest(

@@ -1079,6 +1079,11 @@ export const accessRegistry = [
   // narrowed in the service to the territory's OWN rep (`territoryForRepWrite`), because they are the
   // sentences he wrote and his own plan; `read` here is gate one of two, as everywhere in the module.
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/commitments", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  // The Focus list (owner, 2026-11-28): gate one is `read`, gate two the service — the territory's rep or one of
+  // its managers pushes (`territoryForFocusPush`), a manager of it keeps or returns (`canDecideFocus`), the rep
+  // returns his own (`canReturnOwnFocus`). Holding a permission is never enough on its own.
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/focus", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/focus", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/call-prep", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   // Deciding an off-plan visit: the same split as a grade or drop request, `approve` rather than
   // `update`, and narrowed AGAIN in the service to the one person whose step it is — the territory's

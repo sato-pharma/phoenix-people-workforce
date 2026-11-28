@@ -1,4 +1,4 @@
-import { CalendarDays, CalendarRange, ClipboardList, FileBarChart, FlaskConical, ListChecks, Search, Settings, Target, Users } from "lucide-react";
+import { CalendarDays, CalendarRange, ClipboardList, Crosshair, FileBarChart, FlaskConical, ListChecks, Search, Settings, Target, Users } from "lucide-react";
 
 // The one client piece: it starts the module's page and its screen at the touch (module-link.tsx).
 import { PhoenixCrmNewBadge } from "@/components/phoenix-crm/new-badge";
@@ -34,6 +34,8 @@ import type { PhoenixCrmOverview } from "@/lib/phoenix-crm/view-types";
 const MODULE_ICONS: Record<PhoenixCrmModuleKey, typeof ClipboardList> = {
   visits: ClipboardList,
   list: ListChecks,
+  // The Focus list: the customers in the crosshairs.
+  focus: Crosshair,
   plan: CalendarDays,
   // The CNS daily forecast: today's boxes against the target.
   forecast: Target,
