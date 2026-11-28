@@ -121,7 +121,7 @@ export function runPhoenixCrmReturnForCommentTests(): void {
     assert.match(list, /asAdministrator: canOverrideDecision\(viewer, isTest\),\s+\}\);\s+return \{ canDecide, canReturn \};/, "his card is offered the return");
 
     const card = source("src/components/phoenix-crm/request-card.tsx");
-    assert.match(card, /const administratorDecides = pending && canOverride && !decides;/, "his buttons are drawn at every step: a grade change, the manager's, SFE's and with the rep");
+    assert.match(card, /const administratorDecides = pending && canOverride && !decides(?: && savedHere === null)?;/, "his buttons are drawn at every step: a grade change, the manager's, SFE's and with the rep");
     assert.match(card, /const heldOnPlaceChecks = canOverride \? null : request\.placeCheckHold;/, "Approve stays for him through a Place-check hold");
     assert.doesNotMatch(card, /<AdministratorDecline/, "the decline-only fallback is gone from the card");
 

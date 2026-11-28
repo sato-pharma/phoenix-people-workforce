@@ -23,7 +23,18 @@ import { crmPost, errorCodeOf, messageOf } from "@/components/phoenix-crm/api";
 import { cairoStamp } from "@/components/phoenix-crm/format";
 import { listText } from "@/components/phoenix-crm/labels";
 import { AdministratorStepNote } from "@/components/phoenix-crm/administrator-decline";
-import { CrmButton, CrmCard, CrmCheck, CrmChoice, CrmField, CrmNote, CrmPill, crmTextareaClassName, type PillTone } from "@/components/phoenix-crm/ui";
+import {
+  CrmButton,
+  CrmCard,
+  CrmCheck,
+  CrmChoice,
+  CrmField,
+  CrmNote,
+  CrmPill,
+  crmTextareaClassName,
+  WAITING_STEP_LOOK,
+  type PillTone,
+} from "@/components/phoenix-crm/ui";
 import { DROP_REASON_MAX, POTENTIAL_GRADES, type PotentialGrade } from "@/lib/phoenix-crm/entry-rules";
 import {
   isTwoStepKind,
@@ -35,6 +46,7 @@ import {
   setsAdmissionGrades,
 } from "@/lib/phoenix-crm/list-request-rules";
 import type { PhoenixCrmGrade, PhoenixCrmRequestStatus } from "@/lib/phoenix-crm/types";
+import { listRequestWaitingStep } from "@/lib/phoenix-crm/waiting-step";
 import type { ListRequest } from "@/lib/phoenix-crm/view-types";
 
 const GRADES: readonly PhoenixCrmGrade[] = ["A", "B", "C"];
@@ -82,7 +94,18 @@ export function sortRequests<T extends Pick<ListRequest, "status" | "requestedAt
  */
 function statusPill(request: ListRequest): { label: string; tone: PillTone } {
   if (request.status !== "pending") return STATUS[request.status];
-  return { label: request.stageLabel ?? requestStageLabel("manager") ?? STATUS.pending.label, tone: STATUS.pending.tone };
+  const step = listRequestWaitingStep(request);
+  return {
+    label: request.stageLabel ?? requestStageLabel("manager") ?? STATUS.pending.label,
+    // The district manager's step and SFE's wear different colours (owner, 2026-11-28).
+    tone: step ? WAITING_STEP_LOOK[step].tone : STATUS.pending.tone,
+  };
+}
+
+/** The card's left edge: the step it waits at while pending (amber for the manager, indigo for SFE), else the outcome's. */
+function cardAccent(request: ListRequest): string {
+  const step = listRequestWaitingStep(request);
+  return step ? WAITING_STEP_LOOK[step].accent : STATUS[request.status].accent;
 }
 
 /**
@@ -154,15 +177,29 @@ export function RequestCard({
   const [busy, setBusy] = useState<"approve" | "refuse" | "withdraw" | "return" | "reply" | null>(null);
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  // 🔴 A SAVED ANSWER IS SAID ON THE CARD AT ONCE (owner, 2026-11-28: "when I press approve … nothing
+  // happened"). The Team tab reloads the whole team after a decision, 2–6 s on production, and until
+  // then this card stayed exactly as it was, buttons live again and the notice written at the top of
+  // the tab, out of sight — so the press looked dead and was pressed again (13:51:54, then 13:51:59).
+  // The card now says what was saved and offers nothing more until the reload brings the request back
+  // at a new step (its fingerprint changes) or takes it away.
+  const [saved, setSaved] = useState<{ message: string; at: string } | null>(null);
+  const fingerprint = `${request.status}|${request.stage ?? ""}|${request.withRep ? "rep" : ""}`;
+  const savedHere = saved !== null && saved.at === fingerprint ? saved.message : null;
+
+  function done(message: string) {
+    setSaved({ message, at: fingerprint });
+    onChanged(message);
+  }
 
   const pill = statusPill(request);
   const pending = request.status === "pending";
-  const decides = pending && canDecide && request.canDecide;
+  const decides = pending && canDecide && request.canDecide && savedHere === null;
   // The Administrator takes the step the request is AT, in place of whoever holds it (owner, 2026-10-14),
   // with the same buttons — at ANY step and status (owner, 2026-11-27: "any step any status"): a grade
   // change (no stage), the district manager's step, SFE's, and a request still with the rep, which he
   // decides at the step it returns to.
-  const administratorDecides = pending && canOverride && !decides;
+  const administratorDecides = pending && canOverride && !decides && savedHere === null;
   const deciding = decides || administratorDecides;
   // SFE's step of an add or a bring-back waits while the customer's place is on Place checks. The server
   // says so and refuses the approval, so the card shows why and offers only Refuse (System Audit,
@@ -191,7 +228,7 @@ export function RequestCard({
   const canReturn = deciding && !request.withRep && request.canReturn;
   // Where the rep's comment goes once he answers: the step the request was returned from.
   const backToName = request.stage === "manager" ? "your district manager" : "SFE";
-  const answering = pending && request.withRep && canWithdraw;
+  const answering = pending && request.withRep && canWithdraw && savedHere === null;
 
   async function decide(decision: "approve" | "refuse") {
     const trimmed = note.trim();
@@ -225,9 +262,9 @@ export function RequestCard({
         "request",
       );
       if (result.status === "pending") {
-        onChanged(`Approved — now waiting for SFE: ${request.customerName}.`);
+        done(`Approved — now waiting for SFE: ${request.customerName}.`);
       } else {
-        onChanged(`${result.status === "approved" ? "Approved" : "Refused"}: ${request.customerName}.`);
+        done(`${result.status === "approved" ? "Approved" : "Refused"}: ${request.customerName}.`);
       }
     } catch (error) {
       setProblem(messageOf(error));
@@ -254,7 +291,7 @@ export function RequestCard({
     setProblem(null);
     try {
       await crmPost("/api/phoenix-crm/list/requests/return", { requestId: request.requestId, note: trimmed }, "request");
-      onChanged(`Returned to ${request.requestedByName} for a comment: ${request.customerName}.`);
+      done(`Returned to ${request.requestedByName} for a comment: ${request.customerName}.`);
     } catch (error) {
       setProblem(messageOf(error));
       const code = errorCodeOf(error);
@@ -274,7 +311,7 @@ export function RequestCard({
     setProblem(null);
     try {
       await crmPost("/api/phoenix-crm/list/requests/answer", { requestId: request.requestId, reply: trimmed, seatId, test }, "request");
-      onChanged(`Comment sent to ${backToName}: ${request.customerName}.`);
+      done(`Comment sent to ${backToName}: ${request.customerName}.`);
     } catch (error) {
       setProblem(messageOf(error));
     } finally {
@@ -287,7 +324,7 @@ export function RequestCard({
     setProblem(null);
     try {
       await crmPost("/api/phoenix-crm/list/requests/withdraw", { requestId: request.requestId, seatId, test }, "request");
-      onChanged(`Request withdrawn: ${request.customerName}.`);
+      done(`Request withdrawn: ${request.customerName}.`);
     } catch (error) {
       setProblem(messageOf(error));
       if (errorCodeOf(error) === "phoenix_crm_request_decided") onChanged(`${request.customerName}: this request was already decided.`);
@@ -304,7 +341,7 @@ export function RequestCard({
 
   return (
     <CrmCard
-      accent={STATUS[request.status].accent}
+      accent={cardAccent(request)}
       meta={[listText(request.listType), territoryName].filter(Boolean).join(" · ")}
       status={<CrmPill tone={pill.tone}>{pill.label}</CrmPill>}
       title={request.customerName}
@@ -471,7 +508,13 @@ export function RequestCard({
         </div>
       ) : null}
 
-      {pending && canWithdraw ? (
+      {savedHere ? (
+        <CrmNote className="mt-3" title="Saved" tone="good">
+          {savedHere}
+        </CrmNote>
+      ) : null}
+
+      {pending && canWithdraw && savedHere === null ? (
         <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
           {confirmWithdraw ? (
             <>

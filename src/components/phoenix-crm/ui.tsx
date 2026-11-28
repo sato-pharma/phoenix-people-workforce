@@ -202,10 +202,19 @@ const PILL_TONES = {
   info: "border-sky-200 bg-sky-50 text-sky-700",
   neutral: "border-slate-200 bg-slate-50 text-slate-600",
   orange: "border-orange-200 bg-orange-50 text-orange-700",
+  // SFE's approval step, apart from the district manager's amber "warn" (owner, 2026-11-28: "visually
+  // differentiated"). Indigo, so it never reads as the sky-blue "info" notes beside it.
+  sfe: "border-indigo-300 bg-indigo-50 text-indigo-800",
   warn: "border-amber-200 bg-amber-50 text-amber-800",
 } as const;
 
 export type PillTone = keyof typeof PILL_TONES;
+
+/** The pill tone and the card's left edge for each approval step — the district manager's amber, SFE's indigo. */
+export const WAITING_STEP_LOOK = {
+  manager: { tone: "warn", accent: "border-l-amber-500" },
+  sfe: { tone: "sfe", accent: "border-l-indigo-600" },
+} as const satisfies Record<"manager" | "sfe", { tone: PillTone; accent: string }>;
 
 export function CrmPill({ children, className, tone = "neutral" }: { children: ReactNode; className?: string; tone?: PillTone }) {
   return (
