@@ -41,6 +41,17 @@ code is never written anywhere.
 
 ## Which orders owe a receipt
 
+- 🔴 **This wave is the Pedia line only, from Sunday 29 November 2026** (owner, 28 Nov 2026: the new rule is for
+  the Pedia line in this wave; Anti Infective will work the same later, not now — keep its documents and
+  everything, and no change to Anti Infective's direct-order policy). `RECEIPT_BOOK_LINES` and
+  `RECEIPT_RULE_START_ISO` in `src/lib/direct-orders/receipt-rules.ts` hold it:
+  - an order whose own `line` is not in the list never owes a receipt: it is never late, never flagged
+    "no book", never blocks its manager and never sends a reminder;
+  - nothing approved before Sunday 29 November 2026, 00:00 Cairo, owes one, even if a book went out earlier;
+  - Finance cannot hand a book to a manager outside the list. Books 1 to 7 carry Anti Infective managers'
+    names and stay in the store, and the desk says so in place of the hand-out button. A spare goes only to a
+    Pedia manager.
+  - Starting Anti Infective later is one word added to `RECEIPT_BOOK_LINES`, with its own start day.
 - An order owes a receipt from a book only if it was approved while its requester held one
   (`bookHeldAtApproval`).
 - From the first hand-out of any book (`receiptRolloutStart`), an approved order raised by someone holding NO
