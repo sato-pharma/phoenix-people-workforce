@@ -51,6 +51,10 @@ export type AiCallComponent =
   // comments in the background, so nobody waits on it and its cost is answered on its own line.
   | "phoenix_crm_comment_reading"
   | "phoenix_crm_signboard"
+  // `private_calendar_day_questions` reads what a line's people wrote on its training days and suggests
+  // which days a product manager was likely with them (owner, 2026-11-28). It suggests; the Super Admin
+  // ticks each day himself — it never covers a day. One call per month opened, on his own screen.
+  | "private_calendar_day_questions"
   | "sales_ai_provider"
   | "sales_normalizer_ai_suggest"
   | "sales_weekly_ai_verify";
@@ -122,6 +126,7 @@ const COMPONENT_LABELS: Record<AiCallComponent, string> = {
   phoenix_crm_comment_reading: "Phoenix CRM — reading visit comments for stock, price and follow-ups",
   phoenix_crm_schedule: "Phoenix CRM — reading the timetable in a polyclinic photo",
   phoenix_crm_signboard: "Phoenix CRM — reading the signboard in a place photo",
+  private_calendar_day_questions: "Private Calendar — suggesting the days a manager was with the line's training",
   sales_ai_provider: "Sales AI provider",
   sales_normalizer_ai_suggest: "Sales normalizer — AI suggest",
   sales_weekly_ai_verify: "Weekly sales — AI verify",

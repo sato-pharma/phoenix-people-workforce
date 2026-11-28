@@ -19,7 +19,7 @@
  *     day screen's own block uses too — there is no second way to write a day.
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   CalendarCheck,
   Car,
@@ -38,7 +38,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { crmPost, useCrmAction } from "@/components/phoenix-crm/api";
+import { crmGet, crmPost, useCrmAction } from "@/components/phoenix-crm/api";
 import { DayInterviewsEntry } from "@/components/phoenix-crm/day-interviews";
 import { countText } from "@/components/phoenix-crm/format";
 import { OffPlanAllowanceCard } from "@/components/phoenix-crm/offplan-allowance";
@@ -50,7 +50,15 @@ import type { DayActivityRow, VisitFormView } from "@/lib/phoenix-crm/view-types
 import { cn } from "@/lib/utils";
 
 /** What a day was, when it was not only calls. Null clears the day back to a field day. */
-export type DayActivityChoice = { activityType: PhoenixCrmDayActivity; halfDay: boolean; note: string | null };
+export type DayActivityChoice = {
+  activityType: PhoenixCrmDayActivity;
+  halfDay: boolean;
+  note: string | null;
+  /** A whole-day Conference: who from the line was there (owner, 2026-11-28: "ask the rep"). */
+  withHrIds?: string[];
+};
+
+type LinePerson = { hrId: string; jobTitle: string; name: string };
 
 type DayActivitySaved = { cleared: boolean; activity: DayActivityRow | null };
 
@@ -146,11 +154,30 @@ function ActivityEntry({
   const [interviewCount, setInterviewCount] = useState<number | null>(null);
   const onInterviewCount = useCallback((count: number | null) => setInterviewCount(count), []);
   const waitingForInterviews = activity === "interviews" && (interviewCount === null || interviewCount === 0);
+  // A whole-day Conference asks who from his line was with him — optional, and only a list to tick.
+  const asksWho = activity === "conference" && !halfDay;
+  const [linePeople, setLinePeople] = useState<LinePerson[] | null>(null);
+  const [withHrIds, setWithHrIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (activity !== "conference") return;
+    const controller = new AbortController();
+    const query = new URLSearchParams({ seatId, test: String(test) });
+    crmGet<LinePerson[]>(`/api/phoenix-crm/day-activities/companions?${query.toString()}`, "people", controller.signal)
+      .then((people) => setLinePeople(Array.isArray(people) ? people : []))
+      .catch(() => setLinePeople([]));
+    return () => controller.abort();
+  }, [activity, seatId, test]);
 
   async function save() {
     await action.run(
       "day-activity",
-      () => saveDayActivity(seatId, test, { activityType: activity, halfDay, note: note.trim() || null }),
+      () =>
+        saveDayActivity(seatId, test, {
+          activityType: activity,
+          halfDay,
+          note: note.trim() || null,
+          ...(asksWho ? { withHrIds: [...withHrIds] } : {}),
+        }),
       (saved) => onSaved(saved.activity, label),
     );
   }
@@ -165,6 +192,31 @@ function ActivityEntry({
         <CrmCheck checked={halfDay} disabled={busy} onChange={setHalfDay}>
           Half day — the other half was field work
         </CrmCheck>
+        {asksWho && linePeople && linePeople.length > 0 ? (
+          <CrmField hint="Optional · tick everyone who was there" label="Who from the line was with you?">
+            <div className="grid min-w-0 gap-2">
+              {linePeople.map((person) => (
+                <CrmCheck
+                  checked={withHrIds.has(person.hrId)}
+                  disabled={busy}
+                  key={person.hrId}
+                  onChange={(next) =>
+                    setWithHrIds((current) => {
+                      const copy = new Set(current);
+                      if (next) copy.add(person.hrId);
+                      else copy.delete(person.hrId);
+                      return copy;
+                    })
+                  }
+                >
+                  <span className="min-w-0 break-words">
+                    {person.name} <span className="font-medium text-slate-500">· {person.jobTitle}</span>
+                  </span>
+                </CrmCheck>
+              ))}
+            </div>
+          </CrmField>
+        ) : null}
         <CrmField hint={`Optional · ${note.trim().length} of ${DAY_ACTIVITY_NOTE_MAX} characters`} htmlFor="phoenix-crm-day-activity-note" label="Note">
           <textarea
             className={crmTextareaClassName}

@@ -266,6 +266,7 @@ export function runApprovalsHubSeparateInboxesTests() {
     "/admin/approvals-hub",
     "/admin/disputes",
     "/admin/private-calendar-disputes",
+    "/admin/private-calendar-day-records",
     "/admin/deductions?tab=disputes",
   ];
   assert.deepEqual(

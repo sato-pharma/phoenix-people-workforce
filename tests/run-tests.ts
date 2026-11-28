@@ -3098,6 +3098,7 @@ import { runDoubleVisitReseatedAccountOverrideTests } from "./double-visit-resea
 import { runPrivateCalendarPlanSourceTests } from "./private-calendar-plan-source.test.ts";
 import { runPrivateCalendarOutstationTripsTests } from "./private-calendar-outstation-trips.test.ts";
 import { runPrivateCalendarInterviewsTests } from "./private-calendar-interviews.test.ts";
+import { runPrivateCalendarDayRecordsTests } from "./private-calendar-day-records.test.ts";
 import { runPrivateCalendarsAdminAnyEmployeeTests } from "./private-calendars-admin-any-employee.test.ts";
 import { runStoreSplitDriftTests } from "./store-split-drift.test.ts";
 import { runOfficeAllocationDriftTests } from "./office-allocation-drift.test.ts";
@@ -12408,6 +12409,10 @@ await runTest(
 await runTest(
   "every interview on the recruitment calendar shows on the private calendar of the lead (unless he declined) and each panel member, never a manager it was only shared with, in Cairo time; one interview is display only and the Excel export still prints No Activity Recorded beside it, while two or more in one half (the morning ends at 1 PM; any hour on a Thursday) are that half day worked on the calendar, in the company deductions pass (read strictly) and in the proven-worked days, where a one-half day leaves the other half to the Half Day tab",
   runPrivateCalendarInterviewsTests,
+);
+await runTest(
+  "a Private Calendar day covers a day only once the Super Admin confirms it: a line training day (2+ of the line, Training only, inside the employment window) is a question with the days as ticks, a rep names who was at his whole-day Conference as pending names, the group save skips the not-hired, the departed and the already-recorded, and a confirmed record proves the worked day for the deductions",
+  runPrivateCalendarDayRecordsTests,
 );
 await runTest(
   "/admin/private-calendars reaches EVERY employee — no role shortlist narrows the picker, all six filters (name or HR id, line, area, department, title, employment status) are read, rendered, applied and carried on the row links, the selected employee resolves against the whole directory so a filter change cannot break an open calendar link, a failed read says so, and the company-wide table is table-fixed with a colgroup that merges its middle columns on a phone",

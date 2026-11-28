@@ -71627,6 +71627,44 @@ COMMENT ON TABLE public.private_calendar_data_disputes IS 'Employee-flagged priv
 COMMENT ON COLUMN public.private_calendar_data_disputes.day_part IS 'The half of the day the request explains: whole, am (morning only) or pm (afternoon only). An accepted half clears only that half.';
 
 --
+-- Name: private_calendar_day_records; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.private_calendar_day_records (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    employee_hr_id text NOT NULL,
+    record_date date NOT NULL,
+    activity_type text NOT NULL,
+    note text,
+    origin text NOT NULL,
+    status text NOT NULL,
+    entered_by_hr_id text NOT NULL,
+    named_by_hr_id text,
+    batch_id uuid NOT NULL,
+    decided_by_hr_id text,
+    decided_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    voided_at timestamp with time zone,
+    voided_by_hr_id text,
+    CONSTRAINT private_calendar_day_records_activity_type_check CHECK ((activity_type = ANY (ARRAY['meeting'::text, 'training'::text, 'conference'::text, 'group_meeting'::text, 'admin_work'::text, 'travel'::text, 'other'::text]))),
+    CONSTRAINT private_calendar_day_records_employee_hr_id_check CHECK ((length(btrim(employee_hr_id)) > 0)),
+    CONSTRAINT private_calendar_day_records_entered_by_hr_id_check CHECK ((length(btrim(entered_by_hr_id)) > 0)),
+    CONSTRAINT private_calendar_day_records_named_by CHECK (((origin = 'rep_named'::text) = (named_by_hr_id IS NOT NULL))),
+    CONSTRAINT private_calendar_day_records_note_check CHECK (((note IS NULL) OR (length(note) <= 500))),
+    CONSTRAINT private_calendar_day_records_origin_check CHECK ((origin = ANY (ARRAY['super_admin'::text, 'rep_named'::text, 'line_training'::text]))),
+    CONSTRAINT private_calendar_day_records_pending CHECK (((status <> 'pending'::text) OR (origin = 'rep_named'::text))),
+    CONSTRAINT private_calendar_day_records_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'confirmed'::text, 'declined'::text])))
+);
+
+ALTER TABLE public.private_calendar_day_records OWNER TO postgres;
+
+--
+-- Name: TABLE private_calendar_day_records; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.private_calendar_day_records IS 'Working days recorded FOR a person with no record of his own that day: by the Super Admin in one grouped step, his answer to a line-training question, or a rep naming him on a Conference day (owner, 28 Nov 2026). Only status confirmed covers a day: an entry on the Private Calendar and a proven worked day for the deductions. Never automatic. Voided, never deleted. Service role only. See src/lib/private-calendar/day-records.ts.';
+
+--
 -- Name: private_calendar_dispute_messages; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -81001,6 +81039,13 @@ ALTER TABLE ONLY public.private_calendar_data_disputes
     ADD CONSTRAINT private_calendar_data_disputes_pkey PRIMARY KEY (id);
 
 --
+-- Name: private_calendar_day_records private_calendar_day_records_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.private_calendar_day_records
+    ADD CONSTRAINT private_calendar_day_records_pkey PRIMARY KEY (id);
+
+--
 -- Name: private_calendar_dispute_messages private_calendar_dispute_messages_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -89218,6 +89263,18 @@ CREATE UNIQUE INDEX private_calendar_data_disputes_pending_uidx ON public.privat
 --
 
 CREATE INDEX private_calendar_data_disputes_status_idx ON public.private_calendar_data_disputes USING btree (status) WHERE (status = 'pending_review'::text);
+
+--
+-- Name: private_calendar_day_records_date_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX private_calendar_day_records_date_idx ON public.private_calendar_day_records USING btree (record_date) WHERE (voided_at IS NULL);
+
+--
+-- Name: private_calendar_day_records_person_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX private_calendar_day_records_person_idx ON public.private_calendar_day_records USING btree (upper(employee_hr_id), record_date) WHERE (voided_at IS NULL);
 
 --
 -- Name: private_calendar_dispute_messages_dispute_idx; Type: INDEX; Schema: public; Owner: postgres
@@ -101507,6 +101564,18 @@ ALTER TABLE public.positions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.private_calendar_data_disputes ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: private_calendar_day_records; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.private_calendar_day_records ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: private_calendar_day_records private_calendar_day_records_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY private_calendar_day_records_service_role ON public.private_calendar_day_records TO service_role USING (true) WITH CHECK (true);
+
+--
 -- Name: private_calendar_dispute_messages; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
@@ -111612,6 +111681,12 @@ GRANT ALL ON SEQUENCE public.positions_id_seq TO service_role;
 --
 
 GRANT ALL ON TABLE public.private_calendar_data_disputes TO service_role;
+
+--
+-- Name: TABLE private_calendar_day_records; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.private_calendar_day_records TO service_role;
 
 --
 -- Name: TABLE private_calendar_dispute_messages; Type: ACL; Schema: public; Owner: postgres

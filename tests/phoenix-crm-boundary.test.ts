@@ -404,6 +404,8 @@ const ROUTE_GATES: RouteGate[] = [
   // checked: re-adding the route without a gate fails, and adding a gate without the route fails.
   get("today"),
   get("day-activities"),
+  // Who from his line a rep can name on a whole-day Conference (owner, 2026-11-28): the day's own writer gate.
+  get("day-activities/companions", "create"),
   post("day-activities", "create"),
   // The interviews on an Interviews day (owner, 2026-10-29): the read, an add (multipart, with the CV)
   // and a remove are the day's own; opening an added CV hands back a candidate's file, so it audits.
