@@ -184,7 +184,7 @@ export function ReceiptBooksDesk({ register }: { register: DirectOrderReceiptReg
       <Panel title={`An original still to enter — ${overdue.length} late, ${waiting.length} not yet due`}>
         {register.missing.length === 0 ? (
           <p className="text-phx-sm text-slate-600">
-            Every order whose goods left the warehouse has both originals on Phoenix. Orders approved before the manager received a book never owe one.
+            Every order whose goods left the warehouse has both originals on Phoenix. Only {register.receiptLinesLabel} line orders approved from Sunday 29 November 2026 owe one, and none approved before the manager received a book.
           </p>
         ) : (
           <ul className="divide-y divide-slate-200">
@@ -302,7 +302,12 @@ export function ReceiptBooksDesk({ register }: { register: DirectOrderReceiptReg
                   ) : null}
                 </div>
                 <div className="flex flex-wrap items-start gap-2">
-                  {book.status === "in_store" && book.printedHolderHrId ? (
+                  {book.status === "in_store" && book.waitsForItsLine ? (
+                    <p className="break-words text-phx-sm text-slate-600">
+                      Kept in the store: this manager&apos;s line has not started the receipt books yet, so its direct orders keep the current rule.
+                    </p>
+                  ) : null}
+                  {book.status === "in_store" && book.printedHolderHrId && !book.waitsForItsLine ? (
                     <button className={phxButtonGhostClassName} disabled={busy !== null} onClick={() => void act(key, { action: "issue", bookNo: book.bookNo, holderHrId: book.printedHolderHrId })} type="button">
                       Hand to {book.printedHolderName}
                     </button>

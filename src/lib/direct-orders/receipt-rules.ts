@@ -160,6 +160,8 @@ export type OrderForReceipt = {
   status: string;
   decidedAt: string | null;
   reversalOfRequestId: string | null;
+  /** The order's own line ("Pedia", "Anti Infective"): only a line in RECEIPT_BOOK_LINES owes a receipt. */
+  line: string | null;
 };
 
 export type ReceiptDecision = { ok: true } | { ok: false; reason: ReceiptRefusalReason; message: string };
@@ -389,7 +391,32 @@ export function receiptRolloutStart(books: readonly ReceiptBookRow[]): number | 
     const at = Date.parse(book.issuedAt);
     if (Number.isFinite(at) && (first === null || at < first)) first = at;
   }
-  return first;
+  return first === null ? null : Math.max(first, RECEIPT_RULE_START_MS);
+}
+
+/**
+ * THIS WAVE IS THE PEDIA LINE ONLY, FROM SUNDAY 29 NOVEMBER 2026 (owner, 28 Nov 2026: the new rule is for the
+ * Pedia line only in this wave; Anti Infective will work the same, but not now — keep its documents and
+ * everything, and no change to Anti Infective's direct-order policy). An order of any other line never owes a
+ * receipt: it is never flagged, never blocks its manager, never reminds anyone, and Finance hands no book to a
+ * manager outside these lines. Anti Infective's printed books stay in the store, untouched, until he says it
+ * starts; adding it is one word in this list.
+ */
+export const RECEIPT_BOOK_LINES: readonly string[] = ["Pedia"];
+
+/** Sunday 29 November 2026, 00:00 Cairo (UTC+2): nothing approved before it owes a receipt. */
+export const RECEIPT_RULE_START_ISO = "2026-11-28T22:00:00.000Z";
+const RECEIPT_RULE_START_MS = Date.parse(RECEIPT_RULE_START_ISO);
+
+/** Does this line work with the receipt books in this wave? */
+export function lineUsesReceiptBooks(line: string | null | undefined): boolean {
+  const key = String(line ?? "").trim().toLowerCase();
+  return key !== "" && RECEIPT_BOOK_LINES.some((name) => name.toLowerCase() === key);
+}
+
+/** "Pedia" — the lines in this wave, as Finance reads them. */
+export function receiptBookLinesLabel(): string {
+  return RECEIPT_BOOK_LINES.join(" and ");
 }
 
 /**
@@ -456,6 +483,12 @@ export function classifyOrderReceipt(input: {
   if (progress.custodyEntered && progress.deliveryEntered) return "has_receipt";
   if (input.order.status !== "approved" || input.order.reversalOfRequestId) return "not_required";
   if (input.withoutReceiptApproved) return "without_receipt";
+  if (!progress.custodyEntered) {
+    // This wave: the Pedia line, from Sunday 29 Nov 2026. Anti Infective's orders keep today's rule.
+    if (!lineUsesReceiptBooks(input.order.line)) return "not_required";
+    const decidedAt = input.order.decidedAt ? Date.parse(input.order.decidedAt) : Number.NaN;
+    if (Number.isFinite(decidedAt) && decidedAt < RECEIPT_RULE_START_MS) return "not_required";
+  }
   // Original 1 entered proves a book stood behind the order, whenever it was handed over.
   if (!progress.custodyEntered && !bookHeldAtApproval(input.order, input.books)) {
     const rollout = receiptRolloutStart(input.books);

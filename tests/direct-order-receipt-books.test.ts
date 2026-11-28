@@ -55,6 +55,9 @@ import {
   receiptLateness,
   receiptReminderFor,
   receiptRolloutStart,
+  lineUsesReceiptBooks,
+  RECEIPT_BOOK_LINES,
+  RECEIPT_RULE_START_ISO,
   RECEIPT_CLOSED_BY_RELEASE_NOTE,
   RECEIPT_O2_CLOSED_WITH_O1_NOTE,
   RECEIPT_QR_LOCK_START,
@@ -127,6 +130,7 @@ function order(overrides: Partial<OrderForReceipt> = {}): OrderForReceipt {
     status: "approved",
     decidedAt: "2026-12-10T09:00:00.000Z",
     reversalOfRequestId: null,
+    line: "Pedia",
     ...overrides,
   };
 }
@@ -506,6 +510,51 @@ function rejectionShownPureTests() {
  * THE MANAGER'S REMINDERS AND FINANCE'S COUNT (owner, 28 Nov 2026: "الاتنين" — Finance sees a count on the Direct
  * Orders row, the manager is told inside Phoenix the day before an original is due and once it is late; never email).
  */
+function pediaWaveTests() {
+  const progress = (overrides: Partial<ReceiptProgress> = {}): ReceiptProgress => ({ custodyEntered: false, deliveryEntered: false, exitDate: "2026-12-10", ...overrides });
+  assert.deepEqual([...RECEIPT_BOOK_LINES], ["Pedia"], "this wave: the Pedia line only");
+  assert.equal(RECEIPT_RULE_START_ISO, "2026-11-28T22:00:00.000Z", "Sunday 29 November 2026, 00:00 Cairo");
+  assert.equal(lineUsesReceiptBooks("Pedia"), true);
+  assert.equal(lineUsesReceiptBooks(" pedia "), true, "spacing and case do not matter");
+  assert.equal(lineUsesReceiptBooks("Anti Infective"), false, "Anti Infective keeps the current rule");
+  assert.equal(lineUsesReceiptBooks(null), false, "an order with no line owes nothing");
+
+  const books = [book()];
+  const none = progress({ exitDate: null });
+  assert.equal(
+    classifyOrderReceipt({ order: order({ line: "Anti Infective" }), books, progress: none, now: NOW }),
+    "not_required",
+    "an Anti Infective order never owes a receipt, even from a manager holding a book",
+  );
+  assert.equal(
+    classifyOrderReceipt({ order: order({ line: "Anti Infective" }), books, progress: progress(), now: NOW }),
+    "not_required",
+    "nor is it ever late",
+  );
+  assert.equal(
+    classifyOrderReceipt({ order: order({ requesterHrId: "NS-0001", line: "Anti Infective", decidedAt: "2026-12-12T09:00:00.000Z" }), books, progress: none, now: NOW }),
+    "not_required",
+    "nor flagged as raised without a book",
+  );
+  const early = [book({ issuedAt: "2026-11-27T08:00:00.000Z" })];
+  assert.equal(receiptRolloutStart(early), Date.parse(RECEIPT_RULE_START_ISO), "a book handed out early starts the check on Sunday, not before");
+  assert.equal(
+    classifyOrderReceipt({ order: order({ decidedAt: "2026-11-28T21:59:00.000Z" }), books: early, progress: none, now: NOW }),
+    "not_required",
+    "approved on Saturday 23:59 Cairo: before the start",
+  );
+  assert.equal(
+    classifyOrderReceipt({ order: order({ decidedAt: "2026-11-28T22:30:00.000Z" }), books: early, progress: none, now: NOW }),
+    "awaiting_exit",
+    "approved on Sunday 00:30 Cairo: owes a receipt",
+  );
+  assert.equal(
+    classifyOrderReceipt({ order: order({ line: "Anti Infective" }), books, progress: progress({ custodyEntered: true, deliveryEntered: true }), now: NOW }),
+    "has_receipt",
+    "a receipt already entered is still shown as entered",
+  );
+}
+
 function reminderPureTests() {
   // Left Thursday 10 Dec: Original 1 due Sunday 13, Original 2 due Thursday 17 (the Friday skipped).
   const nothing: ReceiptProgress = { custodyEntered: false, deliveryEntered: false, exitDate: "2026-12-10" };
@@ -610,6 +659,7 @@ const ORDER_A = "11111111-1111-4111-8111-111111111111";
 const ORDER_B = "22222222-2222-4222-8222-222222222222";
 const ORDER_C = "44444444-4444-4444-8444-444444444444";
 const ORDER_D = "55555555-5555-4555-8555-555555555555";
+const ORDER_ANTI = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 const ORDER_USED = "33333333-3333-4333-8333-333333333333";
 const PHOTO = `data:image/jpeg;base64,${Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4, 5, 6, 7, 8]).toString("base64")}`;
 
@@ -631,11 +681,13 @@ function tables(): Record<string, Row[]> {
       { serial: 9, book_no: 1, check_code: "HJ4MN5", state: "used", request_id: ORDER_USED, voided_reason: null, photo_storage_path: "receipts/x/000009.jpg", used_by_hr_id: "AI-0001", used_at: "2026-12-09T10:00:00.000Z" },
     ],
     direct_order_requests: [
-      { id: ORDER_A, requester_hr_id: "AI-0001", status: "approved", decided_at: "2026-12-10T09:00:00.000Z", reversal_of_request_id: null, pharmacy_id: "ph-1", product_name: "Sato 500", sales_value: 1200 },
-      { id: ORDER_B, requester_hr_id: "AI-0001", status: "approved", decided_at: "2026-12-11T09:00:00.000Z", reversal_of_request_id: null, pharmacy_id: "ph-1", product_name: "Sato 500", sales_value: 800 },
+      { id: ORDER_A, requester_hr_id: "AI-0001", status: "approved", decided_at: "2026-12-10T09:00:00.000Z", reversal_of_request_id: null, line: "Pedia", pharmacy_id: "ph-1", product_name: "Sato 500", sales_value: 1200 },
+      { id: ORDER_B, requester_hr_id: "AI-0001", status: "approved", decided_at: "2026-12-11T09:00:00.000Z", reversal_of_request_id: null, line: "Pedia", pharmacy_id: "ph-1", product_name: "Sato 500", sales_value: 800 },
       // Raised by the National Sales Manager, who holds no book: after the rollout, and before it.
-      { id: ORDER_C, requester_hr_id: "NS-0001", status: "approved", decided_at: "2026-12-12T09:00:00.000Z", reversal_of_request_id: null, pharmacy_id: "ph-2", product_name: "Sato 250", sales_value: 500 },
-      { id: ORDER_D, requester_hr_id: "NS-0001", status: "approved", decided_at: "2026-11-20T09:00:00.000Z", reversal_of_request_id: null, pharmacy_id: "ph-2", product_name: "Sato 250", sales_value: 400 },
+      { id: ORDER_C, requester_hr_id: "NS-0001", status: "approved", decided_at: "2026-12-12T09:00:00.000Z", reversal_of_request_id: null, line: "Pedia", pharmacy_id: "ph-2", product_name: "Sato 250", sales_value: 500 },
+      { id: ORDER_D, requester_hr_id: "NS-0001", status: "approved", decided_at: "2026-11-20T09:00:00.000Z", reversal_of_request_id: null, line: "Pedia", pharmacy_id: "ph-2", product_name: "Sato 250", sales_value: 400 },
+      // An Anti Infective order by the same manager, after the rollout: this wave never asks it for a receipt.
+      { id: ORDER_ANTI, requester_hr_id: "AI-0001", status: "approved", decided_at: "2026-12-13T09:00:00.000Z", reversal_of_request_id: null, line: "Anti Infective", pharmacy_id: "ph-2", product_name: "Sato 250", sales_value: 300 },
     ],
     direct_order_pharmacies: [
       { id: "ph-1", pharmacy_name: "El Shifa Pharmacy" },
@@ -648,6 +700,10 @@ function tables(): Record<string, Row[]> {
     direct_order_events: [],
     audit_logs: [],
     employees: [],
+    lines: [
+      { id: 1, name: "Anti Infective" },
+      { id: 2, name: "Pedia" },
+    ],
   };
 }
 
@@ -845,11 +901,38 @@ async function behaviourTests() {
     const standIn: StandIn = { tables: tables() };
     await withPostgrestStandIn(standIn, async () => {
       await rejectsWith(issueDirectOrderReceiptBook(ADMIN, { bookNo: 2, holderHrId: "PD-0012" }), /not an employee still at work/, "nobody by that id");
-      standIn.tables.employees.push({ hr_id: "PD-0012", full_name: "Mohamed Eleiwa", employment_status: "resigned" });
+      standIn.tables.employees.push({ hr_id: "PD-0012", full_name: "Mohamed Eleiwa", employment_status: "resigned", line_id: 2 });
       await rejectsWith(issueDirectOrderReceiptBook(ADMIN, { bookNo: 2, holderHrId: "PD-0012" }), /not an employee still at work/, "a leaver never receives a book");
       standIn.tables.employees[0].employment_status = "active";
       await issueDirectOrderReceiptBook(ADMIN, { bookNo: 2, holderHrId: "PD-0012" });
       assert.equal(standIn.tables.direct_order_receipt_books.find((b) => b.book_no === 2)?.status, "issued");
+    });
+  }
+
+  // 7b. This wave is the Pedia line only (owner, 28 Nov 2026): an Anti Infective manager's book stays in the store.
+  {
+    const standIn: StandIn = { tables: tables() };
+    standIn.tables.direct_order_receipt_books.push({ book_no: 3, first_serial: 101, last_serial: 150, printed_holder_hr_id: "AI-0030", holder_hr_id: null, status: "in_store", issued_at: null, closed_at: null });
+    standIn.tables.employees.push(
+      { hr_id: "AI-0030", full_name: "Anti Infective Manager", job_title: "District Sales Manager", employment_status: "active", line_id: 1 },
+      { hr_id: "PD-0012", full_name: "Mohamed Eleiwa", job_title: "District Sales Manager", employment_status: "active", line_id: 2 },
+    );
+    await withPostgrestStandIn(standIn, async () => {
+      await rejectsWith(
+        issueDirectOrderReceiptBook(ADMIN, { bookNo: 3, holderHrId: "AI-0030" }),
+        /used by the Pedia line only for now, so book 3 stays in the store\. AI-0030 is not in the Pedia line/,
+        "no book is handed to an Anti Infective manager in this wave",
+      );
+      assert.equal(standIn.tables.direct_order_receipt_books.find((b) => b.book_no === 3)?.status, "in_store", "the refused book is untouched");
+      const register = await loadDirectOrderReceiptRegister(ADMIN);
+      assert.equal(register.books.find((b) => b.bookNo === 3)?.waitsForItsLine, true, "the desk keeps the Anti Infective book in the store");
+      assert.equal(register.books.find((b) => b.bookNo === 2)?.waitsForItsLine, false, "a Pedia book may go out");
+      assert.deepEqual(register.holderOptions.map((o) => o.hrId), ["PD-0012"], "a spare goes only to a Pedia manager");
+      assert.equal(register.receiptLinesLabel, "Pedia");
+      assert.ok(
+        ![...register.missing, ...register.noBook, ...register.awaitingExit].some((o) => o.requestId === ORDER_ANTI),
+        "an Anti Infective order is on no list of the desk",
+      );
     });
   }
 
@@ -1434,6 +1517,7 @@ async function photoQrBehaviourTests() {
 
 export async function runDirectOrderReceiptBooksTests() {
   pureTests();
+  pediaWaveTests();
   reminderPureTests();
   photoQrPureTests();
   rejectionShownPureTests();

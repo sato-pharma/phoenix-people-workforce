@@ -39,6 +39,8 @@ import {
   receiptLateness,
   receiptReminderFor,
   receiptRolloutStart,
+  RECEIPT_BOOK_LINES,
+  receiptBookLinesLabel,
   rejectionToShowManager,
   type HandEntryStatus,
   type NoReceiptRow,
@@ -62,6 +64,7 @@ import { isUuid } from "@/lib/http/uuid";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import type { CreateSystemNotificationInput } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
+import { resolveLineId } from "@/lib/direct-orders/campaign-link";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -279,18 +282,19 @@ async function loadOrder(requestId: string): Promise<OrderForReceipt | null> {
   if (!isUuid(requestId)) return null;
   const { data, error } = await getSupabaseAdmin()
     .from("direct_order_requests")
-    .select("id,requester_hr_id,status,decided_at,reversal_of_request_id")
+    .select("id,requester_hr_id,status,decided_at,reversal_of_request_id,line")
     .eq("id", requestId)
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  const row = data as { id: string; requester_hr_id: string; status: string; decided_at: string | null; reversal_of_request_id: string | null };
+  const row = data as { id: string; requester_hr_id: string; status: string; decided_at: string | null; reversal_of_request_id: string | null; line: string | null };
   return {
     id: row.id,
     requesterHrId: row.requester_hr_id,
     status: row.status,
     decidedAt: row.decided_at,
     reversalOfRequestId: row.reversal_of_request_id,
+    line: row.line ?? null,
   };
 }
 
@@ -1264,6 +1268,11 @@ export type ReceiptRegisterBook = {
   holderName: string | null;
   printedHolderName: string | null;
   printedHolderHrId: string | null;
+  /**
+   * The printed manager's line is NOT in this wave (Anti Infective's books 1 to 7): the book stays in the store
+   * and the desk offers no hand-out (owner, 28 Nov 2026: Pedia only for now).
+   */
+  waitsForItsLine: boolean;
   issuedAt: string | null;
   closedAt: string | null;
   used: number;
@@ -1336,6 +1345,8 @@ export type DirectOrderReceiptRegister = {
   deliveryDueWorkingDays: number;
   /** Everyone a spare book may be handed to: District Managers on a line with direct orders, still employed. */
   holderOptions: { hrId: string; name: string }[];
+  /** "Pedia": the lines whose orders owe a receipt in this wave. */
+  receiptLinesLabel: string;
   /** Originals typed by hand (their QR was not read), waiting for review — the oldest first. */
   handEntries: ReceiptHandEntryToReview[];
 };
@@ -1378,7 +1389,7 @@ export async function loadDirectOrderReceiptRegister(access: AccessContext): Pro
     loadApprovedOrdersSinceRollout(books),
     supabase
       .from("employees")
-      .select("hr_id,full_name,job_title,employment_status")
+      .select("hr_id,full_name,job_title,employment_status,line_id")
       .eq("job_title", "District Sales Manager")
       .in("employment_status", ["active", "on_leave"]),
     supabase.from(NO_RECEIPT).select(NO_RECEIPT_COLUMNS).in("status", ["pending", "approved"]),
@@ -1471,7 +1482,21 @@ export async function loadDirectOrderReceiptRegister(access: AccessContext): Pro
   ]);
   const handEntryPhotos = await Promise.all(pendingHandEntries.map((e) => signedPhoto(e.photo_storage_path)));
 
-  const holderOptions = (((holdersResult.data ?? []) as { hr_id: string; full_name: string | null }[]))
+  // The line of every printed name and every manager a spare may go to: this wave is the Pedia line only.
+  const printedIds = [...new Set(books.map((book) => book.printedHolderHrId).filter((id): id is string => Boolean(id)))];
+  const [printedResult, waveLineIds] = await Promise.all([
+    printedIds.length > 0
+      ? supabase.from("employees").select("hr_id,line_id").in("hr_id", printedIds.flatMap((id) => hrIdLookupKeys(id)))
+      : Promise.resolve({ data: [], error: null }),
+    receiptBookLineIds(),
+  ]);
+  if (printedResult.error) throw printedResult.error;
+  const inWave = (lineId: number | null | undefined) => lineId !== null && lineId !== undefined && waveLineIds.has(Number(lineId));
+  const printedLineId = new Map(
+    ((printedResult.data ?? []) as { hr_id: string; line_id: number | null }[]).map((row) => [canonicalHrIdKey(row.hr_id), row.line_id]),
+  );
+  const holderOptions = (((holdersResult.data ?? []) as { hr_id: string; full_name: string | null; line_id?: number | null }[]))
+    .filter((row) => inWave(row.line_id))
     .map((row) => ({ hrId: hrIdForStorage(row.hr_id) ?? row.hr_id, name: names.get(row.hr_id) ?? String(row.full_name ?? row.hr_id) }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -1479,6 +1504,7 @@ export async function loadDirectOrderReceiptRegister(access: AccessContext): Pro
     custodyDueDays: CUSTODY_DUE_DAYS,
     deliveryDueWorkingDays: DELIVERY_DUE_WORKING_DAYS,
     holderOptions,
+    receiptLinesLabel: receiptBookLinesLabel(),
     handEntries: pendingHandEntries.map((entry, index) => ({
       entryId: entry.id,
       requestId: entry.request_id,
@@ -1503,6 +1529,11 @@ export async function loadDirectOrderReceiptRegister(access: AccessContext): Pro
         holderName: book.holderHrId ? names.get(book.holderHrId) ?? book.holderHrId : null,
         printedHolderHrId: book.printedHolderHrId,
         printedHolderName: book.printedHolderHrId ? names.get(book.printedHolderHrId) ?? book.printedHolderHrId : null,
+        waitsForItsLine: Boolean(
+          book.printedHolderHrId &&
+            printedLineId.has(canonicalHrIdKey(book.printedHolderHrId)) &&
+            !inWave(printedLineId.get(canonicalHrIdKey(book.printedHolderHrId))),
+        ),
         issuedAt: book.issuedAt,
         closedAt: book.closedAt,
         used: count.used,
@@ -1605,8 +1636,9 @@ async function loadApprovedOrdersSinceRollout(books: readonly ReceiptBookRow[]):
   for (let from = 0; ; from += pageSize) {
     const { data, error } = await getSupabaseAdmin()
       .from("direct_order_requests")
-      .select("id,requester_hr_id,status,decided_at,reversal_of_request_id,pharmacy_id,product_name,sales_value")
+      .select("id,requester_hr_id,status,decided_at,reversal_of_request_id,line,pharmacy_id,product_name,sales_value")
       .eq("status", "approved")
+      .in("line", [...RECEIPT_BOOK_LINES])
       .is("reversal_of_request_id", null)
       .gte("decided_at", since)
       .order("decided_at")
@@ -1615,11 +1647,11 @@ async function loadApprovedOrdersSinceRollout(books: readonly ReceiptBookRow[]):
     if (error) throw error;
     const page = (data ?? []) as {
       id: string; requester_hr_id: string; status: string; decided_at: string | null; reversal_of_request_id: string | null;
-      pharmacy_id: string; product_name: string | null; sales_value: number | null;
+      line: string | null; pharmacy_id: string; product_name: string | null; sales_value: number | null;
     }[];
     for (const row of page) {
       rows.push({
-        order: { id: row.id, requesterHrId: row.requester_hr_id, status: row.status, decidedAt: row.decided_at, reversalOfRequestId: row.reversal_of_request_id },
+        order: { id: row.id, requesterHrId: row.requester_hr_id, status: row.status, decidedAt: row.decided_at, reversalOfRequestId: row.reversal_of_request_id, line: row.line ?? null },
         pharmacyId: row.pharmacy_id,
         productName: String(row.product_name ?? ""),
         salesValue: Number(row.sales_value ?? 0),
@@ -1877,6 +1909,12 @@ function parseBookNo(raw: unknown): number {
 }
 
 /** Finance hands a book to its manager. The issue date is the cutover: orders approved before it owe no receipt. */
+/** The ids of the lines in this wave, read live (never from a cache: it decides who may receive a book). */
+async function receiptBookLineIds(): Promise<Set<number>> {
+  const ids = await Promise.all(RECEIPT_BOOK_LINES.map((name) => resolveLineId(name)));
+  return new Set(ids.filter((id): id is number => id !== null));
+}
+
 export async function issueDirectOrderReceiptBook(access: AccessContext, input: { bookNo: unknown; holderHrId: unknown }): Promise<{ message: string }> {
   if (!canManageDirectOrderReceiptBooks(access)) throw forbiddenError("Only Finance hands out receipt books.");
   const bookNo = parseBookNo(input.bookNo);
@@ -1887,13 +1925,20 @@ export async function issueDirectOrderReceiptBook(access: AccessContext, input: 
   // The hand-out names a real person still at work — never a typed id that matches nobody.
   const { data: employeeRows, error: employeeError } = await getSupabaseAdmin()
     .from("employees")
-    .select("hr_id,employment_status")
+    .select("hr_id,employment_status,line_id")
     .in("hr_id", hrIdLookupKeys(holder));
   if (employeeError) throw employeeError;
-  const atWork = ((employeeRows ?? []) as { hr_id: string; employment_status: string | null }[]).some(
+  const holderRow = ((employeeRows ?? []) as { hr_id: string; employment_status: string | null; line_id: number | null }[]).find(
     (row) => canonicalHrIdKey(row.hr_id) === canonicalHrIdKey(holder) && (row.employment_status === "active" || row.employment_status === "on_leave"),
   );
-  if (!atWork) throw validationError(`${holder} is not an employee still at work, so book ${bookNo} cannot be handed to them.`);
+  if (!holderRow) throw validationError(`${holder} is not an employee still at work, so book ${bookNo} cannot be handed to them.`);
+  // This wave is the Pedia line only (owner, 28 Nov 2026): Anti Infective's books stay in the store.
+  const waveLineIds = await receiptBookLineIds();
+  if (holderRow.line_id === null || holderRow.line_id === undefined || !waveLineIds.has(Number(holderRow.line_id))) {
+    throw validationError(
+      `Receipt books are used by the ${receiptBookLinesLabel()} line only for now, so book ${bookNo} stays in the store. ${holder} is not in the ${receiptBookLinesLabel()} line, and their direct orders keep the current rule.`,
+    );
+  }
   const now = new Date().toISOString();
   const { data, error } = await getSupabaseAdmin()
     .from(BOOKS)
@@ -1913,7 +1958,7 @@ export async function issueDirectOrderReceiptBook(access: AccessContext, input: 
     newValues: { status: "issued", holderHrId: hrIdForStorage(holder), issuedAt: now },
     summary: `Receipt book ${bookNo} handed to ${holderName}.`,
   });
-  return { message: `Book ${bookNo} is recorded as handed to ${holderName} today. Every order approved from now on needs a receipt from it.` };
+  return { message: `Book ${bookNo} is recorded as handed to ${holderName} today. Every ${receiptBookLinesLabel()} order approved from now on needs a receipt from it.` };
 }
 
 /**
