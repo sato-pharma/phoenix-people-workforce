@@ -555,3 +555,48 @@ export function checkNoReceiptDecision(input: {
   if (input.decision === "refuse" && input.note.trim().length < 3) return { ok: false, message: "Write why the request is refused." };
   return { ok: true, decision: input.decision === "approve" ? "approved" : "refused" };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE QR ON EVERY PAGE (owner, 28 Nov 2026: "كيو ار كود يقرا فينيكس ده اساسي"; "هيطلب منه لوجن …
+// اللي هيحط لوجن هيدخله على تفاصيل الاوردر، اللي مش هيحط لوجن مش هيدخله").
+//
+// Each sheet's QR is a Phoenix link, `/r/<serial>-<code>`. Scanning it asks for a sign-in; once signed
+// in, a used receipt opens its order (whose own page decides who may see it) and any other receipt says
+// what it is. The code in the link is the one printed beside the serial on the same sheet, so the link
+// gives away nothing the paper does not already show. As in checkReceiptForOrder, the code is checked
+// BEFORE the receipt's state is said, so a made-up link learns nothing about a real serial.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The path the QR on a receipt sheet opens. */
+export function receiptScanPath(serial: number, code: string): string {
+  return `/r/${formatReceiptSerial(serial)}-${code}`;
+}
+
+/** `000401-TMDD9C` as it arrives in the link. Null when it is not a serial and a code of the printer's alphabet. */
+export function parseReceiptScanToken(raw: unknown): { serial: number; code: string } | null {
+  let text = String(raw ?? "").trim();
+  try {
+    text = decodeURIComponent(text);
+  } catch {
+    return null;
+  }
+  const match = /^(\d{6})-([0-9A-Za-z]{6})$/.exec(text);
+  if (!match) return null;
+  const serial = parseReceiptSerial(match[1]);
+  const code = normalizeReceiptCode(match[2]);
+  return serial !== null && code !== null ? { serial, code } : null;
+}
+
+export type ReceiptScanOutcome =
+  | { kind: "not_genuine" }
+  | { kind: "used"; serial: number; bookNo: number; requestId: string | null }
+  | { kind: "unused"; serial: number; bookNo: number }
+  | { kind: "voided"; serial: number; bookNo: number; reason: string | null };
+
+/** What a scanned link proves. The code first, then the state. */
+export function decideReceiptScan(token: { serial: number; code: string } | null, receipt: ReceiptRow | null): ReceiptScanOutcome {
+  if (!token || !receipt || receipt.serial !== token.serial || receipt.checkCode !== token.code) return { kind: "not_genuine" };
+  if (receipt.state === "used") return { kind: "used", serial: receipt.serial, bookNo: receipt.bookNo, requestId: receipt.requestId };
+  if (receipt.state === "voided") return { kind: "voided", serial: receipt.serial, bookNo: receipt.bookNo, reason: receipt.voidedReason };
+  return { kind: "unused", serial: receipt.serial, bookNo: receipt.bookNo };
+}

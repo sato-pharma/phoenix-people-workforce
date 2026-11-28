@@ -119,13 +119,8 @@ function sealSvg(code, serial, partEn) {
     <text y="6" text-anchor="middle" font-family="Consolas, monospace" font-size="5.2" fill="${C.deep}" letter-spacing="0.4">${code}</text>
   </svg>`;
 }
-function groundSvg(code, serial, partEn) {
-  // the page watermark: the same rosette, large and pale, behind the item table
-  const p = rosettePaths(code, serial, 40, 1600);
-  return `<svg viewBox="-50 -50 100 100" class="wm">
-    ${p.map((d, i) => `<path d="${d}" fill="none" stroke="${C.ghost}" stroke-width="${[0.16, 0.13, 0.11][i]}"/>`).join("")}
-  </svg>`;
-}
+// NO visible watermark (owner, 28 Nov 2026: "من غير علامة مائية"): the large pale rosette that sat behind the items
+// table is gone. The per-receipt seal, the microtext and the QR stay ("سيب الكيو ار … سيب الحاجات المتامنه").
 // NO hidden "photocopied — not valid" word (owner's office print-and-copy tests, 27 Nov 2026): a void pantograph
 // needs dots an office laser cannot print and a copier cannot see; on his machines the word showed on the print,
 // or on neither. A stuck-on hologram can be peeled and reused, and a raised seal re-made by any seal maker, so
@@ -138,8 +133,10 @@ function groundSvg(code, serial, partEn) {
 function microLine(code, serial, partEn) {
   return `<div class="micro" dir="ltr">${esc(`SATOPHARMA${pad(serial)}${code}${partEn.replace(/\s/g, "")}`.repeat(24))}</div>`;
 }
+// The QR is a Phoenix link (owner, 28 Nov 2026: "كيو ار كود يقرا فينيكس ده اساسي"): a scan asks for a
+// sign-in and then opens the order (app/r/[receipt]/page.tsx; the path is receiptScanPath in receipt-rules.ts).
 function qr(serial, code) {
-  return renderToStaticMarkup(React.createElement(QRCodeSVG, { value: `SATO-DO|${pad(serial)}|${code}`, level: "M", marginSize: 0, fgColor: "#000000", bgColor: "#FFFFFF", size: 256 }))
+  return renderToStaticMarkup(React.createElement(QRCodeSVG, { value: `https://phoenix-hr.satopharma.com/r/${pad(serial)}-${code}`, level: "M", marginSize: 0, fgColor: "#000000", bgColor: "#FFFFFF", size: 256 }))
     .replace("<svg ", '<svg class="qr" ');
 }
 
@@ -150,8 +147,7 @@ html, body { margin: 0; padding: 0; background: #fff; -webkit-print-color-adjust
 body { font-family: ${FONT}; color: ${C.body}; font-size: 9.4pt; line-height: 1.5; }
 .sheet { position: relative; background: #fff; width: 210mm; height: 297mm; padding: 9mm 11mm 8mm; overflow: hidden; page-break-after: always; break-after: page; }
 .sheet:last-child { page-break-after: auto; break-after: auto; }
-.wm { position: absolute; width: 150mm; height: 150mm; left: 30mm; top: 95mm; z-index: 0; }
-.sheet > *:not(.wm):not(.foot):not(.zoneA):not(.zoneB) { position: relative; z-index: 1; }
+.sheet > *:not(.foot):not(.zoneA):not(.zoneB) { position: relative; z-index: 1; }
 .sheet > .foot { z-index: 1; }
 .mast { display: flex; direction: ltr; align-items: center; gap: 5mm; }
 .mast__logo { width: 36mm; height: 14.2mm; flex: none; }
@@ -284,7 +280,6 @@ function receiptPage(book, r, idx, part) {
     <div class="stamp">ختم المنشأة</div>
   </div>`;
   return `<section class="sheet">
-  ${groundSvg(code, s, part.en)}
   <header class="mast">
     <div class="mast__logo">${LOGO}</div>
     <div class="mast__title"><p class="co">شركة ساتو فارما <span dir="ltr">(SATO PHARMA)</span></p><h1>إذن تسليم وتسلم بضاعة</h1></div>

@@ -106,10 +106,15 @@ the browser on another machine.
   3. **Every signature line says «بالقلم الأزرق»**.
   4. **Guilloche seal per receipt.** Its rosette is seeded from the serial and code, so no two of the 800 match.
      The serial and code run round its ring.
-  5. **Visible watermark**: the same rosette, large and pale, behind the items table.
+  5. 🔴 **Visible watermark — DROPPED** (owner, 28 Nov 2026: «من غير علامة مائية، من غير اللون الاصفر … اهم حاجة تبقى
+     الدفاتر عادية»). The large pale rosette behind the items table is gone; never bring it back.
   6. **Microtext line** at 2.6 pt: `SATOPHARMA` + serial + code + part, repeated. It reads as a hairline. Never
      claim a copy loses it: his copier keeps what the eye can see.
-  7. **QR code** carrying `SATO-DO|<serial>|<code>`. Phoenix does not scan it yet, so never claim it does.
+  7. **QR code = a Phoenix link**, `https://phoenix-hr.satopharma.com/r/<serial>-<code>` (owner, 28 Nov 2026:
+     «كيو ار كود يقرا فينيكس ده اساسي»). A scan asks for a sign-in; signed in, a used receipt opens its order
+     (`/admin/direct-orders/<id>`, which keeps its own scope rule), any other says genuine-unused, cancelled or
+     not genuine. Page `app/r/[receipt]/page.tsx`; rules `receiptScanPath` / `decideReceiptScan` in `receipt-rules.ts`.
+     A photocopy carries the same link — the one-use code in Phoenix is what stops it, never the QR.
 - **Print spec, written by Claude on 27 Nov and NOT yet confirmed by the owner or the printer:**
   - each receipt is a 3-part self-copying (NCR) set: the two originals on anti-copy VOID paper, the customer copy white;
   - the order is Original on top, then Copy 1, then Copy 2;
@@ -295,6 +300,13 @@ After Dr Anwar asked what the original and Copy 2 were for, the owner settled it
   - The yellow books are in `_superseded v4 - yellow ground\`, the yellow guides and video in
     `Guides\_superseded - yellow ground\`. Never print them.
   - The managers' guide still names no security mark.
+
+- ✅ **Rebuilt on 28 Nov 2026, ~03:30 Cairo, with NO visible watermark and the QR as a Phoenix link** (owner, ~02:30:
+  «سيب الكيو ار وسيب … الحاجات المتامنه، يعني امن نفسك بس بحاجه غير العلامه المائيه وغير اللون الاصفر»).
+  - Kept: the per-receipt seal, the microtext, the red serial, «بالقلم الأزرق», the secret code and the QR.
+  - The owner asked which press options need a special request: UV ink, impressed numbering and thermochromic ink
+    all do, so none is in the files; he asked for every protection that needs NO special request.
+  - The watermark books are in `_superseded v5 - watermark\`. Never print them.
 
 - The physical copier test. Two ways to do it:
   - on a sheet of the press's security paper: `اختبار ورق الأمان - ماكينة التصوير.pdf`, page 2, printed on it at

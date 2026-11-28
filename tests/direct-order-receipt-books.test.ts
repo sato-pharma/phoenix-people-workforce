@@ -12,6 +12,7 @@ import {
   loadDirectOrderReceiptPanel,
   loadDirectOrderReceiptPrint,
   loadDirectOrderReceiptRegister,
+  loadDirectOrderReceiptScan,
   recordDirectOrderDelivery,
   recordDirectOrderReceipt,
   recordDirectOrderWarehouseExit,
@@ -29,10 +30,13 @@ import {
   checkReceiptVoid,
   checkWarehouseExit,
   classifyOrderReceipt,
+  decideReceiptScan,
   normalizeReceiptCode,
   parseDateKey,
+  parseReceiptScanToken,
   parseReceiptSerial,
   receiptDueDates,
+  receiptScanPath,
   receiptEntryBookFor,
   receiptLateness,
   receiptRolloutStart,
@@ -132,6 +136,23 @@ function pureTests() {
   assert.equal(normalizeReceiptCode(" ab3k7q "), "AB3K7Q", "lower case and spaces are forgiven");
   assert.equal(normalizeReceiptCode("AB3K7O"), null, "O is not in the printer's alphabet, so it cannot be a real code");
   assert.equal(normalizeReceiptCode("AB3K7"), null);
+
+  // The QR on every sheet is a Phoenix link (owner, 28 Nov 2026), and the code is checked before the state.
+  assert.equal(receiptScanPath(401, "TMDD9C"), "/r/000401-TMDD9C", "the link the generator prints in the QR");
+  assert.deepEqual(parseReceiptScanToken("000401-tmdd9c"), { serial: 401, code: "TMDD9C" });
+  assert.deepEqual(parseReceiptScanToken("000401%2DTMDD9C"), { serial: 401, code: "TMDD9C" }, "an encoded dash still reads");
+  assert.equal(parseReceiptScanToken("401-TMDD9C"), null, "the serial is printed with six digits");
+  assert.equal(parseReceiptScanToken("000401-TMDD9O"), null, "O is not in the printer's alphabet");
+  assert.equal(parseReceiptScanToken("%E0%A4%A"), null, "a broken escape is not a receipt");
+  {
+    const row: ReceiptRow = { serial: 9, bookNo: 1, checkCode: "HJ4MN5", state: "used", requestId: "order-9", voidedReason: null };
+    assert.deepEqual(decideReceiptScan({ serial: 9, code: "HJ4MN5" }, row), { kind: "used", serial: 9, bookNo: 1, requestId: "order-9" });
+    assert.deepEqual(decideReceiptScan({ serial: 9, code: "HJ4MN6" }, row), { kind: "not_genuine" }, "a wrong code says nothing about the real page's state");
+    assert.deepEqual(decideReceiptScan({ serial: 9, code: "HJ4MN5" }, null), { kind: "not_genuine" }, "no such serial");
+    assert.deepEqual(decideReceiptScan(null, row), { kind: "not_genuine" });
+    assert.equal(decideReceiptScan({ serial: 9, code: "HJ4MN5" }, { ...row, state: "unused", requestId: null }).kind, "unused");
+    assert.deepEqual(decideReceiptScan({ serial: 9, code: "HJ4MN5" }, { ...row, state: "voided", requestId: null, voidedReason: "torn" }), { kind: "voided", serial: 9, bookNo: 1, reason: "torn" });
+  }
 
   assert.equal(reasonOf(check()), "ok", "the requester's own unused receipt with its printed code");
   assert.equal(reasonOf(check({ typedCode: "ZZZZZZ" })), "code_mismatch", "an invented page is refused");
@@ -772,6 +793,26 @@ async function behaviourTests() {
       assert.equal(exits.find((e) => e.request_id === ORDER_B)?.exit_date, "2026-12-13");
       const corrected = standIn.tables.direct_order_events.filter((e) => e.event_type === "warehouse_exit_recorded").at(-1);
       assert.equal((corrected?.metadata as { previousDate?: string } | undefined)?.previousDate, "2026-12-12", "the corrected day is kept on the order's history");
+    });
+  }
+
+  // 11b. A scanned QR: signed in only; the holder's name to Finance and the Administrator only.
+  {
+    const standIn: StandIn = { tables: tables() };
+    await withPostgrestStandIn(standIn, async () => {
+      const GUEST = createAccessContext({ hrId: "", loginId: "", role: "Employee", source: "session" });
+      await assert.rejects(loadDirectOrderReceiptScan(GUEST, "000007-AB3K7Q"), "no sign-in, no answer");
+      const unused = await loadDirectOrderReceiptScan(STRANGER, "000007-ab3k7q");
+      assert.equal(unused.outcome.kind, "unused");
+      assert.equal(unused.serialLabel, "000007");
+      assert.equal(unused.holderName, null, "a manager is not told whose book it is");
+      const used = await loadDirectOrderReceiptScan(MOMEN, "000009-HJ4MN5");
+      assert.deepEqual(used.outcome, { kind: "used", serial: 9, bookNo: 1, requestId: ORDER_USED });
+      const forged = await loadDirectOrderReceiptScan(ADMIN, "000009-HJ4MN6");
+      assert.deepEqual(forged, { outcome: { kind: "not_genuine" }, serialLabel: null, holderName: null });
+      standIn.tables.employees.push({ hr_id: "AI-0001", full_name: "Momen Test", employment_status: "active" });
+      const forFinance = await loadDirectOrderReceiptScan(ADMIN, "000007-AB3K7Q");
+      assert.equal(forFinance.holderName, "Momen Test", "the Administrator sees who holds the book");
     });
   }
 

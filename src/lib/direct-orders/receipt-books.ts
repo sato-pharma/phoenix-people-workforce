@@ -1,3 +1,4 @@
+import { isGuestFallbackAccess } from "@/lib/auth/page-access-guard";
 import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { canDecideDirectOrderWithoutReceipt, canManageDirectOrderReceiptBooks } from "@/lib/direct-orders/finance-authority";
@@ -17,11 +18,13 @@ import {
   classifyOrderReceipt,
   CUSTODY_DUE_DAYS,
   daysSinceApproval,
+  decideReceiptScan,
   DELIVERY_DUE_WORKING_DAYS,
   formatReceiptRange,
   formatReceiptSerial,
   normalizeReceiptCode,
   parseDateKey,
+  parseReceiptScanToken,
   parseReceiptSerial,
   receiptDueDates,
   receiptEntryBookFor,
@@ -36,6 +39,7 @@ import {
   type ReceiptLateness,
   type ReceiptProgress,
   type ReceiptRow,
+  type ReceiptScanOutcome,
   type ReceiptStanding,
   type ReceiptState,
 } from "@/lib/direct-orders/receipt-rules";
@@ -49,8 +53,9 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // ─────────────────────────────────────────────────────────────────────────────
 // The delivery-receipt books — reads and writes. Every decision is in receipt-rules.ts.
 //
-// 🔴 A receipt's check code NEVER leaves the server. No read here returns it, and the only place it
-// is compared is checkReceiptForOrder. The codes are not in Git either: the rows were seeded once
+// 🔴 A receipt's check code NEVER leaves the server. No read here returns it, and the only places it
+// is compared are checkReceiptForOrder and decideReceiptScan (the QR link carries the code printed on the
+// same sheet; nothing here sends it back). The codes are not in Git either: the rows were seeded once
 // from the printer's register.json, which is kept off GitHub with the printed books.
 //
 // The database guards the paper as well (migration 20261127121951): a used receipt goes back to
@@ -1514,4 +1519,31 @@ export async function loadDirectOrderReceiptPrint(access: AccessContext, request
     printedAt: new Date().toISOString(),
     printedByName: names.get(access.hrId),
   };
+}
+
+export type DirectOrderReceiptScan = {
+  outcome: ReceiptScanOutcome;
+  /** "000401", or null when the link is not a genuine receipt. */
+  serialLabel: string | null;
+  /** The manager holding the book — told to Finance and the Administrator only. */
+  holderName: string | null;
+};
+
+/**
+ * What a scanned receipt QR proves (owner, 28 Nov 2026: the QR is read by Phoenix, behind a sign-in).
+ * Anyone signed in may scan; a used receipt's order is opened on its own page, which keeps its own
+ * scope rule, so the scan never shows an order its reader could not already open.
+ */
+export async function loadDirectOrderReceiptScan(access: AccessContext, rawToken: unknown): Promise<DirectOrderReceiptScan> {
+  if (isGuestFallbackAccess(access)) throw forbiddenError("Sign in to check a receipt.");
+  const token = parseReceiptScanToken(rawToken);
+  const receipt = token ? await loadReceipt(token.serial) : null;
+  const outcome = decideReceiptScan(token, receipt);
+  if (outcome.kind === "not_genuine") return { outcome, serialLabel: null, holderName: null };
+  let holderName: string | null = null;
+  if (canManageDirectOrderReceiptBooks(access)) {
+    const book = await loadBook(outcome.bookNo);
+    if (book?.holderHrId) holderName = (await namesByHrId([book.holderHrId])).get(book.holderHrId) ?? book.holderHrId;
+  }
+  return { outcome, serialLabel: formatReceiptSerial(outcome.serial), holderName };
 }
