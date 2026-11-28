@@ -167,8 +167,25 @@ The owner's words: "لايف مش ابلود … منوره بالاحمر طو�
 المدير يدخله بايده والماليه تدخله، بس هو بيروح للريفيو الاول"; and who reviews: "المالية، وإنت لو المالية دخلته".
 
 - **The order page opens the live camera** (`src/components/direct-orders/receipt-qr-camera.tsx`), never the gallery.
-  The frame is red until jsQR reads the same receipt on two frames in a row, then green, and the photo saves itself
-  with the number and code taken from the QR. Original 2 must carry Original 1's number; another number stays red.
+  The frame is red until the same receipt is read twice, then green, and the photo saves itself with the number and
+  code taken from the QR. Original 2 must carry Original 1's number; another number stays red.
+- **How the camera makes sure a correct receipt is recognised** (the owner, 28 Nov 2026: "max effort to be sure the
+  camera can recognize the receipt if it is correct"):
+  - it asks for the 2560 x 1440 the signboard camera already uses on the reps' phones and reads every frame WHOLE —
+    a 1080-wide frame read at 960, the first version, needed the page to fill three quarters of the picture;
+  - the phone's own QR reader (`BarcodeDetector`, Chrome on Android) reads first, jsQR after it; a native reader
+    that fails once is dropped and jsQR carries on;
+  - the lock is `stepReceiptQrLock` (`receipt-rules.ts`): two reads of the same receipt, each within 2 s of the one
+    before. A frame that reads nothing in between does NOT undo it — a hand-held phone reads, misses and reads again;
+  - it asks the lens for continuous focus, and after 4 s with nothing read the line under the frame asks for the
+    phone to come closer to the QR;
+  - the photo saved is the very frame that was read, so the server sees what turned the frame green; a photo that
+    fails to save no longer stops the camera.
+  - Measured on 28 Nov 2026 with the real component and a simulated camera showing the sample pages: green from
+    the page filling the picture down to a third of it when sharp; at 15° and 30°, upside down, at 30 % brightness and
+    under strong glare; Original 2 of another receipt stayed red. All 25 photos the camera saved were read and
+    matched again by the server reader. The server's 1,200 / 1,800 / 2,600 px ladder already read every photo that a
+    full-size or sharpened read could; only a badly shaken photo reads nowhere, and it waits for review.
   A manager has no "Choose file"; Finance keeps it for a page it already holds (`mayChooseFile`).
 - **The camera is only a help — the server reads the QR again** (`src/lib/direct-orders/receipt-photo-qr.ts`, sharp
   plus jsqr, at 1,200, 1,800 and 2,600 px wide; it never throws). `classifyReceiptPhotoQr` decides:

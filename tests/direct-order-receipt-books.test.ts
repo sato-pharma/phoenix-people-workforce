@@ -46,6 +46,9 @@ import {
   receiptEntryBookFor,
   receiptLateness,
   receiptRolloutStart,
+  RECEIPT_QR_LOCK_START,
+  RECEIPT_QR_LOCK_WINDOW_MS,
+  stepReceiptQrLock,
   type NoReceiptRow,
   type OrderForReceipt,
   type ReceiptBookRow,
@@ -403,6 +406,25 @@ function photoQrPureTests() {
     "two receipts in one photo: every receipt QR in it must be the typed one",
   );
 
+  // THE LIVE CAMERA'S LOCK: the same receipt read twice, close together, turns the frame green. A frame that reads
+  // nothing in between does not undo it — a hand-held phone at the edge of focus reads, misses and reads again.
+  const A = { serial: 401, code: "TMDD9C" };
+  const B = { serial: 402, code: "MVY378" };
+  const once = stepReceiptQrLock(RECEIPT_QR_LOCK_START, A, 1000, null);
+  assert.equal(once.kind, "reading", "one read never locks");
+  const missed = stepReceiptQrLock(once.lock, null, 1250, null);
+  assert.equal(missed.kind, "nothing");
+  const again = stepReceiptQrLock(missed.lock, A, 1500, null);
+  assert.deepEqual([again.kind, again.kind === "locked" ? again.read : null], ["locked", A], "read, miss, read: it locks");
+  assert.equal(stepReceiptQrLock(once.lock, A, 1000 + RECEIPT_QR_LOCK_WINDOW_MS + 1, null).kind, "reading", "two reads too far apart start again");
+  assert.equal(stepReceiptQrLock(once.lock, B, 1200, null).kind, "reading", "two different receipts never lock");
+  assert.equal(stepReceiptQrLock(once.lock, { serial: 401, code: "MVY378" }, 1200, null).kind, "reading", "the same number with another code never locks");
+  const wrongPage = stepReceiptQrLock(stepReceiptQrLock(RECEIPT_QR_LOCK_START, A, 1000, 401).lock, B, 1200, 401);
+  assert.deepEqual([wrongPage.kind, wrongPage.kind === "wrong_receipt" ? wrongPage.serial : null], ["wrong_receipt", 402], "Original 2 of another receipt says so");
+  const restarted = stepReceiptQrLock(wrongPage.lock, A, 1400, 401);
+  assert.equal(restarted.kind, "reading", "and the count starts again");
+  assert.equal(stepReceiptQrLock(restarted.lock, A, 1600, 401).kind, "locked", "the right page then locks");
+
   const manager = { scope: "self" as const, role: "District Manager" as const, hrId: "AI-0001" };
   const finance = { scope: "self" as const, role: "Finance Manager" as const, hrId: "B-185" };
   const admin = { scope: "system" as const, role: "Super Admin" as const, hrId: "B-10" };
@@ -444,6 +466,23 @@ async function photoQrReaderTests() {
   __setReceiptQrReaderForTests(null);
   const texts = await readReceiptQrTexts(new Uint8Array(page), "image/jpeg");
   assert.deepEqual(classifyReceiptPhotoQr(texts, { serial: 401, code: "TMDD9C" }), { kind: "matched" }, "the real reader finds the QR on the page");
+  // A phone's photo: the sheet a third of a 3,024 x 4,032 picture, tilted, soft and compressed, so the 24 mm QR is
+  // about 150 px. Read at 1,200 px wide it is too small; the reader must go on to the wider reads and find it.
+  const smallQr = await sharp(qr).resize(150).rotate(7, { background: "#ffffff" }).toBuffer();
+  const sheet = await sharp({ create: { width: 1000, height: 1400, channels: 3, background: "#ffffff" } })
+    .composite([{ input: smallQr, left: 780, top: 60 }])
+    .png()
+    .toBuffer();
+  const phonePhoto = await sharp({ create: { width: 3024, height: 4032, channels: 3, background: "#6b6156" } })
+    .composite([{ input: sheet, left: 1000, top: 1300 }])
+    .blur(0.8)
+    .jpeg({ quality: 65 })
+    .toBuffer();
+  assert.deepEqual(
+    classifyReceiptPhotoQr(await readReceiptQrTexts(new Uint8Array(phonePhoto), "image/jpeg"), { serial: 401, code: "TMDD9C" }),
+    { kind: "matched" },
+    "a phone's photo with a small, tilted, soft QR is still read",
+  );
   assert.deepEqual(await readReceiptQrTexts(new Uint8Array(page), "application/pdf"), [], "a PDF is never read: it waits for review");
   assert.deepEqual(await readReceiptQrTexts(new Uint8Array([1, 2, 3]), "image/jpeg"), [], "a broken picture never throws: it waits for review");
 }

@@ -633,4 +633,38 @@ export function classifyReceiptPhotoQr(qrTexts: readonly string[], typed: { seri
   return other ? { kind: "other_receipt", serial: other.serial } : { kind: "matched" };
 }
 
+/**
+ * THE LIVE CAMERA'S LOCK (owner, 28 Nov 2026: the frame "تنور بالاخضر" once the receipt is recognised). The same
+ * receipt read on RECEIPT_QR_READS_TO_LOCK frames, each within RECEIPT_QR_LOCK_WINDOW_MS of the one before, locks —
+ * one stray read never does. A frame that reads nothing does not undo the reads before it: a hand-held phone at the
+ * edge of focus reads, misses and reads again, and that must still lock. Original 2 must carry `expectedSerial`;
+ * another receipt is "wrong_receipt" and starts the count again.
+ */
+export const RECEIPT_QR_READS_TO_LOCK = 2;
+export const RECEIPT_QR_LOCK_WINDOW_MS = 2000;
+
+export type ReceiptQrLock = { key: string; at: number; streak: number };
+export const RECEIPT_QR_LOCK_START: ReceiptQrLock = { key: "", at: 0, streak: 0 };
+
+export type ReceiptQrFrame =
+  | { kind: "nothing"; lock: ReceiptQrLock }
+  | { kind: "wrong_receipt"; serial: number; lock: ReceiptQrLock }
+  | { kind: "reading"; lock: ReceiptQrLock }
+  | { kind: "locked"; read: { serial: number; code: string }; lock: ReceiptQrLock };
+
+/** One camera frame's read, carried into the lock. `read` is what parseReceiptQrText made of the frame's QR, if any. */
+export function stepReceiptQrLock(
+  lock: ReceiptQrLock,
+  read: { serial: number; code: string } | null,
+  now: number,
+  expectedSerial: number | null,
+): ReceiptQrFrame {
+  if (!read) return { kind: "nothing", lock };
+  if (expectedSerial !== null && read.serial !== expectedSerial) return { kind: "wrong_receipt", serial: read.serial, lock: RECEIPT_QR_LOCK_START };
+  const key = `${read.serial}-${read.code}`;
+  const streak = key === lock.key && now - lock.at <= RECEIPT_QR_LOCK_WINDOW_MS ? lock.streak + 1 : 1;
+  const next = { key, at: now, streak };
+  return streak >= RECEIPT_QR_READS_TO_LOCK ? { kind: "locked", read, lock: next } : { kind: "reading", lock: next };
+}
+
 export type HandEntryStatus = "pending" | "approved" | "rejected";
