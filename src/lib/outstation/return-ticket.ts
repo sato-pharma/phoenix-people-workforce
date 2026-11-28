@@ -27,7 +27,7 @@ export type ReturnTicketState =
   /** A return fare is claimed, but no ticket was read (filed before 7 Nov, or the reader was down). */
   | "unread";
 
-type StoredScan = {
+export type StoredScan = {
   fromStation?: unknown;
   matchedTo?: unknown;
   toStation?: unknown;
@@ -75,4 +75,68 @@ export function returnTicketState(input: { returnAmount: number | null | undefin
 /** "EGP 90" — the return fare, as the employee and the approver read it. */
 export function returnFareLabel(amount: number): string {
   return `EGP ${Math.round(amount * 100) / 100}`;
+}
+
+/** "Thu 19 Nov 2026" — a ticket's date as the employee reads it. */
+function legDayLabel(day: unknown): string | null {
+  const iso = String(day ?? "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
+  const date = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC", weekday: "short", year: "numeric" }).format(date);
+}
+
+const stationText = (value: unknown) => {
+  const out = String(value ?? "").trim();
+  return out ? out : null;
+};
+
+/** The one read leg already on a claim whose other leg is owed — what the card names. */
+export type LegOnClaim = { day: string | null; fromStation: string | null; toStation: string | null };
+
+/** The read leg already on the claim (the first one), or null when none was read. */
+export function legOnClaim(tickets: unknown): LegOnClaim | null {
+  const [first] = readScans(tickets);
+  if (!first) return null;
+  return { day: legDayLabel(first.travelDate), fromStation: stationText(first.fromStation), toStation: stationText(first.toStation) };
+}
+
+/**
+ * A ticket picked for the missing second leg that runs the SAME WAY as the one already on the claim is refused
+ * (owner, 2026-11-28, after Weaam Gweed attached the same Cairo → Luxor photo three times over 23–25 Nov and the
+ * same Sohag → Hurghada ticket twice: each was taken, the screen said "Return ticket attached", and the card came
+ * back the next visit because two copies of one leg are not a return). Refused at the pick, with the leg named and
+ * the way it must run instead, so she knows on the spot which ticket is wanted.
+ *
+ * Only a READ ticket is refused: one the reader could not reach is kept for the approver, as everywhere else.
+ * Returns null when nothing is wrong — no return owed, or the picked tickets supply the other leg.
+ */
+export function sameLegAgainRefusal(input: {
+  candidates: ReadonlyArray<StoredScan | null | undefined>;
+  returnAmount: number | null | undefined;
+  tickets: unknown;
+  transportation: unknown;
+}): { guidance: string[]; reason: string } | null {
+  const base = { returnAmount: input.returnAmount, transportation: input.transportation };
+  if (returnTicketState({ ...base, tickets: input.tickets }) !== "missing") return null;
+  const candidates = input.candidates.filter((scan): scan is StoredScan => Boolean(scan));
+  if (candidates.length === 0) return null;
+  if (!candidates.every((scan) => scan.matchedTo === "arrival" || scan.matchedTo === "departure")) return null;
+  const existing = Array.isArray(input.tickets) ? input.tickets : [];
+  const combined = [...existing, ...candidates.map((scan) => ({ scan }))];
+  if (returnTicketState({ ...base, tickets: combined }) !== "missing") return null;
+
+  const leg = candidates[0];
+  const from = stationText(leg.fromStation);
+  const to = stationText(leg.toStation);
+  const day = legDayLabel(leg.travelDate);
+  const described = [from && to ? `${from} to ${to}` : null, day].filter(Boolean).join(", ");
+  return {
+    guidance: [
+      from
+        ? `Attach the ticket of the other way — the one you travelled on to ${from}. A second photo of the same ticket is not accepted.`
+        : "Attach the ticket of the other way. A second photo of the same ticket is not accepted.",
+    ],
+    reason: `Not accepted: this is the same ticket already on this claim${described ? ` (${described})` : ""}. The claim pays a fare each way, so it needs the ticket for the other direction.`,
+  };
 }

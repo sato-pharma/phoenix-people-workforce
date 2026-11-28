@@ -8,9 +8,10 @@ import { parseJsonBody } from "@/lib/http/request-body";
 import { normalizeHrIdForAccess } from "@/lib/hr-id";
 import { parseOutstationTicketAttachmentDataUrl } from "@/lib/outstation/car-evidence-storage";
 import { parseOutstationRequestId } from "@/lib/outstation/request-id";
+import { sameLegAgainRefusal } from "@/lib/outstation/return-ticket";
 import { getOutstationRequestById } from "@/lib/outstation/service";
 import { readTrainTicket, signTicketScan } from "@/lib/outstation/ticket-scan";
-import { judgeTrainTicket, TICKET_SCAN_NEEDS, type TicketDateContext } from "@/lib/outstation/ticket-scan-rules";
+import { judgeTrainTicket, TICKET_SCAN_NEEDS, type TicketDateContext, type TicketVerdict } from "@/lib/outstation/ticket-scan-rules";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
@@ -60,9 +61,10 @@ export async function POST(request: Request) {
     const ticket = parseOutstationTicketAttachmentDataUrl({ dataUrl: String(body.dataUrl ?? ""), fileName: String(body.name ?? "") });
 
     let context: TicketDateContext;
+    let claim: Awaited<ReturnType<typeof getOutstationRequestById>> = null;
     const requestId = body.requestId == null ? null : parseOutstationRequestId(String(body.requestId));
     if (requestId !== null) {
-      const claim = await getOutstationRequestById(requestId);
+      claim = await getOutstationRequestById(requestId);
       if (!claim || normalizeHrIdForAccess(claim.employeeHrId) !== hrId) {
         return NextResponse.json({ error: "forbidden", message: "You can only attach a ticket to your own expense request." }, { status: 403 });
       }
@@ -87,7 +89,18 @@ export async function POST(request: Request) {
     }
 
     const scan = await readTrainTicket(ticket);
-    const verdict = judgeTrainTicket(scan, context);
+    let verdict: TicketVerdict = judgeTrainTicket(scan, context);
+    // The second leg of a claim that pays a fare each way: a copy of the leg already on it is refused here, at
+    // the pick, so the card says which ticket is wanted instead of "attached" (return-ticket.ts).
+    if (claim && verdict.accepted && scan.status === "read") {
+      const refusal = sameLegAgainRefusal({
+        candidates: [{ fromStation: scan.fromStation, matchedTo: verdict.matchedTo, toStation: scan.toStation, travelDate: verdict.travelDate }],
+        returnAmount: claim.returnTicketAmount,
+        tickets: claim.ticketAttachmentMetadata,
+        transportation: claim.transportationType,
+      });
+      if (refusal) verdict = { accepted: false, ...refusal };
+    }
     return NextResponse.json({
       needs: TICKET_SCAN_NEEDS,
       scan,

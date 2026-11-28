@@ -76,7 +76,7 @@ import { readCarOdometer } from "@/lib/outstation/odometer-scan";
 import { measureEvidencePhoto } from "@/lib/outstation/blank-frame-server";
 import { inspectEvidencePhoto } from "@/lib/outstation/evidence-photo-inspection";
 import { odometerOfMetadata } from "@/lib/outstation/odometer-scan-rules";
-import { ticketScanApplies } from "@/lib/outstation/ticket-scan-rules";
+import { ticketRefusalMessage, ticketScanApplies } from "@/lib/outstation/ticket-scan-rules";
 import {
   NoTicketFareUnavailableError,
   noTicketFareRecord,
@@ -138,7 +138,7 @@ import {
   OUTSTATION_TICKET_EVIDENCE_REQUIRED_REASON,
   returnTicketAskIsDue,
 } from "@/lib/outstation/missing-ticket";
-import { returnTicketState } from "@/lib/outstation/return-ticket";
+import { legOnClaim, returnTicketState, sameLegAgainRefusal, type LegOnClaim } from "@/lib/outstation/return-ticket";
 import { isDistrictManagerRole } from "@/lib/outstation/dm-double-visit-distance";
 import {
   isNonTravelExpenseType,
@@ -3440,6 +3440,16 @@ export async function attachMissingTicketsToOwnOutstationRequest(
         tickets,
       })
     : null;
+  // The second leg must be the other way: a copy of the leg already on the claim is refused (return-ticket.ts).
+  if (returnMissing && scans) {
+    const refusal = sameLegAgainRefusal({
+      candidates: scans,
+      returnAmount: existing.returnTicketAmount,
+      tickets: existing.ticketAttachmentMetadata,
+      transportation: existing.transportationType,
+    });
+    if (refusal) throw new TrainTicketRefusedError(ticketRefusalMessage({ accepted: false, ...refusal }));
+  }
 
   const uploaded = await uploadOutstationTicketAttachments(
     tickets.map((ticket, index) => ({
@@ -7548,6 +7558,8 @@ export async function getOwnOutstationRequestsAwaitingDeparturePhoto(
 export type OutstationMissingTicketDue = OutstationDeparturePhotoDue & {
   /** True when it is the RETURN ticket that is asked for: the claim pays a return fare (owner, 2026-11-23). */
   returnTicket?: boolean;
+  /** The read leg already on the claim, so the card names the ticket it has and the way the missing one runs. */
+  legOnClaim?: LegOnClaim;
   transportationType: string;
 };
 
@@ -7605,14 +7617,18 @@ export async function getOwnOutstationRequestsMissingTicket(
         transportationType: row.transportationType,
       }),
     )
-    .map(({ returnMissing, row }) => ({
-      destination: text(row.toLabel) || text(row.toCity) || text(row.toArea) || "—",
-      id: row.id,
-      ...(returnMissing ? { returnTicket: true } : {}),
-      transportationType: row.transportationType,
-      tripEndDate: row.tripEndDate,
-      tripStartDate: row.tripStartDate,
-    }));
+    .map(({ returnMissing, row }) => {
+      const leg = returnMissing ? legOnClaim(row.ticketAttachmentMetadata) : null;
+      return {
+        destination: text(row.toLabel) || text(row.toCity) || text(row.toArea) || "—",
+        id: row.id,
+        ...(returnMissing ? { returnTicket: true } : {}),
+        ...(leg ? { legOnClaim: leg } : {}),
+        transportationType: row.transportationType,
+        tripEndDate: row.tripEndDate,
+        tripStartDate: row.tripStartDate,
+      };
+    });
 }
 
 /**
