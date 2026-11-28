@@ -437,8 +437,14 @@ function distanceCheck(facts: ClaimCheckFacts): ClaimCheck | null {
 function workAllowanceCheck(facts: ClaimCheckFacts): ClaimCheck | null {
   const record = facts.dmWorkAllowance;
   if (!isDistrictManagerRole(facts.role) || !record) return null;
-  if (record.days.length === 0) {
+  // What submit could not refuse (an offline replay, a fare above an estimate) is put to him first.
+  const flags = record.evidenceFlags ?? [];
+  if (flags.length > 0) return check("work_allowance", "fail", flags.join(" "));
+  if (record.initial) {
     return check("work_allowance", "unknown", "Not priced on the trip days' work yet: the first pricing runs after the claim is filed.");
+  }
+  if (record.days.length === 0) {
+    return check("work_allowance", "pass", "No trip day carries an allowance, so the work rule has nothing to price.");
   }
   const money = (value: number) => `EGP ${value.toFixed(2)}`;
   const paid = `${money(record.allowanceAfter)} of ${money(record.allowanceBefore)} allowance paid`;

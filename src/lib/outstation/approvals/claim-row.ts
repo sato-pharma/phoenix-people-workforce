@@ -29,7 +29,7 @@ import { odometerFromValue, odometerOfMetadata, type OutstationOdometerRecord } 
 import { frameOfMetadata } from "@/lib/outstation/blank-frame";
 import { returnTicketState } from "@/lib/outstation/return-ticket";
 import { distanceVisitWords, isDistrictManagerRole, isTripExpense, readDistanceBasis } from "@/lib/outstation/dm-double-visit-distance";
-import { readDmWorkAllowance } from "@/lib/outstation/dm-expense-rules";
+import { dmAllowanceApprovalHold, dmAllowanceEditedSincePriced, readDmWorkAllowance } from "@/lib/outstation/dm-expense-rules";
 import { readNoTicketFare } from "@/lib/outstation/train-fare";
 import type { OutstationEvidenceGateStatus, OutstationWorkloadGateStatus } from "@/lib/outstation/types";
 import { addDaysIso } from "@/lib/crm/dates";
@@ -323,14 +323,22 @@ export function buildDeskClaim(input: {
   const total = live ? approval.total : (ledger?.total ?? approval.total);
   const approvedAmount = live ? null : (ledger?.approved_amount ?? null);
   const tripDates = tripDatesOfRow(row);
-  // A claim the work rule priced has already cut each idle day (it pays nothing without its work): no second cut.
+  // A claim the work rule priced has already cut each idle day (it pays nothing without its work): no second
+  // cut. Only while the stored allowance is still the rule's own figure — a hand edit since was not cut by it.
+  const workRecord =
+    isDistrictManagerRole(text(row.employee_role)) && isTripExpense(text(row.expense_type)) ? readDmWorkAllowance(row.dm_work_allowance) : null;
+  const dmWorkPriced = Boolean(workRecord && !workRecord.initial && !dmAllowanceEditedSincePriced(workRecord, approval.allowance));
   const preCut =
-    waiting && isTripClaim(text(row.expense_type)) && verdict.idleDates.length > 0 && !readDmWorkAllowance(row.dm_work_allowance)
+    waiting && isTripClaim(text(row.expense_type)) && verdict.idleDates.length > 0 && !dmWorkPriced
       ? claimPreCut({ allowance: approval.allowance, idleDays: verdict.idleDates.length, total: approval.total, tripDays: tripDates.length })
       : null;
+  // Approve waits until every trip day is priced: an approval freezes the allowance (dm-expense-rules.ts).
+  const allowanceHold =
+    waiting || reading.standing === "rejected" ? dmAllowanceApprovalHold(workRecord, tripDates[tripDates.length - 1] ?? null, input.now.getTime()) : null;
 
   return {
     allowance: approval.allowance,
+    allowanceHold,
     approvedAmount,
     daysWaiting: waiting ? daysBetween(text(row.created_at) || null, input.now) : 0,
     declaredWorkload: {
@@ -341,6 +349,7 @@ export function buildDeskClaim(input: {
     },
     decidedAt: waiting ? null : (ledger?.approved_at ?? (text(row.updated_at) || null)),
     distance: deskDistanceOfRow(row),
+    dmWorkPriced,
     employeeName: approval.specialist,
     employeeNote: approval.employeeNote ?? null,
     employeeRole: text(row.employee_role) || null,

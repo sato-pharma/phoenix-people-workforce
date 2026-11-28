@@ -504,7 +504,9 @@ export function reasonChips(claim: DeskClaim): ReasonChip[] {
   const chips: ReasonChip[] = [];
   const idle = claim.verdict.idleDates.length;
   const days = tripDayCount(claim);
-  if (failed.has("field_work") && idle > 0) {
+  // The work rule already paid an idle day nothing on a priced District Manager claim: "Idle days" would
+  // name a cut that is in the figure. "No field activity" stays, as a reason to reject.
+  if (failed.has("field_work") && idle > 0 && !(claim.dmWorkPriced && idle < days)) {
     chips.push(
       idle >= days
         ? {

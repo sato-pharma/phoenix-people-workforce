@@ -72,7 +72,7 @@ import {
   type OutstationTicketAttachmentUploadInput,
 } from "@/lib/outstation/car-evidence-storage";
 import { checkTrainTicketsOnServer, TrainTicketRefusedError } from "@/lib/outstation/ticket-scan";
-import { dmTrainFareOverCaps, dmTrainFareRefusal } from "@/lib/outstation/train-fare-cap";
+import { dmTrainFareFlag, dmTrainFareOverCaps, dmTrainFareRefusal } from "@/lib/outstation/train-fare-cap";
 import { meetingDayRefusal } from "@/lib/outstation/approvals/meeting-day";
 import { claimKindOf } from "@/lib/outstation/approvals/claim-kind";
 import { readCarOdometer } from "@/lib/outstation/odometer-scan";
@@ -2360,11 +2360,19 @@ export async function submitOutstationRequest(
   if (!evidenceValidation.isValid) {
     throw new Error(evidenceValidation.message);
   }
+  // What a District Manager's claim breaks but submit lets through — an offline replay has no screen to refuse
+  // it on, and a fare above an estimate is not refused — stored on the claim and failed on Expense Approvals.
+  const dmEvidenceFlags: string[] = [];
   // A District Manager's ticket is a live photo or the operator's PDF (owner, 28 Nov 2026). An offline
-  // replay is let through: refusing it would lose the claim, and its ticket is attached again from My claims.
-  if (!nonTravel && isDistrictManagerRole(calculation.employeeRole) && !options.dropRefusedTrainTickets) {
+  // replay is let through, flagged: refusing it would lose the claim.
+  if (!nonTravel && isDistrictManagerRole(calculation.employeeRole)) {
     const refusal = dmTicketSourceRefusal(options.ticketAttachments ?? []);
-    if (refusal) throw new Error(refusal);
+    if (refusal && !options.dropRefusedTrainTickets) throw new Error(refusal);
+    if (refusal) {
+      dmEvidenceFlags.push(
+        "A ticket that synced offline was not taken live in the app, or is not the operator's PDF (a gallery picture or a screenshot). Check it before approving.",
+      );
+    }
   }
   // A weekly meeting is accepted only on a Thursday, for everyone (owner, 28 Nov 2026: "No any other meeting
   // will be accepted not on Thursday"). Refused here, before anything is stored; a claim already stored is
@@ -2437,29 +2445,31 @@ export async function submitOutstationRequest(
     }
   }
   // A District Manager's train ticket is paid up to the second-class AC fare of the train taken (owner,
-  // 28 Nov 2026; train-fare-cap.ts). Refused with the figure to enter, before anything is stored. An offline
-  // replay has no screen to say it on, so it is let through like the other ticket rules.
+  // 28 Nov 2026; train-fare-cap.ts). Refused with the figure to enter, before anything is stored — but only
+  // on the railway's own fare for the stations read off the ticket. A cap that is a nearest-route estimate
+  // (the fare table has holes), and any leg of an offline replay, is let through and flagged instead.
   if (
     !nonTravel &&
     calculation.transportationType === "train" &&
     !calculation.noTicketFare &&
-    isDistrictManagerRole(calculation.employeeRole) &&
-    !options.dropRefusedTrainTickets
+    isDistrictManagerRole(calculation.employeeRole)
   ) {
-    const refusal = dmTrainFareRefusal(
-      dmTrainFareOverCaps({
-        destination: { latitude: calculation.capturedLatitude, longitude: calculation.capturedLongitude },
-        goAmount: numberValue(input.goTicketAmount),
-        home:
-          calculation.residenceLatitude == null || calculation.residenceLongitude == null
-            ? null
-            : { latitude: Number(calculation.residenceLatitude), longitude: Number(calculation.residenceLongitude) },
-        returnAmount: numberValue(input.returnTicketAmount),
-        tickets: trainTicketScans ?? [],
-      }),
-    );
+    const over = dmTrainFareOverCaps({
+      destination: { latitude: calculation.capturedLatitude, longitude: calculation.capturedLongitude },
+      goAmount: numberValue(input.goTicketAmount),
+      home:
+        calculation.residenceLatitude == null || calculation.residenceLongitude == null
+          ? null
+          : { latitude: Number(calculation.residenceLatitude), longitude: Number(calculation.residenceLongitude) },
+      returnAmount: numberValue(input.returnTicketAmount),
+      tickets: trainTicketScans ?? [],
+    });
+    const offline = Boolean(options.dropRefusedTrainTickets);
+    const refusal = offline ? null : dmTrainFareRefusal(over.filter((check) => check.refusable));
     // A ticket refusal: the routes answer it 400 with these words.
     if (refusal) throw new TrainTicketRefusedError(refusal);
+    const flag = dmTrainFareFlag(offline ? over : over.filter((check) => !check.refusable), { offline });
+    if (flag) dmEvidenceFlags.push(flag);
   }
 
   await assertOutstationExpenseWorkflowTransition({
@@ -2842,7 +2852,9 @@ export async function submitOutstationRequest(
     // A District Manager trip filed from 28 Nov 2026 is under the work rules (dm-expense-rules.ts): the
     // stamp is what lets the allowance be priced on each trip day's work. NULL keeps the old rules.
     dm_work_allowance:
-      !nonTravel && isDistrictManagerRole(calculation.employeeRole) ? initialDmWorkAllowanceStamp(calculation.submittedAt) : null,
+      !nonTravel && isDistrictManagerRole(calculation.employeeRole)
+        ? initialDmWorkAllowanceStamp(calculation.submittedAt, dmEvidenceFlags)
+        : null,
   };
 
   const { data, error } = await supabase
@@ -4268,6 +4280,14 @@ export async function approveOutstationRequestForPayroll(
   // timestamp it was checked against: a change landing between this read and the update leaves no
   // row to update, instead of being approved unseen. The write returned is the row that was
   // checked, so what goes to payroll is what he saw.
+  // A District Manager trip under the work rules is approved on its finished, priced trip (owner, 28 Nov
+  // 2026): an approval freezes the allowance. Refused in words while a trip day is open; priced first when
+  // the trip closed after its last pricing (dm-work-allowance-server.ts). Before the version check, so a
+  // claim that pricing moved is answered "changed" and he approves the figure he then sees.
+  if (!existing.status.startsWith("accepted")) {
+    const { assertDmAllowanceReadyToApprove } = await import("@/lib/outstation/dm-work-allowance-server");
+    await assertDmAllowanceReadyToApprove(requestId);
+  }
   const checkedUpdatedAt = await readOutstationRequestStoredUpdatedAt(requestId);
   assertOutstationClaimUnchanged({ current: checkedUpdatedAt, expected: options.expectedRevision });
 

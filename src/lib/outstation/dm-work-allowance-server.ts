@@ -14,11 +14,11 @@
  */
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
-import { cairoMidnightUtcIso } from "@/lib/attendance/timezone";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getRepTripVisitWorkload } from "@/lib/crm/visit-workload";
 import { hrIdLookupKeys, normalizeHrIdForAccess } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
+import { OutstationClaimChangedError } from "@/lib/outstation/claim-revision";
 import { allowanceRowDates } from "@/lib/outstation/allowance-day-guard";
 import { cairoDateOnly } from "@/lib/outstation/departure-evidence";
 import { isDistrictManagerRole, isTripExpense, readDistanceBasis, WAITING_STATUSES } from "@/lib/outstation/dm-double-visit-distance";
@@ -26,10 +26,15 @@ import {
   type DmDoubleVisit,
   type DmTripDayWork,
   type DmWorkAllowanceRecord,
+  arrivedBeforeDayClosed,
+  crmDayClosesAt,
+  dmAllowanceApprovalHold,
   dmTicketDeadline,
   type DmTicketFile,
   dmTicketSourceRefusal,
   dmTicketTooLateMessage,
+  dmAllowanceEditedSincePriced,
+  dmExpectedTotalAfter,
   firstAndLastDoubleVisit,
   planDmWorkAllowance,
   readDmWorkAllowance,
@@ -50,12 +55,11 @@ const num = (value: unknown): number | null => {
 };
 const round2 = (value: number) => Math.round(value * 100) / 100;
 
-/** The instant a CRM visit day closes: 02:00 Cairo the next morning. */
-export function crmDayClosesAt(day: string): number {
-  return Date.parse(cairoMidnightUtcIso(day, 1, "Africa/Cairo")) + 2 * 60 * 60 * 1000;
-}
+/** The instant a CRM visit day closes: 02:00 Cairo the next morning (dm-expense-rules.ts). */
+export { crmDayClosesAt };
 
 // ── Reads ────────────────────────────────────────────────────────────────────────────────────────
+
 
 type DoubleVisitRead = {
   capturedAt: string | null;
@@ -76,7 +80,7 @@ export async function readDmDoubleVisits(managerHrId: string, start: string, end
     () =>
       getSupabaseAdmin()
         .from("phoenix_crm_visits")
-        .select("id, manager_hr_id, rep_hr_id, captured_at, visit_date, lat, lon, customer_id")
+        .select("id, manager_hr_id, rep_hr_id, captured_at, created_at, visit_date, lat, lon, customer_id")
         .eq("is_test", false)
         .is("imported_from_ireports360_at", null)
         .is("archived_at", null)
@@ -89,6 +93,10 @@ export async function readDmDoubleVisits(managerHrId: string, start: string, end
   const me = normalizeHrIdForAccess(managerHrId);
   return rows
     .filter((row) => normalizeHrIdForAccess(String(row.manager_hr_id ?? "")) === me)
+    // A visit that reached the server after its CRM day closed (02:00) could no longer be confirmed, so it
+    // never counts: a rep's offline visit syncing late must not become the day's first or last double
+    // visit and take a confirmed day's allowance to nothing.
+    .filter((row) => arrivedBeforeDayClosed(row))
     .map((row) => ({
       capturedAt: row.captured_at ? String(row.captured_at) : null,
       customerId: row.customer_id ? String(row.customer_id) : null,
@@ -302,26 +310,36 @@ function readBreakdown(value: unknown): { rows?: Array<Record<string, unknown>> 
 const CLAIM_COLUMNS = [
   "id", "status", "updated_at", "employee_hr_id", "employee_role", "expense_type", "trip_start_date", "trip_end_date",
   "distance_from_residence_km", "distance_basis", "allowance_amount", "allowance_breakdown_json",
-  "expected_total_amount", "claimed_total_amount", "dm_work_allowance",
+  "expected_total_amount", "claimed_total_amount", "dm_work_allowance", "eligibility_status",
 ].join(", ");
 
 export type DmWorkAllowanceOutcome =
-  | { requestId: number; result: "not_applicable" | "not_waiting" | "on_payroll" | "unchanged" | "changed_meanwhile" }
+  | {
+      requestId: number;
+      result: "not_applicable" | "not_waiting" | "on_payroll" | "unchanged" | "changed_meanwhile" | "edited_since_priced" | "unmeasured";
+    }
   | { allowanceAfter: number; allowanceBefore: number; requestId: number; result: "written" };
 
+/** True once a payroll took the claim's row. A row left pending under a rejected claim decides nothing. */
 async function onAPayrollRow(requestId: number): Promise<boolean> {
   const { data, error } = await getSupabaseAdmin()
     .from("outstation_expenses")
-    .select("id")
-    .eq("trip_id", `OUTSTATION-${requestId}`)
-    .limit(1);
+    .select("id, imported_payroll_batch_id, imported_to_payroll_at")
+    .eq("trip_id", `OUTSTATION-${requestId}`);
   if (error) throw new Error(error.message);
-  return (data ?? []).length > 0;
+  return ((data ?? []) as Row[]).some((row) => Boolean(row.imported_payroll_batch_id || row.imported_to_payroll_at));
 }
 
+/** A rejected claim: re-priced only when an approval of it asks (`includeRejected`), so it is approved on its finished trip. */
+const REJECTED_STATUSES = ["rejected", "rejected_by_admin", "rejected_by_system"] as const;
+
 /** Re-price one claim's allowance on each trip day's work and confirmations. Never throws for a claim it leaves alone. */
-export async function priceDmWorkAllowance(requestId: number, options: { now?: Date } = {}): Promise<DmWorkAllowanceOutcome> {
+export async function priceDmWorkAllowance(
+  requestId: number,
+  options: { includeRejected?: boolean; now?: Date; retried?: boolean } = {},
+): Promise<DmWorkAllowanceOutcome> {
   const now = options.now ?? new Date();
+  const statuses: string[] = [...WAITING_STATUSES, ...(options.includeRejected ? REJECTED_STATUSES : [])];
   const { data, error } = await getSupabaseAdmin()
     .from("outstation_expense_requests")
     .select(CLAIM_COLUMNS)
@@ -337,8 +355,13 @@ export async function priceDmWorkAllowance(requestId: number, options: { now?: D
   ) {
     return { requestId, result: "not_applicable" };
   }
-  if (!(WAITING_STATUSES as ReadonlyArray<string>).includes(String(row.status ?? ""))) return { requestId, result: "not_waiting" };
+  if (!statuses.includes(String(row.status ?? ""))) return { requestId, result: "not_waiting" };
   if (await onAPayrollRow(requestId)) return { requestId, result: "on_payroll" };
+  const previous = readDmWorkAllowance(row.dm_work_allowance);
+  // An approver's or HR's own allowance figure (updateManagerExpenseAsAdmin) is never priced over: once
+  // priced, the stored allowance moving off what this wrote is someone's edit.
+  const allowanceNow = num(row.allowance_amount) ?? 0;
+  if (dmAllowanceEditedSincePriced(previous, allowanceNow)) return { requestId, result: "edited_since_priced" };
 
   const hrId = String(row.employee_hr_id ?? "").trim();
   const start = cairoDateOnly(String(row.trip_start_date ?? "") || null);
@@ -351,6 +374,9 @@ export async function priceDmWorkAllowance(requestId: number, options: { now?: D
     getRepTripVisitWorkload({ hrId, tripEndDate: end, tripStartDate: start }),
     readDmDoubleVisits(hrId, start, end),
   ]);
+  // A read that could not measure the field work writes nothing: an unmapped person or a failed read of his
+  // own visits would price his worked days at nothing. The next run (every morning, every change) tries again.
+  if (workload.matchStatus === "unmapped" || workload.managerOwnVisits === undefined) return { requestId, result: "unmeasured" };
   const confirmations = await readConfirmations(visits.map((v) => v.id));
   const byDay = new Map<string, DmDoubleVisit[]>();
   for (const v of visits) {
@@ -380,18 +406,17 @@ export async function priceDmWorkAllowance(requestId: number, options: { now?: D
     rowDates: allowanceRowDates(String(row.trip_start_date ?? start).slice(0, 10), typedRows.length),
     rows: typedRows,
     work,
+    evidenceFlags: previous?.evidenceFlags,
   });
 
-  const allowanceNow = num(row.allowance_amount) ?? 0;
   const delta = round2(plan.record.allowanceAfter - allowanceNow);
-  const previous = readDmWorkAllowance(row.dm_work_allowance);
   const sameDays = JSON.stringify(previous?.days ?? []) === JSON.stringify(plan.record.days);
   if (Math.abs(delta) < 0.005 && sameDays && previous?.final === plan.record.final) return { requestId, result: "unchanged" };
 
   const expected = num(row.expected_total_amount) ?? 0;
   const claimed = num(row.claimed_total_amount) ?? 0;
   const systemClaim = Math.abs(claimed - expected) <= 0.01;
-  const expectedAfter = round2(expected + delta);
+  const expectedAfter = dmExpectedTotalAfter({ delta, eligibilityStatus: String(row.eligibility_status ?? ""), expected });
   const write = {
     allowance_amount: plan.record.allowanceAfter,
     // Stored the way submit stores it: a JSON string inside the jsonb column (service.ts, safeJsonParse on read).
@@ -405,12 +430,15 @@ export async function priceDmWorkAllowance(requestId: number, options: { now?: D
     .from("outstation_expense_requests")
     .update(write)
     .eq("id", requestId)
-    .in("status", [...WAITING_STATUSES])
+    .in("status", statuses)
     .eq("updated_at", String(row.updated_at))
     .select("id")
     .maybeSingle();
   if (writeError) throw new Error(writeError.message);
-  if (!written) return { requestId, result: "changed_meanwhile" };
+  // The claim moved between the read and the write (a ticket, a confirmation): priced once more on it.
+  if (!written) {
+    return options.retried ? { requestId, result: "changed_meanwhile" } : priceDmWorkAllowance(requestId, { ...options, retried: true });
+  }
 
   if (Math.abs(delta) >= 0.005) {
     await writeRequiredAuditLog({
@@ -423,6 +451,52 @@ export async function priceDmWorkAllowance(requestId: number, options: { now?: D
     });
   }
   return { allowanceAfter: plan.record.allowanceAfter, allowanceBefore: allowanceNow, requestId, result: "written" };
+}
+
+/** An approval refused because the trip's allowance is not priced on its finished trip yet; the words say why. */
+export class DmAllowanceNotReadyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DmAllowanceNotReadyError";
+  }
+}
+
+/**
+ * The server's own gate before a District Manager trip under the work rules is approved (owner, 28 Nov
+ * 2026): an approval freezes the allowance, so it waits until every trip day is priced on its field work.
+ *
+ *   - The trip's last day is still open: refused, in words (`dmAllowanceApprovalHold`).
+ *   - The day has closed but the record was priced before: priced now, on the finished trip. When that
+ *     moved the claim, the approval is refused as "changed" so he approves the figure he sees.
+ *   - Still not final (the field work could not be read): refused, in words; he may reject it.
+ *   - An allowance someone set by hand after the pricing is his own figure and is approved as it stands.
+ */
+export async function assertDmAllowanceReadyToApprove(requestId: number, now = new Date()): Promise<void> {
+  const read = async () => {
+    const { data, error } = await getSupabaseAdmin()
+      .from("outstation_expense_requests")
+      .select("id, employee_role, expense_type, trip_start_date, trip_end_date, allowance_amount, dm_work_allowance")
+      .eq("id", requestId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return (data ?? null) as Row | null;
+  };
+  const row = await read();
+  if (!row || !isDistrictManagerRole(String(row.employee_role ?? "")) || !isTripExpense(String(row.expense_type ?? ""))) return;
+  const record = readDmWorkAllowance(row.dm_work_allowance);
+  if (!record || record.final || dmAllowanceEditedSincePriced(record, num(row.allowance_amount) ?? 0)) return;
+  const endDay = cairoDateOnly(String(row.trip_end_date ?? "") || null) ?? cairoDateOnly(String(row.trip_start_date ?? "") || null);
+  const held = dmAllowanceApprovalHold(record, endDay, now.getTime());
+  if (held) throw new DmAllowanceNotReadyError(held);
+
+  const outcome = await priceDmWorkAllowance(requestId, { includeRejected: true, now });
+  if (outcome.result === "written") throw new OutstationClaimChangedError("changed");
+  const after = readDmWorkAllowance((await read())?.dm_work_allowance);
+  if (!after || after.final || outcome.result === "edited_since_priced") return;
+  throw new DmAllowanceNotReadyError(
+    "This District Manager trip's allowance could not be priced on its field work yet (the visits could not be read). " +
+      "It is tried again every morning and on every change; approve it once the work allowance check reads final, or reject it.",
+  );
 }
 
 /** The morning run: every waiting District Manager claim filed under the rules; one failure never stops the rest. */

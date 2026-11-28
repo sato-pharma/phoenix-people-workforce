@@ -86,6 +86,6 @@ async function search([a, b]) {
 
 const queue = [...pairs];
 await Promise.all([0, 1].map(async () => { while (queue.length) await search(queue.shift()); }));
-writeFileSync(out, JSON.stringify({ date, rows }));
+writeFileSync(out, JSON.stringify({ date, failed, pairs: pairs.length, rows }));
 console.log(`pairs ${pairs.length}, failed ${failed}, direct trains ${rows.length} -> ${out}`);
 if (failed) process.exitCode = 1;

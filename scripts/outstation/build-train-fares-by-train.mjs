@@ -22,6 +22,10 @@ refuseUnknownFlags({ name: "build-train-fares-by-train", entry: import.meta.url,
 const src = process.argv[2];
 if (!src) throw new Error("usage: node scripts/outstation/build-train-fares-by-train.mjs <sweep.json>");
 const sweep = JSON.parse(readFileSync(src, "utf8"));
+// A sweep with a failed search has holes a District Manager's ticket would be capped through (the nearest
+// route instead of his own), so it is never built from. Re-run the sweep until it records 0 failed.
+if (typeof sweep.failed !== "number") throw new Error(`${src} does not record its failed searches; re-run sweep-train-fares.mjs.`);
+if (sweep.failed > 0) throw new Error(`${src} has ${sweep.failed} failed searches; re-run sweep-train-fares.mjs until it records 0.`);
 
 /** "from>to" → train → highest AC 2 fare in pounds (the site sends piastres). */
 const pairs = new Map();

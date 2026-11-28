@@ -257,6 +257,13 @@ export type DmWorkAllowanceRecord = {
   /** The allowance the claim had before the rule, and what it pays now. */
   allowanceBefore: number;
   allowanceAfter: number;
+  /**
+   * What submit could not refuse and the approver must see (an offline replay's gallery ticket or train fare
+   * over its cap, a fare above a nearest-route estimate). Kept through every re-price.
+   */
+  evidenceFlags?: string[];
+  /** The submit stamp, before the first pricing: nothing is priced yet. Absent once priced. */
+  initial?: true;
 };
 
 type AllowanceRow = {
@@ -280,6 +287,8 @@ export function planDmWorkAllowance<Row extends AllowanceRow>(input: {
   rowDates: string[];
   rows: Row[];
   work: (date: string) => DmTripDayWork;
+  /** The stored record's flags, carried over unchanged. */
+  evidenceFlags?: string[];
 }): { record: DmWorkAllowanceRecord; rows: Row[] } {
   const days: DmDayVerdict[] = [];
   let before = 0;
@@ -302,6 +311,7 @@ export function planDmWorkAllowance<Row extends AllowanceRow>(input: {
       allowanceAfter: round2(after),
       allowanceBefore: round2(before),
       days,
+      ...(input.evidenceFlags && input.evidenceFlags.length > 0 ? { evidenceFlags: [...input.evidenceFlags] } : {}),
       final: days.every((d) => d.final),
       km: input.km,
       pricedAt: input.now,
@@ -318,8 +328,18 @@ const finiteOrNull = (value: unknown): number | null => {
 };
 
 /** The stamp a District Manager trip claim gets at submit: the rules apply to it, nothing priced yet. */
-export function initialDmWorkAllowanceStamp(now: string): DmWorkAllowanceRecord {
-  return { allowanceAfter: 0, allowanceBefore: 0, days: [], final: false, km: null, pricedAt: now, rules: DM_EXPENSE_RULES_VERSION };
+export function initialDmWorkAllowanceStamp(now: string, evidenceFlags: string[] = []): DmWorkAllowanceRecord {
+  return {
+    allowanceAfter: 0,
+    allowanceBefore: 0,
+    days: [],
+    ...(evidenceFlags.length > 0 ? { evidenceFlags: [...evidenceFlags] } : {}),
+    final: false,
+    initial: true,
+    km: null,
+    pricedAt: now,
+    rules: DM_EXPENSE_RULES_VERSION,
+  };
 }
 
 /** The stored record, or null on a claim filed before the rules. */
@@ -331,9 +351,75 @@ export function readDmWorkAllowance(value: unknown): DmWorkAllowanceRecord | nul
     allowanceAfter: finiteOrNull(record.allowanceAfter) ?? 0,
     allowanceBefore: finiteOrNull(record.allowanceBefore) ?? 0,
     days: Array.isArray(record.days) ? record.days : [],
+    ...(Array.isArray(record.evidenceFlags) && record.evidenceFlags.length > 0
+      ? { evidenceFlags: record.evidenceFlags.map(String).filter(Boolean) }
+      : {}),
     final: record.final === true,
+    // A stamp written before the marker existed: no days and never final is the unpriced submit stamp.
+    ...(record.initial === true || (record.final !== true && (!Array.isArray(record.days) || record.days.length === 0))
+      ? { initial: true as const }
+      : {}),
     km: finiteOrNull(record.km),
     pricedAt: String(record.pricedAt ?? ""),
     rules: DM_EXPENSE_RULES_VERSION,
   };
+}
+
+/** The instant a CRM visit day closes: 02:00 Cairo the next morning. */
+export function crmDayClosesAt(day: string): number {
+  return Date.parse(cairoMidnightUtcIso(day, 1, CAIRO)) + 2 * 60 * 60 * 1000;
+}
+
+/** True when the visit reached the server (`created_at`) before its CRM day closed. */
+export function arrivedBeforeDayClosed(row: { created_at?: unknown; visit_date?: unknown }): boolean {
+  const day = String(row.visit_date ?? "");
+  const arrived = Date.parse(String(row.created_at ?? ""));
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !Number.isFinite(arrived)) return true;
+  return arrived <= crmDayClosesAt(day);
+}
+
+/**
+ * True when someone set the claim's allowance by hand after the system priced it (an approver's or HR's
+ * edit, updateManagerExpenseAsAdmin): the pricer never writes over it, and the desk's idle-day cut is
+ * offered again, because the edited figure was not cut by the work rule.
+ */
+export function dmAllowanceEditedSincePriced(record: DmWorkAllowanceRecord | null, allowanceAmount: number): boolean {
+  if (!record || record.initial) return false;
+  return Math.abs(allowanceAmount - record.allowanceAfter) > 0.01;
+}
+
+/**
+ * The claim's expected total once the allowance moved by `delta`. A not-eligible claim's expected total is
+ * 0 whatever its parts (reportExpectedTotal in service.ts) and stays where it is; any other never goes below 0.
+ */
+export function dmExpectedTotalAfter(input: { delta: number; eligibilityStatus: string; expected: number }): number {
+  if (input.eligibilityStatus === "not_eligible") return input.expected;
+  return round2(Math.max(0, input.expected + input.delta));
+}
+
+/**
+ * Why a District Manager trip under the work rules cannot be approved yet, or null when it can (owner,
+ * 28 Nov 2026). Its allowance is priced on each trip day's work and confirmed double visits, and an
+ * approval freezes the figure: approved before every day is over, a later day would stay at what it paid
+ * so far (often nothing). So Approve waits until every trip day is final.
+ */
+export function dmAllowanceApprovalHold(
+  record: DmWorkAllowanceRecord | null,
+  tripEndDate: string | null,
+  nowMs: number,
+): string | null {
+  if (!record || record.final) return null;
+  const day = tripEndDate && /^\d{4}-\d{2}-\d{2}/.test(tripEndDate) ? tripEndDate.slice(0, 10) : null;
+  // The trip's last day has closed but the record was priced before it did: not held here. The approval
+  // itself prices it on the finished trip first (approveOutstationRequestForPayroll) and asks him to look again.
+  if (day && nowMs >= crmDayClosesAt(day)) return null;
+  const last = day
+    ? new Date(`${day}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: "Africa/Cairo", year: "numeric" })
+    : null;
+  return (
+    "This District Manager trip is paid on each trip day's field work and its confirmed double visits, and " +
+    `not every day is priced yet${last ? ` (the trip's last day, ${last}, closes at 02:00 the next morning)` : ""}. ` +
+    "Approve it once the work allowance check reads final; approving now would freeze the days still open. " +
+    "You can still reject it."
+  );
 }

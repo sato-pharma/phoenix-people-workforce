@@ -149,12 +149,38 @@ export type DmTrainLegCheck = {
   caps: TrainFareCap[];
   entered: number;
   leg: "go" | "return";
+  /**
+   * True when the cap rests only on the railway's own fare for the stations read off the ticket (its train,
+   * or that route's dearest). False when any part is the nearest-route guess: the fare table has holes
+   * (Zagazig, Minya al-Qamh and Port Said have no fares, and some routes were listed one way only), so a
+   * guess is put to the approver as a flag, never refused.
+   */
+  refusable: boolean;
 };
 
 /**
+ * The leg one read ticket belongs to. By DIRECTION, never by date: a ticket leaving the station nearer his
+ * home is the trip there, one arriving there is the trip back — a same-day trip's two tickets share a date.
+ * Only when its stations were not read (or no home is on file) does the date match decide (`matchedTo`).
+ */
+function legOfTicket(
+  ticket: { fromStation?: unknown; matchedTo?: unknown; toStation?: unknown },
+  home: GeoPoint | null | undefined,
+): "go" | "return" | null {
+  const from = matchTrainStation(typeof ticket.fromStation === "string" ? ticket.fromStation : null);
+  const to = matchTrainStation(typeof ticket.toStation === "string" ? ticket.toStation : null);
+  if (usable(home) && from && to && from.index !== to.index) {
+    return distanceKm(home, from) <= distanceKm(home, to) ? "go" : "return";
+  }
+  if (ticket.matchedTo === "arrival") return "go";
+  if (ticket.matchedTo === "departure") return "return";
+  return null;
+}
+
+/**
  * The legs of a District Manager's train claim whose typed amount is above their cap. Each read ticket
- * counts on its own leg (matched to the arrival = go, the departure = return); a leg with none, or with a
- * ticket whose stations were not read, takes the nearest-route cap for that ticket. Empty when every leg fits.
+ * counts on the leg its direction names (`legOfTicket`); a leg with none, or with a ticket whose stations
+ * were not read, takes the nearest-route cap for that ticket. Empty when every leg fits.
  */
 export function dmTrainFareOverCaps(input: {
   destination: GeoPoint | null | undefined;
@@ -165,12 +191,12 @@ export function dmTrainFareOverCaps(input: {
 }): DmTrainLegCheck[] {
   const nearest = nearestRouteFareCap({ destination: input.destination, home: input.home });
   const over: DmTrainLegCheck[] = [];
-  for (const [leg, entered, matched] of [
-    ["go", input.goAmount, "arrival"],
-    ["return", input.returnAmount, "departure"],
+  for (const [leg, entered] of [
+    ["go", input.goAmount],
+    ["return", input.returnAmount],
   ] as const) {
     if (!(entered > 0)) continue;
-    const onLeg = input.tickets.filter((ticket) => ticket.matchedTo === matched);
+    const onLeg = input.tickets.filter((ticket) => legOfTicket(ticket, input.home) === leg);
     const caps: TrainFareCap[] = [];
     let known = true;
     for (const ticket of onLeg.length > 0 ? onLeg : [{}]) {
@@ -184,7 +210,7 @@ export function dmTrainFareOverCaps(input: {
     if (!known) continue;
     const cap = caps.reduce((sum, item) => sum + item.fare, 0);
     // Half a pound of slack for a fare typed with its piastres.
-    if (entered > cap + 0.5) over.push({ cap, caps, entered, leg });
+    if (entered > cap + 0.5) over.push({ cap, caps, entered, leg, refusable: caps.every((item) => item.source !== "nearest") });
   }
   return over;
 }
@@ -210,4 +236,25 @@ export function dmTrainFareRefusal(over: ReadonlyArray<DmTrainLegCheck>): string
     `A train ticket is paid up to the second-class AC fare of the train taken. ${parts.join(" ")} ` +
     `Enter that amount or less and submit again. Fares as the railway listed them for ${TRAIN_AC2_BY_TRAIN_COLLECTED_FOR}.`
   );
+}
+
+/**
+ * The approver's flag for train legs above their cap that submit did not refuse: a cap that rests on a
+ * nearest-route estimate (`refusable` false), or any leg of a claim that synced offline (no screen to refuse
+ * it on). Stored on the claim (`dm_work_allowance.evidenceFlags`) and failed on Expense Approvals.
+ */
+export function dmTrainFareFlag(over: ReadonlyArray<DmTrainLegCheck>, options: { offline?: boolean } = {}): string | null {
+  if (over.length === 0) return null;
+  const money = (value: number) => `EGP ${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+  const parts = over.map((check) => {
+    const leg = check.leg === "go" ? "the trip there" : "the trip back";
+    const route = check.caps
+      .map((cap) => (cap.source === "train" ? `train ${cap.trainNumber}, ${cap.fromName} to ${cap.toName}` : `${cap.fromName} to ${cap.toName}`))
+      .join(" then ");
+    return `${money(check.entered)} for ${leg}, above ${money(check.cap)} (${route})`;
+  });
+  const why = options.offline
+    ? "The claim synced offline, so it could not be refused when it was sent."
+    : "The railway's fare for the stations on the ticket is not on file, so the most paid was estimated from the stations nearest the employee's home and the destination.";
+  return `Train fare above the second-class AC fare: ${parts.join("; ")}. ${why} Check the ticket before approving.`;
 }
