@@ -19,20 +19,20 @@
  *     approved counts as an ordinary visit.
  * Test entries never appear. Managers read the DISTANCE and nothing about the reading behind it (owner, 2026-10-02).
  */
-import { buildCaseMap, type CaseMap } from "@/lib/crm-integrity/integrity-case-map";
+import { buildCaseMap } from "@/lib/crm-integrity/integrity-case-map";
 import { forbiddenError, notFoundError } from "@/lib/http/api-errors";
 import {
   FAR_VISIT_WEEK_NO_DISTRICT,
   FAR_VISIT_WEEK_POINT_LABELS,
   farVisitWeek,
   farVisitWeekFilterNarrows,
+  farVisitWeeks,
   farVisitWeekStanding,
-  type FarVisitWeek,
   type FarVisitWeekCellCounts,
   type FarVisitWeekFilter,
   type FarVisitWeekKind,
-  type FarVisitWeekStanding,
 } from "@/lib/phoenix-crm/far-visit-week-rules";
+import type { FarVisitWeekCell, FarVisitWeekDayItem, FarVisitWeekItem, FarVisitWeekOption, FarVisitWeekReport, FarVisitWeekRow, FarVisitWeeksReport } from "@/lib/phoenix-crm/far-visit-week-types";
 import { distanceMeters, isUsableFix } from "@/lib/phoenix-crm/geo";
 import { personKey, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { districtSeatAbove } from "@/lib/phoenix-crm/region-manager-groups";
@@ -44,6 +44,9 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
 type Point = { lat: number; lon: number };
+
+// The report's shapes live beside the rules, outside `server/`, so the screen can name them without bundling server code.
+export type { FarVisitWeekCell, FarVisitWeekDayItem, FarVisitWeekItem, FarVisitWeekOption, FarVisitWeekReport, FarVisitWeekRow, FarVisitWeeksReport };
 
 /**
  * Who opens the report: whoever reads a far-visit count at all (`readsPlaceVsActual`), the Super Admin, the SFE
@@ -59,65 +62,6 @@ export function farVisitWeekSeats(viewer: PhoenixCrmViewer): OrgSeat[] {
   if (!canReadFarVisitWeekReport(viewer)) throw forbiddenError("The far-visit week is for managers.");
   return viewer.scopeTerritories.filter((seat) => !seat.isOtherPseudoDm && !isLocationBlind(viewer, seat));
 }
-
-export type FarVisitWeekCell = FarVisitWeekCellCounts & { date: string; standing: FarVisitWeekStanding };
-
-export type FarVisitWeekRow = {
-  seatId: string;
-  repName: string;
-  territory: string;
-  regionName: string | null;
-  /** The territory's line, for the line filter. */
-  lineName: string | null;
-  /** The district manager's seat above this territory (the `dm` filter's value), or the no-district value. */
-  districtSeatId: string;
-  /** "Sahar El Gallad (Delta (2) · CNS)", "Vacant district (…)" or "No district manager". */
-  districtLabel: string;
-  cells: FarVisitWeekCell[];
-  totals: FarVisitWeekCellCounts;
-  cleanDays: number;
-};
-
-export type FarVisitWeekItem = {
-  kind: FarVisitWeekKind;
-  seatId: string;
-  date: string;
-  /** When it happened (ISO): the last refused try, or when the visit was held. */
-  at: string | null;
-  repName: string;
-  territory: string;
-  customerId: string;
-  customerName: string;
-  /** Metres from the customer's place, as the check measured it. */
-  distanceMeters: number | null;
-  /** The far line it was measured against. */
-  farMeters: number | null;
-  /** How many times save was pressed (a door refusal), or the stuck rep's tries (a hold). */
-  tries: number;
-  /** A door refusal whose customer the rep then visited from the right place the same day (an accepted visit apart). */
-  loggedLater: boolean;
-  spot: Point | null;
-  visitId: string | null;
-  placeId: string | null;
-};
-
-export type FarVisitWeekOption = { value: string; label: string };
-
-export type FarVisitWeekReport = {
-  week: FarVisitWeek;
-  rows: FarVisitWeekRow[];
-  items: FarVisitWeekItem[];
-  totals: FarVisitWeekCellCounts & { reps: number; repsWithRejections: number };
-  /** What the reader filtered by, as read from the address. */
-  filter: FarVisitWeekFilter;
-  /** "District manager: … · Line: …", or null when nothing narrows the week (printed on the Excel file). */
-  filterLabel: string | null;
-  /**
-   * The choices in each filter. District managers and lines come from the whole scope; the reps from the rows the
-   * district-manager and line filters leave, so picking a district first shortens the rep list.
-   */
-  options: { districts: FarVisitWeekOption[]; lines: string[]; reps: FarVisitWeekOption[] };
-};
 
 const NO_FILTER: FarVisitWeekFilter = { dm: null, line: null, rep: null };
 
@@ -405,7 +349,36 @@ export async function loadFarVisitWeekReport(
   return filterFarVisitWeekReport({ week, rows, items }, filter);
 }
 
-export type FarVisitWeekDayItem = FarVisitWeekItem & { map: CaseMap | null; points: Array<{ index: number; label: string; lat: number; lon: number }> };
+export function combineFarVisitWeeks(weeks: readonly FarVisitWeekReport[], filter: FarVisitWeekFilter): FarVisitWeeksReport {
+  const first = weeks[0];
+  const rejectedSeats = new Set<string>();
+  const totals = { visits: 0, doorRejected: 0, sfeRejected: 0, waiting: 0, reps: first?.totals.reps ?? 0, repsWithRejections: 0 };
+  for (const week of weeks) {
+    totals.visits += week.totals.visits;
+    totals.doorRejected += week.totals.doorRejected;
+    totals.sfeRejected += week.totals.sfeRejected;
+    totals.waiting += week.totals.waiting;
+    for (const row of week.rows) if (row.totals.doorRejected + row.totals.sfeRejected > 0) rejectedSeats.add(row.seatId);
+  }
+  totals.repsWithRejections = rejectedSeats.size;
+  return {
+    weeks: [...weeks],
+    totals,
+    filter,
+    filterLabel: first?.filterLabel ?? null,
+    options: first?.options ?? { districts: [], lines: [], reps: [] },
+  };
+}
+
+export async function loadFarVisitWeeksReport(
+  viewer: PhoenixCrmViewer,
+  rawWeeks: readonly string[],
+  filter: FarVisitWeekFilter = NO_FILTER,
+): Promise<FarVisitWeeksReport> {
+  const weeks = farVisitWeeks(rawWeeks, viewer.cairoToday);
+  const reports = await Promise.all(weeks.map((week) => loadFarVisitWeekReport(viewer, week.start, filter)));
+  return combineFarVisitWeeks(reports, filter);
+}
 
 const DAY_MAP_SIZE = { width: 256, height: 256, padding: 32 };
 

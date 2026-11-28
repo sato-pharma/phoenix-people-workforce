@@ -488,6 +488,7 @@ export const MODULES = [
       "supabase/migrations/*phoenix_crm_far_visit_safeguards*",
       "tests/phoenix-crm-far-visit-safeguards*",
       "src/lib/phoenix-crm/far-visit-week-rules.ts",
+      "src/lib/phoenix-crm/far-visit-week-types.ts",
       "src/lib/phoenix-crm/server/far-visit-week-*.ts",
       "src/components/phoenix-crm/far-visit-week-report-view.tsx",
       "app/**/far-visit-week/**",

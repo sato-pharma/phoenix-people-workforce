@@ -448,7 +448,8 @@
     "Visit report": 30,
     "Visits": 26,
     "Weekly": 35,
-    "vs Target": 30
+    "vs Target": 30,
+    "Far visits": 26
   },
   "fallback": {
     "admin": {
@@ -900,7 +901,8 @@
       "Visit report": 29,
       "Visits": 27,
       "Weekly": 35,
-      "vs Target": 30
+      "vs Target": 30,
+      "Far visits": 27
     }
   }
 }

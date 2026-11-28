@@ -35,7 +35,7 @@ export default async function TeamFarVisitWeekPage({ searchParams }: { searchPar
       description="Each of your reps' week, a day at a time: clean, rejected for where the visit was logged, or waiting for the SFE. Open a red day to see each visit and the map behind it; the Excel file holds the same week."
       title="Far-visit week"
     >
-      <FarVisitWeekReportView basePath={FAR_VISIT_WEEK_PATHS.portal} report={report} selected={selected} />
+      <FarVisitWeekReportView basePath={FAR_VISIT_WEEK_PATHS.portal} report={report} selected={selected} today={viewer.cairoToday} />
     </EmployeePortalPageShell>
   );
 }

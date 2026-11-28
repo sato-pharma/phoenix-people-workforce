@@ -196,6 +196,7 @@
     {"pattern":"/api/payroll/copilot/:runId/deductions/vacation","file":null,"reasons":["registry:access-read"]},
     {"pattern":"/api/payroll/template","file":"app/api/payroll/template/route.ts","reasons":["file:content-disposition","file:spreadsheet"]},
     {"pattern":"/api/phoenix-crm/day-interviews/cv","file":"app/api/phoenix-crm/day-interviews/cv/route.ts","reasons":["registry:export","writes:audit-write"]},
+    {"pattern":"/api/phoenix-crm/far-visit-week-report/export","file":"app/api/phoenix-crm/far-visit-week-report/export/route.ts","reasons":["file:content-disposition","file:spreadsheet","registry:export","writes:audit-write"]},
     {"pattern":"/api/phoenix-crm/list/line-export","file":"app/api/phoenix-crm/list/line-export/route.ts","reasons":["file:content-disposition","file:spreadsheet","registry:export","writes:audit-write"]},
     {"pattern":"/api/phoenix-crm/list/template","file":"app/api/phoenix-crm/list/template/route.ts","reasons":["file:content-disposition","file:spreadsheet","registry:export","writes:audit-write"]},
     {"pattern":"/api/phoenix-crm/manager-plans/export","file":"app/api/phoenix-crm/manager-plans/export/route.ts","reasons":["file:content-disposition","file:spreadsheet","registry:export","writes:audit-write"]},

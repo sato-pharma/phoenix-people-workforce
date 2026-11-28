@@ -9,7 +9,10 @@ import {
   FAR_VISIT_WEEK_KIND_LABELS,
   FAR_VISIT_WEEK_PATHS,
   farVisitWeek,
+  FAR_VISIT_WEEK_MAX,
   farVisitWeekCellText,
+  farVisitWeekChoices,
+  farVisitWeeks,
   farVisitWeekDayLabel,
   farVisitWeekFilterNarrows,
   farVisitWeekQuery,
@@ -20,11 +23,12 @@ import {
 import {
   canReadFarVisitWeekReport,
   farVisitWeekSeats,
+  combineFarVisitWeeks,
   filterFarVisitWeekReport,
   type FarVisitWeekItem,
   type FarVisitWeekRow,
 } from "../src/lib/phoenix-crm/server/far-visit-week-report.ts";
-import { FAR_VISIT_WEEK_SHEETS, buildFarVisitWeekWorkbook } from "../src/lib/phoenix-crm/server/far-visit-week-workbook.ts";
+import { FAR_VISIT_WEEK_SHEETS, buildFarVisitWeekWorkbook, farVisitWeekSheetName } from "../src/lib/phoenix-crm/server/far-visit-week-workbook.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 function read(path: string): string {
@@ -138,7 +142,7 @@ function thePagesTheRouteAndTheSidebarHoldTheirGates() {
 
   const route = stripComments(read("app/api/phoenix-crm/far-visit-week-report/export/route.ts"));
   assert.doesNotMatch(route, /export async function (?:POST|PATCH|PUT|DELETE)\(/, "the export only reads");
-  const steps = ['assertPermission(access, "phoenix_crm", "read")', "assertExportRateLimit(", "loadFarVisitWeekReport(", "writeAuditLog("].map((step) => route.indexOf(step));
+  const steps = ['assertPermission(access, "phoenix_crm", "read")', "assertExportRateLimit(", "loadFarVisitWeeksReport(", "writeAuditLog("].map((step) => route.indexOf(step));
   assert.ok(steps.every((at) => at > 0) && steps.every((at, index) => index === 0 || at > steps[index - 1]!), "permission, rate limit, the loader's own gate, then the export is recorded");
 
   const entries = stripComments(read("src/lib/phoenix-crm/server/sidebar-entries.ts"));
@@ -153,16 +157,17 @@ function thePagesTheRouteAndTheSidebarHoldTheirGates() {
 
   const view = stripComments(read("src/components/phoenix-crm/far-visit-week-report-view.tsx"));
   assert.doesNotMatch(view, /^"use client"|onClick|fetch\(|method="post"/im, "the view is read-only links and a GET form, drawn on the server");
-  assert.match(view, /<form action=\{basePath\}[^>]*method="get"/, "the filters are a plain GET form on the page's own address");
-  for (const link of ["week.previous", "week.next", "week.start"]) {
+  assert.match(view, /<form action=\{reading\.basePath\}[^>]*method="get"/, "the weeks and filters are a plain GET form on the page's own address");
+  assert.match(view, /name="week" type="checkbox"/, "several weeks are ticked, each a repeated week= in the address");
+  for (const link of ["single.previous", "single.next", "reading.chosen"]) {
     assert.match(view, new RegExp(`farVisitWeekQuery\\(${link.replace(".", "\\.")}, filter\\)`), `the ${link} link keeps the filters`);
   }
-  assert.match(view, /farVisitWeekQuery\(week, filter, \{ seat: seatId, date \}\)/, "a day opened from the grid keeps the filters");
+  assert.match(view, /farVisitWeekQuery\(reading\.chosen, reading\.filter, \{ seat: seatId, date \}\)/, "a day opened from the grid keeps the weeks and the filters");
   const page = stripComments(read("src/lib/phoenix-crm/server/far-visit-week-page.ts"));
-  assert.match(page, /loadFarVisitWeekReport\(viewer, [^\n]*parseFarVisitWeekFilter\(/, "the page reads the filters from its address");
+  assert.match(page, /loadFarVisitWeeksReport\(viewer, all\(params\.week\), parseFarVisitWeekFilter\(/, "the page reads every week and the filters from its address");
   const exportRoute = stripComments(read("app/api/phoenix-crm/far-visit-week-report/export/route.ts"));
-  assert.match(exportRoute, /loadFarVisitWeekReport\(viewer, search\.get\("week"\), parseFarVisitWeekFilter\(/, "the Excel file is read with the same filters");
-  assert.match(view, /<table className="w-full table-fixed/, "the desktop grid is a fixed table (fits the screen)");
+  assert.match(exportRoute, /loadFarVisitWeeksReport\(viewer, search\.getAll\("week"\), parseFarVisitWeekFilter\(/, "the Excel file is read with the same weeks and filters");
+  assert.match(view, /<CrmTable columns=\{\["19%", \.\.\.week\.days\.map/, "the desktop grid is the module's fixed table (fits the screen)");
   assert.doesNotMatch(view, /rounded|overflow-x-auto|min-w-\[/, "no round corner, no sideways scroll");
 }
 
@@ -302,7 +307,7 @@ async function theWorkbook() {
     ],
   }, { dm: null, line: "CNS", rep: null });
   assert.equal(report.totals.reps, 1);
-  const buffer = await buildFarVisitWeekWorkbook(report, "Super Admin", "2026-11-28T17:00:00.000Z");
+  const buffer = await buildFarVisitWeekWorkbook(combineFarVisitWeeks([report], report.filter), "Super Admin", "2026-11-28T17:00:00.000Z");
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
   assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), [FAR_VISIT_WEEK_SHEETS.week, FAR_VISIT_WEEK_SHEETS.details], "two sheets: the week and its details");
@@ -329,6 +334,57 @@ async function theWorkbook() {
   assert.ok(details.autoFilter, "the details can be filtered");
 }
 
+async function severalWeeks() {
+  // 🔴 SEVERAL WEEKS AT ONCE (owner, 28 Nov 2026: "multi select multi weeks").
+  const today = "2026-11-28"; // a Saturday: this week is Sat 28 Nov
+  assert.deepEqual(
+    farVisitWeeks(["2026-11-17", "2026-11-24", "2026-11-21", "nonsense", ""], today).map((week) => week.start),
+    ["2026-11-21", "2026-11-14"],
+    "each day moves to its Saturday, repeats fold into one, nonsense is dropped, newest first",
+  );
+  assert.deepEqual(farVisitWeeks([], today).map((week) => week.start), ["2026-11-28"], "nothing chosen is this week alone");
+  assert.deepEqual(farVisitWeeks(["2027-01-09"], today).map((week) => week.start), ["2026-11-28"], "a week not begun yet is never read");
+  const many = Array.from({ length: 12 }, (_, index) => new Date(Date.UTC(2026, 10, 28 - 7 * index)).toISOString().slice(0, 10));
+  assert.equal(farVisitWeeks(many, today).length, FAR_VISIT_WEEK_MAX, `no more than ${FAR_VISIT_WEEK_MAX} weeks in one reading`);
+  const choices = farVisitWeekChoices(today);
+  assert.equal(choices.length, 12);
+  assert.equal(choices[0].start, "2026-11-28", "the picker opens on this week");
+  assert.equal(choices[1].start, "2026-11-21", "then the weeks before it");
+  assert.equal(
+    farVisitWeekQuery(["2026-11-21", "2026-11-14"], { dm: null, line: "CNS", rep: null }, { seat: "t-1", date: "2026-11-17" }),
+    "?week=2026-11-21&week=2026-11-14&line=CNS&seat=t-1&date=2026-11-17",
+    "every week chosen rides in the address, with the filters",
+  );
+
+  // One set of totals across the weeks: the reps once, a rep with a rejection once however many weeks held one.
+  const none = { dm: null, line: null, rep: null };
+  const weekA = farVisitWeek("2026-11-21", today);
+  const weekB = farVisitWeek("2026-11-14", today);
+  const a = filterFarVisitWeekReport({ week: weekA, rows: [weekRow(weekA, { seatId: "t-1", repName: "Rep One" }), weekRow(weekA, { seatId: "t-2", repName: "Rep Two", totals: { visits: 30, doorRejected: 0, sfeRejected: 0, waiting: 1 } })], items: [itemOf("t-1")] }, none);
+  const b = filterFarVisitWeekReport({ week: weekB, rows: [weekRow(weekB, { seatId: "t-1", repName: "Rep One" }), weekRow(weekB, { seatId: "t-2", repName: "Rep Two" })], items: [itemOf("t-2")] }, none);
+  const both = combineFarVisitWeeks([a, b], none);
+  assert.equal(both.totals.reps, 2, "the same two reps, counted once");
+  assert.equal(both.totals.repsWithRejections, 2);
+  assert.equal(both.totals.doorRejected, 21, "the rejections add up across the weeks");
+  assert.equal(both.totals.waiting, 1);
+  assert.equal(both.totals.visits, 135);
+
+  // The file: one sheet per week, newest first, and every week's lines in Details.
+  const buffer = await buildFarVisitWeekWorkbook(both, "Super Admin", "2026-11-28T17:00:00.000Z");
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
+  assert.deepEqual(
+    workbook.worksheets.map((sheet) => sheet.name),
+    ["Week Sat 21 Nov", "Week Sat 14 Nov", FAR_VISIT_WEEK_SHEETS.details],
+    "a sheet per week, named by its Saturday, then the details",
+  );
+  assert.equal(farVisitWeekSheetName(weekA, false), FAR_VISIT_WEEK_SHEETS.week, "one week keeps the plain name");
+  const details = workbook.getWorksheet(FAR_VISIT_WEEK_SHEETS.details)!;
+  assert.equal(details.getRow(6).getCell(1).value, "t-1");
+  assert.equal(details.getRow(7).getCell(1).value, "t-2", "both weeks' lines are in the details");
+  assert.match(String(details.getRow(2).getCell(1).value), /^2 weeks, Sat 14 Nov to Fri 27 Nov 2026/, "the details say which weeks they hold");
+}
+
 export async function runPhoenixCrmFarVisitWeekTests(): Promise<void> {
   rulesOfTheWeek();
   whoReadsIt();
@@ -336,5 +392,6 @@ export async function runPhoenixCrmFarVisitWeekTests(): Promise<void> {
   thePagesTheRouteAndTheSidebarHoldTheirGates();
   theFilters();
   await theWorkbook();
+  await severalWeeks();
   console.log("phoenix-crm-far-visit-week: PASS");
 }

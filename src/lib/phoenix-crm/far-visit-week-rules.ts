@@ -114,6 +114,37 @@ export const FAR_VISIT_WEEK_PATHS = {
   portal: "/employee-portals/far-visit-week",
 } as const;
 
+/** How many weeks one reading may hold, and how far back the picker reaches. */
+export const FAR_VISIT_WEEK_MAX = 8;
+export const FAR_VISIT_WEEK_CHOICES = 12;
+
+/**
+ * SEVERAL WEEKS AT ONCE (owner, 28 Nov 2026: "multi select multi weeks"). Each value in the address moves to its
+ * Saturday (`farVisitWeek`), repeats fold into one, the newest comes first, and no more than `FAR_VISIT_WEEK_MAX`
+ * are read; nothing, or only nonsense, is this week alone.
+ */
+export function farVisitWeeks(raws: readonly string[], today: string): FarVisitWeek[] {
+  const seen = new Map<string, FarVisitWeek>();
+  for (const raw of raws) {
+    if (!raw || !isDay(raw)) continue;
+    const week = farVisitWeek(raw, today);
+    seen.set(week.start, week);
+  }
+  const weeks = [...seen.values()].sort((a, b) => b.start.localeCompare(a.start)).slice(0, FAR_VISIT_WEEK_MAX);
+  return weeks.length > 0 ? weeks : [farVisitWeek(null, today)];
+}
+
+/** The weeks the picker offers: this week and the ones before it, newest first. */
+export function farVisitWeekChoices(today: string, count: number = FAR_VISIT_WEEK_CHOICES): FarVisitWeek[] {
+  const thisWeek = weekSaturday(today);
+  return Array.from({ length: count }, (_, index) => farVisitWeek(addDays(thisWeek, -7 * index), today));
+}
+
+/** "Sat 21 Nov to Fri 27 Nov 2026" — a week in words. */
+export function farVisitWeekRangeLabel(week: Pick<FarVisitWeek, "start" | "end">): string {
+  return `${farVisitWeekDayLabel(week.start)} to ${farVisitWeekDayLabel(week.end)} ${week.end.slice(0, 4)}`;
+}
+
 /**
  * The three filters above the week (owner, 28 Nov 2026: "filter by district manager … or by line or by rep"). Each
  * is a value from the address and nothing else: `dm` a district manager's SEAT id (or `none` for the reps with no
@@ -143,8 +174,9 @@ export function farVisitWeekFilterNarrows(filter: FarVisitWeekFilter): boolean {
  * The address of a week with the filters kept: every link on the page (the week arrows, a day, the Excel file)
  * goes through here, so moving a week or opening a day never drops what the reader filtered by.
  */
-export function farVisitWeekQuery(week: string, filter: FarVisitWeekFilter, extra: Record<string, string> = {}): string {
-  const params = new URLSearchParams({ week });
+export function farVisitWeekQuery(weeks: string | readonly string[], filter: FarVisitWeekFilter, extra: Record<string, string> = {}): string {
+  const params = new URLSearchParams();
+  for (const week of typeof weeks === "string" ? [weeks] : weeks) params.append("week", week);
   for (const name of FAR_VISIT_WEEK_FILTER_NAMES) {
     const value = filter[name];
     if (value) params.set(name, value);

@@ -6,7 +6,7 @@ import { resolveAccessContext } from "@/lib/auth/server";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { parseFarVisitWeekFilter } from "@/lib/phoenix-crm/far-visit-week-rules";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { loadFarVisitWeekReport } from "@/lib/phoenix-crm/server/far-visit-week-report";
+import { loadFarVisitWeeksReport } from "@/lib/phoenix-crm/server/far-visit-week-report";
 import { buildFarVisitWeekWorkbook } from "@/lib/phoenix-crm/server/far-visit-week-workbook";
 import { phoenixCrmFailure, searchOf } from "@/lib/phoenix-crm/server/http";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -18,7 +18,7 @@ export const maxDuration = 60;
 
 const XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
-// GET = the Far-visit week as one workbook (owner, 28 Nov 2026): sheet "Week" is the screen's grid, sheet
+// GET = the Far-visit week as one workbook (owner, 28 Nov 2026): a "Week" sheet per week chosen (the screen's grid), sheet
 // "Details" every refused or held visit of it. Built from the SAME loader as the screen, so the file can never hold
 // a rep the screen would not show this reader; the loader refuses a rep and anybody outside the team reports'
 // readers. The rate limit runs before the load, and the taking of the file is recorded, because it names
@@ -32,7 +32,9 @@ export async function GET(request: Request) {
     const viewer = await resolvePhoenixCrmViewer(access);
     const search = searchOf(request);
     // The same filters the screen was read with: the file holds exactly the rows the reader was looking at.
-    const report = await loadFarVisitWeekReport(viewer, search.get("week"), parseFarVisitWeekFilter((name) => search.get(name)));
+    const report = await loadFarVisitWeeksReport(viewer, search.getAll("week"), parseFarVisitWeekFilter((name) => search.get(name)));
+    const first = report.weeks[report.weeks.length - 1].week;
+    const last = report.weeks[0].week;
     const names = await loadPeopleNames([viewer.hrId]);
     const buffer = await buildFarVisitWeekWorkbook(report, nameOf(names, viewer.hrId), new Date().toISOString());
 
@@ -40,13 +42,13 @@ export async function GET(request: Request) {
       actorLoginId: access.loginId ?? null,
       entityId: null,
       entityType: "phoenix_crm_far_visit_week_export",
-      summary: `Exported the Far-visit week ${report.week.start} to ${report.week.end} (${report.totals.reps} reps, ${report.items.length} lines${report.filterLabel ? `; ${report.filterLabel}` : ""})`,
+      summary: `Exported the Far-visit week ${first.start} to ${last.end} (${report.weeks.length} ${report.weeks.length === 1 ? "week" : "weeks"}, ${report.totals.reps} reps, ${report.weeks.reduce((sum, week) => sum + week.items.length, 0)} lines${report.filterLabel ? `; ${report.filterLabel}` : ""})`,
     });
 
     return new NextResponse(buffer as unknown as ArrayBuffer, {
       headers: {
         "cache-control": "no-store",
-        "content-disposition": `attachment; filename="far-visit-week-${report.week.start}-to-${report.week.end}.xlsx"`,
+        "content-disposition": `attachment; filename="far-visit-week-${first.start}-to-${last.end}.xlsx"`,
         "content-type": XLSX,
       },
       status: 200,

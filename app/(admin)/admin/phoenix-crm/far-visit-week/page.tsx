@@ -38,7 +38,7 @@ export default async function PhoenixCrmFarVisitWeekPage({ searchParams }: { sea
         icon={<CalendarRange className="h-3.5 w-3.5" />}
         title="Far-visit week"
       />
-      <FarVisitWeekReportView basePath={FAR_VISIT_WEEK_PATHS.admin} report={report} selected={selected} />
+      <FarVisitWeekReportView basePath={FAR_VISIT_WEEK_PATHS.admin} report={report} selected={selected} today={viewer.cairoToday} />
     </div>
   );
 }
