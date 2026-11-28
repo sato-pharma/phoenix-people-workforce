@@ -1,8 +1,8 @@
 /**
  * The District Manager expense rules (owner, 28 Nov 2026, "Build them now"). Pinned:
  *
- *   1. The day's work: within 150 km a full day is AM ≥ 2 and PM ≥ 6; fewer than 2 AM counts as PM only
- *      and pays half; fewer than 6 PM pays PM/6; beyond 150 km a PM half day is allowed. Only the
+ *   1. The day's work: within 150 km a full day is AM ≥ 1 and PM ≥ 6 (the owner lowered AM from 2 to 1 on
+ *      28 Nov 2026); no AM visit counts as PM only and pays half; fewer than 6 PM pays PM/6; beyond 150 km a PM half day is allowed. Only the
  *      allowance is cut, per trip day, and a day whose first or last double visit is not confirmed — or
  *      that had no double visit — pays nothing. A row already at 0 stays 0; a re-price starts from the
  *      day's own base, never from a cut.
@@ -74,11 +74,15 @@ function day(am: number, pm: number, visits = [visit("a", "2026-12-01T08:00:00Z"
 
 function dayWork() {
   const judge = (work: DmTripDayWork, km: number | null = 100) => judgeDmTripDay({ baseAmount: 200, date: "2026-12-01", km, work });
-  assert.equal(judge(day(2, 6)).paidAmount, 200, "HEADLINE: AM 2 and PM 6 within 150 km is a full day");
+  assert.equal(judge(day(1, 6)).paidAmount, 200, "HEADLINE: AM 1 and PM 6 within 150 km is a full day — one contract account or hospital is enough");
+  assert.equal(judge(day(2, 6)).paidAmount, 200, "AM 2 and PM 6 is a full day too");
   assert.equal(judge(day(5, 9)).paidAmount, 200, "more work never pays more than the day");
-  assert.equal(judge(day(1, 6)).paidAmount, 100, "fewer than 2 AM counts as PM only: half");
+  const noAm = judge(day(0, 6));
+  assert.equal(noAm.paidAmount, 100, "no AM visit counts as PM only: half");
+  assert.match(noAm.reason, /^No AM visit counts as PM only: half/, "the reason says no AM visit, never \"fewer than 1\"");
   assert.equal(judge(day(2, 3)).paidAmount, 100, "3 of 6 PM pays half");
-  assert.equal(judge(day(1, 3)).paidAmount, 50, "both cuts: half of 3/6");
+  assert.equal(judge(day(1, 3)).paidAmount, 100, "1 AM and 3 PM: a full day's AM, 3/6 of the PM");
+  assert.equal(judge(day(0, 3)).paidAmount, 50, "both cuts: half of 3/6");
   assert.equal(judge(day(0, 6), 151).paidAmount, 200, "beyond 150 km a PM day is allowed");
   assert.equal(judge(day(0, 6), 150).paidAmount, 100, "at exactly 150 km it is not");
   assert.equal(judge(day(2, 0)).paidAmount, 0, "no PM at all pays nothing");
@@ -104,7 +108,7 @@ function dayWork() {
       { amount: 0, label: "Held by another claim", skipped: true, type: "overnight" as const },
       { amount: 60, baseAmount: 125, label: "Return day", type: "return_day" as const },
     ],
-    work: (date) => (date === "2026-12-01" ? day(1, 6) : day(2, 6)),
+    work: (date) => (date === "2026-12-01" ? day(0, 6) : day(2, 6)),
   });
   assert.deepEqual(plan.rows.map((row) => row.amount), [100, 0, 125], "a skipped day stays 0; a re-price starts from the base (125), never from the cut (60)");
   assert.equal(plan.record.allowanceBefore, 325);
@@ -326,7 +330,7 @@ function pricerGuards() {
   const priced = planDmWorkAllowance({
     km: 100, now: "2026-12-04T06:00:00Z", rowDates: ["2026-12-03"],
     rows: [{ amount: 200, label: "Overnight", type: "overnight" as const }],
-    work: () => day(1, 6),
+    work: () => day(0, 6),
   }).record;
   assert.equal(dmAllowanceEditedSincePriced(priced, 100), false, "the rule's own figure");
   assert.equal(dmAllowanceEditedSincePriced(priced, 180), true, "HEADLINE: an allowance moved off the priced figure is someone's edit");

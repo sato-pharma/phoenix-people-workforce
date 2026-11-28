@@ -13,9 +13,10 @@
  *      ("12 hours from the first double visit done for this district manager at this day"); with no
  *      double visit that day, within 12 hours of the end of the trip's last day.
  *   3. Each trip day's allowance is paid by the day's work: more than 150 km from home, a PM half day is
- *      allowed; 150 km or less, a full day is AM with at least 2 (contract accounts or hospitals) and PM
- *      with at least 6 evening visits, fewer than 2 AM counts as PM only = half; fewer than 6 PM is paid
- *      in proportion, PM / 6 at most. Only the allowance moves — never fuel or tickets.
+ *      allowed; 150 km or less, a full day is AM with at least 1 (a contract account or a hospital) and PM
+ *      with at least 6 evening visits, no AM visit counts as PM only = half; fewer than 6 PM is paid
+ *      in proportion, PM / 6 at most. The AM minimum was 2 as dictated, lowered to 1 by the owner the same
+ *      evening ("make the am account 1 instead of 2", 28 Nov 2026). Only the allowance moves — never fuel or tickets.
  *   4. On every trip day the District Manager confirms the first and the last double visit a rep logs with
  *      him, and the confirmation records where he was. A day without both loses its whole allowance.
  */
@@ -32,7 +33,7 @@ export function isDistrictManagerRole(role: string | null | undefined): boolean 
 export const DM_TRIP_PHOTO_GAP_HOURS = 3;
 export const DM_TICKET_WINDOW_HOURS = 12;
 export const DM_FULL_DAY_DISTANCE_KM = 150;
-export const DM_AM_MINIMUM = 2;
+export const DM_AM_MINIMUM = 1;
 export const DM_PM_MINIMUM = 6;
 
 /** The version stamp a District Manager claim filed under these rules carries (`dm_work_allowance.rules`). */
@@ -217,7 +218,7 @@ export function judgeDmTripDay(input: {
 
   const parts: string[] = [];
   if (far) parts.push(`More than ${DM_FULL_DAY_DISTANCE_KM} km from home: a PM half day is allowed`);
-  else if (half) parts.push(`${am} AM (fewer than ${DM_AM_MINIMUM}) counts as PM only: half`);
+  else if (half) parts.push(`${am === 0 ? "No AM visit" : `${am} AM (fewer than ${DM_AM_MINIMUM})`} counts as PM only: half`);
   else parts.push(`${am} AM`);
   parts.push(pm >= DM_PM_MINIMUM ? `${pm} PM` : `${pm} of ${DM_PM_MINIMUM} PM`);
   let reason = parts.join("; ") + ".";
