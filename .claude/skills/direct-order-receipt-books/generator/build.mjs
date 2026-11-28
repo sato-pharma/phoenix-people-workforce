@@ -119,8 +119,14 @@ function sealSvg(code, serial, partEn) {
     <text y="6" text-anchor="middle" font-family="Consolas, monospace" font-size="5.2" fill="${C.deep}" letter-spacing="0.4">${code}</text>
   </svg>`;
 }
-// NO visible watermark (owner, 28 Nov 2026: "من غير علامة مائية"): the large pale rosette that sat behind the items
-// table is gone. The per-receipt seal, the microtext and the QR stay ("سيب الكيو ار … سيب الحاجات المتامنه").
+// The page watermark: the same rosette, large and pale, behind the item table. Taken out at ~02:30 on 28 Nov 2026
+// ("من غير علامة مائية") and put BACK the same day at the owner's pick ("نرجّعه"), on plain white paper.
+function groundSvg(code, serial, partEn) {
+  const p = rosettePaths(code, serial, 40, 1600);
+  return `<svg viewBox="-50 -50 100 100" class="wm">
+    ${p.map((d, i) => `<path d="${d}" fill="none" stroke="${C.ghost}" stroke-width="${[0.16, 0.13, 0.11][i]}"/>`).join("")}
+  </svg>`;
+}
 // NO hidden "photocopied — not valid" word (owner's office print-and-copy tests, 27 Nov 2026): a void pantograph
 // needs dots an office laser cannot print and a copier cannot see; on his machines the word showed on the print,
 // or on neither. A stuck-on hologram can be peeled and reused, and a raised seal re-made by any seal maker, so
@@ -147,7 +153,8 @@ html, body { margin: 0; padding: 0; background: #fff; -webkit-print-color-adjust
 body { font-family: ${FONT}; color: ${C.body}; font-size: 9.4pt; line-height: 1.5; }
 .sheet { position: relative; background: #fff; width: 210mm; height: 297mm; padding: 9mm 11mm 8mm; overflow: hidden; page-break-after: always; break-after: page; }
 .sheet:last-child { page-break-after: auto; break-after: auto; }
-.sheet > *:not(.foot):not(.zoneA):not(.zoneB) { position: relative; z-index: 1; }
+.wm { position: absolute; width: 150mm; height: 150mm; left: 30mm; top: 95mm; z-index: 0; }
+.sheet > *:not(.wm):not(.foot):not(.zoneA):not(.zoneB) { position: relative; z-index: 1; }
 .sheet > .foot { z-index: 1; }
 .mast { display: flex; direction: ltr; align-items: center; gap: 5mm; }
 .mast__logo { width: 36mm; height: 14.2mm; flex: none; }
@@ -280,6 +287,7 @@ function receiptPage(book, r, idx, part) {
     <div class="stamp">ختم المنشأة</div>
   </div>`;
   return `<section class="sheet">
+  ${groundSvg(code, s, part.en)}
   <header class="mast">
     <div class="mast__logo">${LOGO}</div>
     <div class="mast__title"><p class="co">شركة ساتو فارما <span dir="ltr">(SATO PHARMA)</span></p><h1>إذن تسليم وتسلم بضاعة</h1></div>

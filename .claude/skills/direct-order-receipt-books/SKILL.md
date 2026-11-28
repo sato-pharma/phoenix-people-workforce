@@ -106,8 +106,9 @@ the browser on another machine.
   3. **Every signature line says «بالقلم الأزرق»**.
   4. **Guilloche seal per receipt.** Its rosette is seeded from the serial and code, so no two of the 800 match.
      The serial and code run round its ring.
-  5. 🔴 **Visible watermark — DROPPED** (owner, 28 Nov 2026: «من غير علامة مائية، من غير اللون الاصفر … اهم حاجة تبقى
-     الدفاتر عادية»). The large pale rosette behind the items table is gone; never bring it back.
+  5. **Visible watermark**: the same rosette, large and pale, behind the items table. Taken out at ~02:30 on
+     28 Nov 2026 («من غير علامة مائية») and put BACK the same day at the owner's pick («نرجّعه»). It is not
+     yellow and a copier keeps it: it makes a page drawn from scratch harder, never a photocopy.
   6. **Microtext line** at 2.6 pt: `SATOPHARMA` + serial + code + part, repeated. It reads as a hairline. Never
      claim a copy loses it: his copier keeps what the eye can see.
   7. **QR code = a Phoenix link**, `https://phoenix-hr.satopharma.com/r/<serial>-<code>` (owner, 28 Nov 2026:
@@ -301,12 +302,15 @@ After Dr Anwar asked what the original and Copy 2 were for, the owner settled it
     `Guides\_superseded - yellow ground\`. Never print them.
   - The managers' guide still names no security mark.
 
-- ✅ **Rebuilt on 28 Nov 2026, ~03:30 Cairo, with NO visible watermark and the QR as a Phoenix link** (owner, ~02:30:
+- ✅ **28 Nov 2026: the QR became a Phoenix link; the watermark was taken out, then put back; PLAIN paper** (owner, ~02:30:
   «سيب الكيو ار وسيب … الحاجات المتامنه، يعني امن نفسك بس بحاجه غير العلامه المائيه وغير اللون الاصفر»).
   - Kept: the per-receipt seal, the microtext, the red serial, «بالقلم الأزرق», the secret code and the QR.
   - The owner asked which press options need a special request: UV ink, impressed numbering and thermochromic ink
     all do, so none is in the files; he asked for every protection that needs NO special request.
-  - The watermark books are in `_superseded v5 - watermark\`. Never print them.
+  - 🔴 **PLAIN WHITE PAPER, NO SPECIAL PRESS REQUEST** (owner's pick, 28 Nov: «ورق عادي»; «تأمن نفسك بكل الطرق اللي
+    مش محتاجة سبيشال ريكوست من المطبعة»). Anti-copy (VOID) paper is a special request too, so it is OUT; a copy is
+    stopped by the one-use code in Phoenix. The guides still name the VOID paper until they are rebuilt.
+  - The sample was shown to him first (his word: «DO EXAMPLE AND SHOW ME FIRST BEFORE BUILDING ALL»).
 
 - The physical copier test. Two ways to do it:
   - on a sheet of the press's security paper: `اختبار ورق الأمان - ماكينة التصوير.pdf`, page 2, printed on it at
