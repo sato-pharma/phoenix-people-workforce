@@ -19,6 +19,11 @@
  *    destination city is the same (or either side has none);
  *  - RECEIPT: a ticket photo of the same file name and the same size is already on the other
  *    claim, whatever its dates (the read that feeds this bounds them).
+ *  - READ TICKET: a ticket the reader read (ticket-scan.ts) carries the same train or bus number and the
+ *    same travel day as a read ticket already on the other claim — the same ticket photographed again
+ *    is a new file, so the receipt print never sees it (owner, 2026-11-28, ZERO leniency: "مفيش فيها
+ *    تهاون", after Weaam Gweed's Superjet 2244150 was photographed twice and her train 976 sent three
+ *    times as legs of two claims). `sameTicketTwice` holds the same key inside one claim and one upload.
  *
  * The same two halves as the same-trip guard, one rule:
  *  - SUBMISSION refuses the copy with words that name the earlier claim (service.ts), checked
@@ -49,6 +54,8 @@ export type DuplicateTicketCandidate = {
   otherAmount?: number | null;
   /** The ticket photos, as files or as fingerprints already made by `ticketReceiptFingerprint`. */
   receipts?: Array<TicketReceiptFile | string> | null;
+  /** The tickets the reader read: stored metadata, scan records, or keys made by `readTicketKey`. */
+  readTickets?: unknown;
   returnTicketAmount?: number | null;
   toCity?: string | null;
   tripEndDate?: string | null;
@@ -61,7 +68,7 @@ export type DuplicateTicketExisting = DuplicateTicketCandidate & {
 };
 
 /** What the copy repeats, in the order an employee reads it. */
-export type DuplicateTicketRepeat = "tickets" | "other" | "receipt";
+export type DuplicateTicketRepeat = "tickets" | "other" | "receipt" | "read_ticket";
 
 export type DuplicateTicketMatch = {
   earlier: DuplicateTicketExisting;
@@ -133,6 +140,72 @@ function fingerprints(files: Array<TicketReceiptFile | string> | null | undefine
   );
 }
 
+/** A read ticket, as kept on a claim (`scan` of ticket_attachment_metadata) or just read for a new one. */
+export type ReadTicket = { fromStation?: unknown; matchedTo?: unknown; toStation?: unknown; trainNumber?: unknown; travelDate?: unknown };
+
+const ARABIC_DIGITS = /[٠-٩۰-۹]/g;
+
+function asciiDigits(value: string): string {
+  return value.replace(ARABIC_DIGITS, (digit) => String((digit.charCodeAt(0) & 0xf) % 10));
+}
+
+/**
+ * A read ticket's identity: its travel day and its train or bus number (the reader puts a bus ticket's
+ * serial there too — Superjet 2244150). One person cannot hold two tickets of the same number on the
+ * same day as two different journeys. Null when the ticket was not read, or no number was read.
+ */
+export function readTicketKey(ticket: ReadTicket | null | undefined): string | null {
+  if (!ticket || (ticket.matchedTo !== "arrival" && ticket.matchedTo !== "departure")) return null;
+  const travel = String(ticket.travelDate ?? "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(travel)) return null;
+  const number = asciiDigits(String(ticket.trainNumber ?? ""))
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "")
+    .replace(/^0+(?=.)/, "");
+  return number ? `${travel}|${number}` : null;
+}
+
+/** Every read ticket's key in a claim's stored metadata, a list of scan records, or a list of keys. */
+export function readTicketKeys(tickets: unknown): string[] {
+  if (!Array.isArray(tickets)) return [];
+  return tickets
+    .map((entry) => {
+      if (typeof entry === "string") return entry || null;
+      if (!entry || typeof entry !== "object") return null;
+      const scan = "scan" in entry ? (entry as { scan?: unknown }).scan : entry;
+      return scan && typeof scan === "object" ? readTicketKey(scan as ReadTicket) : null;
+    })
+    .filter((key): key is string => Boolean(key));
+}
+
+/** "train 976 on 19 Nov 2026" — a read ticket as the employee reads it. */
+function readTicketWords(key: string): string {
+  const [travel, number] = key.split("|");
+  return `train or bus number ${number} on ${formatTripDay(travel ?? "")}`;
+}
+
+/**
+ * The same read ticket twice inside ONE claim: picked twice in one upload, or picked again for a claim that
+ * already carries it. Returns the refusal the employee reads, or null. Zero leniency (owner, 2026-11-28).
+ */
+export function sameTicketTwice(input: { candidates: ReadonlyArray<ReadTicket | null | undefined>; onThisClaim?: unknown }): { guidance: string[]; reason: string } | null {
+  const held = new Set(readTicketKeys(input.onThisClaim));
+  const picked = new Set<string>();
+  for (const candidate of input.candidates) {
+    const key = readTicketKey(candidate);
+    if (!key) continue;
+    if (held.has(key) || picked.has(key)) {
+      const where = held.has(key) ? "already on this claim" : "chosen twice in this upload";
+      return {
+        guidance: ["Each ticket is attached once. Attach the ticket of the other journey, never a second photo of the same ticket."],
+        reason: `Not accepted: this is the same ticket (${readTicketWords(key)}) ${where}.`,
+      };
+    }
+    picked.add(key);
+  }
+  return null;
+}
+
 /** What `candidate` repeats of `other`, empty when nothing. */
 export function ticketRepeats(candidate: DuplicateTicketCandidate, other: DuplicateTicketCandidate): DuplicateTicketRepeat[] {
   const repeats: DuplicateTicketRepeat[] = [];
@@ -160,6 +233,10 @@ export function ticketRepeats(candidate: DuplicateTicketCandidate, other: Duplic
       }
     }
   }
+
+  // Whatever the dates and the amounts: the ticket's own day and number are the identity.
+  const read = new Set(readTicketKeys(candidate.readTickets));
+  if (read.size > 0 && readTicketKeys(other.readTickets).some((key) => read.has(key))) repeats.push("read_ticket");
   return repeats;
 }
 
@@ -193,7 +270,13 @@ function formatTripDay(iso: string) {
 
 function repeatWords(repeats: DuplicateTicketRepeat[]) {
   const words = repeats.map((repeat) =>
-    repeat === "tickets" ? "the same go and return tickets" : repeat === "other" ? "the same other cost (such as parking)" : "the same ticket photo",
+    repeat === "tickets"
+      ? "the same go and return tickets"
+      : repeat === "other"
+        ? "the same other cost (such as parking)"
+        : repeat === "read_ticket"
+          ? "the same ticket (the same train or bus number on the same day)"
+          : "the same ticket photo",
   );
   if (words.length <= 1) return words.join("");
   return `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`;
@@ -216,6 +299,7 @@ export type DuplicateTicketRow = {
   hrId?: string | null;
   otherAmount?: number | null;
   receipts?: Array<TicketReceiptFile | string> | null;
+  readTickets?: unknown;
   returnTicketAmount?: number | null;
   status?: string | null;
   toCity?: string | null;
@@ -241,6 +325,7 @@ export function flagDuplicateTicketRows(rows: DuplicateTicketRow[]): Map<string,
     employeeHrId: String(row.hrId ?? ""),
     goTicketAmount: row.goTicketAmount,
     otherAmount: row.otherAmount,
+    readTickets: row.readTickets,
     receipts: row.receipts,
     returnTicketAmount: row.returnTicketAmount,
     toCity: row.toCity,

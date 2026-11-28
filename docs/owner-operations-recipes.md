@@ -164,6 +164,23 @@ node --env-file-if-exists=.env.local --experimental-strip-types --experimental-s
   printed pin row.
 - **Proof:** the pin row, then the linked employees' workspaces.
 
+## Expenses
+
+### Reject an expense claim ("reject it", "ارفضها")
+
+- **Run:** `owner-ops.ts reject-expense --claim <claim number> --reason "<what the employee reads>"`, dry run
+  first, then the same line with `--apply`. One claim per run.
+- **What it does:** the Expense Approvals Reject press itself (`decideDeskClaims`, `src/lib/outstation/approvals/decide.ts`):
+  the claim's own version, the in-payroll lock, the audit row and the employee's notice (in-app, Telegram and
+  push — never email; a local run's push says "OneSignal is not configured" and the in-app notice still lands).
+  The reason is shown to the employee on the claim, so write it for her.
+- **A dry run ends "refused"** by design: the fence holds the write back, so the desk's own re-read finds the
+  claim unchanged. The listed writes are the reading.
+- **Proof:** the claim re-read through the desk — `rejected`, with the decided time and the comment.
+- **First run:** 28 Nov 2026, claims 368 and 399 of Weaam Gweed (the same ticket uploaded as two legs).
+  An email about it, when he asks for one, goes from production (`railway run`) through the HR reply
+  composer's own code, after he approves the exact text.
+
 ## Leave
 
 ### Close the HR approver's own leave that waits on himself ("I already accepted this")

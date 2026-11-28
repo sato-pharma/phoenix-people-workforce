@@ -150,6 +150,14 @@ function dryRunIsTheDefault() {
   assert.deepEqual(plan(["reinstate-insurance-cover", "--employee", "B-76,OF-0005, B-76"]), { apply: false, hrIds: ["B-76", "OF-0005"], job: "reinstate-insurance-cover" }, "putting cover back names the people, each once, and is a dry run until --apply");
   refused(["reinstate-insurance-cover"], "putting cover back is never aimed at everyone");
   refused(["reinstate-insurance-cover", "--employee", "Salim Gomaa"], "an HR id, never a name");
+  const why = "Rejected: the same train ticket was uploaded three times.";
+  assert.deepEqual(plan(["reject-expense", "--claim", "399", "--reason", why]), { apply: false, job: "reject-expense", reason: why, requestId: 399 }, "rejecting a claim names one claim and the reason she reads, and is a dry run until --apply");
+  assert.equal((plan(["reject-expense", "--claim", "399", "--reason", why, "--apply"]) as { apply: boolean }).apply, true);
+  refused(["reject-expense", "--reason", why], "a rejection is never aimed at no claim");
+  refused(["reject-expense", "--claim", "OUTSTATION-399", "--reason", why], "the claim's number, never its label");
+  refused(["reject-expense", "--claim", "399"], "a rejection always carries the reason the employee reads");
+  refused(["reject-expense", "--claim", "399", "--reason", "same"], "a one-word reason tells her nothing");
+  refused(["reject-expense", "--claim", "399", "--reason", why, "--employee", "AI-0013"], "a flag of another job is refused");
 }
 
 type Call = { url: string; method: string };
