@@ -33,6 +33,7 @@
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import { privateCalendarHrIdKey, privateCalendarSourceLabels, type PrivateCalendarItem } from "@/lib/private-calendar/logic";
 import { fetchAllRows, fetchAllRowsKeyset } from "@/lib/supabase/paginated";
+import { loadReferenceLines } from "@/lib/reference/reference-lists";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const PRIVATE_CALENDAR_DAY_RECORDS_TABLE = "private_calendar_day_records";
@@ -298,7 +299,7 @@ export async function loadLineTrainingDays(window: { end: string; start: string 
           .ilike("job_title", "%product manager%"),
       "hr_id",
     ),
-    fetchAllRows<Row>(() => getSupabaseAdmin().from("lines").select("id, code, name"), "id"),
+    loadReferenceLines(),
   ]);
   const codeById = new Map<string, string>();
   const lineNames = new Map<string, string>();

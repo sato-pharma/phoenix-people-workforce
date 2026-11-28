@@ -26,6 +26,7 @@ import {
 import { privateCalendarHrIdKey } from "@/lib/private-calendar/logic";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { hrIdForStorage } from "@/lib/hr-id";
+import { loadReferenceLines } from "@/lib/reference/reference-lists";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** At most this many people in one step — the whole company fits, a runaway payload does not. */
@@ -77,7 +78,7 @@ export async function loadDayRecordPicker(access: Pick<AccessContext, "role">): 
           .select("hr_id, full_name, nickname, job_title, line_id, hire_date, last_working_date, employment_status"),
       "hr_id",
     ),
-    fetchAllRows<Row>(() => getSupabaseAdmin().from("lines").select("id, name"), "id"),
+    loadReferenceLines(),
   ]);
   const lineName = new Map(lines.map((line) => [String(line.id), String(line.name ?? "")]));
   const today = new Intl.DateTimeFormat("en-CA", { day: "2-digit", month: "2-digit", timeZone: "Africa/Cairo", year: "numeric" }).format(new Date());

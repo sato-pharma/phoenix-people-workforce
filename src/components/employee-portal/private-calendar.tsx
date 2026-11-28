@@ -208,11 +208,11 @@ const kindTones: Record<PrivateCalendarActivityKind, { accent: string; chip: str
     swatch: "bg-neutral-800",
   },
   // A day record (2026-11-28): the line's training day, a day the Super Admin recorded for a group, or a
-  // conference a rep named him on — deep indigo, apart from the single-visit blue and every exception hue.
+  // conference a rep named him on — bronze: the review hue is taken, and every other free hue sits near a kind.
   day_record: {
-    accent: "border-l-indigo-900",
-    chip: "border-l-[3px] border-l-indigo-900 bg-indigo-50",
-    swatch: "bg-indigo-900",
+    accent: "border-l-yellow-800",
+    chip: "border-l-[3px] border-l-yellow-800 bg-yellow-50",
+    swatch: "bg-yellow-800",
   },
   // A day an admin verified on the employee's review request (2026-10-29) — lime, a hue no source and no exception wears.
   correction: {

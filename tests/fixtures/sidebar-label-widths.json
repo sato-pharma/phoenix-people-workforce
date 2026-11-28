@@ -262,7 +262,8 @@
     "Held Emails": 68,
     "Far Visits Held": 82,
     "Probation Due": 84,
-    "Open Renewals": 89
+    "Open Renewals": 89,
+    "Day Records": 79
   },
   "portal": {
     "All Marketing Requests": 131,
@@ -711,7 +712,8 @@
       "Held Emails": 73,
       "Far Visits Held": 89,
       "Probation Due": 88,
-      "Open Renewals": 96
+      "Open Renewals": 96,
+      "Day Records": 79
     },
     "portal": {
       "All Marketing Requests": 133,

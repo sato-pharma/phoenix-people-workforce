@@ -14,6 +14,7 @@ import { randomUUID } from "node:crypto";
 import { PRIVATE_CALENDAR_DAY_RECORDS_TABLE } from "@/lib/private-calendar/day-records";
 import { privateCalendarHrIdKey } from "@/lib/private-calendar/logic";
 import { fetchAllRows } from "@/lib/supabase/paginated";
+import { loadReferenceLines } from "@/lib/reference/reference-lists";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const CONFERENCE_COMPANIONS_MAX = 20;
@@ -53,15 +54,14 @@ export async function loadConferenceCompanionChoices(lineCode: string | null | u
   const code = String(lineCode ?? "").trim();
   if (!code) return [];
   const supabase = getSupabaseAdmin();
-  const { data: line, error } = await supabase.from("lines").select("id").eq("code", code).maybeSingle();
-  if (error) throw new Error(`Could not read the line: ${error.message}`);
-  if (!line) return [];
+  const line = (await loadReferenceLines()).find((entry) => String(entry.code ?? "").trim() === code);
+  if (!line || line.id === null) return [];
   const rows = await fetchAllRows<Row>(
     () =>
       supabase
         .from("employees")
         .select("hr_id, full_name, nickname, job_title")
-        .eq("line_id", (line as Row).id as string)
+        .eq("line_id", line.id)
         .ilike("employment_status", "active")
         .ilike("job_title", "%manager%"),
     "hr_id",

@@ -276,7 +276,7 @@ export async function runPrivateCalendarTests() {
   );
   assert.equal(
     noItemsExceptions[0]?.description,
-    "Employee Two: no CRM field or double visit, no fingerprint attendance, no outstation trip, no approved vacation, no approved excuse and no two interviews in one half recorded for this workday. An approved weekly plan is not a record of work and never clears this day.",
+    "Employee Two: no CRM field or double visit, no fingerprint attendance, no outstation trip, no day record, no approved vacation, no approved excuse and no two interviews in one half recorded for this workday. An approved weekly plan is not a record of work and never clears this day.",
     "the description must spell out exactly which sources were checked and came up empty",
   );
 
@@ -467,7 +467,7 @@ export async function runPrivateCalendarTests() {
       assert.ok(block, `the screen gives ${kind} a colour`);
       assert.equal(tone.tailwind, block?.[1], `the PDF paints ${kind} in the screen's own colour, never one of its own`);
     }
-    assert.equal(Object.keys(PRIVATE_CALENDAR_PDF_KIND_TONES).length, 12, "every kind of day has its colour on paper too");
+    assert.equal(Object.keys(PRIVATE_CALENDAR_PDF_KIND_TONES).length, 13, "every kind of day has its colour on paper too");
 
     assert.equal(privateCalendarOtherActivityText("Other CRM activity: Training 1"), "Training", "one activity is named, never counted as 1");
     assert.equal(privateCalendarOtherActivityText("Other CRM activity: Training 1 · Meeting 2"), "Training · Meeting × 2");
@@ -793,6 +793,7 @@ export async function runPrivateCalendarTests() {
   assert.deepEqual(summarizePrivateCalendarItems([attendance, vacation, excuse]), {
     attendance: 1,
     correction: 0,
+    day_record: 0,
     double_visit: 0,
     excuse: 1,
     field_visit: 0,
