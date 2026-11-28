@@ -23,6 +23,7 @@ import type { PhoenixCrmModuleKey } from "@/lib/phoenix-crm/modules";
 const TAB_CHUNKS: Record<PhoenixCrmModuleKey, () => Promise<unknown>> = {
   visits: () => import("@/components/phoenix-crm/visits-tab"),
   list: () => import("@/components/phoenix-crm/list-tab"),
+  focus: () => import("@/components/phoenix-crm/focus-list-tab"),
   plan: () => import("@/components/phoenix-crm/plan-board"),
   forecast: () => import("@/components/phoenix-crm/forecast-tab"),
   team: () => import("@/components/phoenix-crm/team-tab"),

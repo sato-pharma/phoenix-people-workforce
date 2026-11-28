@@ -81,7 +81,7 @@ function testThePageCannotTellARefresh() {
 }
 
 function overview(overrides: Record<string, unknown> = {}, viewer: Record<string, unknown> = {}): PhoenixCrmOverview {
-  const tabs = { calendar: true, doctors: true, forecast: true, list: true, plan: true, reports: true, settings: true, team: true, testAccounts: true, visits: true };
+  const tabs = { calendar: true, doctors: true, focus: true, forecast: true, list: true, plan: true, reports: true, settings: true, team: true, testAccounts: true, visits: true };
   return {
     closedMessage: null,
     managerPlans: null,

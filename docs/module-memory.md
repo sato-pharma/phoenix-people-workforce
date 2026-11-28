@@ -112,6 +112,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `phoenix-crm-requests` — Phoenix CRM — how a request answers the screen | `src/components/phoenix-crm/api.ts` and 10 more |
 | `phoenix-crm-manager-plan` — Phoenix CRM — the district manager's weekly plan | `src/lib/phoenix-crm/manager-plan-rules.ts` and 11 more |
 | `phoenix-crm-manager-customer-marks` — Phoenix CRM — the marks on each customer of a manager's plan board | `src/lib/phoenix-crm/manager-customer-marks-rules.ts` and 9 more |
+| `phoenix-crm-focus-list` — Phoenix CRM — the Focus list | `src/lib/phoenix-crm/focus-list-rules.ts` and 5 more |
 | `phoenix-crm-manager-ride-alongs` — Phoenix CRM — a manager's half-day with another manager | `src/lib/phoenix-crm/manager-plan-rules.ts` and 12 more |
 | `phoenix-crm-manager-plan-conversation` — Phoenix CRM — the conversation on a manager's week | `src/lib/phoenix-crm/server/manager-plan-conversation.ts` and 4 more |
 | `phoenix-crm-manager-plan-training-manager` — Phoenix CRM — the Training Manager's weekly plan | `src/lib/phoenix-crm/manager-plan-rules.ts` and 6 more |

@@ -12,7 +12,7 @@ export type PhoenixCrmSurface = "admin" | "portal";
 export type TabKey = keyof PhoenixCrmTabs;
 
 // The Super Admin's own tab for the test personas' approvals is LAST (owner, 2026-10-22), after Settings.
-export const TAB_ORDER: readonly TabKey[] = ["visits", "list", "plan", "forecast", "team", "calendar", "doctors", "reports", "settings", "testAccounts"];
+export const TAB_ORDER: readonly TabKey[] = ["visits", "list", "focus", "plan", "forecast", "team", "calendar", "doctors", "reports", "settings", "testAccounts"];
 
 /** The tabs that show one territory, chosen with the picker above them. */
 export type SeatTab = "visits" | "list" | "plan";

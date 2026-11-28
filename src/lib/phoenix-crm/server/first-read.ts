@@ -168,6 +168,9 @@ export function phoenixCrmFirstReadTarget(overview: PhoenixCrmOverview, requeste
         permission: "update",
         url: "/api/phoenix-crm/settings",
       };
+    // The Focus list reads its own route once mounted; it has no server first read.
+    case "focus":
+      return null;
     case "testAccounts":
       return {
         key: "testApprovals",

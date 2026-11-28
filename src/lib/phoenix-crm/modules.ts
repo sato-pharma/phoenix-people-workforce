@@ -58,6 +58,7 @@ export function phoenixCrmDayPath(
 export type PhoenixCrmModuleKey =
   | "visits"
   | "list"
+  | "focus"
   | "plan"
   | "forecast"
   | "team"
@@ -100,6 +101,9 @@ export type PhoenixCrmModule = {
 export const PHOENIX_CRM_MODULES: readonly PhoenixCrmModule[] = [
   { key: "visits", slug: "visits", label: "Visits", blurb: "Add a visit, and read back the ones you entered today." },
   { key: "list", slug: "list", label: "List", blurb: "Your customers: validate them at the clinic, keep their days and hours, ask to add or drop." },
+  // The Focus list (owner, 2026-11-28): the PM customers a rep or his manager put in focus, with why — grouped by
+  // grade, then brick. A manager reads it with the tracking: how often each one was visited, when and where last.
+  { key: "focus", slug: "focus-list", label: "Focus list", blurb: "The PM customers in focus, with why: grouped by grade, then brick." },
   { key: "plan", slug: "plan", label: "Plan", blurb: "Plan the coming week day by day, and send it for approval." },
   // 🔴 CNS ONLY (owner, 2026-10-01: "build the daily forecast module in Phoenix ONLY FOR CNS LINE"). It
   // replaces the "Daily forecast" the CNS reps typed into the line's WhatsApp group: the boxes come

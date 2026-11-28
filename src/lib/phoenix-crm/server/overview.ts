@@ -54,6 +54,8 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 export type PhoenixCrmTabs = {
   visits: boolean;
   list: boolean;
+  /** The Focus list (owner, 2026-11-28): the rep's own, and his managers' tracking of it. */
+  focus: boolean;
   plan: boolean;
   forecast: boolean;
   team: boolean;
@@ -307,6 +309,8 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
     // holds no territory (owner, 2026-10-17).
     visits: hasScope || managerPlanner,
     list: hasScope,
+    // Whoever reads a territory's list reads its Focus list: the rep his own, a manager the tracking of his reps'.
+    focus: hasScope,
     // A district manager whose team is live plans HIS week here too (owner, 2026-10-16), on his own board;
     // since 2026-10-17 so do the regional, national and product managers.
     plan: viewer.isSuperAdmin || ownSeatIds.length > 0 || managerPlanner,
