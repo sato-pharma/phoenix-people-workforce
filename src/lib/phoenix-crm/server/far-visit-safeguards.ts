@@ -29,7 +29,11 @@ import { createSystemNotificationForRecipients } from "@/lib/notifications/syste
 import { logError } from "@/lib/observability/log";
 import { cairoBusinessDay } from "@/lib/phoenix-crm/calendar";
 import { cleanText, type PlaceDraft, type VisitDraft } from "@/lib/phoenix-crm/entry-rules";
+import { distanceMeters, isUsableFix } from "@/lib/phoenix-crm/geo";
 import {
+  FAR_VISIT_REJECTED_LABEL,
+  FAR_VISIT_REJECTED_NOTE,
+  FAR_VISIT_REJECTED_POINT_LABELS,
   IMPOSSIBLE_LOCATION_REFUSED,
   IMPOSSIBLE_POINT_MEMORY_HOURS,
   IMPOSSIBLE_TRAVEL_LOOKBACK_MINUTES,
@@ -681,4 +685,118 @@ export async function countFarVisitHoldsWaiting(viewer: PhoenixCrmViewer): Promi
     saved += visits.count ?? 0;
   }
   return saved;
+}
+
+// ── The rep's own rejected visit (owner, 28 Nov 2026) ─────────────────────────────────────────────
+
+/** What the rep reads on his own visit the SFE refused: the word, the sentence, and the read-only map. */
+export type FarVisitRejection = {
+  label: string;
+  note: string;
+  /** 1 where he submitted the visit, 2 the customer's saved place, 3 the place's photo reading. Null with no reading. */
+  map: CaseMap | null;
+  points: Array<{ index: number; label: string; lat: number; lon: number }>;
+};
+
+const REJECTED_MAP_SIZE = { width: 256, height: 256, padding: 32 };
+
+/**
+ * The refused far visits of one territory's visit day, each with its map (owner, 28 Nov 2026: "show him what I am
+ * seeing … the map … read only"). The place drawn is the customer's ACTIVE place nearest the visit — the one
+ * the rule measures today — and the hold's own place when the customer has none left. Throws on a failed
+ * read; the day page leaves the map out rather than failing (`loadVisitDay`).
+ */
+export async function loadFarVisitRejections(day: { seatId: string; date: string }): Promise<Map<string, FarVisitRejection>> {
+  const out = new Map<string, FarVisitRejection>();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day.date)) return out;
+  const supabase = getSupabaseAdmin();
+  const holds = await supabase
+    .from("phoenix_crm_far_visit_holds")
+    .select("visit_id, customer_id, place_id")
+    .eq("seat_id", day.seatId)
+    .eq("visit_date", day.date)
+    .eq("status", "refused");
+  throwIfError(holds.error);
+  const holdRows = (holds.data ?? []) as Row[];
+  if (holdRows.length === 0) return out;
+  // A hold is only ever the rep's own entry, never a copied iReports360 visit — the mark says so in the read.
+  const visits = await supabase.from("phoenix_crm_visits").select("id, lat, lon").in("id", holdRows.map((row) => String(row.visit_id))).is("imported_from_ireports360_at", null);
+  throwIfError(visits.error);
+  const customerIds = [...new Set(holdRows.map((row) => String(row.customer_id)))];
+  const holdPlaceIds = [...new Set(holdRows.map((row) => (row.place_id ? String(row.place_id) : null)).filter((id): id is string => id !== null))];
+  const placeColumns = "id, customer_id, status, retired_at, lat, lon, pin_lat, pin_lon, photo_lat, photo_lon";
+  const [active, held] = await Promise.all([
+    supabase.from("phoenix_crm_places").select(placeColumns).in("customer_id", customerIds).eq("status", "active").is("retired_at", null),
+    holdPlaceIds.length > 0 ? supabase.from("phoenix_crm_places").select(placeColumns).in("id", holdPlaceIds) : Promise.resolve({ data: [], error: null }),
+  ]);
+  throwIfError(active.error);
+  throwIfError(held.error);
+  const visitById = new Map(((visits.data ?? []) as Row[]).map((row) => [String(row.id), row]));
+  const heldById = new Map(((held.data ?? []) as Row[]).map((row) => [String(row.id), row]));
+  const activeByCustomer = new Map<string, Row[]>();
+  for (const row of (active.data ?? []) as Row[]) {
+    const key = String(row.customer_id);
+    activeByCustomer.set(key, [...(activeByCustomer.get(key) ?? []), row]);
+  }
+  const pointOf = (lat: unknown, lon: unknown): { lat: number; lon: number } | null => {
+    const a = numberOrNull(lat);
+    const b = numberOrNull(lon);
+    return a !== null && b !== null && isUsableFix(a, b) ? { lat: a, lon: b } : null;
+  };
+  const pinOf = (place: Row) => pointOf(place.pin_lat, place.pin_lon) ?? pointOf(place.lat, place.lon);
+  for (const hold of holdRows) {
+    const visitId = String(hold.visit_id);
+    const visit = visitById.get(visitId);
+    const submitted = visit ? pointOf(visit.lat, visit.lon) : null;
+    const candidates = activeByCustomer.get(String(hold.customer_id)) ?? [];
+    let place: Row | undefined = candidates[0];
+    if (submitted && candidates.length > 1) {
+      let best = Number.POSITIVE_INFINITY;
+      for (const candidate of candidates) {
+        const near = [pinOf(candidate), pointOf(candidate.photo_lat, candidate.photo_lon)]
+          .filter((point): point is { lat: number; lon: number } => point !== null)
+          .map((point) => distanceMeters(submitted, point));
+        const metres = near.length > 0 ? Math.min(...near) : Number.POSITIVE_INFINITY;
+        if (metres < best) {
+          best = metres;
+          place = candidate;
+        }
+      }
+    }
+    if (!place && hold.place_id) place = heldById.get(String(hold.place_id));
+    const pin = place ? pinOf(place) : null;
+    const photo = place ? pointOf(place.photo_lat, place.photo_lon) : null;
+    const labelled: Array<{ label: string; lat: number; lon: number }> = [];
+    if (submitted) labelled.push({ label: FAR_VISIT_REJECTED_POINT_LABELS.submitted, lat: submitted.lat, lon: submitted.lon });
+    if (pin) labelled.push({ label: FAR_VISIT_REJECTED_POINT_LABELS.place, lat: pin.lat, lon: pin.lon });
+    if (photo) labelled.push({ label: FAR_VISIT_REJECTED_POINT_LABELS.photo, lat: photo.lat, lon: photo.lon });
+    const map = submitted
+      ? buildCaseMap(
+          labelled.map((point) => ({ ...point, accuracyMeters: null })),
+          REJECTED_MAP_SIZE,
+        )
+      : null;
+    out.set(visitId, {
+      label: FAR_VISIT_REJECTED_LABEL,
+      note: FAR_VISIT_REJECTED_NOTE,
+      map,
+      points: labelled.map((point, index) => ({ index: index + 1, ...point })),
+    });
+  }
+  return out;
+}
+
+/**
+ * May this viewer have the streets drawn behind his own rejected visit's map? A rep (or a manager who entered
+ * the visit) with at least one refused far visit of his own. The picture route asks it after the boards' own
+ * readers, so the Google account is spent only on a visit somebody was refused for.
+ */
+export async function hasOwnFarVisitRejection(viewer: PhoenixCrmViewer): Promise<boolean> {
+  const { count, error } = await getSupabaseAdmin()
+    .from("phoenix_crm_far_visit_holds")
+    .select("visit_id", { count: "exact", head: true })
+    .eq("status", "refused")
+    .eq("rep_hr_id", viewer.hrId.toUpperCase());
+  if (error) return false;
+  return (count ?? 0) > 0;
 }
