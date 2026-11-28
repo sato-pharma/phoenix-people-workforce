@@ -205,6 +205,16 @@ The owner's words: "لايف مش ابلود … منوره بالاحمر طو�
   needs a written reason: Original 1 goes through `direct_order_release_receipt` (the release record keeps the
   photo) and any waiting Original 2 entry closes with it; Original 2 clears only itself, through the receipt
   guard's `phoenix.receipt_delivery_clear` door. The order then says which original was rejected and why.
+- **The manager reads the reviewer's own reason** (owner, 28 Nov 2026: "it must show the manager the reason of the
+  rejection, the accurate reason"). The order's red notice names the original, the receipt number, who rejected it
+  and when (Cairo), then the reason on a line of its own, word for word, its direction taken from its words so an
+  Arabic reason reads right to left, then what to do now. The reviewer's box says the manager reads exactly what is
+  written. Which rejection shows is `rejectionToShowManager` (`receipt-rules.ts`): the newest decision a reviewer
+  made, while that original is still missing. Rejecting Original 1 closes a waiting Original 2 in the SAME instant
+  with `RECEIPT_O2_CLOSED_WITH_O1_NOTE` — measured on staging, both rows carry one timestamp to the microsecond,
+  and the page reads Original 2 first — so that closing note is never shown as the reason, and on a tie Original 1
+  comes first. Until 28 Nov 2026 the order showed "Original 2 … Original 1 was rejected, so the receipt was taken
+  off the order" instead of Finance's words.
 - **Where it shows:** each original on the order says whether its QR was read or it waits; Finance's Receipt Books
   desk lists every entry waiting, with its photo and the Approve and Reject buttons; the verified print says for
   each original whether its QR was read, or it was typed by hand and approved, or it still waits.

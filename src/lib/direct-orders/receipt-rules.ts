@@ -668,3 +668,50 @@ export function stepReceiptQrLock(
 }
 
 export type HandEntryStatus = "pending" | "approved" | "rejected";
+
+/**
+ * What Phoenix writes on a waiting Original 2 when Original 1 is rejected: the whole receipt left the order, so the
+ * Original 2 review is closed in the same instant (20261128134224, `direct_order_decide_hand_entry`). It is a closing
+ * note, never the reviewer's reason — the migration must carry this exact text (pinned by the receipt test).
+ */
+export const RECEIPT_O2_CLOSED_WITH_O1_NOTE = "Original 1 was rejected, so the receipt was taken off the order.";
+
+export type RejectedHandEntryCandidate = {
+  original: "custody" | "delivery";
+  status: HandEntryStatus;
+  entered_by_hr_id: string;
+  reviewed_by_hr_id: string | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+};
+
+/**
+ * THE REJECTION THE MANAGER IS SHOWN (owner, 28 Nov 2026: "it must show the manager the reason of the rejection,
+ * the accurate reason"). The newest rejection a REVIEWER made, carrying the reason the reviewer wrote word for word,
+ * while that original is still missing from the order:
+ * - the closing note on an Original 2 that left with a rejected Original 1 is never it — the Original 1 decision is,
+ *   and when both carry the same instant Original 1 comes first;
+ * - a hand entry its own author closed (the original was never saved) is no rejection;
+ * - once the original is on the order again, nothing is shown.
+ */
+export function rejectionToShowManager<T extends RejectedHandEntryCandidate>(
+  entries: readonly T[],
+  standing: { custody: string | null | undefined; delivery: string | null | undefined },
+): T | null {
+  const decided = entries
+    .filter(
+      (e) =>
+        e.status === "rejected" &&
+        Boolean(e.reviewed_by_hr_id) &&
+        e.reviewed_by_hr_id !== e.entered_by_hr_id &&
+        (e.review_note ?? "").trim() !== RECEIPT_O2_CLOSED_WITH_O1_NOTE,
+    )
+    .sort((a, b) => {
+      const at = Date.parse(b.reviewed_at ?? "") - Date.parse(a.reviewed_at ?? "");
+      if (Number.isFinite(at) && at !== 0) return at;
+      return (a.original === "custody" ? 0 : 1) - (b.original === "custody" ? 0 : 1);
+    });
+  const newest = decided[0];
+  if (!newest) return null;
+  return (newest.original === "custody" ? standing.custody : standing.delivery) ? null : newest;
+}

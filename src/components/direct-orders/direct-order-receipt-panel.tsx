@@ -129,14 +129,7 @@ export function DirectOrderReceiptPanel({ requestId, panel: given }: { requestId
           </p>
         ) : null}
 
-        {panel.lastRejectedHandEntry ? (
-          <p className="text-phx-sm font-bold text-rose-700">
-            {panel.lastRejectedHandEntry.original === "custody" ? "Original 1" : "Original 2"}, typed by hand, was rejected
-            {panel.lastRejectedHandEntry.reviewedByName ? ` by ${panel.lastRejectedHandEntry.reviewedByName}` : ""}
-            {panel.lastRejectedHandEntry.reviewedAt ? ` on ${cairoDateTime(panel.lastRejectedHandEntry.reviewedAt)}` : ""}
-            {panel.lastRejectedHandEntry.note ? `: ${panel.lastRejectedHandEntry.note}` : ""}. Enter it again.
-          </p>
-        ) : null}
+        {panel.lastRejectedHandEntry ? <RejectedHandEntryNotice rejected={panel.lastRejectedHandEntry} /> : null}
 
         {panel.mayRecordExit ? <WarehouseExitField exitDate={exit?.date ?? null} requestId={requestId} todayCairo={panel.todayCairo} /> : null}
 
@@ -429,6 +422,34 @@ function OriginalEntry({
   );
 }
 
+/**
+ * A rejected hand-entered original, as its manager reads it (owner, 28 Nov 2026: "it must show the manager the reason
+ * of the rejection, the accurate reason"): which original, who rejected it and when, what to do now, and the reason
+ * on a line of its own in the reviewer's own words — never folded into a sentence.
+ */
+function RejectedHandEntryNotice({ rejected }: { rejected: NonNullable<Panel["lastRejectedHandEntry"]> }) {
+  const custody = rejected.original === "custody";
+  return (
+    <div className="space-y-1 border-l-4 border-rose-600 bg-white pl-3" role="status">
+      <p className="text-phx-sm font-bold text-rose-700">
+        {custody ? "Original 1" : "Original 2"} of receipt {rejected.serialLabel}, typed by hand, was rejected
+        {rejected.reviewedByName ? ` by ${rejected.reviewedByName}` : ""}
+        {rejected.reviewedAt ? ` on ${cairoDateTime(rejected.reviewedAt)}` : ""}.
+      </p>
+      <p className="text-phx-sm font-bold text-slate-900">Reason:</p>
+      {/* Its own line, its direction taken from its words: an Arabic reason reads right to left, whole. */}
+      <p className="whitespace-pre-wrap break-words text-phx-sm text-slate-900" dir="auto">
+        {rejected.note ?? "No reason was written."}
+      </p>
+      <p className="text-phx-sm text-slate-700">
+        {custody
+          ? "The receipt was taken off the order. Enter Original 1 again, then Original 2."
+          : "Original 2 was taken back out. Enter it again."}
+      </p>
+    </div>
+  );
+}
+
 /** How a hand-entered original stands, and — for its reviewer — the approve and reject buttons. */
 function HandEntryNotice({ requestId, review }: { requestId: string; review: DirectOrderHandEntryReview }) {
   if (review.status === "approved") {
@@ -479,10 +500,11 @@ export function HandEntryReviewButtons({ requestId, entryId }: { requestId: stri
   return (
     <div className="space-y-2">
       {rejecting ? (
-        <FormField label="Why is it rejected" required htmlFor={`hand-entry-note-${entryId}`}>
+        <FormField label="Why is it rejected — the manager reads exactly what you write" required htmlFor={`hand-entry-note-${entryId}`}>
           <input
             className={phxFieldClassName}
             id={`hand-entry-note-${entryId}`}
+            maxLength={500}
             onChange={(event) => setNote(event.target.value)}
             placeholder="The number in the photo is not the one typed"
             value={note}

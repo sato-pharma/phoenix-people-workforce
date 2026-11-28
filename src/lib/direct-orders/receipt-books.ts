@@ -36,6 +36,7 @@ import {
   receiptEntryBookFor,
   receiptLateness,
   receiptRolloutStart,
+  rejectionToShowManager,
   type HandEntryStatus,
   type NoReceiptRow,
   type NoReceiptStatus,
@@ -449,8 +450,17 @@ export type DirectOrderReceiptPanel = {
   mayDecideWithoutReceipt: boolean;
   /** Finance may attach a file it already holds; a manager photographs the page live, with no gallery (owner, 28 Nov 2026). */
   mayChooseFile: boolean;
-  /** The last hand-entered original that was rejected and taken back out, so the order says why it is missing again. */
-  lastRejectedHandEntry: { original: "custody" | "delivery"; note: string | null; reviewedByName: string | null; reviewedAt: string | null } | null;
+  /**
+   * The last hand-entered original a reviewer rejected and took back out, so the order tells the manager why it is
+   * missing again — the reviewer's own words (rejectionToShowManager, receipt-rules.ts).
+   */
+  lastRejectedHandEntry: {
+    original: "custody" | "delivery";
+    serialLabel: string;
+    note: string | null;
+    reviewedByName: string | null;
+    reviewedAt: string | null;
+  } | null;
 };
 
 /** The receipt could not be read: said on the order as such, never as "no receipt". */
@@ -511,19 +521,18 @@ async function originalsOf(
   return { custody, delivery };
 }
 
-/** The newest rejected hand entry whose original is no longer on the order — a decided one still standing is not "missing". */
+/** The rejection the order shows its manager, with the reviewer's reason — see rejectionToShowManager. */
 function lastRejectedOf(
   entries: readonly HandEntryDbRow[],
   used: UsedReceiptDbRow | null,
   names: { get(hrId: string | null | undefined): string | null },
 ): DirectOrderReceiptPanel["lastRejectedHandEntry"] {
-  const rejected = entries.find((e) => e.status === "rejected" && e.reviewed_by_hr_id !== e.entered_by_hr_id);
+  const rejected = rejectionToShowManager(entries, { custody: used?.photo_storage_path, delivery: used?.delivery_photo_storage_path });
   if (!rejected) return null;
-  const standing = rejected.original === "custody" ? used?.photo_storage_path : used?.delivery_photo_storage_path;
-  if (standing) return null;
   return {
     original: rejected.original,
-    note: rejected.review_note,
+    serialLabel: formatReceiptSerial(Number(rejected.serial)),
+    note: rejected.review_note?.trim() || null,
     reviewedByName: names.get(rejected.reviewed_by_hr_id),
     reviewedAt: rejected.reviewed_at,
   };
