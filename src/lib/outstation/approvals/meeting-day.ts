@@ -2,9 +2,12 @@
  * Meetings are held on a Thursday — the one rule (owner, 2026-11-23: "I want you to flag any meeting
  * that is not on Thursday").
  *
- * 🔴 A FLAG, NEVER A REFUSAL. A claimed meeting on any other day fails this check, so the claim is
- *    filed in "Your call" with the day in words and is never Ready. Nothing here rejects it, changes
- *    its amount or stops it being filed: the approver's press decides (checks.ts).
+ * 🔴 ON THE DESK, A FLAG, NEVER A REFUSAL. A stored claimed meeting on any other day fails this check, so
+ *    the claim is filed in "Your call" with the day in words and is never Ready. Nothing here rejects a
+ *    stored claim or changes its amount: the approver's press decides (checks.ts).
+ * 🔴 AT SUBMIT, A REFUSAL (owner, 28 Nov 2026: "the weekly meetings are only accepted on Thursday. No any
+ *    other meeting will be accepted not on Thursday", for everyone): `meetingDayRefusal` is the same verdict,
+ *    and service.ts refuses a new claim it fails before anything is stored. "Could not check" is let through.
  *
  * What counts as a claimed meeting:
  *   - a claim filed as Meeting, and
@@ -102,4 +105,34 @@ export function meetingDayVerdict(input: { dates: ReadonlyArray<string>; kind: C
       ? `The meeting claim covers ${span}, with no Thursday among its ${dates.length} days.`
       : `A meeting cost of ${egp(cost)} was claimed for ${span}, with no Thursday among the ${dates.length} days.`,
   };
+}
+
+function isoDay(ms: number): string {
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+/** A claim's own days, first to last (at most 62), from its start and end dates. */
+export function claimDays(startDate: string | null | undefined, endDate: string | null | undefined): string[] {
+  const start = parts(startDate);
+  if (!start) return [];
+  const first = Date.parse(`${String(startDate).slice(0, 10)}T00:00:00Z`);
+  const last = parts(endDate) ? Date.parse(`${String(endDate).slice(0, 10)}T00:00:00Z`) : first;
+  const days: string[] = [];
+  for (let at = first; at <= Math.max(first, last) && days.length < 62; at += 24 * 60 * 60 * 1000) days.push(isoDay(at));
+  return days;
+}
+
+/**
+ * The refusal a new claim reads when it claims a meeting with no Thursday among its days (owner, 28 Nov
+ * 2026), or null. The words contain "must be", so every submit route answers it 400.
+ */
+export function meetingDayRefusal(input: {
+  endDate: string | null | undefined;
+  kind: ClaimKind;
+  meetingCost: number;
+  startDate: string | null | undefined;
+}): string | null {
+  const verdict = meetingDayVerdict({ dates: claimDays(input.startDate, input.endDate), kind: input.kind, meetingCost: input.meetingCost });
+  if (!verdict || verdict.answer !== "fail") return null;
+  return `${verdict.sentence} A weekly meeting must be on a Thursday: a meeting on any other day is not accepted. Change the date to the Thursday it was held, or remove the meeting.`;
 }

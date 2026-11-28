@@ -105,10 +105,8 @@ function usable(lat: number | null, lon: number | null): { lat: number; lon: num
   return { lat, lon };
 }
 
-/** True for a claim filed under the District Manager role. */
-export function isDistrictManagerRole(role: string | null | undefined): boolean {
-  return String(role ?? "").trim().toLowerCase() === "district manager";
-}
+/** True for a claim filed under the District Manager role (defined in the client-safe rules module). */
+export { isDistrictManagerRole } from "@/lib/outstation/dm-expense-rules";
 
 /** A trip claim: a meeting or another cost has no journey to price. */
 export function isTripExpense(expenseType: string | null | undefined): boolean {

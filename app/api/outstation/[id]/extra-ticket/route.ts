@@ -19,6 +19,8 @@ const ExtraTicketEntrySchema = z.object({
   amount: z.union([z.number(), z.string()]).nullable().optional(),
   dataUrl: z.string().nullable().optional(),
   name: z.string().nullable().optional(),
+  /** "live_camera" when the app's camera took it; a District Manager's photo must be (dm-expense-rules.ts). */
+  source: z.string().nullable().optional(),
 });
 
 /** What "Add tickets" sends (extra-ticket-manager.tsx). Every rule is still judged below and in the service. */
@@ -84,10 +86,13 @@ export async function POST(
       );
     }
     const tickets = rawTickets.map((entry) => ({
-      ticket: parseOutstationTicketAttachmentDataUrl({
-        dataUrl: String(entry.dataUrl ?? ""),
-        fileName: String(entry.name ?? ""),
-      }),
+      ticket: {
+        ...parseOutstationTicketAttachmentDataUrl({
+          dataUrl: String(entry.dataUrl ?? ""),
+          fileName: String(entry.name ?? ""),
+        }),
+        source: entry.source === "live_camera" ? ("live_camera" as const) : ("file" as const),
+      },
       amount: Number(entry.amount ?? 0),
     }));
     const result = await addExtraTicketsToOwnOutstationRequest(id, access, {

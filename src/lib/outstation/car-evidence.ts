@@ -1,3 +1,4 @@
+import { isDistrictManagerRole } from "@/lib/outstation/dm-expense-rules";
 import { isOutstationEvidenceWaivedRole } from "@/lib/outstation/evidence-waiver";
 import type {
   OutstationCarEvidenceMetadata,
@@ -62,10 +63,10 @@ export function validateLiveArrivalEvidence(params: {
   // A waived role that volunteers a photo may equally volunteer an uploaded one — the live-camera
   // mandate on car exists to make a REQUIRED photo hard to fake, and there is no longer a
   // required photo here to protect.
-  const acceptedSources =
-    params.transportationType === "car" && !isWaived
-      ? [CAR_EVIDENCE_SOURCE]
-      : [CAR_EVIDENCE_SOURCE, UPLOADED_EVIDENCE_SOURCE];
+  // A District Manager's arrival photo is live on EVERY trip (owner, 28 Nov 2026: "every photo is taken
+  // live"), so it also anchors his 3-hour stay (dm-expense-rules.ts).
+  const liveOnly = (params.transportationType === "car" && !isWaived) || isDistrictManagerRole(params.employeeRole);
+  const acceptedSources = liveOnly ? [CAR_EVIDENCE_SOURCE] : [CAR_EVIDENCE_SOURCE, UPLOADED_EVIDENCE_SOURCE];
 
   if (!acceptedSources.includes(params.carEvidenceMetadata.source)) {
     return {
@@ -73,7 +74,9 @@ export function validateLiveArrivalEvidence(params: {
       message:
         params.transportationType === "car"
           ? "Only a live in-app camera capture satisfies the arrival-photo requirement on a car trip. A picture chosen from the gallery is not accepted."
-          : "The arrival photo must be either a live in-app capture or an uploaded image.",
+          : liveOnly
+            ? "A District Manager's arrival photo must be taken live in the app. A picture chosen from the gallery is not accepted."
+            : "The arrival photo must be either a live in-app capture or an uploaded image.",
     };
   }
 

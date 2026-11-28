@@ -882,6 +882,7 @@ export async function WorkspaceSubmitExpensePage() {
       <div className="space-y-5">
         <OutstationPendingActions
           departurePhotoDue={pendingActions.departurePhotoDue}
+          doubleVisitsToConfirm={pendingActions.doubleVisitsToConfirm}
           employeeHrId={employeeHrId}
           missingTicket={pendingActions.missingTicket}
         />

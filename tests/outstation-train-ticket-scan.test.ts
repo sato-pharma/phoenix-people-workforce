@@ -261,6 +261,8 @@ function wiring() {
   assert.match(server, /Read whichever copy is clear/);
   assert.match(server, /'Issued' \(صادر\)[\s\S]{0,200}تاريخ إصدار الحجز/, "the issue or booking date is never the travel date");
   assert.match(server, /required: \[[^\]]*"year_printed"/, "every read says whether the year was printed");
+  // An online ticket is read for who it was issued to and its booking number (owner, 28 Nov 2026).
+  assert.match(server, /required: \[[^\]]*"passenger_name"[^\]]*"booking_number"/, "every read names the passenger and the booking");
   assert.match(
     server,
     /readSignedTicketScan\(ticket\.scanToken, \{ bytes: ticket\.bytes, hrId: input\.hrId \}\) \?\? \(await readTrainTicket\(ticket\)\)/,
@@ -315,7 +317,7 @@ function wiring() {
 
   const card = code(CARD);
   assert.match(card, /scanTrainTicket\(ticket, \{ requestId: request\.id \}\)/, "the late upload reads against the claim's own photos");
-  assert.match(card, /acceptedTickets\.map\(\(\{ ticket \}\) => \(\{ dataUrl: ticket\.dataUrl, name: ticket\.name, scanToken:/);
+  assert.match(card, /acceptedTickets\.map\(\(\{ ticket \}\) => \(\{\s*dataUrl: ticket\.dataUrl,\s*name: ticket\.name,\s*scanToken:/);
   assert.match(card, /<TicketScanNotices accepted=\{acceptedTickets\} refused=\{refusedTickets\} \/>/);
 
   const client = code(CLIENT);

@@ -16,6 +16,7 @@ import { runNeedsYouWeeklyEmail } from "@/lib/needs-you/deliver/weekly";
 import { runTelegramDailyHrDigest } from "@/lib/notifications/telegram-operations";
 import { runOutstationGeocodeWarmup } from "@/lib/outstation/geocode-warmup";
 import { priceWaitingDistrictManagerClaims } from "@/lib/outstation/dm-double-visit-distance-server";
+import { priceWaitingDmWorkAllowances } from "@/lib/outstation/dm-work-allowance-server";
 import { runExcuseSlaDaily } from "@/lib/excuses/service";
 import {
   releaseStrandedAcceptedOutstationClaims,
@@ -216,7 +217,16 @@ export const DAILY_JOB_RUNNERS: Readonly<Record<DailyJobKey, DailyJobRunner>> = 
         });
         return { failed: 1, moneyMoved: 0, read: 0, written: 0, detail: clientSafeErrorMessage(error, "The pricing did not run.") };
       });
-      return { ...reminders, doubleVisitPricing, strandedClaimRelease };
+      // Then each trip day's allowance on its work and confirmed double visits (owner, 28 Nov 2026), after
+      // the distance, which decides the more-than-150-km rule. Claims filed under the rules only.
+      const workAllowancePricing = await priceWaitingDmWorkAllowances().catch((error: unknown) => {
+        logError("Outstation: the morning pricing of District Manager work allowances did not run", {
+          error,
+          labels: { event: "outstation_dm_work_allowance_run_failed", job: "daily-outstation-departure-photo" },
+        });
+        return { failed: 1, read: 0, written: 0, detail: clientSafeErrorMessage(error, "The pricing did not run.") };
+      });
+      return { ...reminders, doubleVisitPricing, strandedClaimRelease, workAllowancePricing };
     },
   },
   "resignation-sla": {

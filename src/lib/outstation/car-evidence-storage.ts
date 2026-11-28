@@ -37,6 +37,8 @@ export type OutstationTicketAttachmentUpload = {
   /** The signed note of that read, sent back by the phone; never stored. */
   scanToken?: string;
   size: number;
+  /** "live_camera" when the app's own camera took it (prepare-ticket-attachment.ts); a District Manager's photo must be. */
+  source?: "live_camera" | "file";
 };
 
 /** A ticket attachment before the employee/request identity is attached. */

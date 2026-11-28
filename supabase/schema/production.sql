@@ -67749,6 +67749,30 @@ COMMENT ON COLUMN public.offers.role_summary IS 'This letter''s own role paragra
 COMMENT ON COLUMN public.offers.employee_hr_id IS 'The employee record the candidate''s joining form created. Set only by the joining form; never a link to a candidate.';
 
 --
+-- Name: outstation_dm_visit_confirmations; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.outstation_dm_visit_confirmations (
+    visit_id uuid NOT NULL,
+    manager_hr_id text NOT NULL,
+    visit_date date NOT NULL,
+    confirmed_at timestamp with time zone DEFAULT now() NOT NULL,
+    latitude double precision NOT NULL,
+    longitude double precision NOT NULL,
+    accuracy_meters double precision,
+    distance_km double precision,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE public.outstation_dm_visit_confirmations OWNER TO postgres;
+
+--
+-- Name: TABLE outstation_dm_visit_confirmations; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.outstation_dm_visit_confirmations IS 'A District Manager confirms a double visit a rep logged with him, with his position at the press (owner, 28 Nov 2026). Read by the outstation work allowance; never shown to the rep.';
+
+--
 -- Name: outstation_expense_reports; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -67871,6 +67895,7 @@ CREATE TABLE public.outstation_expense_requests (
     system_verdict_at_decision jsonb,
     distance_basis jsonb,
     hr_amounts jsonb,
+    dm_work_allowance jsonb,
     CONSTRAINT outstation_evidence_gate_status_check CHECK ((evidence_gate_status = ANY (ARRAY['pending_arrival_photo'::text, 'pending_departure_photo'::text, 'complete'::text, 'grandfathered'::text]))),
     CONSTRAINT outstation_expense_requests_expense_type_check CHECK (((expense_type IS NULL) OR (expense_type = ANY (ARRAY['traveling'::text, 'meeting'::text, 'other'::text])))),
     CONSTRAINT outstation_expense_requests_journey_stops_is_array CHECK ((jsonb_typeof(journey_stops) = 'array'::text)),
@@ -68014,6 +68039,12 @@ COMMENT ON COLUMN public.outstation_expense_requests.distance_basis IS 'District
 --
 
 COMMENT ON COLUMN public.outstation_expense_requests.hr_amounts IS 'The Super Admin''s own figures for this trip: {travel, allowance, meeting, other, reason, by, setAt, before}. NULL = never edited. When present, payroll pays these parts (src/lib/outstation/hr-amounts.ts); the claimed columns keep what the employee sent.';
+
+--
+-- Name: COLUMN outstation_expense_requests.dm_work_allowance; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.outstation_expense_requests.dm_work_allowance IS 'District Manager work rules (owner, 28 Nov 2026; dm-expense-rules.ts): per trip day AM, PM, confirmed double visits and the share of the allowance paid. NULL = filed before the rules.';
 
 --
 -- Name: CONSTRAINT outstation_expense_requests_expense_type_check ON outstation_expense_requests; Type: COMMENT; Schema: public; Owner: postgres
@@ -80152,6 +80183,13 @@ ALTER TABLE ONLY public.offers
     ADD CONSTRAINT offers_pkey PRIMARY KEY (id);
 
 --
+-- Name: outstation_dm_visit_confirmations outstation_dm_visit_confirmations_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.outstation_dm_visit_confirmations
+    ADD CONSTRAINT outstation_dm_visit_confirmations_pkey PRIMARY KEY (visit_id);
+
+--
 -- Name: outstation_expense_reports outstation_expense_reports_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -87793,6 +87831,12 @@ CREATE INDEX offers_template_id_fk_idx ON public.offers USING btree (template_id
 CREATE INDEX offers_vacancy_id_idx ON public.offers USING btree (vacancy_id) WHERE (vacancy_id IS NOT NULL);
 
 --
+-- Name: outstation_dm_visit_confirmations_manager_day_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX outstation_dm_visit_confirmations_manager_day_idx ON public.outstation_dm_visit_confirmations USING btree (manager_hr_id, visit_date);
+
+--
 -- Name: outstation_expense_requests_employee_idx; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -94717,6 +94761,13 @@ ALTER TABLE ONLY public.offers
     ADD CONSTRAINT offers_vacancy_id_fkey FOREIGN KEY (vacancy_id) REFERENCES public.position_vacancies(id) ON DELETE SET NULL;
 
 --
+-- Name: outstation_dm_visit_confirmations outstation_dm_visit_confirmations_visit_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.outstation_dm_visit_confirmations
+    ADD CONSTRAINT outstation_dm_visit_confirmations_visit_id_fkey FOREIGN KEY (visit_id) REFERENCES public.phoenix_crm_visits(id) ON DELETE CASCADE;
+
+--
 -- Name: outstation_expense_requests outstation_expense_requests_employee_hr_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -99572,6 +99623,12 @@ ALTER TABLE public.offer_templates ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.offers ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: outstation_dm_visit_confirmations; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.outstation_dm_visit_confirmations ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: outstation_expense_reports; Type: ROW SECURITY; Schema: public; Owner: postgres
@@ -111025,6 +111082,12 @@ GRANT ALL ON TABLE public.offer_templates TO service_role;
 --
 
 GRANT ALL ON TABLE public.offers TO service_role;
+
+--
+-- Name: TABLE outstation_dm_visit_confirmations; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.outstation_dm_visit_confirmations TO service_role;
 
 --
 -- Name: TABLE outstation_expense_reports; Type: ACL; Schema: public; Owner: postgres

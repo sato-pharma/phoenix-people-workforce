@@ -1750,6 +1750,8 @@ export const accessRegistry = [
   // `outstation:create` because that is the capture it leads to; a caller without it is answered
   // an empty list, never a 403, since the app signs out on any 403 (see the route's own comment).
   sessionApi({ methods: readOnly, pattern: "/api/outstation/departure-photo-due", permission: { resource: "outstation", action: "create" } }),
+  // A District Manager confirms a double visit with his position (owner, 28 Nov 2026); the service checks it is his.
+  sessionApi({ methods: ["POST"], pattern: "/api/outstation/dm-visit-confirmations", permission: { resource: "outstation", action: "create" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/outstation/**", permission: { resource: "outstation", action: "read" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/outstation/expenses", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/outstation/expenses", permission: null, guard: "domain-helper", csrfRequired: true }),

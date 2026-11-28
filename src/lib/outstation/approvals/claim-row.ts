@@ -29,6 +29,7 @@ import { odometerFromValue, odometerOfMetadata, type OutstationOdometerRecord } 
 import { frameOfMetadata } from "@/lib/outstation/blank-frame";
 import { returnTicketState } from "@/lib/outstation/return-ticket";
 import { distanceVisitWords, isDistrictManagerRole, isTripExpense, readDistanceBasis } from "@/lib/outstation/dm-double-visit-distance";
+import { readDmWorkAllowance } from "@/lib/outstation/dm-expense-rules";
 import { readNoTicketFare } from "@/lib/outstation/train-fare";
 import type { OutstationEvidenceGateStatus, OutstationWorkloadGateStatus } from "@/lib/outstation/types";
 import { addDaysIso } from "@/lib/crm/dates";
@@ -65,7 +66,7 @@ export const DESK_CLAIM_COLUMNS = [
   "expense_type", "transportation_type", "notes", "approval_reason", "eligibility_status", "eligibility_reason",
   "car_evidence_image_path", "car_evidence_metadata", "departure_evidence_image_path", "departure_evidence_metadata",
   "evidence_gate_status", "workload_gate_status", "system_lane_at_decision", "system_verdict_at_decision",
-  "distance_basis", "hr_amounts",
+  "distance_basis", "hr_amounts", "dm_work_allowance",
 ].join(", ");
 
 /**
@@ -179,6 +180,7 @@ export function claimFactsFromRow(row: ClaimRow, context: ClaimContext): ClaimCh
   return {
     arrival: {
       blank: arrivalOnFile ? frameOfMetadata(arrivalMeta)?.blank : undefined,
+      capturedAt: text(arrivalMeta?.capturedAt) || null,
       capturedOn: cairoDateOnly(text(arrivalMeta?.capturedAt) || null),
       fileTakenOn: fileTakenAt === undefined ? undefined : cairoDateOnly(text(fileTakenAt) || null),
       hasPosition: arrivalOnFile && usablePosition(num(arrivalMeta?.capturedLatitude), num(arrivalMeta?.capturedLongitude)) !== null,
@@ -200,6 +202,11 @@ export function claimFactsFromRow(row: ClaimRow, context: ClaimContext): ClaimCh
     distanceBasis:
       isDistrictManagerRole(text(row.employee_role)) && isTripExpense(text(row.expense_type))
         ? readDistanceBasis(row.distance_basis)
+        : undefined,
+    // The work rules (owner, 28 Nov 2026): a District Manager trip filed under them; undefined before.
+    dmWorkAllowance:
+      isDistrictManagerRole(text(row.employee_role)) && isTripExpense(text(row.expense_type))
+        ? (readDmWorkAllowance(row.dm_work_allowance) ?? undefined)
         : undefined,
     duplicateTickets: context.duplicateTickets ?? [],
     duplicateTrips: context.duplicateTrips ?? [],
@@ -316,8 +323,9 @@ export function buildDeskClaim(input: {
   const total = live ? approval.total : (ledger?.total ?? approval.total);
   const approvedAmount = live ? null : (ledger?.approved_amount ?? null);
   const tripDates = tripDatesOfRow(row);
+  // A claim the work rule priced has already cut each idle day (it pays nothing without its work): no second cut.
   const preCut =
-    waiting && isTripClaim(text(row.expense_type)) && verdict.idleDates.length > 0
+    waiting && isTripClaim(text(row.expense_type)) && verdict.idleDates.length > 0 && !readDmWorkAllowance(row.dm_work_allowance)
       ? claimPreCut({ allowance: approval.allowance, idleDays: verdict.idleDates.length, total: approval.total, tripDays: tripDates.length })
       : null;
 

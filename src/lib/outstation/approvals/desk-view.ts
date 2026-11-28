@@ -528,6 +528,9 @@ export function reasonChips(claim: DeskClaim): ReasonChip[] {
   }
   if (failed.has("ticket")) chips.push({ key: "ticket", label: "No ticket", text: "No ticket was attached to this trip." });
   if (failed.has("meeting_day")) chips.push({ key: "meeting-day", label: "Not a Thursday", text: "The meeting on this claim was not held on a Thursday." });
+  if (failed.has("work_allowance")) {
+    chips.push({ key: "work-allowance", label: "Visits not confirmed", text: "A trip day's first or last double visit was not confirmed, so that day pays no allowance." });
+  }
   if (failed.has("amounts")) chips.push({ key: "invoice", label: "No invoice", text: "No invoice or picture was attached to this cost." });
   return chips;
 }

@@ -7,6 +7,7 @@ import {
   DeparturePhotoCard,
   type DeparturePhotoPendingRequest,
 } from "@/components/outstation/departure-photo-card";
+import { DmVisitConfirmCard, type DmVisitToConfirmRow } from "@/components/outstation/dm-visit-confirm-card";
 import { MissingTicketCard, type MissingTicketRequest } from "@/components/outstation/missing-ticket-card";
 
 /**
@@ -24,15 +25,19 @@ import { MissingTicketCard, type MissingTicketRequest } from "@/components/outst
  */
 export function OutstationPendingActions({
   departurePhotoDue,
+  doubleVisitsToConfirm = [],
   employeeHrId,
   missingTicket,
 }: {
   departurePhotoDue: DeparturePhotoPendingRequest[];
+  /** A District Manager on a trip today: the double visits reps logged with him, to confirm (owner, 28 Nov 2026). */
+  doubleVisitsToConfirm?: DmVisitToConfirmRow[];
   employeeHrId: string;
   missingTicket: MissingTicketRequest[];
 }) {
   const router = useRouter();
-  const count = departurePhotoDue.length + missingTicket.length;
+  const toConfirm = doubleVisitsToConfirm.filter((v) => !v.confirmedAt).length;
+  const count = departurePhotoDue.length + missingTicket.length + (toConfirm > 0 ? 1 : 0);
   if (count === 0) return null;
 
   return (
@@ -48,6 +53,7 @@ export function OutstationPendingActions({
           </p>
         </div>
       </div>
+      <DmVisitConfirmCard visits={doubleVisitsToConfirm} />
       <DeparturePhotoCard
         employeeHrId={employeeHrId}
         onCaptured={() => router.refresh()}

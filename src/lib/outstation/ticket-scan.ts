@@ -40,6 +40,8 @@ const INSTRUCTIONS = [
   "A date written by hand on the ticket is not a printed travel date.",
   "Return null for travel_date unless you can read every digit of it with certainty in at least one printed copy. Never guess a digit.",
   "from_station and to_station as printed; train_number as the train or bus trip number printed; null when not readable.",
+  "passenger_name: the traveller's name as printed on the ticket or booking (اسم الراكب), else null.",
+  "booking_number: the booking, reservation or PNR code an online ticket or booking prints (رقم الحجز, كود الحجز), never the train number or the seat; else null.",
   "is_train_ticket is false when the image is not a train or bus ticket at all.",
   "problems: when the date is not readable, list every photo problem that stopped you, from:",
   "too_far (the ticket is small in the frame), too_close (part of the ticket is outside the frame because the camera is too near),",
@@ -53,15 +55,27 @@ const TEXT_FORMAT = {
     schema: {
       additionalProperties: false,
       properties: {
+        booking_number: { type: ["string", "null"] as const },
         from_station: { type: ["string", "null"] as const },
         is_train_ticket: { type: "boolean" as const },
+        passenger_name: { type: ["string", "null"] as const },
         problems: { items: { enum: [...TICKET_SCAN_PROBLEMS], type: "string" as const }, type: "array" as const },
         to_station: { type: ["string", "null"] as const },
         train_number: { type: ["string", "null"] as const },
         travel_date: { type: ["string", "null"] as const },
         year_printed: { type: "boolean" as const },
       },
-      required: ["is_train_ticket", "travel_date", "year_printed", "from_station", "to_station", "train_number", "problems"],
+      required: [
+        "is_train_ticket",
+        "travel_date",
+        "year_printed",
+        "from_station",
+        "to_station",
+        "train_number",
+        "passenger_name",
+        "booking_number",
+        "problems",
+      ],
       type: "object" as const,
     },
     strict: true as const,
@@ -167,9 +181,16 @@ export async function checkTrainTicketsOnServer(input: {
       const which = input.tickets.length > 1 ? `Ticket ${index + 1}: ` : "";
       throw new TrainTicketRefusedError(`${which}${ticketRefusalMessage(verdict)}`);
     }
+    const passengerName = scan.status === "read" ? (scan.passengerName ?? null) : null;
+    const bookingNumber = scan.status === "read" ? (scan.bookingNumber ?? null) : null;
     records.push({
+      ...(bookingNumber ? { bookingNumber } : {}),
       fromStation: scan.status === "read" ? scan.fromStation : null,
-      line: verdict.line,
+      // The approver reads who the ticket was issued to and its booking beside the file.
+      line: [verdict.line, passengerName ? `issued to ${passengerName}` : null, bookingNumber ? `booking ${bookingNumber}` : null]
+        .filter(Boolean)
+        .join(" · "),
+      ...(passengerName ? { passengerName } : {}),
       matchedTo: verdict.matchedTo,
       toStation: scan.status === "read" ? scan.toStation : null,
       trainNumber: scan.status === "read" ? scan.trainNumber : null,

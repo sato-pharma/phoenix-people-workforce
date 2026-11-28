@@ -63,6 +63,7 @@ const OFFERS_NEW_JOINER = "src/lib/offers/new-joiner-announcement.ts";
 const OFFERS_APPROVAL = "src/lib/offers/approval.ts";
 const OFFERS_SEND = "src/lib/offers/send.ts";
 const OUTSTATION = "src/lib/outstation/service.ts";
+const OUTSTATION_DM_WORK = "src/lib/outstation/dm-work-allowance-server.ts";
 const PASSWORD_SETUP = "src/lib/auth/password-setup.ts";
 const PHOENIX_CRM = "src/lib/phoenix-crm/server/notifications.ts";
 const RECRUITMENT_INBOUND = "src/lib/recruitment/inbound/recruitment-notify.ts";
@@ -232,6 +233,8 @@ export const NOTIFICATION_TYPES: readonly NotificationTypeEntry[] = [
   { module: "outstation", eventType: "outstation_departure_photo_due", label: "Take your outstation departure photo", sentFrom: [OUTSTATION] },
   { module: "outstation", eventType: "journey_stop_added_by_hr", label: "HR added a stop to your outstation trip", sentFrom: [OUTSTATION] },
   { module: "outstation", eventType: "outstation_sla_reminder", label: "An outstation request is waiting too long for approval", sentFrom: [OUTSTATION] },
+  { module: "outstation", eventType: "outstation_dm_double_visit_to_confirm", label: "Confirm a double visit a rep logged with you (District Manager on a trip)", sentFrom: [OUTSTATION_DM_WORK] },
+  { module: "outstation", eventType: "outstation_dm_arrival_due", label: "A rep logged a double visit with you away from home: submit your arrival (District Manager)", sentFrom: [OUTSTATION_DM_WORK] },
 
   // ── Accounts and sign-in ────────────────────────────────────────────────────────────────────
   // The module and the event follow the same `purpose === "setup"` choice, so they pair up.

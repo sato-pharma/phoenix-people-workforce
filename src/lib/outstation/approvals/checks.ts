@@ -34,6 +34,7 @@ import { kmLabel } from "@/lib/outstation/odometer-scan-rules";
 import { blankFrameSentence } from "@/lib/outstation/blank-frame";
 import { returnFareLabel, type ReturnTicketState } from "@/lib/outstation/return-ticket";
 import { distanceBasisVerdict, isDistrictManagerRole, type DistanceBasis } from "@/lib/outstation/dm-double-visit-distance";
+import { cairoShortTime, type DmWorkAllowanceRecord } from "@/lib/outstation/dm-expense-rules";
 
 /** A departure photo farther than this from the arrival photo is not "around the destination". */
 export const DEPARTURE_MAX_KM_FROM_ARRIVAL = 40;
@@ -57,13 +58,14 @@ export const CHECK_LABEL: Record<CheckKey, string> = {
   odometer: "Odometer",
   route: "Route",
   ticket: "Ticket",
+  work_allowance: "Day's work",
 };
 
 /** The order a row prints them in. */
-const DISPLAY_ORDER: CheckKey[] = ["field_work", "route", "distance", "arrival_photo", "departure_photo", "odometer", "ticket", "duplicate", "meeting_day", "amounts"];
+const DISPLAY_ORDER: CheckKey[] = ["field_work", "work_allowance", "route", "distance", "arrival_photo", "departure_photo", "odometer", "ticket", "duplicate", "meeting_day", "amounts"];
 
 /** The order the ONE reason of a "Your call" row is picked in: what he rejects for first. */
-const REASON_ORDER: CheckKey[] = ["duplicate", "field_work", "route", "distance", "odometer", "meeting_day", "amounts", "arrival_photo", "departure_photo", "ticket"];
+const REASON_ORDER: CheckKey[] = ["duplicate", "field_work", "work_allowance", "route", "distance", "odometer", "meeting_day", "amounts", "arrival_photo", "departure_photo", "ticket"];
 
 export type FieldWorkDay = {
   /** A visit that day was within reach of the claimed destination. */
@@ -95,6 +97,8 @@ export type ClaimPhotoFacts = {
 
 export type ClaimCheckFacts = {
   arrival: ClaimPhotoFacts & {
+    /** When it was taken (ISO), for the District Manager's "arrival before the first double visit" rule. */
+    capturedAt?: string | null;
     /** An uploaded file's own day (EXIF); undefined when nobody read it, null when it had none. */
     fileTakenOn?: string | null;
     uploaded: boolean;
@@ -115,6 +119,11 @@ export type ClaimCheckFacts = {
    * the rule has not priced it yet, undefined when the field was never read.
    */
   distanceBasis?: DistanceBasis | null;
+  /**
+   * A District Manager trip filed under the work rules (owner, 28 Nov 2026; dm-expense-rules.ts): each trip
+   * day's AM, PM and confirmed double visits, and what the allowance pays. Undefined before the rules.
+   */
+  dmWorkAllowance?: DmWorkAllowanceRecord | null;
   /** Other claims of this employee that share a trip day with this one: "18 Nov with the waiting claim of 18 Nov". */
   sharedTripDays?: string[];
   eligibilityReason: string | null;
@@ -279,6 +288,17 @@ function arrivalCheck(facts: ClaimCheckFacts): ClaimCheck {
   if (!onTrip(photo.capturedOn, facts)) {
     return check("arrival_photo", "fail", `Taken on ${shortDay(photo.capturedOn)}, outside the trip.`);
   }
+  // A District Manager's arrival photo is taken at the start of the trip, before his first double visit
+  // (owner, 28 Nov 2026). Later than that is flagged for the approver, never refused.
+  const firstVisit = facts.distanceBasis?.visit?.capturedAt ? Date.parse(facts.distanceBasis.visit.capturedAt) : NaN;
+  const arrivedAt = photo.capturedAt ? Date.parse(photo.capturedAt) : NaN;
+  if (isDistrictManagerRole(facts.role) && Number.isFinite(firstVisit) && Number.isFinite(arrivedAt) && arrivedAt > firstVisit) {
+    return check(
+      "arrival_photo",
+      "unknown",
+      `Taken at ${cairoShortTime(arrivedAt)}, after the first double visit of the trip at ${cairoShortTime(firstVisit)}. The arrival photo is due at the start of the trip.`,
+    );
+  }
   return check("arrival_photo", "pass", `Live photo with its position, taken on ${shortDay(photo.capturedOn)}.`);
 }
 
@@ -410,6 +430,37 @@ function distanceCheck(facts: ClaimCheckFacts): ClaimCheck | null {
 }
 
 /**
+ * A District Manager trip filed under the work rules (owner, 28 Nov 2026): each trip day's allowance is
+ * paid on the day's AM and PM work, and only when its first and last double visits are confirmed. The
+ * system has already priced it; this tells the approver how, and holds the row until every day is over.
+ */
+function workAllowanceCheck(facts: ClaimCheckFacts): ClaimCheck | null {
+  const record = facts.dmWorkAllowance;
+  if (!isDistrictManagerRole(facts.role) || !record) return null;
+  if (record.days.length === 0) {
+    return check("work_allowance", "unknown", "Not priced on the trip days' work yet: the first pricing runs after the claim is filed.");
+  }
+  const money = (value: number) => `EGP ${value.toFixed(2)}`;
+  const paid = `${money(record.allowanceAfter)} of ${money(record.allowanceBefore)} allowance paid`;
+  const unconfirmed = record.days.filter((day) => day.factor === 0);
+  const short = record.days.filter((day) => day.factor > 0 && day.factor < 1);
+  if (!record.final) {
+    return check("work_allowance", "unknown", `The trip is not over yet, so the day's work can still change: ${paid} so far.`);
+  }
+  if (unconfirmed.length > 0) {
+    return check(
+      "work_allowance",
+      "fail",
+      `${paid}. No allowance on ${dayList(unconfirmed.map((day) => day.date))}: ${unconfirmed[0].reason}`,
+    );
+  }
+  if (short.length > 0) {
+    return check("work_allowance", "pass", `${paid}, cut on ${dayList(short.map((day) => day.date))} for the day's work: ${short[0].reason}`);
+  }
+  return check("work_allowance", "pass", `${paid}: every trip day worked in full, with its first and last double visits confirmed.`);
+}
+
+/**
  * Meetings are held on a Thursday (owner, 2026-11-23). Null when the claim claims no meeting; a
  * claimed meeting on another day fails — flagged, never refused (meeting-day.ts).
  */
@@ -436,6 +487,7 @@ export function runClaimChecks(facts: ClaimCheckFacts): ClaimCheck[] {
   const checks: Array<ClaimCheck | null> = isTripClaim(facts.expenseType)
     ? [
         fieldWorkCheck(facts),
+        workAllowanceCheck(facts),
         routeCheck(facts),
         distanceCheck(facts),
         arrivalCheck(facts),

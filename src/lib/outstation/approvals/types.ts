@@ -21,6 +21,7 @@ export type CheckKey =
   | "distance"
   | "odometer"
   | "meeting_day"
+  | "work_allowance"
   | "amounts";
 
 /** What a claim is for: the three kinds Submit Expense offers (claim-kind.ts). */

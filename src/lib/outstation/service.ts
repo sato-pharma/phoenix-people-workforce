@@ -72,6 +72,9 @@ import {
   type OutstationTicketAttachmentUploadInput,
 } from "@/lib/outstation/car-evidence-storage";
 import { checkTrainTicketsOnServer, TrainTicketRefusedError } from "@/lib/outstation/ticket-scan";
+import { dmTrainFareOverCaps, dmTrainFareRefusal } from "@/lib/outstation/train-fare-cap";
+import { meetingDayRefusal } from "@/lib/outstation/approvals/meeting-day";
+import { claimKindOf } from "@/lib/outstation/approvals/claim-kind";
 import { readCarOdometer } from "@/lib/outstation/odometer-scan";
 import { measureEvidencePhoto } from "@/lib/outstation/blank-frame-server";
 import { inspectEvidencePhoto } from "@/lib/outstation/evidence-photo-inspection";
@@ -140,6 +143,13 @@ import {
 } from "@/lib/outstation/missing-ticket";
 import { legOnClaim, returnTicketState, sameLegAgainRefusal, type LegOnClaim } from "@/lib/outstation/return-ticket";
 import { isDistrictManagerRole } from "@/lib/outstation/dm-double-visit-distance";
+import {
+  dmArrivalAnchor,
+  dmDepartureOpensAt,
+  dmDepartureTooSoonMessage,
+  dmTicketSourceRefusal,
+  initialDmWorkAllowanceStamp,
+} from "@/lib/outstation/dm-expense-rules";
 import {
   isNonTravelExpenseType,
   NON_TRAVEL_APPROVAL_REASON,
@@ -2350,6 +2360,24 @@ export async function submitOutstationRequest(
   if (!evidenceValidation.isValid) {
     throw new Error(evidenceValidation.message);
   }
+  // A District Manager's ticket is a live photo or the operator's PDF (owner, 28 Nov 2026). An offline
+  // replay is let through: refusing it would lose the claim, and its ticket is attached again from My claims.
+  if (!nonTravel && isDistrictManagerRole(calculation.employeeRole) && !options.dropRefusedTrainTickets) {
+    const refusal = dmTicketSourceRefusal(options.ticketAttachments ?? []);
+    if (refusal) throw new Error(refusal);
+  }
+  // A weekly meeting is accepted only on a Thursday, for everyone (owner, 28 Nov 2026: "No any other meeting
+  // will be accepted not on Thursday"). Refused here, before anything is stored; a claim already stored is
+  // flagged on Expense Approvals (meeting-day.ts). An offline replay lands and is flagged there.
+  if (!options.dropRefusedTrainTickets) {
+    const refusal = meetingDayRefusal({
+      endDate: calculation.tripEndDate,
+      kind: claimKindOf(calculation.expenseType),
+      meetingCost: nonTravel ? numberValue(calculation.reportMeetingAmount) : numberValue(input.meetingAmount),
+      startDate: calculation.tripStartDate,
+    });
+    if (refusal) throw new Error(refusal);
+  }
 
   // One trip is claimed once (owner, 2026-10-26, after OUTSTATION-292/293). Checked before any
   // photo or ticket is uploaded, so a refused copy leaves nothing behind in storage.
@@ -2407,6 +2435,31 @@ export async function submitOutstationRequest(
       if (!(options.dropRefusedTrainTickets && error instanceof TrainTicketRefusedError)) throw error;
       receivedTicketAttachments = [];
     }
+  }
+  // A District Manager's train ticket is paid up to the second-class AC fare of the train taken (owner,
+  // 28 Nov 2026; train-fare-cap.ts). Refused with the figure to enter, before anything is stored. An offline
+  // replay has no screen to say it on, so it is let through like the other ticket rules.
+  if (
+    !nonTravel &&
+    calculation.transportationType === "train" &&
+    !calculation.noTicketFare &&
+    isDistrictManagerRole(calculation.employeeRole) &&
+    !options.dropRefusedTrainTickets
+  ) {
+    const refusal = dmTrainFareRefusal(
+      dmTrainFareOverCaps({
+        destination: { latitude: calculation.capturedLatitude, longitude: calculation.capturedLongitude },
+        goAmount: numberValue(input.goTicketAmount),
+        home:
+          calculation.residenceLatitude == null || calculation.residenceLongitude == null
+            ? null
+            : { latitude: Number(calculation.residenceLatitude), longitude: Number(calculation.residenceLongitude) },
+        returnAmount: numberValue(input.returnTicketAmount),
+        tickets: trainTicketScans ?? [],
+      }),
+    );
+    // A ticket refusal: the routes answer it 400 with these words.
+    if (refusal) throw new TrainTicketRefusedError(refusal);
   }
 
   await assertOutstationExpenseWorkflowTransition({
@@ -2786,6 +2839,10 @@ export async function submitOutstationRequest(
     transportation_type: calculation.transportationType,
     trip_end_date: calculation.tripEndDate,
     trip_start_date: calculation.tripStartDate,
+    // A District Manager trip filed from 28 Nov 2026 is under the work rules (dm-expense-rules.ts): the
+    // stamp is what lets the allowance be priced on each trip day's work. NULL keeps the old rules.
+    dm_work_allowance:
+      !nonTravel && isDistrictManagerRole(calculation.employeeRole) ? initialDmWorkAllowanceStamp(calculation.submittedAt) : null,
   };
 
   const { data, error } = await supabase
@@ -2855,6 +2912,18 @@ export async function submitOutstationRequest(
       logError("A District Manager claim could not be priced on its first double visit at submit", {
         error: priceError,
         labels: { event: "outstation_dm_double_visit_price_on_submit_failed", requestId },
+      });
+    }
+    // Then each trip day's allowance on the day's work and confirmed double visits (owner, 28 Nov 2026).
+    // After the distance, because more than 150 km is read from it. Same failure rule: never fails the submit.
+    try {
+      const { priceDmWorkAllowance } = await import("@/lib/outstation/dm-work-allowance-server");
+      const outcome = await priceDmWorkAllowance(Number(submitted.id));
+      if (outcome.result === "written") submitted = (await getOutstationRequestById(submitted.id)) ?? submitted;
+    } catch (priceError) {
+      logError("A District Manager claim's work allowance could not be priced at submit", {
+        error: priceError,
+        labels: { event: "outstation_dm_work_allowance_failed", requestId },
       });
     }
   }
@@ -3291,6 +3360,13 @@ export async function addExtraTicketsToOwnOutstationRequest(
   if (existing.transportationType !== "train" && existing.transportationType !== "bus") {
     throw new Error("Extra tickets can only be added to train or bus expense requests.");
   }
+  // A District Manager's ticket (owner, 28 Nov 2026): a live photo or the operator's PDF, and within 12 hours.
+  if (isDistrictManagerRole(existing.employeeRole)) {
+    const { dmTicketAddRefusal } = await import("@/lib/outstation/dm-work-allowance-server");
+    const refusal = await dmTicketAddRefusal(existing, (input.tickets ?? []).map((entry) => entry.ticket));
+    if (refusal) throw new Error(refusal);
+  }
+
   if (existing.status.startsWith("rejected")) {
     throw new Error("This request was rejected and cannot accept extra tickets.");
   }
@@ -3438,6 +3514,13 @@ export async function attachMissingTicketsToOwnOutstationRequest(
   if (existing.transportationType !== "train" && existing.transportationType !== "bus") {
     throw new Error(MISSING_TICKET_WRONG_TRANSPORT_MESSAGE);
   }
+  // A District Manager's ticket (owner, 28 Nov 2026): a live photo or the operator's PDF, and within 12 hours.
+  if (isDistrictManagerRole(existing.employeeRole)) {
+    const { dmTicketAddRefusal } = await import("@/lib/outstation/dm-work-allowance-server");
+    const refusal = await dmTicketAddRefusal(existing, input.tickets ?? []);
+    if (refusal) throw new Error(refusal);
+  }
+
   if (!isOutstationClaimUndecided(existing.status)) {
     throw new Error(OUTSTATION_CLAIM_DECIDED_MESSAGE);
   }
@@ -6233,6 +6316,19 @@ export async function captureOutstationDeparturePhoto(
       "The arrival photo is missing, so a departure photo cannot be accepted yet — capture the arrival photo first.",
     );
   }
+  // A District Manager's two trip photos are at least 3 hours apart (owner, 28 Nov 2026, dm-expense-rules.ts):
+  // refused here, before anything is stored, with the time the camera opens. Never a rejection afterwards.
+  if (isDistrictManagerRole(request.employeeRole)) {
+    const tooSoon = dmDepartureTooSoonMessage({
+      arrivalAnchorMs: dmArrivalAnchor({
+        arrivalCapturedAt: request.carEvidenceMetadata?.capturedAt ?? request.capturedAt,
+        offlineCaptured: request.offlineCaptured,
+        submittedAt: request.submittedAt,
+      }),
+      nowMs: Date.now(),
+    });
+    if (tooSoon) throw new Error(tooSoon);
+  }
   // No location, no photo (owner ruling, 2026-09-18): refused like an arrival photo without GPS,
   // and BEFORE the upload, so nothing is stored. It used to be saved stamped "no GPS fix" with its
   // distance unknown and no flag, which cost the employee nothing. Distance is still only flagged.
@@ -6354,6 +6450,19 @@ export async function captureOutstationDeparturePhoto(
   // workload — and then to release the request into payroll if that succeeded. Both steps are
   // best-effort follow-ons: the photo is already saved, and neither a dead CRM nor a payroll
   // hiccup may turn the employee's successful capture into an error he has to retry.
+  // A District Manager's allowance is priced on the trip days' work first (owner, 28 Nov 2026), so a
+  // release that follows reads the priced figure. Best effort, like the rest.
+  if (isDistrictManagerRole(request.employeeRole)) {
+    try {
+      const { priceDmWorkAllowance } = await import("@/lib/outstation/dm-work-allowance-server");
+      await priceDmWorkAllowance(Number(request.id));
+    } catch (priceError) {
+      logError("A District Manager claim's work allowance could not be priced at departure", {
+        error: priceError,
+        labels: { event: "outstation_dm_work_allowance_failed", requestId: String(request.id) },
+      });
+    }
+  }
   await captureWorkloadAndReleaseIfReady(request);
 
   return { gateStatus, review };
@@ -7049,6 +7158,11 @@ export async function captureOutstationJourneyStop(
     ticketFileCount: ticketFiles.length,
   });
   if (evidenceRefusal) throw new Error(evidenceRefusal);
+  // A District Manager's leg ticket is a live photo or the operator's PDF (owner, 28 Nov 2026).
+  if (isDistrictManagerRole(request.employeeRole)) {
+    const ticketRefusal = dmTicketSourceRefusal(ticketFiles);
+    if (ticketRefusal) throw new Error(ticketRefusal);
+  }
   const latitude = Number(input.latitude);
   const longitude = Number(input.longitude);
   if (!usablePosition(request.residenceLatitude, request.residenceLongitude)) {
@@ -7548,6 +7662,12 @@ export type OutstationDeparturePhotoDue = {
   tripStartDate: string;
   /** The trip's last Cairo day has passed, so the photo can no longer be taken (2026-11-22). */
   windowClosed?: boolean;
+  /**
+   * A District Manager's departure camera opens 3 hours after his arrival photo (owner, 28 Nov 2026,
+   * dm-expense-rules.ts). Set only while it has not opened yet, so the card shows the time instead of a
+   * camera the server would refuse.
+   */
+  opensAt?: string;
 };
 
 /**
@@ -7603,7 +7723,21 @@ export async function getOwnOutstationRequestsAwaitingDeparturePhoto(
       tripStartDate: row.tripStartDate,
       // The card says so instead of offering a camera the server would refuse (2026-11-22).
       windowClosed: !isWithinDepartureWindow({ capturedAt: new Date().toISOString(), tripEndDate: row.tripEndDate }),
+      ...dmDepartureOpensLater(row),
     }));
+}
+
+/** A District Manager's departure camera that has not opened yet: `{ opensAt }`, else nothing. */
+function dmDepartureOpensLater(row: OutstationExpenseRequest): { opensAt?: string } {
+  if (!isDistrictManagerRole(row.employeeRole)) return {};
+  const opensAt = dmDepartureOpensAt(
+    dmArrivalAnchor({
+      arrivalCapturedAt: row.carEvidenceMetadata?.capturedAt ?? row.capturedAt,
+      offlineCaptured: row.offlineCaptured,
+      submittedAt: row.submittedAt,
+    }),
+  );
+  return opensAt && Date.parse(opensAt) > Date.now() ? { opensAt } : {};
 }
 
 /** One of the caller's undecided train or bus claims that arrived with no ticket (missing-ticket.ts). */
@@ -7618,6 +7752,15 @@ export type OutstationMissingTicketDue = OutstationDeparturePhotoDue & {
 /** Everything the caller himself must still do on his own claims — what Submit Expense opens with. */
 export type OwnOutstationPendingActions = {
   departurePhotoDue: OutstationDeparturePhotoDue[];
+  /** A District Manager on a trip today: today's double visits to confirm (owner, 28 Nov 2026). */
+  doubleVisitsToConfirm: Array<{
+    capturedAt: string;
+    confirmedAt: string | null;
+    customerName: string;
+    required: boolean;
+    repName: string;
+    visitId: string;
+  }>;
   missingTicket: OutstationMissingTicketDue[];
 };
 
@@ -7692,11 +7835,15 @@ export async function getOwnOutstationRequestsMissingTicket(
 export async function getOwnOutstationPendingActions(
   access: AccessContext,
 ): Promise<OwnOutstationPendingActions> {
-  const [departurePhotoDue, missingTicket] = await Promise.all([
+  const [departurePhotoDue, missingTicket, toConfirm] = await Promise.all([
     getOwnOutstationRequestsAwaitingDeparturePhoto(access).catch(() => []),
     getOwnOutstationRequestsMissingTicket(access).catch(() => []),
+    // Loaded on demand: the confirmations module reads the CRM and this module's claims.
+    import("@/lib/outstation/dm-work-allowance-server")
+      .then(({ getOwnDoubleVisitsToConfirm }) => getOwnDoubleVisitsToConfirm(access))
+      .catch(() => ({ visits: [] })),
   ]);
-  return { departurePhotoDue, missingTicket };
+  return { departurePhotoDue, doubleVisitsToConfirm: toConfirm.visits, missingTicket };
 }
 
 // ── The submitter's own view of his submissions ───────────────────────────────

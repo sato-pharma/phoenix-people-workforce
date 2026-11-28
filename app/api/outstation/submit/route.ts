@@ -36,6 +36,8 @@ const SubmitTicketAttachmentSchema = z.object({
   dataUrl: submitTextField,
   name: submitTextField,
   scanToken: submitTextField,
+  /** "live_camera" when the app's camera took it; a District Manager's photo must be (dm-expense-rules.ts). */
+  source: submitTextField,
 });
 
 /**
@@ -145,6 +147,7 @@ export async function POST(request: Request) {
       }),
       // The signed note of the read made when the file was picked; checked against these bytes.
       scanToken: typeof entry.scanToken === "string" ? entry.scanToken : undefined,
+      source: entry.source === "live_camera" ? ("live_camera" as const) : ("file" as const),
     }));
     const result = await submitOutstationRequest(
       access,
